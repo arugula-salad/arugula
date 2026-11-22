@@ -36,6 +36,7 @@ import type { DocLinkUrl, DocMoveRequest, DocOpened, DocOpenRequest, DocRow } fr
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { MachinesList } from "./machines-list";
+import { yours } from "./overview-peek";
 import { newSessionsIn } from "../shell/new-session";
 import { projectRef } from "../shell/ui/session-project";
 import { inShown, projectOf, showProject } from "../shell/project-view";
@@ -131,6 +132,15 @@ function hostById(id: string, session: AppSession | null): FleetHost | undefined
 export function docsHere(id: string, session: AppSession | null): boolean {
   const h = hostById(id, session);
   return !!h && !h.owner && h.state === "connected";
+}
+
+/** Whether pane `pane` of machine `id` is in the fleet and the reader's
+ * own, as the Overview's peek tells it (`PlatformApi.ownPane`). */
+export function paneHere(id: string, pane: number, session: AppSession | null): boolean {
+  const fleet = up?.machines.fleet;
+  const h = hostById(id, session);
+  const p = h && fleet?.panes.find((x) => x.host === h.name && x.id === pane && !x.stale);
+  return !!p && yours(fleet!, p);
 }
 
 /** Ask machine `id` to give its Doc `doc` to `project` (its `doc move`):

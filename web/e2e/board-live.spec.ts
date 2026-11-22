@@ -4,7 +4,9 @@
 // and Give it back (today's driver), says while you drive, answers the
 // pane's question at its top as Swarm does, opens the pane on its machine,
 // says when a card has no session yet, and on a phone fills the screen with
-// the key bar while you drive. On the app's fixture page
+// the key bar while you drive. The board's header says who leads it and on
+// what machine, with Talk (its thread) and, for your own lead's pane, Open
+// (Arugula iss_89b78ece43ac3d6271f78d797cdbdc61). On the app's fixture page
 // (app-frame-page.tsx), where the machine `m_suite` is the suite's daemon;
 // the board is made up, its agent block a real terminal of the daemon.
 import { fileURLToPath } from "node:url";
@@ -21,26 +23,32 @@ test.use({ permissions: ["local-network-access"] });
 
 const row = (id: string, note: string, attachments: unknown[]) => ({ id, rev: 1, pointer: { kind: "none" }, note, status: "none", lane: "doing", attachments, updated_at: 1 });
 
-/** The board: a card whose agent block is `pane` of the suite's daemon, with a PR beside it, and a card with no session. */
-function board(pane: number) {
+/** The board: a card whose agent block is `pane` of the suite's daemon, with a PR beside it, and a card with no session; led by `lead`, if given. */
+function board(pane: number, lead?: (pane: number) => unknown) {
   const agent = { id: "att_agent", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(pane) }, block: { state: "working", title: "Fixer", branch: "arugula/fix", head: "abc1234", diffstat: { files: 2, added: 5, removed: 1 } } };
   const pr = { id: "att_pr", role: "work", pointer: { kind: "link", url: "https://example.com/pr/7" } };
   return {
-    board: { id: B, project: P, title: "Launch", created_by: "acct_a", created_at: 1, updated_at: 1, goal: "", done_note: "", closed_by: "", progress: { done: 0, total: 0, proven: 0, review: 0, doing: 0 } },
+    board: { id: B, project: P, title: "Launch", created_by: "acct_a", created_at: 1, updated_at: 1, goal: "", done_note: "", closed_by: "", progress: { done: 0, total: 0, proven: 0, review: 0, doing: 0 }, ...(lead ? { lead: lead(pane) } : {}) },
     zones: [{ id: "z_doing", rev: 1, title: "Doing", kind: "doing", rows: [row("r_live", "The live one", [agent, pr]), row("r_none", "Not started", [])] }],
     groups: [],
     docs: [],
   };
 }
 
-/** A fresh pane on the daemon, then the board in the app, with a row's drawer open. */
-async function openDrawer(page: Page, which: string): Promise<number> {
+/** A fresh pane on the daemon, then the board in the app, led by `lead` if given. */
+async function openBoard(page: Page, lead?: (pane: number) => unknown): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
-  await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(board(pane)) }));
+  await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(board(pane, lead)) }));
   await page.goto(`/p/${P}/boards/${B}`);
+  return pane;
+}
+
+/** The board in the app, with a row's drawer open. */
+async function openDrawer(page: Page, which: string): Promise<number> {
+  const pane = await openBoard(page);
   await page.locator(`[data-board-row="${which}"] [data-board-title]`).click();
   await expect(page.locator(`[data-board-drawer="${which}"]`)).toBeVisible();
   return pane;
@@ -142,6 +150,62 @@ test.describe("on a computer", () => {
     const live = page.locator('[data-board-drawer="r_none"] [data-board-drawer-live]');
     await expect(live.locator("[data-board-live-none]")).toHaveText("No session yet.");
     await expect(live.locator("button")).toHaveCount(0);
+  });
+});
+
+test.describe("its lead", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  /** The board's thread, as chat answers it: the fixture page answers chat itself, so it's made up in the page. */
+  const threadRoom = (page: Page) =>
+    page.evaluate(
+      ({ P, B }) => {
+        const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+        const before = window.fetch;
+        window.fetch = async (input, init) => {
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+          if (url.pathname === "/api/chat/targets") return new Response(JSON.stringify(room), { headers: { "Content-Type": "application/json" } });
+          return before(input, init);
+        };
+      },
+      { P, B },
+    );
+
+  test("your own lead whose pane is here says who and where, talks in the board's thread and opens its pane", async ({ page }, info) => {
+    const pane = await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "Product Improvements", pane, at: 1 }));
+    const lead = page.locator(".board-head [data-board-lead]");
+    await expect(lead).toContainText("Led by Product Improvements on suite-box");
+    await expect(lead.locator("[data-board-lead-talk]")).toHaveText("Talk");
+    await expect(lead.locator("[data-board-lead-open]")).toHaveText("Open");
+    await page.screenshot({ path: info.outputPath("board-lead.png") });
+    // Open: its pane, on its machine's page, as the Overview's Open in Panes.
+    await lead.locator("[data-board-lead-open]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${pane}`));
+    // Talk: the board's thread, which its lead reads.
+    await page.goBack();
+    await threadRoom(page);
+    await lead.locator("[data-board-lead-talk]").click();
+    await expect(page).toHaveURL(/room_launch/);
+  });
+
+  test("a lead whose pane isn't here, or a teammate's, has the line and Talk, not Open", async ({ page }) => {
+    // Its pane is gone from your machine.
+    await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "lead", pane: pane + 1000, at: 1 }));
+    const lead = page.locator(".board-head [data-board-lead]");
+    await expect(lead).toContainText("Led by lead on suite-box");
+    await expect(lead.locator("[data-board-lead-talk]")).toBeVisible();
+    await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
+    // A teammate's machine, which this page doesn't reach.
+    await openBoard(page, () => ({ machine: "m_team", machine_name: "jos-box", session: "Jo's lead", pane: 99_999, at: 1 }));
+    await expect(lead).toContainText("Led by Jo's lead on jos-box");
+    await expect(lead.locator("[data-board-lead-talk]")).toBeVisible();
+    await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
+  });
+
+  test("a board no one leads says nothing of it", async ({ page }) => {
+    await openBoard(page);
+    await expect(page.locator(".board-head [data-board-heading]")).toHaveText("Launch");
+    await expect(page.locator("[data-board-lead]")).toHaveCount(0);
   });
 });
 

@@ -29,7 +29,7 @@
 // to make again.
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLane, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardLane, BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
@@ -740,6 +740,7 @@ function BoardHead({ view, back, write, shareLink, more: items, docs, goal: draf
       <p class="doc-meta board-meta" data-board-meta>
         <DocTimes doc={{ made: b.created_at, updated: b.updated_at }} />
       </p>
+      {b.lead && <LeadLine lead={b.lead} id={id} />}
       {(write || b.goal || (docs && ((view.docs ?? []).length > 0 || write))) && (
         <div class={docs ? "board-head-body" : "board-head-body solo"}>
           <div class="board-goal-col">
@@ -793,6 +794,39 @@ function BoardHead({ view, back, write, shareLink, more: items, docs, goal: draf
         <div class="board-bar" aria-hidden="true" data-board-progress />
       )}
     </PageHeader>
+  );
+}
+
+/** Who leads the board and on what machine, in its header (Arugula
+ * iss_89b78ece43ac3d6271f78d797cdbdc61): Talk opens the board's thread,
+ * which its lead reads; Open, its pane, where it's in the fleet this page
+ * reaches and the reader's own (a teammate's lead is talked to, not
+ * opened). */
+function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
+  const api = usePlatformApi();
+  useSubscribe((fn) => api.ownPane?.watch(fn) ?? (() => {}));
+  const machine = lead.machine_name || api.machine(lead.machine)?.name || "";
+  const open = lead.pane !== undefined && !!api.ownPane?.here(lead.machine, lead.pane);
+  const talk = () =>
+    boards.thread(id).then(
+      (room) => api.nav.openRoom(room.id),
+      (e: Error) => api.toast(`Couldn't open the board's thread: ${e.message}`),
+    );
+  return (
+    <p class="doc-meta board-lead" data-board-lead={lead.session}>
+      <span>
+        Led by <b>{lead.session}</b>
+        {machine && ` on ${machine}`}
+      </span>
+      <button type="button" class="link" title="The board's thread: its lead reads it" data-board-lead-talk onClick={() => void talk()}>
+        Talk
+      </button>
+      {open && (
+        <button type="button" class="link" title="Its pane, on its machine" data-board-lead-open onClick={() => api.goToPane(lead.machine, String(lead.pane), null)}>
+          Open
+        </button>
+      )}
+    </p>
   );
 }
 
