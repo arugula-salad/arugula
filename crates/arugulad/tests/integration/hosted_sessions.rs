@@ -912,6 +912,16 @@ fn a_hosted_machine_runs_sessions() {
     let said = std::fs::read_to_string(&sudo_log).unwrap();
     assert!(said.contains(&format!("-n -u ses1 -- env -i HOME={} USER=ses1", homes.join("ses1").display())), "{said}");
     assert!(said.contains("ANTHROPIC_API_KEY=arugula-brokered sh -c"), "the agent, with the placeholder: {said}");
+    // #1379: Node trusts the system's CAs (E2B's proxy CA), through sudo's
+    // `env -i`.
+    if std::path::Path::new("/etc/ssl/certs/ca-certificates.crt").exists() {
+        assert!(
+            said.contains(
+                "NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt ANTHROPIC_API_KEY=arugula-brokered sh -c"
+            ),
+            "the agent trusts the system's CAs: {said}"
+        );
+    }
     // Arugula #215: the setup's tools first on its PATH, and the setup's
     // environment, `~/` its user's home.
     let theirs = format!(

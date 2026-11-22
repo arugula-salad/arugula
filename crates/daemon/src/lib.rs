@@ -580,6 +580,8 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
             // Pane terminals kept for us across a restart; taken before any
             // threads start.
             let kept = sys::take_listen_fds();
+            // SAFETY: no threads yet.
+            unsafe { agent::hosted::trust_system_ca(args.run.hosted) };
             tokio::runtime::Runtime::new()?.block_on(run(args.run, kept))
         }
     }

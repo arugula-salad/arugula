@@ -6,8 +6,9 @@
 //!   `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` set to [`PLACEHOLDER`]. The
 //!   compute provider's egress proxy writes the real key over it on the
 //!   way out (E2B Secrets), from the project's key or the platform's. Its
-//!   proxy re-signs TLS with its own CA, which Node doesn't read from the
-//!   system store, so `NODE_EXTRA_CA_CERTS` points at it when it's there.
+//!   proxy re-signs TLS with its own CA, which is in the system store but
+//!   Node doesn't read that, so the daemon points `NODE_EXTRA_CA_CERTS` at
+//!   the store for everything it starts ([`trust_system_ca`], #1379).
 //! - **Or a Claude subscription.** A project's Anthropic key may be a
 //!   `claude setup-token` token, which the proxy sets as a bearer: Claude
 //!   Code then holds the placeholder as `CLAUDE_CODE_OAUTH_TOKEN`, so it
@@ -37,8 +38,11 @@ use super::defs::Kind;
 /// `hosted::inference::PLACEHOLDER`).
 pub const PLACEHOLDER: &str = "arugula-brokered";
 
-/// E2B's proxy CA, as its boxes have it.
-const PROXY_CA: &str = "/usr/local/share/ca-certificates/e2b-ca.crt";
+/// The system's CA bundle, with E2B's proxy CA in it.
+const SYSTEM_CA: &str = "/etc/ssl/certs/ca-certificates.crt";
+
+/// Node's extra CAs (#1379).
+const NODE_CA_ENV: &str = "NODE_EXTRA_CA_CERTS";
 
 /// What kind of credential the proxy fills in for Claude Code: an API key
 /// (`x-api-key`), or a Claude subscription's token (a bearer).
@@ -156,20 +160,41 @@ pub fn agent_of(kind: Kind) -> Option<&'static str> {
     }
 }
 
+/// What `NODE_EXTRA_CA_CERTS` a hosted daemon sets for what it starts:
+/// the system's bundle, when the box has it and the daemon wasn't given
+/// one already.
+pub fn node_ca(given: Option<&std::ffi::OsStr>, bundle: bool) -> Option<&'static str> {
+    (given.is_none_or(|v| v.is_empty()) && bundle).then_some(SYSTEM_CA)
+}
+
+/// On a hosted box, let Node trust what the system does, in the panes and
+/// agents the daemon starts as itself, which inherit its environment. A
+/// session user's agent starts from an empty one: [`AsUser::wrap`] names
+/// it there. E2B's egress proxy re-signs TLS with a CA only
+/// the system store has, so without it Claude Code and the ACP adapters
+/// fail with UNABLE_TO_VERIFY_LEAF_SIGNATURE (#1379, #975).
+///
+/// # Safety
+/// No other thread may be running: it sets the process's environment.
+pub unsafe fn trust_system_ca(hosted: bool) {
+    if !(hosted || hosted_env(std::env::var("ARUGULA_HOSTED").ok().as_deref())) {
+        return;
+    }
+    if let Some(ca) = node_ca(std::env::var_os(NODE_CA_ENV).as_deref(), std::path::Path::new(SYSTEM_CA).exists()) {
+        // SAFETY: the caller's.
+        unsafe { std::env::set_var(NODE_CA_ENV, ca) };
+    }
+}
+
 /// What an agent's environment gets on a hosted box: the placeholder for
-/// its provider's key (Claude Code's as `auth` says), and the proxy's CA
-/// for Node when the box has it.
-pub fn env(kind: Kind, auth: Auth, ca: bool) -> Vec<(String, String)> {
-    let mut env = match (kind, auth) {
+/// its provider's key (Claude Code's as `auth` says).
+pub fn env(kind: Kind, auth: Auth) -> Vec<(String, String)> {
+    match (kind, auth) {
         (Kind::Claude, Auth::Key) => vec![("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned())],
         (Kind::Claude, Auth::Subscription) => vec![("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), PLACEHOLDER.to_owned())],
         (Kind::Codex, _) => vec![("OPENAI_API_KEY".to_owned(), PLACEHOLDER.to_owned())],
-        _ => return vec![],
-    };
-    if ca {
-        env.push(("NODE_EXTRA_CA_CERTS".to_owned(), PROXY_CA.to_owned()));
+        _ => vec![],
     }
-    env
 }
 
 /// What an agent's environment loses on a hosted box: on a subscription,
@@ -179,11 +204,6 @@ pub fn unset(kind: Kind, auth: Auth) -> &'static [&'static str] {
         (Kind::Claude, Auth::Subscription) => &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
         _ => &[],
     }
-}
-
-/// [`env`], looking for the proxy's CA on this box.
-pub fn env_here(kind: Kind, auth: Auth) -> Vec<(String, String)> {
-    env(kind, auth, std::path::Path::new(PROXY_CA).exists())
 }
 
 /// Give up the daemon's protection from the OOM killer in what `c` starts:
@@ -258,6 +278,18 @@ fn session_env_text() -> String {
     std::fs::read_to_string(file).unwrap_or_default()
 }
 
+/// `env`, with the daemon's `NODE_EXTRA_CA_CERTS` (`daemon`) first unless
+/// `env` names its own.
+fn with_node_ca(env: &[(String, String)], daemon: Option<String>) -> Vec<(String, String)> {
+    let mut out = env.to_vec();
+    if let Some(ca) = daemon.filter(|c| !c.is_empty())
+        && !env.iter().any(|(k, _)| k == NODE_CA_ENV)
+    {
+        out.insert(0, (NODE_CA_ENV.to_owned(), ca));
+    }
+    out
+}
+
 /// One of a hosted box's session users (M255, S42 q1): a hosted session's
 /// agent runs as it, and so does all of the daemon's git in the session's
 /// checkout, never as the daemon's user or root (an agent's planted
@@ -288,11 +320,17 @@ impl AsUser {
     }
 
     /// The command line that runs `argv` as this user, with `env` (nothing
-    /// secret: [`env`]'s placeholder and the proxy's CA are fine), the
-    /// user's own `HOME`, `USER`, `LOGNAME` and [`SESSION_PATH`], and the
+    /// secret: [`env`]'s placeholder is fine), the user's own `HOME`,
+    /// `USER`, `LOGNAME` and [`SESSION_PATH`], `NODE_EXTRA_CA_CERTS` (the
+    /// daemon's, else the system's bundle when the box has it), and the
     /// setup's [`SESSION_ENV`] (`env`'s where both name a variable).
     pub fn wrap(&self, env: &[(String, String)], argv: &[String]) -> Vec<String> {
-        self.wrap_with(&session_env_text(), env, argv)
+        // #1379: `env -i` drops the daemon's own, so it's named here.
+        let ca = std::env::var(NODE_CA_ENV)
+            .ok()
+            .filter(|c| !c.is_empty())
+            .or_else(|| node_ca(None, std::path::Path::new(SYSTEM_CA).exists()).map(str::to_owned));
+        self.wrap_with(&session_env_text(), &with_node_ca(env, ca), argv)
     }
 
     /// [`AsUser::wrap`], with `setup` as [`SESSION_ENV`]'s text.
@@ -348,15 +386,9 @@ mod tests {
 
     #[test]
     fn only_claude_and_codex_get_a_placeholder() {
-        assert_eq!(
-            env(Kind::Claude, Auth::Key, true),
-            [
-                ("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned()),
-                ("NODE_EXTRA_CA_CERTS".to_owned(), PROXY_CA.to_owned())
-            ]
-        );
-        assert_eq!(env(Kind::Codex, Auth::Key, false), [("OPENAI_API_KEY".to_owned(), PLACEHOLDER.to_owned())]);
-        assert!(env(Kind::Acp, Auth::Key, true).is_empty());
+        assert_eq!(env(Kind::Claude, Auth::Key), [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned())]);
+        assert_eq!(env(Kind::Codex, Auth::Key), [("OPENAI_API_KEY".to_owned(), PLACEHOLDER.to_owned())]);
+        assert!(env(Kind::Acp, Auth::Key).is_empty());
         assert_eq!(
             (agent_of(Kind::Claude), agent_of(Kind::Codex), agent_of(Kind::Acp)),
             (Some("claude"), Some("codex"), None)
@@ -368,16 +400,37 @@ mod tests {
     #[test]
     fn a_subscription_is_an_oauth_token() {
         assert_eq!(
-            env(Kind::Claude, Auth::Subscription, false),
+            env(Kind::Claude, Auth::Subscription),
             [("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), PLACEHOLDER.to_owned())]
         );
-        assert_eq!(env(Kind::Codex, Auth::Subscription, false), env(Kind::Codex, Auth::Key, false));
+        assert_eq!(env(Kind::Codex, Auth::Subscription), env(Kind::Codex, Auth::Key));
         assert_eq!(unset(Kind::Claude, Auth::Subscription), ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]);
         assert!(unset(Kind::Claude, Auth::Key).is_empty() && unset(Kind::Codex, Auth::Subscription).is_empty());
         assert_eq!(Auth::parse(Some("subscription")), Auth::Subscription);
         for key in [None, Some("key"), Some("other")] {
             assert_eq!(Auth::parse(key), Auth::Key, "{key:?}");
         }
+    }
+
+    /// #1379: Node trusts the system's CAs (E2B's proxy CA among them) in
+    /// everything a hosted daemon starts, unless the daemon was given its
+    /// own; a session user's agent gets it through sudo's `env -i`.
+    #[test]
+    fn node_trusts_the_system_store() {
+        use std::ffi::OsStr;
+        assert_eq!(node_ca(None, true), Some("/etc/ssl/certs/ca-certificates.crt"));
+        assert_eq!(node_ca(Some(OsStr::new("")), true), Some(SYSTEM_CA));
+        assert_eq!(node_ca(Some(OsStr::new("/mine.pem")), true), None);
+        assert_eq!(node_ca(None, false), None);
+
+        let key = [("ANTHROPIC_API_KEY".to_owned(), PLACEHOLDER.to_owned())];
+        let u = AsUser { user: "ses1".into(), home: "/home/ses1".into() };
+        let argv = u.wrap_with("", &with_node_ca(&key, Some(SYSTEM_CA.into())), &["acp".into()]);
+        assert!(argv.contains(&format!("NODE_EXTRA_CA_CERTS={SYSTEM_CA}")), "{argv:?}");
+        assert_eq!(with_node_ca(&key, None), key);
+        assert_eq!(with_node_ca(&key, Some(String::new())), key);
+        let own = [("NODE_EXTRA_CA_CERTS".to_owned(), "/x.pem".to_owned())];
+        assert_eq!(with_node_ca(&own, Some(SYSTEM_CA.into())), own);
     }
 
     /// M255: a session's agent runs as its user with an empty environment
