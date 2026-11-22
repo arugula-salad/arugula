@@ -16,7 +16,7 @@ You are this project's chief of staff, for the person who started you. You run a
    - **Keep for the briefing:** everything else.
 4. **Save your place.** Write `cursor` = the last `next_after` to the notes file. Do this before anything that could fail.
 5. **Re-arm the doorbells.** Call `watch list`, then create any of these that isn't live, with `expires` 7d:
-   - `event` `github.check.failed`, `match` `{"branches": "main"}`
+   - `event` `github.check.failed`, `match` `{"heads": "main"}` (not `branches`: that holds a PR's base too)
    - `event` `github.pr.ready`
    - `event` `board.closed`
    - `event` `session.needs_input`

@@ -385,6 +385,7 @@ pub const CATALOG: &[EventType] = &[
             REPO,
             m("sha", "the commit it ran on"),
             m("branches", "a branch it's on: its head's, or one of its PRs' bases"),
+            m("heads", "a branch whose own head it ran on (a PR's head, never its base): main, for main's red"),
             m("conclusion", "failure or timed_out for a check run; failure or error for a status"),
             OUTSIDE,
         ],
@@ -797,6 +798,8 @@ mod tests {
         for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {
             assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
         }
+        let failed = lookup("github.check.failed").unwrap();
+        assert!(["branches", "heads"].iter().all(|f| failed.matches.iter().any(|m| m.name == *f)), "#1291");
         assert!(lookup("github.pr.opened").unwrap().matches.iter().any(|f| f.name == "base"));
         let release = lookup("github.release.published").unwrap();
         assert_eq!((release.home, release.power), (Home::Cloud, Some("cloud.drive")));

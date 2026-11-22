@@ -801,6 +801,9 @@ mod tests {
         assert_eq!(create_body(args(release)).unwrap().event.as_deref(), Some("github.release.published"));
         let merged = json!({ "event": "github.pr.merged", "match": { "repo": "o/r", "outside": true } });
         assert_eq!(create_body(args(merged)).unwrap().event.as_deref(), Some("github.pr.merged"));
+        // The chief of staff's "main went red" (#1291): main's own head, not a PR's base.
+        let red = json!({ "event": "github.check.failed", "match": { "heads": "main" } });
+        assert_eq!(create_body(args(red)).unwrap().event.as_deref(), Some("github.check.failed"));
         assert!(
             create_body(args(json!({ "event": "issue.labeled", "match": { "issue": "#3", "label": "bug" } }))).is_ok()
         );
