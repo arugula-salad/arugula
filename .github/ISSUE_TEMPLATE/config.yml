@@ -1,8 +1,14 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Question or idea
-    url: https://github.com/arugula-salad/arugula/discussions
-    about: Ask how to do something, or float an idea.
+  - name: Question
+    url: https://github.com/arugula-salad/arugula/discussions/categories/q-a
+    about: Ask how to do something in Discussions, Q&A.
+  - name: Idea
+    url: https://github.com/arugula-salad/arugula/discussions/categories/ideas
+    about: Float an idea in Discussions, Ideas.
+  - name: Known issues
+    url: https://docs.arugula.io/known-issues/
+    about: Check whether it's already known, and how to work around it.
   - name: Security problem
     url: https://github.com/arugula-salad/arugula/security/advisories/new
     about: Report it privately, please (see SECURITY.md).
