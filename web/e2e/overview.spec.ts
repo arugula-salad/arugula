@@ -657,6 +657,27 @@ test.describe("on a computer", () => {
     await scrollable();
   });
 
+  test("with no ask and a long thread open, Needs you keeps its height above the tabs (https://app.arugula.io/issues/iss_2ec9ffb4a17f1be76e3d41d30238c775)", async ({ page }) => {
+    await overview(page);
+    await launchRoom(page);
+    await chatOn(page);
+    await page.evaluate(() => {
+      const said = (window as unknown as { said: { seq: number; at: number; author: string; name: string; text: string; quote: null; pane: null; mentions: never[]; edited: null; deleted: null; imported: null; agent: null; reactions: never[]; files: never[]; pinned: boolean; also: boolean }[] }).said;
+      for (let seq = 2; seq <= 60; seq++) said.push({ seq, at: Date.now() - 60_000 + seq, author: "acct_Jo", name: "Jo", text: `Message ${seq} of a long thread.`, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+    });
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
+    await expect(page.locator(`[data-ov-talk-open="thread:${B}"] .thread-list`)).toContainText("Message 60 of a long thread.");
+    // No ask, only a finished session: Needs you's heading and that row.
+    const needs = page.locator("[data-ov-panel] > [data-ov-needs]");
+    await expect(needs.getByRole("heading", { name: "Needs you" })).toBeVisible();
+    await expect(needs.locator('[data-ov-ask][data-kind="ask"]')).toHaveCount(0);
+    // It isn't squeezed into a box shorter than itself, and neither its heading nor its row reaches the tabs.
+    const [over, head, row, tabs] = await Promise.all([needs.evaluate((e) => e.scrollHeight - e.clientHeight), needs.locator("header").boundingBox(), needs.locator("[data-ov-ask]").last().boundingBox(), page.locator("[data-ov-tabs]").boundingBox()]);
+    expect(over).toBeLessThanOrEqual(0);
+    expect(head!.y + head!.height).toBeLessThanOrEqual(tabs!.y);
+    expect(row!.y + row!.height).toBeLessThanOrEqual(tabs!.y);
+  });
+
   test("the reader's staff room is the talk panel's first tab, pinned, saying which session hears it (Arugula #1275)", async ({ page }) => {
     await overview(page);
     const panel = page.locator("[data-ov-panel]");

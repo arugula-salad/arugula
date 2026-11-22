@@ -433,8 +433,10 @@ button.ov-peek:disabled {
 
 /* The talk panel: Needs you on its top, the tabs under it. While a tab is
    open it reaches the window's foot (overview-talk's useFitWindow sets its
-   height as the page scrolls), Needs you at most half of it and the
-   conversation the rest, its box at the foot. */
+   height as the page scrolls), Needs you its own height up to half of it
+   and the conversation the rest, its box at the foot. Needs you doesn't
+   shrink then: the conversation's list does, else a long thread squeezes
+   its heading under the tabs. */
 .ov-panel {
   width: 380px;
   position: sticky;
@@ -456,6 +458,7 @@ button.ov-peek:disabled {
   flex-direction: column;
 }
 .ov-panel-talking .ov-needs {
+  flex-shrink: 0;
   max-height: 50%;
 }
 .ov-needs.ov-needs-none {
@@ -468,6 +471,7 @@ button.ov-peek:disabled {
   width: auto;
 }
 .ov-needs header {
+  flex: none;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
