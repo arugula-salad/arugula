@@ -3193,8 +3193,13 @@ mod tests {
         let mut v = view(lanes(vec![(Lane::Next, vec![row(Pointer::None, Lane::Next, "x")])]));
         let plain = render(&v);
         v.board.goal = "Ship it".into();
-        v.board.lead =
-            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), pane: None, at: 5 });
+        v.board.lead = Some(BoardLead {
+            machine: "m1".into(),
+            machine_name: "geek".into(),
+            session: "ux".into(),
+            pane: None,
+            at: 5,
+        });
         let text = render(&v);
         assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
         v.board.lead.as_mut().unwrap().machine_name.clear();
