@@ -2,15 +2,12 @@
 // default) or when it was made, newest first, and the time each row shows.
 
 import { Time } from "../ui/time";
-import { useListSort, type ListSortOption } from "../ui/list-page";
+import { TIME_SORTS, useListSort, type TimeSort } from "../ui/list-page";
 import { madeAt, type DocTimesOf } from "./doc-times";
 
-export type DocSort = "updated" | "created";
+export type DocSort = TimeSort;
 
-export const DOC_SORTS: ListSortOption<DocSort>[] = [
-  { key: "updated", label: "Updated" },
-  { key: "created", label: "Created" },
-];
+export const DOC_SORTS = TIME_SORTS;
 
 /** The sort this browser left on: Updated until someone chooses Created. */
 export const useDocSort = () => useListSort<DocSort>("docs-sort", DOC_SORTS);

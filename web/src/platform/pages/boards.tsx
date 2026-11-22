@@ -17,7 +17,7 @@ import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boa
 import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
-import { ListPage, type ListGroup, type ListRowParts } from "../../shared/ui/list-page";
+import { ListPage, TIME_SORTS, useListSort, type ListGroup, type ListRowParts, type TimeSort } from "../../shared/ui/list-page";
 import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
@@ -88,6 +88,12 @@ export function useBoards(project: string | undefined): ProjectBoard[] | null {
   return list;
 }
 
+/** The sort this browser left on, for both lists of boards: Updated until someone chooses Created (Arugula #1369). */
+const useBoardSort = () => useListSort<TimeSort>("boards-sort", TIME_SORTS);
+
+/** `boards` newest first by the time they're sorted by. The sort is stable, so equal times keep their order. */
+const newest = (boards: ProjectBoard[], by: TimeSort) => [...boards].sort((a, b) => (by === "created" ? b.created_at - a.created_at : b.updated_at - a.updated_at));
+
 /** The filter box above a list of boards (#546): the page's search (`/`). */
 function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
   return <SearchField class="board-filter" value={q} onValue={setQ} label="Filter boards" placeholder="Filter boards by title, epic key or goal" slash data-boards-filter />;
@@ -109,6 +115,7 @@ export function AllBoardsPage({ all, board }: { all?: boolean; board?: string })
   const [lists, setLists] = useState<Map<string, ProjectBoard[]> | null>(null);
   const [q, setQ] = useState("");
   const [unfolded, setUnfolded] = useState(false);
+  const [sort, setSort] = useBoardSort();
   useEffect(() => {
     setLists(null);
     let live = true;
@@ -136,8 +143,8 @@ export function AllBoardsPage({ all, board }: { all?: boolean; board?: string })
   // Each shown project's issues on no board, read together.
   const open = useUntriaged(shown.map((s) => s.p.id));
   const projectOf = new Map(shown.flatMap(({ p, list }) => list.map((b) => [b.id, p] as const)));
-  const kept = shown.map(({ p, list }) => ({ p, list: list.filter((b) => boardMatches(b, q)) }));
-  const done = kept.flatMap(({ list }) => list.filter((b) => b.closed_at != null));
+  const kept = shown.map(({ p, list }) => ({ p, list: newest(list.filter((b) => boardMatches(b, q)), sort) }));
+  const done = newest(kept.flatMap(({ list }) => list.filter((b) => b.closed_at != null)), sort);
   const linked = board ? kept.flatMap(({ list }) => list).find((b) => b.id === board) : undefined;
   // A Done board's own link unfolds Done, so its row can be the one selected.
   const doneLinked = linked?.closed_at != null;
@@ -200,6 +207,7 @@ export function AllBoardsPage({ all, board }: { all?: boolean; board?: string })
         searchLabel="Filter boards by title, epic key or goal"
         query={q}
         setQuery={setQ}
+        sort={{ options: TIME_SORTS, value: sort, onSort: setSort }}
         groups={groups}
         keyOf={(b) => b.id}
         previewOn="click"
@@ -302,10 +310,11 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
   const [q, setQ] = useState("");
   const [making, setMaking] = useState(false);
   const [unfolded, setUnfolded] = useState(false);
+  const [sort, setSort] = useBoardSort();
   const tri = useTriage(p.id, () => boardsChanged(p.id));
   const all = list ?? [];
   const open = all.filter((b) => b.closed_at == null);
-  const shown = all.filter((b) => boardMatches(b, q));
+  const shown = newest(all.filter((b) => boardMatches(b, q)), sort);
   const done = shown.filter((b) => b.closed_at != null);
   const live = shown.filter((b) => b.closed_at == null);
   const made = live.filter((b) => !b.source);
@@ -374,6 +383,7 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
         searchLabel="Filter boards by title, epic key or goal"
         query={q}
         setQuery={setQ}
+        sort={{ options: TIME_SORTS, value: sort, onSort: setSort }}
         groups={groups}
         keyOf={(r) => (isLoose(r) ? LOOSE_KEY : r.id)}
         previewOn="click"
