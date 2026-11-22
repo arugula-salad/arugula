@@ -878,6 +878,13 @@ pub struct BoardLead {
     #[serde(default)]
     pub machine_name: String,
     pub session: String,
+    /// The leading session's pane on its machine, the one the lead was taken
+    /// from: the page finds the pane by it, not by the name, which a renamed
+    /// conversation or a pane without a title doesn't match. Absent for a
+    /// lead an older daemon took.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pane: Option<u32>,
     /// When the session took the lead.
     pub at: u64,
 }
@@ -1027,6 +1034,10 @@ pub struct NewBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead_session: Option<String>,
+    /// The pane of `lead_session` on its machine, the one it leads from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead_pane: Option<u32>,
 }
 
 /// `POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's
@@ -1039,6 +1050,11 @@ pub struct LeadBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub session: Option<String>,
+    /// The calling session's pane on its machine, the one it takes the lead
+    /// from; left out with `release`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pane: Option<u32>,
     #[serde(default)]
     pub release: bool,
 }
@@ -3178,7 +3194,7 @@ mod tests {
         let plain = render(&v);
         v.board.goal = "Ship it".into();
         v.board.lead =
-            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), at: 5 });
+            Some(BoardLead { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), pane: None, at: 5 });
         let text = render(&v);
         assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
         v.board.lead.as_mut().unwrap().machine_name.clear();

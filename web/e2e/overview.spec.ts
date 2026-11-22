@@ -952,6 +952,95 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-peek-said]")).toHaveText("Typed, with Enter.");
   });
 
+  test("your own lead whose pane has no title and whose session is named otherwise is found by its pane, so its peek has its lines and Open in Panes (Arugula #1368)", async ({ page }) => {
+    // A Claude Code terminal's pane reports no title, and its session is `scratch`: only the pane the lead was taken from says which it is.
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    const scratch = Number((await tile.getAttribute("data-ov-panes"))!.split(":").pop());
+    await expect.poll(() => page.evaluate(async (id) => ((await (await fetch("/api/panes")).json()) as { id: number; title?: string }[]).find((p) => p.id === id)?.title ?? "", scratch)).toBe("");
+    led = { machine: "m_suite", machine_name: host, session: "Product Improvements", pane: scratch, at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
+    const panel = page.locator("[data-ov-panel]");
+    const peek = panel.locator("[data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(peek).not.toHaveAttribute("data-ov-peek-readonly", "");
+    await expect(panel.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Typing into");
+    await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
+  });
+
+  /** A board led from geek, a teammate's machine, by its pane 77. */
+  async function geekLead(page: Page) {
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    led = { machine: "m_geek", machine_name: "geek", session: "Plan overview page prototype", pane: 77, at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+  }
+
+  test("a teammate's lead found by its pane is watched, though its pane has no title and its session is named otherwise (Arugula #1368)", async ({ page }) => {
+    await geekLead(page);
+    await page.evaluate((P) => {
+      const fleet = (window as unknown as { __app: { fleet: { inject(p: unknown[]): void; role(p: { host: string }): string } } }).__app.fleet;
+      const role = fleet.role.bind(fleet);
+      fleet.role = (p) => (p.host === "geek" ? "viewer" : role(p));
+      fleet.inject([
+        {
+          key: "geek:77",
+          host: "geek",
+          id: 77,
+          session: { id: 3, name: "geek-main" },
+          stale: false,
+          owner: "jhgaylor",
+          person: { id: "account:jhgaylor", name: "jhgaylor", kind: "person" },
+          driver: null,
+          watchers: [],
+          unread: 0,
+          mention: false,
+          info: { id: 77, kind: "terminal", attention: "idle", session_project: { id: P, name: "Arugula" }, activity: { bps: 0, last_ms: Date.now() } },
+        },
+      ]);
+    }, P);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
+    const panel = page.locator("[data-ov-panel]");
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Watching");
+    await expect(panel.locator('[data-ov-who="peek"]')).not.toContainText("doesn't reach");
+    await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
+    await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
+  });
+
+  test("a teammate's lead whose pane isn't shared with you says whose machine it runs on, not that this page doesn't reach it (Arugula #1368)", async ({ page }) => {
+    await geekLead(page);
+    // The machine is listed, as a teammate's, with none of its panes.
+    await page.evaluate(() => {
+      const fleet = (window as unknown as { __app: { fleet: { list: unknown[] } } }).__app.fleet;
+      const real = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(fleet), "list")!.get!.bind(fleet);
+      Object.defineProperty(fleet, "list", { configurable: true, get: () => [...real(), { name: "geek", id: "m_geek", transport: "relay", owner: "jhgaylor", ownerId: "jhgaylor", state: "connected", lastSeen: null, summary: null, path: null }] });
+    });
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
+    const panel = page.locator("[data-ov-panel]");
+    await expect(panel.locator("[data-ov-peek-tail]")).toHaveText("It runs on geek, jhgaylor's machine, whose panes aren't shared with you.");
+    await expect(panel.locator("[data-ov-peek-panes]")).toBeDisabled();
+  });
+
+  test("a lead with no pane (from an older daemon) is still found by its session's name (Arugula #1368)", async ({ page }) => {
+    await overview(page, null, false, () => ({ machine: "m_suite", machine_name: "", session: "scratch", at: 1 }));
+    await launchRoom(page);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
+    const panel = page.locator("[data-ov-panel]");
+    await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
+    await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
+  });
+
   test("the Board level: its goal and bar, its lead's card with Talk to the lead and Board thread apart, its open tickets with their word and the agents on them, Done folded; a board no one leads asks the chief of staff for one (Arugula #1288)", async ({ page }, info) => {
     // Launch is led by the project's scratch session, and #12's agent is on it; Later has no lead.
     let led: unknown;

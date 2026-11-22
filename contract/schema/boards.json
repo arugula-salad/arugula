@@ -709,6 +709,15 @@
           "description": "The machine's name now; empty while it can't be told.",
           "type": "string"
         },
+        "pane": {
+          "description": "The leading session's pane on its machine, the one the lead was taken\nfrom: the page finds the pane by it, not by the name, which a renamed\nconversation or a pane without a title doesn't match. Absent for a\nlead an older daemon took.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "session": {
           "type": "string"
         }
@@ -1301,6 +1310,15 @@
     "LeadBoard": {
       "description": "`POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's\nlead (`session`, its name on its machine), or with `release` the lead is\ncleared, by the machine of the session that leads or by a person.",
       "properties": {
+        "pane": {
+          "description": "The calling session's pane on its machine, the one it takes the lead\nfrom; left out with `release`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "release": {
           "default": false,
           "type": "boolean"
@@ -2004,6 +2022,15 @@
           "description": "What the board is for; left out: none.",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "lead_pane": {
+          "description": "The pane of `lead_session` on its machine, the one it leads from.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
             "null"
           ]
         },
