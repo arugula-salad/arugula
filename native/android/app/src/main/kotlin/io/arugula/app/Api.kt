@@ -5,6 +5,7 @@
 package io.arugula.app
 
 import io.arugula.core.Control
+import io.arugula.core.Core
 import io.arugula.core.CoreError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,6 +46,7 @@ fun JSONObject.obj(k: String): JSONObject? = optJSONObject(k)
 fun <T> JSONObject.list(k: String, f: (JSONObject) -> T): List<T> = optJSONArray(k).objects().mapNotNull { runCatching { f(it) }.getOrNull() }
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
 fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).map { optString(it) }
+fun JSONObject.ints(k: String): List<Int> = optJSONArray(k).let { a -> if (a == null) emptyList() else (0 until a.length()).map { a.optInt(it) } }
 
 // ---- projects, issues, boards
 
@@ -199,11 +201,55 @@ data class ChatMessage(
 
 // ---- machines
 
-/** [ownerName]: whose it is, when it's someone else's (M19). */
-data class Machine(val id: String, val name: String, val online: Boolean, val ownerName: String? = null) {
+/**
+ * A machine in the directory. [ownerName]: whose it is, when it's someone
+ * else's (M19); [account] is set whenever it isn't yours, as the web's fleet,
+ * even when the owner has no name to show.
+ */
+data class Machine(val id: String, val name: String, val online: Boolean, val ownerName: String? = null, val account: String? = null) {
+    val yours get() = account == null && ownerName == null
+
     companion object {
-        fun of(o: JSONObject) = Machine(o.getString("id"), o.optString("name"), o.optBoolean("online"), o.str("owner_name")?.takeIf { it.isNotEmpty() })
+        fun of(o: JSONObject) = Machine(
+            o.getString("id"), o.optString("name"), o.optBoolean("online"),
+            o.str("owner_name")?.takeIf { it.isNotEmpty() }, o.str("account")?.takeIf { it.isNotEmpty() },
+        )
     }
+}
+
+/** The project the app shows, as the core's rule reads it (Arugula #1355): Machines and Home show only its sessions. */
+data class Shown(val id: String, val personal: Boolean)
+
+val Project.shown get() = Shown(id, team == null)
+
+/**
+ * Whether a pane (its session's project and its card's) or a session (no
+ * card) on a machine that's [yours] or not shows here: the core's rule, the
+ * web's `inShown`. With no project, every one does.
+ */
+fun Shown?.shows(project: String?, card: String? = null, yours: Boolean) =
+    Core.shown(this?.id, this?.personal ?: false, project, card, yours)
+
+/** One of a machine's sessions the core keeps for a project: its tabs' panes, and how many need you. */
+data class SessionCard(val id: Int, val tabs: Map<Int, List<Int>>, val needsYou: Int) {
+    val panes get() = tabs.values.flatten()
+}
+
+/**
+ * The core's `aru_machines` for [hosts] (each `{id, name, online, owner,
+ * panes}`): every machine in the phone's order, and each one's sessions
+ * that show in [shown]. [recent] is the machine used last.
+ */
+fun sections(hosts: List<JSONObject>, shown: Shown?, recent: String?): JSONObject? = runCatching {
+    val input = JSONObject().put("hosts", JSONArray(hosts))
+    shown?.let { input.put("at", JSONObject().put("id", it.id).put("personal", it.personal)) }
+    recent?.let { input.put("recent", it) }
+    Core.machines(input)
+}.getOrNull()
+
+fun Machine.host(panes: String? = null): JSONObject = JSONObject().put("id", id).put("name", name).put("online", online).apply {
+    owner?.let { put("owner", it) }
+    panes?.let { runCatching { put("panes", JSONObject(it)) } }
 }
 
 /** A project's agent sessions in Arugula cloud, newest first: what each waits on the reader for. */

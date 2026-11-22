@@ -23,6 +23,8 @@ final class MachineSession: ObservableObject {
     /// This person's role in each session; nil when the machine says none
     /// (its owner, as the web's fleet reads it).
     @Published var roles: [UInt32: String]?
+    /// Its panes as the core gave them, for the core's rule to read again.
+    private var summary: String?
     private var link: OpaquePointer?
     private var conversationsAt = Date.distantPast
     /// The terminal being driven, full screen, which takes that pane's bytes.
@@ -106,6 +108,7 @@ final class MachineSession: ObservableObject {
         }
         if flags & 2 != 0, let s = takeString(aru_link_panes(l)),
             let list = try? JSONDecoder().decode(PaneList.self, from: Data(s.utf8)) {
+            summary = s
             panes = list.panes
             tabs = list.tabs ?? []
             sessions = list.sessions ?? []
@@ -258,6 +261,13 @@ final class MachineSession: ObservableObject {
         var body: Body
     }
 
+    /// Its sessions that show in `shown`, as the core's rule keeps them
+    /// (Arugula #1352): each with its tabs and their panes, needs you first.
+    func cards(in shown: Shown?) -> [Sections.Card] {
+        let host = HostIn(id: machine.id, name: machine.name, online: true, owner: machine.owner, panes: summary)
+        return Sections.of([host], shown: shown, recent: nil)?.machines.first?.sessions ?? []
+    }
+
     /// This person's role in a pane's session: `owner`, `editor` or `viewer`.
     func role(of pane: PaneRow) -> String {
         guard let roles else { return "owner" }
@@ -299,6 +309,7 @@ final class MachineSession: ObservableObject {
 
 struct MachinesView: View {
     let control: Control
+    @EnvironmentObject private var scope: Scope
     @ObservedObject private var push = PushCenter.shared
     @State private var picked: Machine?
     /// A pane to open as its machine connects: a notification's (#1260).
@@ -308,7 +319,7 @@ struct MachinesView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             Loaded(load: { try await control.get("/api/directory", as: Directory.self) }) { d in
-                List(d.daemons, selection: $picked) { m in
+                List(Self.ordered(d.daemons), selection: $picked) { m in
                     NavigationLink(value: m) {
                         HStack(spacing: 10) {
                             Circle().fill(m.online == true ? Palette.ok : Palette.muted).frame(width: 8, height: 8)
@@ -331,7 +342,7 @@ struct MachinesView: View {
         } detail: {
             NavigationStack {
                 if let picked {
-                    MachineView(control: control, machine: picked, pane: opening?.machine == picked.id ? opening?.pane : nil)
+                    MachineView(control: control, machine: picked, shown: scope.current?.shown, pane: opening?.machine == picked.id ? opening?.pane : nil)
                 } else {
                     Empty(text: "Pick a machine", symbol: "terminal")
                 }
@@ -342,6 +353,7 @@ struct MachinesView: View {
         // A machine takes the whole width once it's picked (a tab's panes want
         // it); the sidebar button brings the list back.
         .onChange(of: picked) { _, now in
+            if let now { UserDefaults.standard.set(now.id, forKey: Self.lastKey) }
             if now?.id != opening?.machine { opening = nil }
             if now != nil { withAnimation { columns = .detailOnly } }
         }
@@ -359,7 +371,24 @@ struct MachinesView: View {
     }
 }
 
+extension MachinesView {
+    /// The machine picked last, first of yours.
+    static let lastKey = "arugula.last-machine"
+
+    /// In the phone's order, the core's (Arugula #1355): your online
+    /// machines, the one you used last first, then teammates', by name, and
+    /// the offline ones after.
+    static func ordered(_ machines: [Machine]) -> [Machine] {
+        let hosts = machines.map { HostIn(id: $0.id, name: $0.name, online: $0.online == true, owner: $0.owner) }
+        let recent = UserDefaults.standard.string(forKey: lastKey)
+        guard let order = Sections.of(hosts, shown: nil, recent: recent)?.order else { return machines }
+        return order.compactMap { s in machines.first { $0.id == s.id } }
+    }
+}
+
 struct MachineView: View {
+    /// The project shown: only its sessions are here (Arugula #1352).
+    let shown: Shown?
     @StateObject private var session: MachineSession
     @State private var opened: PaneRow?
     @State private var pendingPane: UInt32?
@@ -371,7 +400,8 @@ struct MachineView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.horizontalSizeClass) private var width
 
-    init(control: Control, machine: Machine, pane: UInt32? = nil) {
+    init(control: Control, machine: Machine, shown: Shown?, pane: UInt32? = nil) {
+        self.shown = shown
         _session = StateObject(wrappedValue: MachineSession(control: control, machine: machine))
         _pendingPane = State(initialValue: pane)
     }
@@ -456,11 +486,16 @@ struct MachineView: View {
                     Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
                 }
                 newTerminal
+                let cards = session.cards(in: shown)
+                let kept = Set(cards.flatMap { $0.tabs.flatMap(\.panes) })
+                let panes = shown == nil ? session.panes : session.panes.filter { kept.contains($0.id) }
                 if session.connected {
-                    Caps("\(session.panes.count) panes")
+                    let needs = cards.reduce(0) { $0 + $1.needs_you }
+                    Caps(needs > 0 ? "\(panes.count) panes · \(needs) need you" : "\(panes.count) panes")
+                        .accessibilityIdentifier("machine-count")
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                    ForEach(session.panes.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }) { pane in
+                    ForEach(panes.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }) { pane in
                         Button { opened = pane } label: {
                             PaneCard(pane: pane, machine: session.machine.name, conversation: session.conversations[pane.id])
                         }
@@ -478,7 +513,7 @@ struct MachineView: View {
     /// full screen.
     private var tabView: some View {
         HStack(spacing: 0) {
-            SessionRail(session: session, shown: shownTab?.id) { tabID = $0 }
+            SessionRail(session: session, cards: session.cards(in: shown), all: shown == nil, shown: shownTab?.id) { tabID = $0 }
                 .frame(width: 300)
             Rectangle().fill(Palette.raised).frame(width: 1)
             VStack(alignment: .leading, spacing: 10) {
@@ -502,11 +537,15 @@ struct MachineView: View {
         }
     }
 
-    /// The tab picked, else the one whose pane most wants you, else the first.
+    /// The tab picked, else the one whose pane most wants you, else the
+    /// first: of the project's sessions' tabs only.
     private var shownTab: TabLayout? {
-        if let id = tabID, let t = session.tabs.first(where: { $0.id == id }) { return t }
-        let urgent = session.panes.min { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }
-        return session.tabs.first { $0.id == urgent?.tab } ?? session.tabs.first
+        let kept = Set(session.cards(in: shown).flatMap { $0.tabs.map(\.id) })
+        let tabs = shown == nil ? session.tabs : session.tabs.filter { kept.contains($0.id) }
+        if let id = tabID, let t = tabs.first(where: { $0.id == id }) { return t }
+        let urgent = session.panes.filter { p in tabs.contains { $0.id == p.tab } }
+            .min { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }
+        return tabs.first { $0.id == urgent?.tab } ?? tabs.first
     }
 
     /// The new pane's row, once the machine's state has it.
@@ -522,6 +561,10 @@ struct MachineView: View {
 /// it's doing and what it's called (its conversation, for an agent).
 struct SessionRail: View {
     @ObservedObject var session: MachineSession
+    /// The sessions the project shows, as the core keeps them.
+    let cards: [Sections.Card]
+    /// No project is picked: every session, and tabs no session lists.
+    let all: Bool
     let shown: UInt32?
     let pick: (UInt32) -> Void
 
@@ -543,13 +586,18 @@ struct SessionRail: View {
         .background(Palette.surface.opacity(0.5))
     }
 
-    /// The sessions with their tabs, and any tab no session lists, last.
+    /// The project's sessions with their tabs, in the machine's order; and
+    /// with no project picked, any tab no session lists, last.
     private var groups: [(UInt32, String, String?, [TabLayout])] {
         let byID = Dictionary(session.tabs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        var out = session.sessions.map { s in (s.id, s.name, s.project?.name, s.tabs.compactMap { byID[$0] }) }
+        let kept = Dictionary(cards.map { ($0.id, Set($0.tabs.map(\.id))) }, uniquingKeysWith: { a, _ in a })
+        var out = session.sessions.compactMap { s -> (UInt32, String, String?, [TabLayout])? in
+            guard let tabs = kept[s.id] else { return nil }
+            return (s.id, s.name, s.project?.name, s.tabs.filter { tabs.contains($0) }.compactMap { byID[$0] })
+        }
         let listed = Set(session.sessions.flatMap(\.tabs))
         let rest = session.tabs.filter { !listed.contains($0.id) }
-        if !rest.isEmpty { out.append((UInt32.max, "Other tabs", nil, rest)) }
+        if all, !rest.isEmpty { out.append((UInt32.max, "Other tabs", nil, rest)) }
         return out.filter { !$0.3.isEmpty }
     }
 

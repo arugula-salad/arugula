@@ -71,6 +71,11 @@ void aru_link_input(const AruLink *l, uint32_t pane, const uint8_t *data, size_t
 char *aru_link_request(const AruLink *l, const char *method, const char *path, const char *body, char **err);
 void aru_link_free(AruLink *l);
 
+// Which sessions show in a project (Arugula #1355): at_id NULL shows every one.
+int32_t aru_shown(const char *at_id, int32_t at_personal, const char *session_project, const char *on_issue_project, int32_t yours);
+// The machines as Machines lists them: {at, recent, hosts, pins} in, {order, machines, quiet, pinned} out.
+char *aru_machines(const char *input, char **err);
+
 // Chat's live stream: notify fires from its thread; take events on the main one.
 AruChatLive *aru_chat_live_open(const AruControl *c, AruNotify notify, void *ctx, char **err);
 char *aru_chat_live_next(const AruChatLive *l);

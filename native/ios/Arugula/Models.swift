@@ -170,6 +170,9 @@ struct Machine: Decodable, Identifiable, Hashable {
     var owner_name: String?
     /// The team's own box, not a person's machine (Arugula #1182).
     var team_box: Bool?
+    /// Whose it is when it isn't yours, as the web's fleet says it; nil: yours.
+    var owner: String? { account.map { owner_name ?? $0 } }
+    var yours: Bool { account == nil }
     static func == (a: Machine, b: Machine) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
@@ -323,8 +326,9 @@ struct PaneList: Decodable {
 struct MuxSession: Decodable, Identifiable, Equatable {
     var id: UInt32
     var name: String
-    /// The Arugula project it's in (`{id, name}`).
-    var project: Named?
+    struct Project: Decodable, Equatable { var id: String; var name: String }
+    /// The Arugula project it's in.
+    var project: Project?
     var tabs: [UInt32]
 }
 

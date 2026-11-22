@@ -1,6 +1,7 @@
 // One navigation: the tabs always on the bar (#1262) — Home, the project's
-// Boards and Chat, the account's Machines, and You — each with its own back
-// stack, as the iPhone's HomeView.swift. The bar stays on every screen,
+// Boards and Chat, the account's Machines (with the project's sessions only,
+// Arugula #1352), and You — each with its own back stack, as the iPhone's
+// HomeView.swift. The bar stays on every screen,
 // whatever is open. The project's issues open from its menu and from a
 // board's rows.
 
