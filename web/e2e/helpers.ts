@@ -312,6 +312,6 @@ export async function paletteCommand(page: Page, key: string) {
 
 /** Back to the panes from the Settings page. */
 export async function closeSettingsPage(page: Page) {
-  await page.locator(".ws-rail [data-open-build]").click();
+  await page.locator(".ws-rail [data-open-machines]").click();
   await expect(page.locator("[data-settings-page]")).toHaveCount(0);
 }

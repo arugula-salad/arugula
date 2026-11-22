@@ -1673,7 +1673,7 @@ span.untri-title {
   font-weight: 600;
 }
 
-/* A phone's spaces and Inbox, in a bar along the bottom (decision 15, Arugula #1080). */
+/* A phone's places, in a bar along the bottom (decision 15, Arugula #1345). */
 .app-tabs {
   display: none;
 }
@@ -1694,6 +1694,7 @@ span.untri-title {
   .app-tab {
     position: relative;
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1715,4 +1716,27 @@ span.untri-title {
     top: 4px;
     right: calc(50% - 22px);
   }
+}
+
+/* A phone's Inbox: a bell in the top bar, beside you (Arugula #1345). */
+.platform-inbox-bell {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius);
+  color: var(--dim);
+}
+
+.platform-inbox-bell.here {
+  color: var(--accent);
+  background: var(--chrome-selected);
+}
+
+.platform-inbox-bell .ws-rail-count {
+  top: 2px;
+  right: 0;
 }

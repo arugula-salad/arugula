@@ -139,7 +139,7 @@ test.describe("on a computer", () => {
     // Open the suite's pane, so it's the one you had open last; then Machines.
     const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
-    await page.locator(".ws-rail [data-open-build]").click();
+    await page.locator(".ws-rail [data-open-machines]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await addMachines(page, HOSTS);
     const list = page.locator("[data-machines-list]");

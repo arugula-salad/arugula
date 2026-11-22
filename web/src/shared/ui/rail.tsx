@@ -1,7 +1,8 @@
-// The rail down the left (M108, #376): the brand, the three spaces (Plan,
-// Build, Talk: Arugula #1080) and the foot. It's drawn here from its items,
-// so a machine's own page's (shell/ui/shell/rail.tsx) and the app's are one
-// component, with the same spaces. It knows nothing of either
+// The rail down the left (M108, #376): the brand, a button per place
+// (Overview, Boards, Docs, Machines, Chat: Arugula #1345) and the foot. It's
+// drawn here from its items, so a machine's own page's
+// (shell/ui/shell/rail.tsx) and the app's are one component, with the same
+// places. It knows nothing of either
 // page's state: each builds its items and says which is lit.
 
 import type { ComponentChildren } from "preact";

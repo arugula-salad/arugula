@@ -135,35 +135,34 @@ test.describe("on a computer", () => {
     const box = (await docs.boundingBox())!;
     expect(box.y).toBe(head.y + head.height);
     expect(box.x).toBe((await page.locator(".ws-rail").boundingBox())!.width);
-    // A lone machine's Docs are Build's: Build stays lit.
-    await expect(page.locator(".ws-rail [data-open-build]")).toHaveAttribute("aria-current", "page");
+    // A lone machine's Docs are Machines': Machines stays lit.
+    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("aria-current", "page");
   });
 
-  test("rail routes keep the way back: Build returns to the same tab and pane", async ({ page }) => {
+  test("rail routes keep the way back: Machines returns to the same tab and pane", async ({ page }) => {
     await newWorkspace(page);
     const t = (await tab(page)).id;
     const pane = await active(page);
     const rail = page.locator(".ws-rail");
-    // The three spaces (Arugula #1081). A machine on its own has no platform
-    // page: no Plan or Talk, and no Machines in Build's bar (its Docs are its
-    // bar's, Arugula #418).
-    await expect(rail.locator("[data-open-plan]")).toHaveCount(0);
-    await expect(rail.locator("[data-open-talk]")).toHaveCount(0);
-    await expect(rail.locator("[data-open-build]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("[data-machine-places] [data-machine-machines]")).toHaveCount(0);
+    // The app's places (Arugula #1345). A machine on its own has no platform
+    // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
+    // Machines or Runs in its bar (its Docs are its bar's, Arugula #418).
+    expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["sessions-overview", "machines", "settings"]);
+    await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);
 
-    // Swarm is Build's, in the bar.
+    // Swarm is Machines', in the bar.
     await page.locator("[data-machine-places] [data-machine-swarm]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
-    await expect(rail.locator("[data-open-build]")).toHaveAttribute("aria-current", "page");
-    // The swarm's bar keeps Build's places, Swarm lit.
+    await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
+    // The swarm's bar keeps Machines' views, Swarm lit.
     const swarm = page.locator(".app-bar [data-machine-swarm]");
     await expect(swarm).toHaveAttribute("aria-current", "page");
     await expect(swarm).toHaveAttribute("title", /all machines/);
 
-    await rail.locator("[data-open-build]").click();
+    await rail.locator("[data-open-machines]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-    await expect(rail.locator("[data-open-build]")).toHaveAttribute("aria-current", "page");
+    await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 
@@ -182,7 +181,7 @@ test.describe("on a computer", () => {
     await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toBeVisible();
 
-    // Settings opens its page, marked in the rail, and Build comes back.
+    // Settings opens its page, marked in the rail, and Machines comes back.
     await rail.locator("[data-open-settings]").click();
     await expect(page.locator("[data-settings-page] [data-appearance-controls]")).toBeVisible();
     await expect(rail.locator("[data-open-settings]")).toHaveAttribute("aria-current", "page");

@@ -48,6 +48,8 @@ export interface Booted {
 let booted: Promise<Booted> | null = null;
 /** The machines, once booted: what `panes` reads. */
 let up: Booted | null = null;
+/** The project Swarm just stepped back from, for the pane it opens next (this tick only). */
+let leftSwarm: string | null = null;
 
 /** The page's machines, made once. */
 export function boot(session: AppSession | null): Promise<Booted> {
@@ -76,7 +78,9 @@ export function boot(session: AppSession | null): Promise<Booted> {
       opened?.(host, pane, ...rest);
       const r = current();
       const id = directory.find(host)?.id;
-      if (r.page === "machines") go(pathOf({ page: "machines", project: r.project, at: id ? { at: "machine", machine: id, pane } : { at: "machines", name: host, pane } }, names));
+      // Swarm steps back to the Overview before it opens a pane: still its project's.
+      const project = r.page === "machines" ? r.project : leftSwarm;
+      if (project) go(pathOf({ page: "machines", project, at: id ? { at: "machine", machine: id, pane } : { at: "machines", name: host, pane } }, names));
     };
     // For end-to-end tests, as the shell's page has `window.__arugula`.
     Object.assign(window, {
@@ -257,11 +261,17 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   if (at.at === "swarm") {
     const f = at.focus;
     const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
-    const back = () => go(pathOf({ page: "machines", project, at: { at: "machines" } }, names));
+    // Swarm is the Overview's view (Arugula #1345): Escape, and a card's
+    // open, step back to it; a pane then opens on its machine's page.
+    const back = () => {
+      leftSwarm = project;
+      queueMicrotask(() => (leftSwarm = null));
+      go(pathOf({ page: "project", project }, names));
+    };
     return (
       <div class="app-swarm" data-app-swarm>
         <BesideRail />
-        <SwarmView fleet={machines.fleet} back={back} focus={f && host ? { host, pane: f.pane } : null} board={at.board ?? null} />
+        <SwarmView fleet={machines.fleet} back={back} backTo="Overview" focus={f && host ? { host, pane: f.pane } : null} board={at.board ?? null} />
       </div>
     );
   }

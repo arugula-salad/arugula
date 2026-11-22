@@ -304,17 +304,24 @@ test.describe("a board focus on a phone", () => {
   });
 });
 
-test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
+// A machine's own page has no Overview: its Swarm is the page's, and the
+// way back is to its panes. The app's Swarm, the Overview's view, steps back
+// to the Overview (app-frame.spec.ts, Arugula #1345).
+test("Machines and Escape lead back to the panes, with the rail beside the swarm (#551)", async ({ page }) => {
   await swarm(page);
-  // The rail beside the swarm: its Build, back to the panes.
-  await page.locator(".ws-rail").getByRole("button", { name: "Build", exact: true }).click();
+  // The rail stays beside the swarm: its Machines, back to the panes.
+  const rail = page.locator(".ws-rail");
+  await expect(rail).toBeVisible();
+  await rail.locator("[data-open-machines]").click();
   await expect(page.locator(".swarm")).toBeHidden();
   expect(new URL(page.url()).hash).toBe("");
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
+  await expect(rail).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".swarm")).toBeHidden();
   expect(new URL(page.url()).hash).toBe("");
+  await expect(rail).toBeVisible();
 });
 
 test("a finished card's main button is Open, and Dismiss is down with Show and Edit", async ({ page }) => {
