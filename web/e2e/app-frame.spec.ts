@@ -1,8 +1,8 @@
 // The app's frame (Arugula #989): the project-rooted rail (the project
 // tile and its switcher, then three spaces: Plan, Build, Talk, #1080), the
 // path and the space's places in the bar, the machines inside the frame (a
-// real pane of the suite's daemon, Build's home of every machine's panes
-// (#1083), the machines' list with Build's places, Swarm beside the rail),
+// real pane of the suite's daemon, the Machines page Build opens on
+// (#1346) with Build's places, Swarm beside the rail),
 // the shell's keys only on a machine's page, and on a phone the spaces and
 // the Inbox in a bar along the bottom; the Sessions page folded away
 // (#1082), its old address on to Boards, Runs under Build. On a fixture
@@ -176,48 +176,40 @@ test.describe("on a computer", () => {
     // Swarm, one click from the machine's page.
     await frame.locator("[data-machine-swarm]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-    // Panes, from a machine's page, is every machine's (Arugula #1083).
+    // Panes, from a machine's page, is the Machines page now (Arugula #1346).
     await page.goBack();
     await frame.locator("[data-machine-panes]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
-    await expect(page.locator(`[data-panes-list] [data-panes-pane="${pane}"]`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    await expect(page.locator(`[data-machines-list] [data-panes-pane="${pane}"]`)).toBeVisible();
   });
 
-  test("Build opens on every machine's panes, by machine, with the machine a filter (Arugula #1083)", async ({ page }, info) => {
+  test("Build opens on the Machines page: machines, their sessions, their panes (Arugula #1346)", async ({ page }, info) => {
     const pane = await openApp(page, () => `/p/${P}/boards`);
     await rail(page, "build").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    // Build's old list of panes is the Machines page now: its address goes there.
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await lit(page, "build");
-    await here(page, "panes");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Panes/);
-    const list = page.locator("[data-panes-list]");
-    // No machine's page leads: no machine picker, a list with a section per machine.
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Machines/);
+    const list = page.locator("[data-machines-list]");
+    // No machine's page leads: a section per machine, a card per session.
     await expect(page.locator("[data-platform-machines] .app.ws")).toHaveCount(0);
-    const group = list.locator("[data-panes-group]");
+    const group = list.locator("[data-machines-group]");
     await expect(group).toHaveCount(1);
-    const row = group.locator(`[data-panes-pane="${pane}"]`);
+    await expect(group.locator("[data-machines-state]")).toHaveText(/online/i);
+    await expect(group.locator("[data-machines-here]")).toHaveText("this computer");
+    const row = group.locator(`[data-machines-session] [data-panes-pane="${pane}"]`);
     await expect(row).toBeVisible();
-    // The machine is a filter, Agents only beside it (board-sessions.spec.ts).
-    const filter = list.locator("[data-panes-machine]");
-    await expect(filter).toHaveText(/Every machine/);
-    await expect(filter).toHaveAttribute("aria-pressed", "false");
-    await page.screenshot({ path: info.outputPath("frame-panes.png") });
-    await filter.click();
-    await page.locator(".menu-item").nth(1).click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes\\?machine=[\\w.-]+$`));
-    await expect(filter).toHaveAttribute("aria-pressed", "true");
-    await expect(filter).toHaveText(/^On /);
-    await expect(row).toBeVisible();
-    await filter.click();
-    await page.locator(".menu-item", { hasText: "Every machine" }).click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
-    // A row opens the pane on its machine's page, under Panes.
+    await expect(list.locator("[data-machines-stats]")).toHaveText(/^1 machine · \d+ sessions? · \d+ panes?/);
+    // No machine filter; Runs and Workspaces are the bar's (#1345).
+    await expect(list.locator("[data-panes-machine], [data-machines-runs]")).toHaveCount(0);
+    await page.screenshot({ path: info.outputPath("frame-machines.png") });
+    // A row opens the pane on its machine's page.
     await row.click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`));
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     await lit(page, "build");
-    await expect(page.locator("[data-platform-machines] [data-machine-panes]")).toHaveAttribute("aria-current", "page");
   });
+
 
   test("on macOS a machine's page has one window-button strip: its bar is 28px down, not 56px (Arugula #1089)", async ({ page }) => {
     await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
@@ -228,48 +220,32 @@ test.describe("on a computer", () => {
     expect(await frame.locator(".app.ws").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   });
 
-  test("Build's Machines lists the machines, with Build's places in the bar; Swarm sits beside the rail", async ({ page }, info) => {
+  test("Build's Machines is the Machines page, with Build's places in the bar; Swarm sits beside the rail", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
     await rail(page, "build").click();
     await place(page, "machines").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     const list = page.locator("[data-machines-list]");
-    await expect(list.locator("[data-machine-link]")).toHaveCount(1);
+    await expect(list.locator("[data-machines-machine-link]")).toHaveCount(1);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Machines/);
-    const order = await page.locator("[data-space-places=build] > *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-space-"))?.name.slice(11) ?? ""));
-    expect(order).toEqual(["panes", "swarm", "machines"]);
     await here(page, "machines");
-    // The suite's daemon: online, yours, and its sessions counted.
-    const row = list.locator("[data-machine-link]");
-    await expect(row.locator("[data-machine-state]")).toHaveText(/online/i);
-    await expect(row).toContainText("You own it");
-    await expect(row.locator("[data-machine-sessions]")).toHaveText(/^\d+ sessions?/);
-    await page.screenshot({ path: info.outputPath("frame-machines.png") });
-    // Runs are Machines' (Arugula #1082): a run is a session in a cloud
-    // workspace. No Workspaces for a reader off the hosted list.
-    await expect(list.locator("[data-machines-workspaces]")).toHaveCount(0);
-    await list.locator("[data-machines-runs]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
-    await here(page, "machines");
-    await lit(page, "build");
-    await page.goBack();
     await place(page, "swarm").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
     await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
     await lit(page, "build");
     expect((await page.locator("[data-app-swarm] .swarm").boundingBox())!.x).toBeGreaterThan(0);
     await page.screenshot({ path: info.outputPath("frame-swarm.png") });
-    // Back by the rail, to Build's panes; the list by the bar, and the machine from it.
+    // Back by the rail, to Machines; the machine from it.
     await rail(page, "build").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
-    await place(page, "machines").click();
-    await list.locator("[data-machine-link]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    await list.locator("[data-machines-machine-link]").click();
     await expect(page.locator("[data-platform-machines] .app.ws")).toBeVisible();
     // The machine's bar has Machines, back to the list.
     await page.locator("[data-platform-machines] [data-machine-machines]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await here(page, "machines");
   });
+
 });
 
 test.describe("the shell's keys", () => {
@@ -316,7 +292,7 @@ test.describe("where you were", () => {
     await expect(page.locator(`[data-switcher-project="${P}"]`)).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/docs$`));
   });
 
-  test("Build's panes mark the one you had open last; it opens again, and a reload stays on it", async ({ page }) => {
+  test("Machines marks the pane you had open last; it opens again, and a reload stays on it", async ({ page }) => {
     const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     const there = new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`);
@@ -325,8 +301,9 @@ test.describe("where you were", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     await expect(rail(page, "build")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines/panes$`));
     await rail(page, "build").click();
-    const last = page.locator("[data-panes-list] [data-panes-last]");
+    const last = page.locator("[data-machines-list] [data-panes-last]");
     await expect(last).toHaveAttribute("data-panes-pane", String(pane));
+    await expect(last).toContainText("where you were");
     await last.click();
     await expect(page).toHaveURL(there);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
@@ -382,22 +359,22 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-tab-build] .ws-rail-count")).toHaveText("@4");
   });
 
-  test("Build's tab opens every machine's panes; a row opens its pane", async ({ page }, info) => {
+  test("Build's tab opens the Machines page; a row opens its pane", async ({ page }, info) => {
     const pane = await openApp(page, () => `/p/${P}/boards`);
     await page.locator("[data-phone-tabs] [data-tab-build]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
-    const row = page.locator(`[data-panes-list] [data-panes-pane="${pane}"]`);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    const row = page.locator(`[data-machines-list] [data-panes-pane="${pane}"]`);
     await expect(row).toBeVisible();
     await page.screenshot({ path: info.outputPath("frame-phone-panes.png") });
     await row.click();
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
   });
 
-  test("Machines is a simple list, and a row opens its machine", async ({ page }, info) => {
+  test("Machines is one column, and a machine's name opens its machine", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/machines`);
-    const row = page.locator("[data-machines-list] [data-machine-link]");
+    const row = page.locator("[data-machines-list] [data-machines-machine-link]");
     await expect(row).toHaveCount(1);
-    await expect(row.locator("[data-machine-state]")).toHaveText(/online/i);
+    await expect(page.locator("[data-machines-list] [data-machines-state]")).toHaveText(/online/i);
     await page.screenshot({ path: info.outputPath("app-frame-machines-phone.png") });
     await row.click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]{6,}|\\?machine=)`));

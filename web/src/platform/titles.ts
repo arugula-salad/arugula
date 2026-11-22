@@ -98,7 +98,7 @@ export function titleOf(r: Route, k: Known): string {
     case "design":
       return parts("Design reference");
     case "machines":
-      return parts(r.at.at === "swarm" ? "Swarm" : r.at.at === "panes" ? "Panes" : "Machines", p);
+      return parts(r.at.at === "swarm" ? "Swarm" : "Machines", p);
     case "missing":
       return parts("Not found");
     case "find":

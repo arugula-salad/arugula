@@ -1,7 +1,7 @@
 // Pinned sessions (Arugula iss_c0fd27ac196647fa7c857dc3659a0098): pinned
 // from a session's menu or its row's pin button, a Pinned group below
 // Needs you in the Sessions sidebar, a pinned session that needs you in
-// Needs you until it's answered, the Panes page's Pinned section first,
+// Needs you until it's answered, the Machines page's Pinned cards first,
 // and the phone's sheet in the same order. On the app's fixture page
 // (app-frame-page.tsx) over the suite's daemon; the platform's pins route
 // is stubbed here, as the platform keeps them per account.
@@ -114,30 +114,30 @@ test.describe("on a computer", () => {
     expect(kept.pins).toEqual([]);
   });
 
-  test("the Panes page lists pinned sessions first, not again under their machine", async ({ page }, info) => {
+  test("the Machines page has pinned sessions first, as cards, not again under their machine (Arugula #1346)", async ({ page }, info) => {
     const [a, b] = await sessions(page, 2);
-    await page.screenshot({ path: info.outputPath("pins-panes-before.png") });
     const kept = await stubPins(page, [{ machine: SUITE, session: b.id }]);
-    await openApp(page, `/p/${P}/machines/panes`);
-    const list = page.locator("[data-panes-list]");
-    const pinned = list.locator("[data-panes-pinned]");
+    await openApp(page, `/p/${P}/machines`);
+    const list = page.locator("[data-machines-list]");
+    const pinned = list.locator("[data-machines-pinned]");
     await expect(pinned.locator(`[data-panes-pane="${b.pane}"]`)).toBeVisible();
     // First, above the machines.
-    const order = await list.locator("[data-panes-pinned], [data-panes-group]").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-panes-pinned") ? "pinned" : "machine")));
+    const order = await list.locator("[data-machines-pinned], [data-machines-group]").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-machines-pinned") ? "pinned" : "machine")));
     expect(order).toEqual(["pinned", "machine"]);
-    const session = pinned.locator(`[data-panes-pinned-session="${SUITE}/${b.id}"]`);
+    const session = pinned.locator(`[data-machines-pinned-session="${SUITE}/${b.id}"]`);
     await expect(session).toContainText(/on /);
-    const machine = list.locator("[data-panes-group]");
+    const machine = list.locator("[data-machines-group]");
     await expect(machine.locator(`[data-panes-pane="${a.pane}"]`)).toBeVisible();
     await expect(machine.locator(`[data-panes-pane="${b.pane}"]`)).toHaveCount(0);
-    await page.screenshot({ path: info.outputPath("pins-panes-after.png") });
+    await page.screenshot({ path: info.outputPath("pins-machines-after.png") });
 
     // Unpinned: back under its machine, and no Pinned section.
-    await session.locator("[data-panes-unpin]").click();
+    await session.locator("[data-machines-unpin]").click();
     await expect(pinned).toHaveCount(0);
     await expect(machine.locator(`[data-panes-pane="${b.pane}"]`)).toBeVisible();
     expect(kept.pins).toEqual([]);
   });
+
 });
 
 test.describe("on a phone", () => {

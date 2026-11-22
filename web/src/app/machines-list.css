@@ -1,0 +1,167 @@
+/* The Machines page (./machines-list.tsx): a section per machine, its
+   sessions as cards in a grid, each card's panes one line each, as the
+   Overview's rows are. One column on a phone, and nothing wider than it. */
+
+.machines-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.machines-machine {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--bg);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.machines-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.machines-machine > .machines-head {
+  margin-bottom: var(--space-2);
+}
+.platform-section .machines-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 var(--text-md) var(--f-ui);
+  color: inherit;
+  text-decoration: none;
+}
+.machines-name:hover {
+  text-decoration: underline;
+}
+.machines-count {
+  margin-left: auto;
+}
+
+/* The sessions: cards, as many to a row as fit at about 270px. */
+.machines-sessions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr));
+  gap: var(--space-2);
+}
+.machines-session-item {
+  min-width: 0;
+}
+.machines-session {
+  min-width: 0;
+  height: 100%;
+}
+.machines-session-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.platform-section .machines-session-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 600 var(--text-md) var(--f-ui);
+  color: inherit;
+  text-decoration: none;
+}
+.machines-session-name:hover {
+  text-decoration: underline;
+}
+.platform-section .machines-session-meta {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+}
+.platform-section .machines-tab {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2);
+  font: 500 var(--text-xs) var(--f-ui);
+}
+
+.panes-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.platform-section .panes-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--field-radius);
+  color: inherit;
+  font: var(--text-sm) / 1.4 var(--f-ui);
+  text-decoration: none;
+}
+.panes-row:hover,
+.panes-row:focus-visible {
+  background: var(--raised);
+}
+.panes-row.stale {
+  opacity: 0.6;
+}
+.panes-row-what {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.panes-row-meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+}
+.panes-row-where {
+  flex: none;
+  font-size: var(--text-xs);
+}
+/* The pane you had open last: where you were. */
+.panes-row.last {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The sessions you pinned, first. */
+.platform-section .machines-pinned-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font: 600 var(--text-md) var(--f-ui);
+}
+
+/* The machines with nothing of the project: one line, open to a list. */
+.machines-quiet > summary {
+  cursor: pointer;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+}
+.machines-quiet-list {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+@media (max-width: 700px) {
+  .machines-machine {
+    padding: var(--space-2);
+  }
+}

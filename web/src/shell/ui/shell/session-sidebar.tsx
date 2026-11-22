@@ -99,6 +99,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
 const lastTabs = new Map<string, TabId>();
 const lastKey = (client: Client, s: SessionId) => `${client.base}\u0000${s}`;
 
+/** The tab session `s` last showed on the machine `base` names, in this
+ * page (the Machines page opens a session there, Arugula #1346). */
+export const lastTabOf = (base: string, s: SessionId): TabId | undefined => lastTabs.get(`${base}\u0000${s}`);
+
 /** Note the shown session's tab (the workspace calls this as it draws). */
 export function noteLastTab(client: Client) {
   if (client.session !== null && client.tab !== null) lastTabs.set(lastKey(client, client.session), client.tab);

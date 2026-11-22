@@ -13,8 +13,9 @@ export type MachineAt =
    * `?machine=NAME`). `layer`: one of the shell's own places over the
    * machine shown (`overview`, `agents`, `settings=machine`…). `pop`: the
    * pane alone in its window, on the home machine, which this address
-   * can't name (#1032). */
-  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true }
+   * can't name (#1032). Without either, the Machines page (Arugula #1346):
+   * every machine's sessions in the project; `agents`, only the agents'. */
+  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true }
   /** A machine's page, with a pane to show: shared from (`share`), a person
    * to follow there (`follow`), alone in its window (`pop`); or with
    * Start an agent open (`agent`). */
@@ -22,8 +23,8 @@ export type MachineAt =
   /** Every pane on every machine (decision 3: under Machines), at a pane's
    * card (`focus`) or on one board's agents. */
   | { at: "swarm"; focus?: { machine?: string; pane: number }; board?: string }
-  /** Build's home (Arugula #1083): every machine's panes in one list, by
-   * machine, or one `machine`'s; `agents`, only the agents' (#1082). */
+  /** Build's old home (Arugula #1083), every machine's panes: now the
+   * Machines page's old address, which the app sends there (#1346). */
   | { at: "panes"; machine?: string; agents?: true };
 
 /** A machine's id at the front of a path segment, before its slug: a
@@ -50,7 +51,7 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
     const pane = num(q.get("pane"));
     const name = q.get("machine");
     const layer = hash.replace(/^#/, "");
-    return { at: "machines", ...(pane !== undefined ? { pane } : {}), ...(name ? { name } : {}), ...(LAYER.test(layer) ? { layer } : {}), ...(pane !== undefined && q.has("pop") ? { pop: true } : {}) };
+    return { at: "machines", ...(pane !== undefined ? { pane } : {}), ...(name ? { name } : {}), ...(LAYER.test(layer) ? { layer } : {}), ...(pane !== undefined && q.has("pop") ? { pop: true } : {}), ...(pane === undefined && !name && q.has("agents") ? { agents: true } : {}) };
   }
   if (rest.length !== 1) return null;
   if (rest[0] === "swarm") {
@@ -99,7 +100,7 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
     if (m.follow) q.set("follow", m.follow);
   }
   // Flags as bare words, as the shell's fragments have them.
-  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : m.at === "panes" && m.agents ? ["agents"] : [];
+  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : m.at === "machines" && m.agents ? ["agents"] : m.at === "panes" && m.agents ? ["agents"] : [];
   const qs = [q.toString(), ...flags].filter(Boolean).join("&");
   const layer = m.at === "machines" && m.layer ? `#${m.layer}` : "";
   return `${path}${qs ? `?${qs}` : ""}${layer}`;
