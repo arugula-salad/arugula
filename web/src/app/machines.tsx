@@ -91,6 +91,23 @@ export function appDocLinks(session: () => AppSession | null): NonNullable<Platf
   };
 }
 
+/** `PlatformApi.ownPane` over `session` (Arugula
+ * iss_89b78ece43ac3d6271f78d797cdbdc61): whether a board's lead is a pane
+ * of the reader's own, with the machine page's chunk loaded and its
+ * machines booted once a view watches. While the hub can't reach machines
+ * from this host, none is. */
+export function appOwnPane(session: () => AppSession | null): NonNullable<PlatformApi["ownPane"]> {
+  const docs = appMachineDocs(session);
+  let page: Page | null = null;
+  return {
+    watch(fn) {
+      void load().then((p) => (page = p));
+      return docs.watch(fn);
+    },
+    here: (machine, pane) => !!page?.paneHere(machine, pane, session()),
+  };
+}
+
 /** `PlatformApi.Overview` over `session` (Arugula inversion, L6): the
  * project's Overview, in a chunk of its own with the machine page's. While
  * the hub can't reach machines from this host there is no Overview: the

@@ -134,6 +134,13 @@ export interface PlatformApi {
     open(machine: string, link: string): Promise<number>;
     unshare(machine: string, link: string): Promise<boolean>;
   };
+  /** Whether pane `pane` of machine `machine` is in the fleet this page
+   * reaches and the reader's own, as the Overview's peek tells it (a
+   * board's lead, Arugula iss_89b78ece43ac3d6271f78d797cdbdc61): `watch`
+   * reads the machines, calling `fn` as they change, until its answer is
+   * called. Where the page reaches machines itself (the app); a page
+   * without it opens no lead's pane. */
+  ownPane?: { watch(fn: () => void): () => void; here(machine: string, pane: number): boolean };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
   /** A pane at the Overview's Work level (Arugula #1289): the view Panes mounts, filling its slot, typed into unless `watch` (a teammate's session) or the reader only views it. Where the page reaches machines itself (the app). */

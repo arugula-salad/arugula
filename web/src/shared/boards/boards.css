@@ -587,6 +587,15 @@
   margin: 10px 0 0;
 }
 
+/* Who leads it, with Talk and Open, under when it was made. */
+.board-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+}
+
 .board-head-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
