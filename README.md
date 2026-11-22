@@ -1,22 +1,28 @@
 # Arugula
 
-Every agent on every machine in one view. Answer them from your phone.
-The workspace comes back after a reboot.
+Any agent, on any machine. Run Claude Code, Codex or any
+[ACP](https://agentclientprotocol.com) agent in panes that keep running on
+your own machines. Watch them from the web or your phone, and take a
+session over.
 
 Arugula is a terminal multiplexer for coding agents. A daemon owns your
 terminals; the browser, the desktop app and your phone draw them. Claude
 Code, Codex and plain shells sit side by side as panes, on every machine
 you've connected.
 
-![A recording: Claude Code asks to run cargo test, the request appears on the swarm's Needs you rail in the browser and on a phone, and it's allowed from the phone](https://arugula.io/img/arugula-loop-10s.gif)
+![A recording: Claude Code asks to run cargo test, the request appears in Needs you on the Overview in the browser and on a phone, and it's allowed from the phone](https://arugula.io/img/arugula-loop-10s.gif)
 
-- **Every agent on every connected machine.** The swarm is every
-  Arugula pane on the machines you've connected, in one live view,
-  clustered by project, machine, kind or person. Detected requests for
-  input, and failed commands it recognizes, appear on the *Needs you*
-  rail. Claude Code, Codex or any [ACP](https://agentclientprotocol.com)
-  agent also runs as a block beside your terminals (macOS and Linux):
-  tool calls with their output, approvals and questions as cards.
+- **Any agent, on any machine.** On app.arugula.io, the Overview is
+  where a project opens: each board in one row, with the tickets in
+  flight and the agents on them. Click a board to zoom to its tickets, and a ticket to see its
+  agents' panes, live. Detected requests for input, and failed commands
+  it recognizes, wait in *Needs you*. *Swarm*, a view of the Overview,
+  shows every pane on every machine at once. Claude Code, Codex or any
+  ACP agent also runs as a block beside your terminals (macOS and
+  Linux): tool calls with their output, approvals and questions as cards.
+- **Take a session over.** Every pane keeps running on its machine
+  while you watch it from the browser, the desktop app or your phone.
+  *Hand off to me* sends your typing to it; *Give it back* returns it.
 - **Answer them from your phone.** Screen detection flags a waiting
   Claude Code or Codex pane. Claude Code's hooks and agent blocks turn
   requests into cards: large buttons for approvals and choices, or type
@@ -63,7 +69,7 @@ you've connected.
   machine, with +/−; tap a file for its hunks and a line to see the file
   there, both updating as the edits land. Phone first, and a recognized
   failed command is a *Rerun* tap away.
-- **Your editor in the swarm.** VS Code, Cursor or nvim (over Remote-SSH
+- **Your editor beside your agents.** VS Code, Cursor or nvim (over Remote-SSH
   too) shows up beside your panes once you ask it to. Follow its cursor
   from your phone; a debugger stopping, or Claude Code wanting to edit a
   file, is a card you answer from anywhere. The extension is
@@ -71,16 +77,36 @@ you've connected.
   (`code --install-extension arugula.arugula-editor`), or `arugula editors
   install` puts in the daemon's own copy.
 
-With Arugula control, authorized teammates can share a session or a
-whole machine, with roles and presence
-([teams](https://docs.arugula.io/teams/),
-[sharing](https://docs.arugula.io/sharing/)): anyone allowed can answer
-an agent's card, and everyone sees who did.
-
-[![A tour of the swarm: every pane clustered by project, then one project's panes up close, then an agent's request on the Needs You rail, then that agent's session opened](https://arugula.io/img/dive.gif)](https://arugula.io)
+[![A tour of the Overview: a project's three boards, one row each, then the Launch v1 board with an agent on each ticket in flight, then ticket #14's agent and shell, live, and back out](https://arugula.io/img/dive.gif)](https://arugula.io)
 
 Linux (x86_64, arm64), macOS (Apple silicon and Intel) and Windows 10 and 11
 (x86_64).
+
+## For your team
+
+Start alone. When your team joins, through
+[Arugula control](https://docs.arugula.io/control/):
+
+- **Boards that follow the work.** A board is a goal and the tickets
+  that reach it. A row's lane follows its work: an agent starting on the
+  ticket moves it to *Doing*, opening a pull request moves it to
+  *Review*, and the merge moves it to *Done*. When an agent needs a
+  person to decide something, it asks on the row.
+- **Watch a session, or answer its agent.** Share a session or a whole
+  machine, and choose who watches and who types. A teammate who can type
+  also answers
+  your agent's card from the Overview or their phone.
+- **Everyone sees who did what.** An answered card names who answered,
+  a board keeps who answered each ask, and an issue's timeline says
+  which person or whose agent did each thing.
+- **Talk beside the work.** Team channels, DMs, and a thread on each
+  board that its lead agent reads.
+
+[![The Launch v1 board: tickets in Next, Doing, Review and Done, with the agents working on them](https://arugula.io/img/board.png)](https://docs.arugula.io/boards/)
+
+See [boards](https://docs.arugula.io/boards/),
+[teams](https://docs.arugula.io/teams/) and
+[sharing](https://docs.arugula.io/sharing/).
 
 ## Install
 
