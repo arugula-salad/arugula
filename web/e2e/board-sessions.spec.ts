@@ -2,8 +2,8 @@
 // its board row and in its drawer, from the hub's sessions by card (a
 // computer's session put on the card, a hosted one), less what the row
 // holds already and what has finished; a computer's session opens its pane
-// in Build. Build's list of panes has Agents only, beside its machine
-// filter. On the app's frame fixture (app-frame-page.tsx), with the
+// under Machines. The Machines page has Agents only (Arugula #1346). On the
+// app's frame fixture (app-frame-page.tsx), with the
 // cloud's answers from sessions-fixture.ts and a real pane of the suite's
 // daemon.
 import { expect, test, type Page } from "@playwright/test";

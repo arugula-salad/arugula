@@ -116,9 +116,12 @@ export function SwarmView({
   focus,
   board,
   inBar,
+  backTo = "Panes",
 }: {
   fleet: Fleet;
   back: () => void;
+  /** Where `back` goes, for its button: the panes, or the app's Overview (Arugula #1345). */
+  backTo?: "Panes" | "Overview";
   /** Under the bar every place shares, whose Panes goes back: no button
    * of its own for that. */
   inBar?: boolean;
@@ -541,8 +544,8 @@ export function SwarmView({
             </button>
           )}
           {!inBar && (
-            <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
-              Panes
+            <button data-swarm-back title={`Back to the ${backTo.toLowerCase()} (Escape)`} onClick={back}>
+              {backTo}
             </button>
           )}
           {tipGone && (

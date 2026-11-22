@@ -88,7 +88,7 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
   await reset(page);
   await expect(page.getByRole("navigation", { name: "Places", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "This machine", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Build's places" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Machines' views" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: /^Sessions on / })).toBeVisible();
   await expect(page.getByRole("tablist", { name: /^Tabs in / })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Panes" })).toBeVisible();

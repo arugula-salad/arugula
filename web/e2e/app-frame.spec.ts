@@ -135,6 +135,37 @@ test.describe("on a computer", () => {
     await onlyLit(page, "overview");
   });
 
+  test("Escape and the Swarm's Overview button step back to the Overview, its place; the rail stays beside it, and a pane still opens (Arugula #1345)", async ({ page }) => {
+    const pane = await openApp(page, () => `/p/${P}`);
+    await view(page, "swarm").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
+    await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
+    await expect(page.locator(".ws-rail")).toBeVisible();
+    await onlyLit(page, "overview");
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
+    await expect(page.locator("[data-app-swarm]")).toHaveCount(0);
+    await onlyLit(page, "overview");
+    await here(page, "overview");
+    // Its own way back says where it goes.
+    await view(page, "swarm").click();
+    const back = page.locator("[data-app-swarm] [data-swarm-back]");
+    await expect(back).toHaveText("Overview");
+    await expect(back).toHaveAttribute("title", "Back to the overview (Escape)");
+    await back.click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
+    await onlyLit(page, "overview");
+    // A pane opened from the Swarm still opens on its machine's page.
+    await view(page, "swarm").click();
+    await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
+    await page.evaluate((p) => {
+      const f = (window as unknown as { __app: { fleet: { list: { name: string }[]; open(h: string, p: number): void } } }).__app.fleet;
+      document.querySelector<HTMLButtonElement>("[data-swarm-back]")!.click();
+      f.open(f.list[0].name, p);
+    }, pane);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}(&machine=[\\w.-]+)?$`));
+  });
+
   test("what's new in the issues' threads is a count on Boards; the runs', on Machines and Runs; chat's, on Chat (Arugula #1345)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/machines`);
     await seedThreads(page);

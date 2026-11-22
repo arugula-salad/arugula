@@ -181,7 +181,7 @@ test.describe("on a computer", () => {
     await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toBeVisible();
 
-    // Settings opens its page, marked in the rail, and Build comes back.
+    // Settings opens its page, marked in the rail, and Machines comes back.
     await rail.locator("[data-open-settings]").click();
     await expect(page.locator("[data-settings-page] [data-appearance-controls]")).toBeVisible();
     await expect(rail.locator("[data-open-settings]")).toHaveAttribute("aria-current", "page");
