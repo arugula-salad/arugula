@@ -1,6 +1,6 @@
 ---
 section: Fixed
-title: The iPhone, iPad and Android apps show only the current project's sessions
+title: Native apps show only the current project's sessions
 line: Machines and Home in the native apps show and count only the current project's sessions, as the web does; another project's, or a teammate's unplaced ones, no longer leak in.
 headline: no
 ---
