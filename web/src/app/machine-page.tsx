@@ -48,8 +48,6 @@ export interface Booted {
 let booted: Promise<Booted> | null = null;
 /** The machines, once booted: what `panes` reads. */
 let up: Booted | null = null;
-/** The project Swarm just stepped back from, for the pane it opens next (this tick only). */
-let leftSwarm: string | null = null;
 
 /** The page's machines, made once. */
 export function boot(session: AppSession | null): Promise<Booted> {
@@ -72,15 +70,14 @@ export function boot(session: AppSession | null): Promise<Booted> {
     machines.onSwap(connect);
     machines.followDirectory();
     connect();
-    // A pane opened from Swarm (or a card) shows on its machine's page.
+    // A pane opened from Swarm (or a card) shows on its machine's page, in
+    // the project of the page it was opened from: Swarm stays where it is
+    // (`leave` below), so Back from the pane comes back to it.
     const opened = machines.fleet.onOpen;
     machines.fleet.onOpen = (host, pane, ...rest) => {
       opened?.(host, pane, ...rest);
       const r = current();
-      const id = directory.find(host)?.id;
-      // Swarm steps back to the Overview before it opens a pane: still its project's.
-      const project = r.page === "machines" ? r.project : leftSwarm;
-      if (project) go(pathOf({ page: "machines", project, at: id ? { at: "machine", machine: id, pane } : { at: "machines", name: host, pane } }, names));
+      if (r.page === "machines") go(paneAt(r.project, host, pane));
     };
     // For end-to-end tests, as the shell's page has `window.__arugula`.
     Object.assign(window, {
@@ -207,6 +204,12 @@ function answered(s: AppSession): Promise<void> {
 
 const hostOf = (id: string) => directory.list?.hosts.find((h) => h.id === id)?.name;
 
+/** Pane `pane` of machine `host` on its machine's page, in `project`. */
+function paneAt(project: string, host: string, pane: number): string {
+  const id = directory.find(host)?.id;
+  return pathOf({ page: "machines", project, at: id ? { at: "machine", machine: id, pane } : { at: "machines", name: host, pane } }, names);
+}
+
 export function MachinesPlace({ project, at, session }: { project: string; at: MachineAt; session: AppSession | null }) {
   const [b, setB] = useState<Booted | null>(null);
   useEffect(() => {
@@ -221,6 +224,7 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
 function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
+  const phone = usePhone();
   // Everything here shows this project's sessions only (Arugula #1164), and a session made here starts in it (Arugula #1163).
   const p = platform.project(project);
   const shown = { id: project, name: p?.name ?? "this project", personal: platform.personal()?.id === project };
@@ -258,23 +262,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       });
   }, [project, machine, name, pane, known, list]);
 
-  if (at.at === "swarm") {
-    const f = at.focus;
-    const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
-    // Swarm is the Overview's view (Arugula #1345): Escape, and a card's
-    // open, step back to it; a pane then opens on its machine's page.
-    const back = () => {
-      leftSwarm = project;
-      queueMicrotask(() => (leftSwarm = null));
-      go(pathOf({ page: "project", project }, names));
-    };
-    return (
-      <div class="app-swarm" data-app-swarm>
-        <BesideRail />
-        <SwarmView fleet={machines.fleet} back={back} backTo="Overview" focus={f && host ? { host, pane: f.pane } : null} board={at.board ?? null} />
-      </div>
-    );
-  }
+  if (at.at === "swarm") return <SwarmPlace project={project} at={at} machines={machines} phone={phone} />;
   if (list)
     return (
       // In the panel the project's other pages sit in.
@@ -338,14 +326,21 @@ function PaneProject({ project, client, at }: { project: string; client: Client;
   return null;
 }
 
-/** The swarm fills the window, beside the rail where there is one, as on
- * control's page (style.css's `data-workspace`). */
-function BesideRail() {
-  const phone = usePhone();
-  useLayoutEffect(() => {
-    if (phone) return;
-    document.documentElement.dataset.workspace = "new";
-    return () => void delete document.documentElement.dataset.workspace;
-  }, [phone]);
-  return null;
+/** Swarm, the Overview's view (Arugula #1348): under the bar, beside the
+ * rail, as any other page. Escape (and the bar's Overview) goes back to the
+ * Overview; a card's pane opens on its machine's page, whose Back comes back
+ * here. A computer's only: a phone has the Overview instead. */
+function SwarmPlace({ project, at, machines, phone }: { project: string; at: Extract<MachineAt, { at: "swarm" }>; machines: Machines; phone: boolean }) {
+  const overview = pathOf({ page: "project", project }, names);
+  useEffect(() => {
+    if (phone) go(overview, true);
+  }, [phone, overview]);
+  if (phone) return null;
+  const f = at.focus;
+  const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
+  return (
+    <div class="app-swarm" data-app-swarm>
+      <SwarmView fleet={machines.fleet} back={() => go(overview)} leave={() => {}} inBar focus={f && host ? { host, pane: f.pane } : null} board={at.board ?? null} />
+    </div>
+  );
 }
