@@ -348,7 +348,8 @@ fn live(_: &Path, _: &Ours) -> HashMap<String, Live> {
 }
 
 /// The thread an open file under `home` belongs to: its writer lock, or
-/// one of its rollouts.
+/// one of its rollouts. Only Linux's `live` asks.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn held(home: &Path, file: &Path) -> Option<String> {
     let rest = file.strip_prefix(home).ok()?;
     let name = rest.file_name()?.to_str()?;

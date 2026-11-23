@@ -211,7 +211,7 @@ impl McpOp<AgentBlock> for ConversationsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "list",
         kind: "conversations",
-        description: "Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, and Codex's (agent codex), newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
+        description: "Claude Code conversations on this machine (terminal, desktop app's Code tab) and Codex's (agent codex), newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
     };
     type Args = ListConversationsArgs;
     type Answer = serde_json::Value;
@@ -244,7 +244,7 @@ impl McpOp<AgentBlock> for ConversationOpen {
     const SURFACE: Surface = Surface::Kind {
         tool: "show",
         kind: "conversation",
-        description: "A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on. A Codex one goes on in a terminal pane running codex resume.",
+        description: "A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while open elsewhere) or fork (a new session with its history). send_input to the block goes on. A Codex one: a pane running codex resume.",
     };
     type Args = OpenConversationArgs;
     type Answer = serde_json::Value;
@@ -454,7 +454,9 @@ async fn continue_codex(
     )
     .await?;
     match v.pane {
-        Some(pane) => Ok(OpenConversationResponse { block: pane, opened: v.opened, conversation: v.conversation, error: None }),
+        Some(pane) => {
+            Ok(OpenConversationResponse { block: pane, opened: v.opened, conversation: v.conversation, error: None })
+        }
         None => Err(bad(format!("its folder, {}, is gone", if v.cwd.is_empty() { "unrecorded" } else { &v.cwd }))),
     }
 }
@@ -592,7 +594,10 @@ mod tests {
     fn continuing_codex_resumes_it_in_its_folder() {
         let id = "01a206ce-0c41-7ce0-a62f-517a7a089b86";
         let want = format!("codex resume {id}");
-        assert_eq!(resume_here("codex", id, "/home/sam/dev/x", true, None), Ok((Some("/home/sam/dev/x".into()), want.clone())));
+        assert_eq!(
+            resume_here("codex", id, "/home/sam/dev/x", true, None),
+            Ok((Some("/home/sam/dev/x".into()), want.clone()))
+        );
         assert_eq!(resume_here("codex", id, "/home/sam/gone", false, None), Ok((None, want.clone())));
         assert_eq!(
             resume_here("codex", id, "/home/sam/gone", false, Some(std::path::Path::new("/home/sam"))),
