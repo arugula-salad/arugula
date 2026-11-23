@@ -41,7 +41,7 @@ import { DocComments } from "../../shared/docs/doc-comments";
 import { reachOf } from "../../shared/docs/doc-reach";
 import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
 import { modeOf } from "../../shared/docs/docs-mode";
-import { noImages, projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
+import { projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
 import { homes, names } from "../links";
@@ -353,6 +353,7 @@ function NewDoc({ p, done }: { p: PlatformProject; done: () => void }) {
 function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload: () => void }) {
   const view = useProjectDoc(p.id, doc.id);
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
+  const images = useProjectImages(p.id, doc.id);
   const reader = useRef<HTMLDivElement>(null);
   const team = modeOf(p).kind === "team";
   return (
@@ -371,7 +372,7 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
       aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} reader={reader} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
-        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
+        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={images.load} cached={images.cached} />
       </div>
     </ListPreview>
   );
@@ -432,6 +433,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   }, [project, doc]);
 
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
+  const images = useProjectImages(project, doc);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const writer = !!view?.writer;
   // An older platform sends no `deleter`, and then its `writer` says.
@@ -451,7 +453,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           docKey={doc}
           s={state}
           fresh={fresh}
-          load={noImages}
+          load={images.load}
+          cached={images.cached}
           link="page"
           titleView={view && writer ? <TitleEdit project={project} view={view} opener={rename} wrote={show} /> : undefined}
           share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
