@@ -86,6 +86,12 @@
   padding: 0 var(--space-2);
   font: 500 var(--text-xs) var(--f-ui);
 }
+/* "+N more tabs", under a busy session's first few. */
+.platform-section .machines-more {
+  align-self: flex-start;
+  margin: var(--space-1) 0 0;
+  padding: 0 var(--space-2);
+}
 
 .panes-rows {
   margin: 0;
