@@ -4,11 +4,14 @@
 // here: a terminal pane in its folder running the person's own `claude
 // --resume <id>` (or `codex resume <id>`), in a new tab named after it (no
 // adapter to install), or the pane or block that has it already. If its
-// folder is gone, the picker says so and offers to run it in home. *Open
+// folder is gone, the picker says so and offers to run it in home. One
+// running in a terminal outside Arugula asks first ("Running in iTerm.
+// Move here?"): *Move here* stops it there (SIGINT, then SIGTERM) and
+// continues it here; if it won't stop, it says to quit it there. *Open
 // as agent block* shows a Claude Code one as an agent block instead
-// (stopped, its transcript as it grows), which forks too. Opened from a
-// pane's menu, the agent dialog and the phone's sheet. On a phone it is a
-// full-height sheet.
+// (stopped, its transcript as it grows), and *Fork here* forks it,
+// leaving the original alone. Opened from a pane's menu, the agent dialog
+// and the phone's sheet. On a phone it is a full-height sheet.
 //
 // With more than one host (#78), every host's are listed, grouped by host
 // and then folder: each host is asked over the fleet's connection (M25) at
@@ -49,7 +52,7 @@ export interface Conversation {
   updated_ms: number;
   forked_from?: string;
   archived: boolean;
-  live?: { pid: number; pane?: PaneId; block?: PaneId; place: string; status: string };
+  live?: { pid: number; pane?: PaneId; block?: PaneId; place: string; status: string; entrypoint?: string; terminal?: string };
   /** What it and its subagents cost at API list prices (#398), once the
    *  daemon has read it. */
   estimate?: Estimate;
@@ -252,10 +255,19 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
   };
 
+  /** Running at a terminal outside Arugula on this machine: Move here can
+   * stop it there and go on with it here. Never another host's. */
+  const movable = (c: Conversation, host: string): boolean =>
+    host === here && c.agent !== "codex" && c.live?.entrypoint === "cli" && c.block === null && c.live.pane === undefined && c.live.block === undefined;
+
   /** Continue here: where it's open already, else `claude --resume` in a
-   * terminal pane on its host. `home`: its folder is gone, run it there. */
-  const goOn = async (c: Conversation, host: string, home = false) => {
+   * terminal pane on its host. `home`: its folder is gone, run it there.
+   * `move`: it's running in another terminal, stop it there first (the
+   * person said yes to Move here). */
+  const goOn = async (c: Conversation, host: string, home = false, move = false) => {
     if (busy) return;
+    // Running elsewhere: only Move here's button stops it.
+    if (c.live && c.block === null && !inPane(c, host) && !move) return;
     const there = host !== here && fleet;
     if (c.block !== null || inPane(c, host)) {
       const p = c.block ?? c.live!.pane!;
@@ -273,8 +285,10 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
         v = res.ok && typeof body?.conversation === "string" ? (body as ContinueConversationResponse) : null;
         if (!v) client.toast(body?.error ?? `couldn't continue it on ${host} (${res.status})`);
       } else {
-        v = await client.continueConversation({ id: c.id, home, from: where.split, session: where.session });
+        v = await client.continueConversation({ id: c.id, home, move, from: where.split, session: where.session });
       }
+      // Moving refused: it's still running there; show it as it is.
+      if (!v && move) load();
       if (!v) return;
       if (v.pane == null) {
         if (v.folder_gone) setGone({ id: c.id, host, cwd: v.cwd });
@@ -356,6 +370,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   const chosenGone = !!chosen && gone?.id === chosen.id && gone.host === chosenHost ? gone : null;
   // Codex's has one way on, Continue here: no agent block, no fork.
   const codex = chosen?.agent === "codex";
+  const move = !!chosen && movable(chosen, chosenHost);
   let i = -1;
   return (
     <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
@@ -450,18 +465,29 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       </ul>
       {error && <p class="error picker-error">{error}</p>}
       <div class="picker-actions">
-        <span class="picker-target" title={chosenGone?.cwd ?? chosen?.live?.place ?? chosen?.cwd} data-folder-gone={chosenGone ? true : undefined}>
+        <span
+          class={move ? "picker-target ask" : "picker-target"}
+          title={chosenGone?.cwd ?? chosen?.live?.place ?? chosen?.cwd}
+          data-folder-gone={chosenGone ? true : undefined}
+          data-move-ask={move ? true : undefined}
+        >
           {chosenGone
             ? `${chosenGone.cwd} is gone. Run it in your home folder instead?`
-            : chosen
+            : move
+              ? `Running in ${chosen!.live!.terminal ?? "another terminal"}. Move here?`
+              : chosen
               ? chosen.live
                 ? chosen.live.place
                 : (chosen.last_prompt ?? chosen.first_prompt ?? "")
               : ""}
         </span>
         {chosenGone ? (
-          <button class="primary" data-continue-home disabled={busy} onClick={() => chosen && void goOn(chosen, chosenHost, true)}>
+          <button class="primary" data-continue-home disabled={busy} onClick={() => chosen && void goOn(chosen, chosenHost, true, !!chosen.live)}>
             Run it in home
+          </button>
+        ) : move ? (
+          <button class="primary" data-move-here disabled={busy} title="Stop it there (gently, as Ctrl-C would) and continue it here" onClick={() => chosen && void goOn(chosen, chosenHost, false, true)}>
+            Move here
           </button>
         ) : (
           <button
@@ -484,8 +510,8 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
           </button>
         )}
         {!codex && (
-          <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
-            Fork
+          <button disabled={!chosen || busy} data-fork-here title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
+            Fork here
           </button>
         )}
         <button onClick={close}>Cancel</button>

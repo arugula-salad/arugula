@@ -20,6 +20,7 @@ pub mod branch;
 pub mod codex;
 pub mod context;
 pub mod convert;
+pub mod moving;
 pub mod signals;
 pub mod spend;
 
@@ -83,6 +84,11 @@ pub struct Live {
     pub block: Option<PaneId>,
     /// Where, for people ([`Live::place`]).
     pub place: String,
+    /// The terminal app it runs in, when it runs in none of ours and its
+    /// ancestors say (`iTerm`, `Terminal`; [`moving::terminal_of`]): what
+    /// Move here's question names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<String>,
     /// The directory it runs in (#146: where to resume it).
     #[serde(skip)]
     pub cwd: Option<String>,
@@ -606,9 +612,13 @@ fn live(dir: &Path, ours: &Ours) -> HashMap<String, Live> {
             pane,
             block,
             place: String::new(),
+            terminal: None,
             cwd: v["cwd"].as_str().map(str::to_owned),
             started: v["startedAt"].as_u64().unwrap_or(0),
         };
+        if l.pane.is_none() && l.block.is_none() && l.entrypoint == "cli" {
+            l.terminal = moving::terminal_of(pid).map(str::to_owned);
+        }
         l.place = l.place();
         out.insert(session.to_owned(), l);
     }
@@ -738,6 +748,7 @@ mod tests {
             pane: Some(76),
             block: None,
             place: String::new(),
+            terminal: None,
             cwd: None,
             started: 0,
         };
@@ -1069,6 +1080,7 @@ mod tests {
             pane,
             block: None,
             place: String::new(),
+            terminal: None,
             cwd: None,
             started,
         }

@@ -138,6 +138,11 @@ pub fn comm(pid: u32) -> Option<String> {
     imp::comm(pid)
 }
 
+/// Whose a process is: its user id (none on Windows).
+pub fn uid(pid: u32) -> Option<u32> {
+    imp::uid(pid)
+}
+
 /// The executable a process runs.
 pub fn exe(pid: u32) -> Option<PathBuf> {
     imp::exe(pid)
@@ -251,6 +256,11 @@ mod imp {
 
     pub fn exe(pid: u32) -> Option<PathBuf> {
         std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+    }
+
+    pub fn uid(pid: u32) -> Option<u32> {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(format!("/proc/{pid}")).ok().map(|m| m.uid())
     }
 
     pub fn fd_path(fd: RawFd) -> std::io::Result<PathBuf> {
@@ -384,6 +394,10 @@ mod imp {
     /// the user's own included (`ps -E` shows none either).
     pub fn environ(_pid: u32) -> Option<Vec<Vec<u8>>> {
         None
+    }
+
+    pub fn uid(pid: u32) -> Option<u32> {
+        Some(bsdinfo(pid)?.pbi_uid)
     }
 
     pub fn comm(pid: u32) -> Option<String> {
@@ -673,6 +687,10 @@ mod imp {
         // SAFETY: a buffer of `n` characters.
         let ok = unsafe { QueryFullProcessImageNameW(p.0, PROCESS_NAME_WIN32, buf.as_mut_ptr(), &mut n) };
         (ok != 0).then(|| PathBuf::from(OsString::from_wide(&buf[..n as usize])))
+    }
+
+    pub fn uid(_pid: u32) -> Option<u32> {
+        None
     }
 
     /// The program's name, less `.exe` (`pwsh`, `vim`, `node`).
