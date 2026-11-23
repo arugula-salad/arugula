@@ -477,7 +477,7 @@ test.describe("desktop", () => {
     await prompted(page, shell, 1);
     await line(page, shell, "cd ~/src/game-night && git diff --stat && git status -sb");
     await prompted(page, shell, 2);
-    // What the Start an agent dialog sends (it's the command palette's now, not the pane menu's).
+    // What the Start an agent dialog sends (the pane menu's Start an agent…).
     await page.evaluate(async (shell) => {
       const config = { agent: "acp", command: "demo-agent", prompt: "fix the flaky session test" };
       await window.__arugula.client.newAgent({ config, split: shell, from: shell } as never);

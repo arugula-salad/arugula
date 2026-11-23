@@ -114,7 +114,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     },
     // A port where this pane runs: its machine, or this host.
     { label: mine ? "Open a port on this machine…" : "Open a port…", run: () => void openPort(client, { split: id, host: mine?.id, local: !mine }) },
-    { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
     { label: "Start a chat", run: () => void client.newChat({ split: id, from: id }) },
     // #123: the team's chat beside it, or one room of it, where chat is on.
     ...(!client.state?.roles && hasChat()
@@ -183,6 +182,9 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
+    // An agent beside it, on the menu itself (Arugula #1386): the docs and
+    // recordings show it there, not under Open beside.
+    { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
     ...sub("Open beside", openBeside),
     ...sub("Move", [
       moveToTab,

@@ -74,6 +74,18 @@ test.describe("desktop", () => {
     await page.evaluate((b) => window.__arugula.client.intent({ op: "close_pane", pane: b }), id);
     await expect.poll(() => panes(page)).toEqual([term]);
   });
+
+  // Arugula #1386: on the pane menu itself, not only in a submenu, and it
+  // starts the agent beside the pane as the palette's does.
+  test("the pane menu's own Start an agent… opens the dialog", async ({ page }) => {
+    await reset(page);
+    const [term] = await panes(page);
+    await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
+    await page.locator(".menu > .menu-item:not(.menu-parent)", { hasText: "Start an agent…" }).click();
+    await startFake(page, "hello");
+    await expect.poll(() => agentBlock(page)).not.toBeNull();
+    expect(await panes(page)).toEqual([term, (await agentBlock(page))!]);
+  });
 });
 
 test("a command's plain output is text, ending at its last line; only colours get a terminal", async ({ page }) => {
