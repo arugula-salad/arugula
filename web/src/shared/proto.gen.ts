@@ -2202,6 +2202,38 @@ by?: string, };
 export type ConnectTracker = { workspace_slug: string, project: string, api_key: string, webhook_secret: string | null, };
 
 /**
+ * `POST /api/conversations/continue`: a Claude Code conversation going on
+ * in a terminal pane, the person's own `claude --resume <id>` in its
+ * folder, in a new tab named after it: no adapter to install. The pane
+ * or block that has it already, if one of ours does.
+ */
+export type ContinueConversationRequest = { 
+/**
+ * Its id, or a unique prefix.
+ */
+id: string, 
+/**
+ * Its folder is gone: run it in home instead.
+ */
+home?: boolean | null, 
+/**
+ * The new tab's session (name or id). Default: `from_pane`'s, else
+ * the first.
+ */
+session?: string | null, from_pane?: number | null, };
+
+/**
+ * What continuing a conversation answers: the pane it goes on in
+ * (`opened`: made now, not there already), or, with none, that its folder
+ * is gone (`folder_gone`: ask again with `home`).
+ */
+export type ContinueConversationResponse = { pane?: number, opened: boolean, conversation: string, 
+/**
+ * The folder it runs in, or would have.
+ */
+cwd: string, folder_gone?: boolean, };
+
+/**
  * A machine's standing with Arugula control (#325): whether and where
  * it's joined, whether control is reachable, or that control dropped it.
  * The page, the tray and `arugula status` all show this.
@@ -6968,6 +7000,7 @@ export const OPS = {
   "agent_can.get": { method: "GET", path: "/api/agent-can" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
+  "conversation.continue": { method: "POST", path: "/api/conversations/continue" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },

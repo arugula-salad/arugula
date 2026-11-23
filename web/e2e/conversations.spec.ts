@@ -1,12 +1,12 @@
 // M33 in the client: Claude Code conversations from a terminal or the
 // desktop app, picked from a pane's menu (desktop) or the sheet (phone).
 // Continue here resumes one in a terminal tab named after it (`claude
-// --resume`, which isn't installed here: the tab and its pane are what's
-// checked; the daemon's test checks the command and folder), and offers
-// home when its folder is gone. Open as agent block shows it as a block,
-// continued there; one still open elsewhere forked instead. The Claude directory is the run's own (playwright.config.ts)
-// and Claude Code's adapter is the fake ACP agent, so nothing here costs
-// anything.
+// --resume`, a stand-in here: the tab and its pane are what's checked; the
+// daemon's test checks the command and folder), and offers home when its
+// folder is gone. Open as agent block shows it as a block, continued
+// there; one still open elsewhere forked instead. The Claude directory is
+// the run's own (playwright.config.ts) and Claude Code's adapter is the
+// fake ACP agent, so nothing here costs anything.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -166,7 +166,8 @@ test.describe("continue here", () => {
     await expect.poll(async () => (await tab(page))?.name).toBe("Fish hawks");
     const pane = await active(page);
     expect(pane).not.toBe(term);
-    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.kind, pane)).toBe("terminal");
+    // A terminal (its `kind` is what runs in it: the agent, `claude`).
+    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, pane)).toBe("terminal");
     expect(await agentBlock(page)).toBeNull();
   });
 
