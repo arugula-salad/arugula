@@ -55,6 +55,16 @@ const enc = encodeURIComponent;
  * stays on it when it moves to another card. */
 export const peekKey = (s: OvSession) => s.key.slice(s.key.indexOf("|") + 1);
 
+/** A session's tab in the talk panel: the hub's id for it where the hub
+ * lists it, which stays put when its panes come onto the page or its
+ * daemon restarts (#1390); else its key without its card. */
+export const talkKey = (s: OvSession) => s.hub ?? peekKey(s);
+
+/** A peek tab's id as saved before #1390, as it is now: a session the hub
+ * listed with no pane on the page was `machine:<machine>:ses_…` or
+ * `hosted:ses_…`, and is its `ses_…`. */
+export const talkKeyOf = (id: string) => /^(?:machine:[^:|]+|hosted):(ses_[^:|]+)$/.exec(id)?.[1] ?? id;
+
 /** A tab's body: the session, found again on each draw. */
 export function PeekTab({ id }: { id: string }) {
   const place = useContext(PeekContext);

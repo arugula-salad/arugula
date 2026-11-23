@@ -30,7 +30,7 @@ import type { Fleet } from "../shell/fleet";
 import { shortHost } from "../shell/swarm/model";
 import type { OvPane, OvSession, Standing } from "../shell/swarm/overview";
 import { titleOf } from "./overview-board";
-import { lastAnswer, ownFar, peekKey, Reply, yours } from "./overview-peek";
+import { lastAnswer, ownFar, peekKey, Reply, talkKey, yours } from "./overview-peek";
 import { Word } from "./overview-row";
 
 /** Most panes side by side; the rest are tabs. */
@@ -47,8 +47,8 @@ export interface WorkLevelProps {
   card: { board: string; boardTitle: string; row: BoardRow; standing: Standing } | null;
   /** The sessions working on it: the card's, or the one on no card. */
   sessions: OvSession[];
-  /** The session whose tab is in front of the talk panel, by its peek's
-   * key (`peekKey`): its pane is the one outlined. */
+  /** The session whose tab is in front of the talk panel, by its tab's
+   * key (`talkKey`): its pane is the one outlined. */
   talking: string | null;
   /** Bring a session's tab to the front of the talk panel. */
   talkTo(s: OvSession): void;
@@ -82,7 +82,7 @@ export function OverviewWork({ card, fleet, sessions, talking, talkTo, openPanes
   const lone = card ? null : sessions[0];
   const items = itemsOf(sessions);
   const hosted = useHostedViews(sessions.flatMap((s) => (s.hosted && !s.panes.length ? [s.hosted] : [])));
-  const talkingKey = sessions.find((s) => peekKey(s) === talking);
+  const talkingKey = sessions.find((s) => talkKey(s) === talking);
   const outlined = talkingKey ? talkPaneOf(talkingKey) : null;
 
   // Four side by side; past that, the fourth place is a tab's, the one you're talking to's when it's among them.

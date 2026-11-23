@@ -20,7 +20,7 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
-import { PeekTab, PeekWho } from "./overview-peek";
+import { PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -91,6 +91,21 @@ export interface Talk {
   open(t: TalkTab): void;
   close(key: string): void;
   pick(key: string): void;
+  /** A tab's key changed (a session's peek, to the hub's id for it, #1390): it keeps its place. */
+  rekey(from: string, to: TalkTab): void;
+}
+
+/** Saved tabs as they're keyed now: a peek's by the hub's id (#1390). Two
+ * that come to the same key are one. */
+function migrated(v: { tabs: TalkTab[]; active: string | null }): { tabs: TalkTab[]; active: string | null } {
+  const tabs: TalkTab[] = [];
+  for (const t of v.tabs) {
+    if (!(t.kind in TAB_KINDS)) continue;
+    const n = t.kind === "peek" ? { ...t, id: talkKeyOf(t.id) } : t;
+    if (!tabs.some((x) => keyOf(x) === keyOf(n))) tabs.push(n);
+  }
+  const active = v.active?.startsWith("peek:") ? `peek:${talkKeyOf(v.active.slice("peek:".length))}` : v.active;
+  return { tabs, active };
 }
 
 /** The panel's tabs on this project's Overview, kept for the browser tab. */
@@ -99,8 +114,8 @@ export function useTalk(project: string): Talk {
   const [s, setS] = useState<{ tabs: TalkTab[]; active: string | null }>(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem(store) ?? "null") as { tabs: TalkTab[]; active: string | null } | null;
-      // A kind this page no longer has is dropped.
-      if (v) return { tabs: v.tabs.filter((t) => t.kind in TAB_KINDS), active: v.active };
+      // A kind this page no longer has is dropped, and an old key is the new one.
+      if (v) return migrated(v);
     } catch {
       // Unreadable: start empty.
     }
@@ -133,6 +148,12 @@ export function useTalk(project: string): Talk {
         return { tabs: left, active: next };
       }),
     pick: (k) => put((was) => ({ ...was, active: k })),
+    rekey: (from, to) =>
+      put(({ tabs, active }) => {
+        const k = keyOf(to);
+        const kept = tabs.some((x) => keyOf(x) === k);
+        return { tabs: tabs.flatMap((x) => (keyOf(x) !== from ? [x] : kept ? [] : [to])), active: active === from ? k : active };
+      }),
   };
 }
 

@@ -280,12 +280,14 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
   const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
   const machineName = l.machine_name || hostOf(l.machine) || "";
-  // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row.
+  // The hub's id for its session; an agent's id is its pane, not a session's.
+  const hubId = hub && hub.kind !== "agent" ? { hub: hub.id } : {};
+  // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row: by the hub's id where it names the session, except a lead that is one pane (#1390).
   const lead = pinned ?? (mine.length ? leadOf(mine) : undefined);
   const peek: OvSession = lead
-    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine }
+    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine, ...(pinned ? {} : hubId) }
     : hub
-      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch }
+      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch, ...hubId }
       : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
   return { machine: l.machine, machineName, session: l.session, standing, peek };
 }

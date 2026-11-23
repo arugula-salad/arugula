@@ -62,7 +62,7 @@ import { BriefingLine, useBriefing } from "./overview-briefing";
 import { OverviewBoard } from "./overview-board";
 import { CardRow, SessionRow, Word } from "./overview-row";
 import { OverviewWork } from "./overview-work";
-import { PeekContext, peekKey, type PeekPlace } from "./overview-peek";
+import { PeekContext, peekKey, type PeekPlace, talkKey } from "./overview-peek";
 import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
@@ -91,7 +91,8 @@ const levelOf = (zoom?: OverviewZoom): Level => (!zoom ? 0 : "session" in zoom |
 const outOf = (zoom: OverviewZoom, to: Level = (levelOf(zoom) - 1) as Level): OverviewZoom | undefined => (to === 1 && "board" in zoom ? { board: zoom.board } : undefined);
 const zoomKey = (zoom?: OverviewZoom) => (!zoom ? "" : "session" in zoom ? `s:${zoom.session}` : `b:${zoom.board}/${zoom.card ?? ""}`);
 /** A session's peek, as a tab. */
-const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: peekKey(s), title: s.name });
+// Keyed by the hub's id where it has one, so a reload or a daemon restart finds it again (#1390).
+const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: talkKey(s), title: s.name });
 
 /** A pane as the Overview groups it. */
 function ovPane(fleet: Fleet, p: FleetPane): OvPane {
@@ -419,7 +420,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };
   // A card's row, or a session's, opens its peek there (#1271); a card with no session, its drawer.
-  const openSession = (s: OvSession) => talkTo({ kind: "peek", id: peekKey(s), title: s.name });
+  const openSession = (s: OvSession) => talkTo(peekTab(s));
   const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
   const peeks: PeekPlace = {
     fleet,
@@ -427,13 +428,22 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       // A session by its tile's key, or by the hub's id for it (`/work/ses_…`, #1380).
       const is = (s: OvSession) => peekKey(s) === key || s.hub === key;
       for (const c of ovCards) for (const s of c.sessions) if (is(s)) return { s, card: c };
-      const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
+      const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && is(b.lead.peek))?.lead?.peek;
       return s && { s, card: null };
     },
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
   };
+
+  // A peek tab saved under its tile's key (`host#N`) takes the hub's id for its session once the page knows it (#1390).
+  const stale = talk.tabs.flatMap((t) => {
+    const s = t.kind === "peek" ? peeks.find(t.id)?.s : undefined;
+    return s && talkKey(s) !== t.id ? [{ from: `peek:${t.id}`, to: { ...t, id: talkKey(s) } }] : [];
+  });
+  useEffect(() => {
+    for (const { from, to } of stale) talk.rekey(from, to);
+  }, [stale.map((x) => `${x.from}>${x.to.id}`).join(" ")]);
 
   // Zooming (Arugula #1287): where the address is, and the way in and out.
   const level = levelOf(zoom);
