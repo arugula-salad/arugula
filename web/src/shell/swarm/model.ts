@@ -8,6 +8,7 @@ import type { FleetPane } from "../fleet";
 import type { Reason, WorkKind } from "../../shared/proto";
 import { NEEDS_YOU } from "../../shared/needs-you";
 import { boardGroup } from "../../shared/boards/text";
+import type { FlagName } from "../client";
 
 // "owner", not "person": it groups by whose a pane is, and a team owns
 // some (UI audit #172).
@@ -59,6 +60,20 @@ export const KIND_LABEL: Record<WorkKind, string> = {
   issue: "Issue",
   managoat: "Managoat",
 };
+
+/** The kinds only a Labs flag brings, by that flag: a studio app comes with
+ * `studio`, as its block does (../blocks/lazy.ts). Managoat's is retired:
+ * no one turns it on (an older daemon may still say it). */
+const LABS_KINDS: Partial<Record<WorkKind, FlagName | null>> = { app: "studio", managoat: null };
+
+/** The kinds the legend lists: every kind, but a Labs one only where `on`
+ * says its flag is (https://app.arugula.io/issues/iss_78ce975b330e471f9827d13cb22024bb). */
+export function legendKinds(on: (flag: FlagName) => boolean): WorkKind[] {
+  return (Object.keys(KINDS) as WorkKind[]).filter((k) => {
+    const flag = LABS_KINDS[k];
+    return flag === undefined || (flag !== null && on(flag));
+  });
+}
 
 /** Agents as people name them, by the ids panes and asks carry
  * (`claude-code`, `claude`): "Claude Code" (UI audit #172). */
