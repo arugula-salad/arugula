@@ -24,9 +24,20 @@ pub struct Settings {
     /// Its keys, in the global-shortcut plugin's syntax.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hotkey: Option<String>,
+    /// "Just this machine", chosen on the sign-in page for this control:
+    /// the window opens on the daemon's page instead, at every launch,
+    /// until the person signs in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_only: Option<String>,
 }
 
 impl Settings {
+    /// "Just this machine" was chosen for `control`, not one the machine
+    /// was joined to before.
+    pub fn local_only_on(&self, control: &str) -> bool {
+        self.local_only.as_deref() == Some(control)
+    }
+
     pub fn keys(&self) -> &str {
         self.hotkey.as_deref().filter(|k| !k.trim().is_empty()).unwrap_or(DEFAULT_HOTKEY)
     }
@@ -243,6 +254,20 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"hotkey_on": true, "hotkey": "Super+F12"}"#).unwrap();
         assert!(s.hotkey_on);
         assert_eq!(s.keys(), "Super+F12");
+    }
+
+    #[test]
+    fn just_this_machine_is_kept_for_its_control() {
+        let s: Settings = serde_json::from_str(r#"{"hotkey_on": true}"#).unwrap();
+        assert!(!s.local_only_on("https://control.arugula.io"));
+        let s = Settings { local_only: Some("https://control.arugula.io".into()), ..s };
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back, s);
+        assert!(back.local_only_on("https://control.arugula.io"));
+        assert!(!back.local_only_on("https://other.example"));
+        // Cleared, it leaves no trace in the file.
+        let cleared = Settings { local_only: None, ..back };
+        assert_eq!(serde_json::to_string(&cleared).unwrap(), r#"{"hotkey_on":true}"#);
     }
 
     #[test]
