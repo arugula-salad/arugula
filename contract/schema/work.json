@@ -179,6 +179,40 @@
       ],
       "type": "object"
     },
+    "AnsweredAsk": {
+      "description": "An ask that was answered, kept in the row's history.",
+      "properties": {
+        "answer": {
+          "type": "string"
+        },
+        "answered_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "answered_by": {
+          "type": "string"
+        },
+        "asked_by": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "answer",
+        "asked_by",
+        "answered_by",
+        "answered_at"
+      ],
+      "type": "object"
+    },
     "Approval": {
       "properties": {
         "account": {
@@ -285,6 +319,79 @@
         }
       ]
     },
+    "Ask": {
+      "description": "A question on a row that a person answers on the board (Arugula #367):\nasked by a person or an agent, or raised by the board itself from the\nstate of the row's items (`raised`, never stored, and with no answer).",
+      "properties": {
+        "asked_by": {
+          "description": "Who asked, as a name: a person, or an agent and its machine. Empty\nfor a raised ask.",
+          "type": "string"
+        },
+        "can_answer": {
+          "default": false,
+          "description": "The reader may answer it: the person it names, or an owner or editor.",
+          "type": "boolean"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`ask_…`; a raised ask has none.",
+          "type": "string"
+        },
+        "mine": {
+          "default": false,
+          "description": "It is for the reader (a raised ask is for whoever reads the row).",
+          "type": "boolean"
+        },
+        "options": {
+          "default": [],
+          "description": "None: free text.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        },
+        "raised": {
+          "default": false,
+          "description": "The board raised it, from its items' state, and it clears with its\ncause: nobody answers it.",
+          "type": "boolean"
+        },
+        "recommend": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "who": {
+          "description": "The account it is for; empty for a raised ask.",
+          "type": "string"
+        },
+        "who_name": {
+          "description": "Who it is for, as the reader's page names them.",
+          "type": "string"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "who",
+        "who_name",
+        "question",
+        "asked_by",
+        "created_at"
+      ],
+      "type": "object"
+    },
     "Assertion": {
       "additionalProperties": false,
       "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
@@ -340,6 +447,537 @@
         "rev"
       ],
       "type": "object"
+    },
+    "AttachRole": {
+      "description": "What an attachment is for.",
+      "oneOf": [
+        {
+          "const": "work",
+          "description": "The work itself: a PR, an agent block or a run. It moves the lane.",
+          "type": "string"
+        },
+        {
+          "const": "proof",
+          "description": "Evidence that the work is done: a run or a link.",
+          "type": "string"
+        }
+      ]
+    },
+    "Attachment": {
+      "description": "Something attached to a row.",
+      "properties": {
+        "block": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `Block` pointer's block as its machine last reported it."
+        },
+        "id": {
+          "description": "`att_` and 32 hex characters.",
+          "type": "string"
+        },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The item's state now, when the reader may see it: an item they can't\nread says nothing, as an unreadable row does."
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "released": {
+          "description": "A block that a newer agent took the row from (`take`): it is an\nearlier agent whatever it reports, and holds no claim.",
+          "type": "boolean"
+        },
+        "role": {
+          "$ref": "#/$defs/AttachRole"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "pointer"
+      ],
+      "type": "object"
+    },
+    "BlockState": {
+      "description": "What a daemon says of one of its own agent blocks, and all it says\n(aru-116's second ruling): the state word, the branch, the short HEAD,\nwhether it is pushed, how many files are uncommitted and the diffstat.\nNo message text, no file names, no prompts: the type has no field that\ncould carry them. This is the view, read leniently by a daemon; control\nrefuses a body with another field through [`BlockStateReport`].",
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diffstat": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Diffstat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "description": "HEAD, abbreviated.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pushed": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/BlockWord"
+        },
+        "title": {
+          "description": "The name its starter or its person gave the block: a board's chip\nfor it. Never the first words of a prompt.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uncommitted": {
+          "description": "How many files are uncommitted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "BlockWord": {
+      "description": "What an agent block is doing (aru-116's second ruling).",
+      "enum": [
+        "working",
+        "needs_input",
+        "idle",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "Board": {
+      "properties": {
+        "closed_at": {
+          "default": null,
+          "description": "When it was closed; absent while it is open.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "closed_by": {
+          "default": "",
+          "description": "The account that closed it; empty once that account is deleted. When\nan agent closed it, the account it acted for.",
+          "type": "string"
+        },
+        "closed_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent closed it, if one did."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_by": {
+          "description": "The account that made it; empty once that account is deleted. When an\nagent made it, the account it acted for.",
+          "type": "string"
+        },
+        "created_by_agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent made it, if one did."
+        },
+        "done_note": {
+          "default": "",
+          "description": "What was done, written when the board was closed; kept when it is\nopened again. Empty before it was ever closed.",
+          "type": "string"
+        },
+        "goal": {
+          "default": "",
+          "description": "What the board is for, in a paragraph; empty means none.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lead": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardLead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The session that leads the board (#414): a post on the board's thread\nreaches it. Absent when no session does."
+        },
+        "progress": {
+          "$ref": "#/$defs/BoardProgress",
+          "default": {
+            "doing": 0,
+            "done": 0,
+            "proven": 0,
+            "review": 0,
+            "total": 0
+          },
+          "description": "How many of its issues are closed."
+        },
+        "project": {
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The tracker's epic it follows, when it was made from one (Plane's,\n#483); absent for a board a person made."
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "project",
+        "title",
+        "created_by",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "BoardDoc": {
+      "description": "One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).",
+      "properties": {
+        "added_by": {
+          "description": "The account that linked it (the owner, for an agent).",
+          "type": "string"
+        },
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent linked it, if one did."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`bdc_` and 32 hex characters.",
+          "type": "string"
+        },
+        "machine_name": {
+          "description": "A machine Doc's machine, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "missing": {
+          "description": "A project Doc that was deleted.",
+          "type": "boolean"
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer",
+          "description": "[`Pointer::Doc`] or [`Pointer::MachineDoc`]."
+        },
+        "sections": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "written": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pointer",
+        "title",
+        "added_by",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "BoardLead": {
+      "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
+      "properties": {
+        "at": {
+          "description": "When the session took the lead.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": "",
+          "description": "The machine's name now; empty while it can't be told.",
+          "type": "string"
+        },
+        "pane": {
+          "description": "The leading session's pane on its machine, the one the lead was taken\nfrom: the page finds the pane by it, not by the name, which a renamed\nconversation or a pane without a title doesn't match. Absent for a\nlead an older daemon took.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "session",
+        "at"
+      ],
+      "type": "object"
+    },
+    "BoardList": {
+      "properties": {
+        "boards": {
+          "items": {
+            "$ref": "#/$defs/Board"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "boards"
+      ],
+      "type": "object"
+    },
+    "BoardProgress": {
+      "description": "A board's work, counted: the rows with a primary item (an issue or a\nPR; a note row is never counted). `done` is those in the Done lane, and\n`proven` those of them with a proof; `review` and `doing` are those in\nthe Review and Doing lanes.",
+      "properties": {
+        "doing": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "done": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "proven": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "review": {
+          "default": 0,
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "done",
+        "total"
+      ],
+      "type": "object"
+    },
+    "BoardSource": {
+      "description": "The epic a board follows: its children are the board's rows, and the\nconnection made the board, not a person.",
+      "properties": {
+        "connection": {
+          "description": "The connection that made the board, as the project calls it.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The epic's key in the tracker, such as `ARUGU-10`.",
+          "type": "string"
+        },
+        "left_out": {
+          "default": 0,
+          "description": "How many children the board is too full to show, the oldest done\nones first.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "description": "`plane`.",
+          "type": "string"
+        },
+        "started": {
+          "default": false,
+          "description": "Whether the epic is started in the tracker (Plane's `started` group),\nread from its mirrored item; not whether the board is open.",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "Where the epic is in the tracker's web app.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "key",
+        "url",
+        "connection"
+      ],
+      "type": "object"
+    },
+    "BoardView": {
+      "description": "A board with its four lanes, in order (`lane_next`, `lane_doing`,\n`lane_review`, `lane_done`), each with its rows, and its groups, in\norder. The rows of a group are those with [`Row::group`] set to its id; a\nrow without one comes after the grouped ones.",
+      "properties": {
+        "board": {
+          "$ref": "#/$defs/Board"
+        },
+        "chain": {
+          "description": "The longest chain of open rows (`row_…`), first to last; empty when\nno row waits on another (#762).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "docs": {
+          "default": [],
+          "description": "The Docs strip, in order. Empty for a board with none; an old client\nignores it.",
+          "items": {
+            "$ref": "#/$defs/BoardDoc"
+          },
+          "type": "array"
+        },
+        "groups": {
+          "default": [],
+          "description": "Empty for a board with none; an old client ignores it.",
+          "items": {
+            "$ref": "#/$defs/Group"
+          },
+          "type": "array"
+        },
+        "order": {
+          "description": "Every row (`row_…`) as the board stores them: by group, in the\ngroups' order, then by position inside each, those with no group\nlast. A move that names the order it read (`seen`) names a group's\nrows from here.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ready": {
+          "description": "The ready set (Arugula #403): the rows (`row_…`) with an issue or a\nPR as their item that are in Next and have no open blocker.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "said": {
+          "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sequence": {
+          "description": "The rows (`row_…`) that have a [`Row::step`], by step, and inside a\nstep by what unblocks the most open rows, then by position (#762).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "zones": {
+          "items": {
+            "$ref": "#/$defs/LaneView"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "board",
+        "zones"
+      ],
+      "type": "object"
+    },
+    "Category": {
+      "description": "Where an item is in its own life, the same words for every source\n(Arugula #405): Plane's state groups, which a native issue's and a GitHub\nissue's open and closed map onto. A lane reads it: `completed` and\n`canceled` are Done, every other category is not.",
+      "enum": [
+        "triage",
+        "backlog",
+        "unstarted",
+        "started",
+        "completed",
+        "canceled"
+      ],
+      "type": "string"
     },
     "Change": {
       "description": "What happened to a passkey.",
@@ -1052,6 +1690,32 @@
       ],
       "type": "object"
     },
+    "Diffstat": {
+      "description": "A `git diff --stat` summary line as numbers: nothing of the files.",
+      "properties": {
+        "added": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "files": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "removed": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "files",
+        "added",
+        "removed"
+      ],
+      "type": "object"
+    },
     "Doc": {
       "description": "A Doc, without its sections: a list's row, and a view's head.",
       "properties": {
@@ -1657,6 +2321,41 @@
       ],
       "type": "object"
     },
+    "Group": {
+      "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
+      "properties": {
+        "id": {
+          "description": "`zon_…`.",
+          "type": "string"
+        },
+        "progress": {
+          "$ref": "#/$defs/BoardProgress",
+          "default": {
+            "doing": 0,
+            "done": 0,
+            "proven": 0,
+            "review": 0,
+            "total": 0
+          },
+          "description": "Its rows with an issue or a PR, counted as a board's are."
+        },
+        "rev": {
+          "description": "Counts changes to its title.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title"
+      ],
+      "type": "object"
+    },
     "Issue": {
       "properties": {
         "agent": {
@@ -1932,6 +2631,288 @@
       },
       "type": "object"
     },
+    "Lane": {
+      "description": "Where a row is, worked out on every read from the live state of its\nitems and never stored (aru-125). Each is the furthest that applies, in\nthe order `done`, `review`, `doing`, `next`.",
+      "oneOf": [
+        {
+          "const": "next",
+          "description": "Nothing is under way, or the row is a note.",
+          "type": "string"
+        },
+        {
+          "const": "doing",
+          "description": "An agent block that isn't closed, or a run that is running.",
+          "type": "string"
+        },
+        {
+          "const": "review",
+          "description": "A PR is open, or the issue is open and its PR merged (see\n[`Mark::NotFinished`]).",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "description": "The issue is closed, or the PR merged or closed.",
+          "type": "string"
+        }
+      ]
+    },
+    "LaneSet": {
+      "description": "A lane a person set on a row ([`Row::lane_set`]).",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "The account that moved the row.",
+          "type": "string"
+        },
+        "lane": {
+          "$ref": "#/$defs/Lane",
+          "description": "`next`, `doing` or `review`."
+        }
+      },
+      "required": [
+        "lane",
+        "by",
+        "at"
+      ],
+      "type": "object"
+    },
+    "LaneView": {
+      "description": "One of a board's four lanes as a read answers it, with its rows. The wire\nand TypeScript still call it a zone (`zones`, `BoardZone`).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ZoneKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "title",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "LeftQueue": {
+      "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
+      "properties": {
+        "at": {
+          "description": "When the platform heard it, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Live": {
+      "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
+      "properties": {
+        "assignees": {
+          "description": "Who an issue or PR is assigned to: a mirrored item's logins, a native\nissue's names. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Category"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An issue's status category; a PR and a run have none."
+        },
+        "closed_by": {
+          "description": "With `closed_with`, the words of the PR that closed it: `\"(#12)\" in\nthe title`, `\"Closes #12\" in the body`, `the branch feat/12-x`,\n`attached to its board row as work`. Absent for a close from before\nthey were kept.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_with": {
+          "description": "A closed native issue that a merged PR closed: the PR\n(`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "identifier": {
+          "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`pr` or `issue` (a mirrored one), `native` for a native issue, or\n`run`.",
+          "type": "string"
+        },
+        "labels": {
+          "description": "The item's labels (#547): a native issue's, a mirrored item's, a\nPlane item's. A run has none.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "left_queue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeftQueue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A PR that left the queue unmerged, and why (`ForgeItem::left_queue`)."
+        },
+        "number": {
+          "description": "A run has none: 0.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "provider": {
+          "description": "`plane` for a tracker's item; absent for GitHub, native issues and runs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "queued": {
+          "description": "A PR in its branch's merge queue now (Arugula #766). A repo with no\nqueue, a platform from before it and every other kind say false.",
+          "type": "boolean"
+        },
+        "queued_since": {
+          "description": "With `queued`: when it entered the queue, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`OWNER/NAME` of a mirrored item; absent for a native issue.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/LiveState"
+        },
+        "state_name": {
+          "description": "A tracker item's own state (`In Progress`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "A run's: how it started (`manual run`).",
+          "type": "string"
+        },
+        "url": {
+          "description": "Where a tracker item is, in the tracker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "kind",
+        "number",
+        "title"
+      ],
+      "type": "object"
+    },
+    "LiveState": {
+      "description": "What a pointer to an item, an issue or a run is now, from data control\nalready has (the forge mirror, the issues and runs tables): a separate fact, never written\nover the row's stored `status`.",
+      "oneOf": [
+        {
+          "enum": [
+            "merged",
+            "succeeded"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "open",
+          "description": "A PR or an issue, open.",
+          "type": "string"
+        },
+        {
+          "const": "checks_running",
+          "description": "A PR, open, with checks still running.",
+          "type": "string"
+        },
+        {
+          "const": "checks_failed",
+          "description": "A PR, open, with red checks.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "A PR closed unmerged, or an issue closed.",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "description": "A run, running.",
+          "type": "string"
+        },
+        {
+          "const": "run_failed",
+          "description": "A run that failed.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "A run that is pending, approved, denied, canceled or expired.",
+          "type": "string"
+        }
+      ]
+    },
     "Log": {
       "additionalProperties": false,
       "description": "An account's log, oldest first.",
@@ -1960,6 +2941,197 @@
         "events"
       ],
       "type": "object"
+    },
+    "Mark": {
+      "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
+      "oneOf": [
+        {
+          "description": "What a build before Arugula #841 said of an open issue whose PR\nmerged, with none open: read as `NotFinished` with no reason and\n`merged`. Current platforms never send it.",
+          "properties": {
+            "kind": {
+              "const": "merged_not_closed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row's issue is marked Not finished (Arugula #841), or it is open\nand a PR of the row merged, with none open: a merge doesn't close a\nmarked ticket. `merged`: a PR of the row merged, and the row is in\nReview. `reason` is what is left, and is none when nobody marked it\n(a merged PR that only said `part of`). A marked row with nothing\nmerged keeps the lane its work gives it.",
+          "properties": {
+            "at": {
+              "description": "When, in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "by": {
+              "description": "Who marked it: a login or name, and for an agent \"<person>'s\nagent on <machine>\" as the board names an agent.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "not_finished",
+              "type": "string"
+            },
+            "merged": {
+              "default": false,
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row's item was canceled (a Plane `cancelled` state, a native issue\nclosed as not planned or as a duplicate): the row is Done and never\nproven, whatever merged.",
+          "properties": {
+            "kind": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An open PR of the row is stacked on another open PR: it targets that\nPR's branch, so it waits for it. `repo` is left out when the reader\nmay not read the repo.",
+          "properties": {
+            "kind": {
+              "const": "after",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent block attached to the row (`attachment`) was closed, and\nanother may have taken its place: it no longer counts toward Doing.",
+          "properties": {
+            "attachment": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "earlier",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "attachment"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row is in Doing, every block of it that isn't closed has been\nidle for longer than the project's `stall_minutes`, and no PR is on\nit (Arugula #404). `since` is when the last of them went idle, in\nmilliseconds. It names no block: who holds the row is the block's\nchip, for a reader who may see it.",
+          "properties": {
+            "kind": {
+              "const": "stalled",
+              "type": "string"
+            },
+            "since": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "since"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row's item is blocked by an open item (a `blocks` edge, Arugula\n#403): the row stays in its lane. `number`, `title` and `repo` are\nleft out when the reader may not read the blocker (one such mark\nstands for all of them: \"something you can't see\").",
+          "properties": {
+            "board": {
+              "description": "The other board the blocker is a row of, when the reader may read\nthe blocker and it is on a board other than this one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "blocked_by",
+              "type": "string"
+            },
+            "lead": {
+              "description": "The session that leads that board, when one does.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The row's item is in a loop of open ordering edges (Plane can make\none): it shares its `step` with the others in the loop.",
+          "properties": {
+            "kind": {
+              "const": "cycle",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "MovedFrom": {
       "description": "Where a Doc a machine moved to a team was (Arugula #863).",
@@ -2131,6 +3303,168 @@
         }
       ]
     },
+    "Pointer": {
+      "description": "What a row points at. `None` is free text. The ids are the platform's:\n`fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a\nproject Doc).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "forge_item",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "issue",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "run",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "workspace",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An agent block on a machine.",
+          "properties": {
+            "kind": {
+              "const": "block",
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "pane": {
+              "description": "The block's pane, as `%N` or `N`; stored as `N`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "machine",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `https://` URL, as evidence (a CI page, a report). The platform\ntakes only `https`, no userinfo, at most [`LINK_MAX`] bytes.",
+          "properties": {
+            "kind": {
+              "const": "link",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A project Doc (`pdc_…`) of the board's own project. Only a Doc strip\nor a `reference` attachment carries one.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "doc",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A Doc block on a machine. `title` is a snapshot from when it was\nlinked, since the machine may be off; a [`BoardDoc`] reads the\nmachine's copy instead when the copy sits in the board's project.",
+          "properties": {
+            "doc": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "machine_doc",
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "machine",
+            "doc",
+            "title"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PrUntil": {
       "description": "What a watch on a pull request waits for.",
       "oneOf": [
@@ -2242,6 +3576,44 @@
         "made"
       ],
       "type": "object"
+    },
+    "Proof": {
+      "description": "The mark on a Done row that is proven. A Done row without one is not\nproven yet.",
+      "properties": {
+        "by": {
+          "$ref": "#/$defs/ProofBy"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pointer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What proves it: the merged PR, or the evidence attached."
+        }
+      },
+      "required": [
+        "by"
+      ],
+      "type": "object"
+    },
+    "ProofBy": {
+      "description": "How a Done row is proven.",
+      "oneOf": [
+        {
+          "const": "ci",
+          "description": "A PR of the row merged with every check on its head completed and\nnone red.",
+          "type": "string"
+        },
+        {
+          "const": "evidence",
+          "description": "A `proof` attachment.",
+          "type": "string"
+        }
+      ]
     },
     "PublicLink": {
       "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
@@ -2448,6 +3820,62 @@
       ],
       "type": "object"
     },
+    "RelationDirection": {
+      "description": "Which end of an edge a row's item is.",
+      "oneOf": [
+        {
+          "const": "out",
+          "description": "The row's item is the first end: it blocks, duplicates, was found from.",
+          "type": "string"
+        },
+        {
+          "const": "in",
+          "description": "The row's item is the second end: it is blocked by the other.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelationKind": {
+      "description": "What an edge between two work items says (Arugula #403). Only `blocks`\ngates: it keeps the blocked item's row out of the ready set until the\nblocker is closed. `before` (#761) says an order and gates nothing; it\ncan't close a cycle with `blocks` edges.",
+      "oneOf": [
+        {
+          "enum": [
+            "relates"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "blocks",
+          "description": "The first item blocks the second.",
+          "type": "string"
+        },
+        {
+          "const": "duplicate_of",
+          "description": "The first item duplicates the second.",
+          "type": "string"
+        },
+        {
+          "const": "discovered_from",
+          "description": "The first item was found while working on the second.",
+          "type": "string"
+        },
+        {
+          "const": "before",
+          "description": "The first item comes before the second, in the order the work is\ndone in.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelationSource": {
+      "description": "Who made an edge. `plane` and `github` edges are read from there, and\nArugula doesn't change them.",
+      "enum": [
+        "person",
+        "agent",
+        "plane",
+        "github"
+      ],
+      "type": "string"
+    },
     "Report": {
       "description": "One state change, signed by the machine that made it.",
       "properties": {
@@ -2573,6 +4001,281 @@
       "required": [
         "deploy",
         "to"
+      ],
+      "type": "object"
+    },
+    "Row": {
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatAgent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The machine whose agent added the row, if one did (it may remove\nit; nobody else's agent may)."
+        },
+        "ask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ask"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The row's one open question: asked, else raised by the board."
+        },
+        "asked": {
+          "description": "The last [`ASKED_SHOWN`] asks answered, newest first.",
+          "items": {
+            "$ref": "#/$defs/AnsweredAsk"
+          },
+          "type": "array"
+        },
+        "attachments": {
+          "default": [],
+          "description": "Work and proof attached to the row, oldest first.",
+          "items": {
+            "$ref": "#/$defs/Attachment"
+          },
+          "type": "array"
+        },
+        "block": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `Block` pointer's block as its machine last reported it, when that\nmachine holds `boards.write` over the board's project."
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "docs": {
+          "description": "The Docs linked to the row (#517): its spike or research, in order.\nThey move no lane and prove nothing.",
+          "items": {
+            "$ref": "#/$defs/BoardDoc"
+          },
+          "type": "array"
+        },
+        "group": {
+          "description": "The group (`zon_…`) the row belongs to, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionHold"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The session that holds the row's issue (Arugula #765), if one does.\nNever set on a row whose issue is closed."
+        },
+        "id": {
+          "type": "string"
+        },
+        "lane": {
+          "$ref": "#/$defs/Lane",
+          "default": "next",
+          "description": "Where the row is, from the live state of its items."
+        },
+        "lane_set": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LaneSet"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when a person moved the row and the work hasn't changed its\nderived lane since (#494): `lane` is then the row's lane."
+        },
+        "live": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
+        },
+        "marks": {
+          "description": "What the lane doesn't say, in a fixed order: `not_finished`,\n`cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.",
+          "items": {
+            "$ref": "#/$defs/Mark"
+          },
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        },
+        "place": {
+          "description": "The column the row sits in on the Steps chart (Arugula #824): the\nsame longest-path layout as [`Row::step`], but over every row with an\nissue or a PR, done ones included, using their ordering edges whether\nthe other end is open or closed. So finishing work never moves a row.\nAbsent for a row with no issue or PR.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "pointer": {
+          "$ref": "#/$defs/Pointer"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Proof"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set only on a Done row that is proven."
+        },
+        "relations": {
+          "description": "The edges of the row's item, both ways, for the drawer.",
+          "items": {
+            "$ref": "#/$defs/RowRelation"
+          },
+          "type": "array"
+        },
+        "rev": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sessions": {
+          "description": "The agent sessions started on the row's issue, oldest first\n(Arugula #843). A live one puts the row in Doing.",
+          "items": {
+            "$ref": "#/$defs/RowSession"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/Status",
+          "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
+        },
+        "step": {
+          "description": "Where the row falls in the board's order (Arugula #762): 1 plus the\nhighest step of the open rows that come before it, worked out on\nevery read and never stored. Absent for a row with no issue or PR,\nand for a Done row. Doing and Review rows are step 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "rev",
+        "pointer",
+        "note",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "RowRelation": {
+      "description": "An edge of a row's item, as the reader sees it.",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/RelationDirection"
+        },
+        "id": {
+          "description": "`rel_…`, to take it off.",
+          "type": "string"
+        },
+        "item": {
+          "description": "The `iss_` or `fi_` id of the item at the other end, with `other`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/RelationKind"
+        },
+        "other": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Live"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The item at the other end. Left out when the reader may not read it:\nthe edge is \"something you can't see\", with no title or number."
+        },
+        "removable": {
+          "description": "The reader may take it off: an owner or editor, and it was made here.",
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/RelationSource"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "direction",
+        "source",
+        "removable"
+      ],
+      "type": "object"
+    },
+    "RowSession": {
+      "description": "An agent session started on a row's issue (Arugula #843).",
+      "properties": {
+        "branch": {
+          "description": "The one ref it may push, `arugula/<8 hex>-<slug>`.",
+          "type": "string"
+        },
+        "live": {
+          "description": "Whether it moves the row: it is under way, or done with its PR not\nyet sent. A session that isn't live is shown dimmed.",
+          "type": "boolean"
+        },
+        "pr": {
+          "description": "Its PR's link, once its asker sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "`ses_…`, for its thread.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state as the platform keeps it: `queued`, `working`,\n`needs_input`, `done`, `failed`, `unresponsive` or `stopped`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "state",
+        "live",
+        "branch"
       ],
       "type": "object"
     },
@@ -2943,6 +4646,35 @@
       },
       "type": "object"
     },
+    "SessionHold": {
+      "description": "The session that holds an issue's row (Arugula #765): the one that last\nstarted an agent on it, or took it. It is the issue's, so a row on two\nboards shows the same holder, and it lasts until the issue closes or the\nsession lets it go. The same shape as [`BoardLead`].",
+      "properties": {
+        "at": {
+          "description": "When the session took the row.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": "",
+          "description": "The machine's name now; empty while it can't be told.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session's name, as its machine's daemon matches it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "session",
+        "at"
+      ],
+      "type": "object"
+    },
     "SessionIssuesAsk": {
       "description": "[`WORK_SESSION_ISSUES`]'s body: which session asks, and what. The\nproject is never named: it is the session's, and the platform finds it.",
       "oneOf": [
@@ -3161,6 +4893,26 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "The project's boards, as the session's asker may read them (Arugula\n#1381); with `board` (`brd_…`, or an open board's exact title) that\none board, with its lead, its rows and who works each.",
+          "properties": {
+            "board": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "board_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -3364,6 +5116,40 @@
           "type": "object"
         },
         {
+          "description": "The project's boards (`BoardRead` with no board).",
+          "properties": {
+            "kind": {
+              "const": "boards",
+              "type": "string"
+            },
+            "list": {
+              "$ref": "#/$defs/BoardList"
+            }
+          },
+          "required": [
+            "kind",
+            "list"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One board (`BoardRead` with a board).",
+          "properties": {
+            "kind": {
+              "const": "board",
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/$defs/BoardView"
+            }
+          },
+          "required": [
+            "kind",
+            "view"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Not done, and why (the agent reads it).",
           "properties": {
             "kind": {
@@ -3383,7 +5169,7 @@
       ]
     },
     "SessionIssuesOp": {
-      "description": "What a session's agent does in its project: read, comment on and open\nits native issues, make, write and read its Docs (aru-118), and read and\npost in its rooms as its asker's agent (Arugula #1276), nothing else. The route kept its first name, `session/issues`, for the boxes\nalready calling it.",
+      "description": "What a session's agent does in its project: read, comment on and open\nits native issues, make, write and read its Docs (aru-118), and read and\npost in its rooms as its asker's agent (Arugula #1276), and read its\nboards (Arugula #1381), nothing else. The route kept its first name,\n`session/issues`, for the boxes already calling it.",
       "oneOf": [
         {
           "description": "A page of the project's issues, newest first.",
@@ -3598,6 +5384,26 @@
             "op",
             "room",
             "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The project's boards, as the session's asker may read them (Arugula\n#1381); with `board` (`brd_…`, or an open board's exact title) that\none board, with its lead, its rows and who works each.",
+          "properties": {
+            "board": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "board_read",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
           ],
           "type": "object"
         }
@@ -4050,6 +5856,18 @@
         }
       ]
     },
+    "Status": {
+      "description": "Where a row stands. `None` says nothing.",
+      "enum": [
+        "none",
+        "open",
+        "working",
+        "needs_input",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
     "WatchCancelled": {
       "description": "What [`WatchCancel`] cancelled, by id. The session that asked is told\nby this answer, and gets no message for them.",
       "properties": {
@@ -4335,6 +6153,13 @@
         }
       },
       "type": "object"
+    },
+    "ZoneKind": {
+      "description": "A zone's kind: every zone a read answers is a `lane`, one of the four\n([`Lane`]). No one makes a zone.",
+      "enum": [
+        "lane"
+      ],
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

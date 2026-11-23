@@ -7,7 +7,8 @@
 //! gets none of `/mcp`'s tools: those start and drive panes as the daemon.
 //! What it gets instead is this: a loopback listener that serves only
 //! [`READ`], [`COMMENT`], [`CREATE`], [`CREATE_DOC`], [`FILL_DOC`] and
-//! [`READ_DOC`], [`READ_THREAD`] and [`POST_THREAD`] (Arugula #1276), each a
+//! [`READ_DOC`], [`READ_THREAD`] and [`POST_THREAD`] (Arugula #1276) and
+//! [`BOARD_READ`] (Arugula #1381), each a
 //! call to control's `POST /api/hosted/work/session/issues` for the agent's
 //! session, and [`WATCH`]
 //! (Arugula #1035), its `POST /api/hosted/work/session/watch`.
@@ -69,7 +70,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::mcp::{
-    session::{COMMENT, CREATE, CREATE_DOC, FILL_DOC, POST_THREAD, READ, READ_DOC, READ_THREAD, WATCH},
+    session::{BOARD_READ, COMMENT, CREATE, CREATE_DOC, FILL_DOC, POST_THREAD, READ, READ_DOC, READ_THREAD, WATCH},
     tools::{Out, done, parse},
 };
 use crate::server::App;
@@ -78,7 +79,7 @@ use crate::server::App;
 const COMMENTS_IN_CHAT: &str =
     "its comments are in chat, which is off for the person who asked you, so they aren't shown";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. read_session_thread reads a room (staff, the asker's own room with their agents, or one of the project's: a board's thread, a channel), and post_session_thread posts there as the asker's agent: a board's lead hears a post on its board's thread, and the asker is told of one in their staff room. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. read_session_thread reads a room (staff, the asker's own room with their agents, or one of the project's: a board's thread, a channel), and post_session_thread posts there as the asker's agent: a board's lead hears a post on its board's thread, and the asker is told of one in their staff room. board_read lists the project's boards, each with its lead and progress, or reads one (by brd_ id or title) with its lead, its rows and who is working each: read it to find who leads a board, never guess. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadArgs {
@@ -188,6 +189,14 @@ pub struct PostThreadArgs {
     /// Reply in the thread of this message (its seq).
     #[serde(default)]
     pub parent: Option<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct BoardReadArgs {
+    /// The board: its id (brd_…), or an open board's exact title. Without
+    /// it: the project's boards, each with its lead and progress.
+    #[serde(default)]
+    pub board: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -330,6 +339,7 @@ fn tools() -> Vec<Tool> {
     let read_thread = ToolAnnotations::with_title("Read a room").read_only(true).open_world(false);
     let post_thread =
         ToolAnnotations::with_title("Post in a room").read_only(false).destructive(false).open_world(false);
+    let board_read = ToolAnnotations::with_title("Read the project's boards").read_only(true).open_world(false);
     let watch = ToolAnnotations::with_title("Watch for something to happen")
         .read_only(false)
         .destructive(false)
@@ -391,6 +401,13 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Post in a room")
         .with_annotations(post_thread),
+        Tool::new(
+            BOARD_READ,
+            "Read this project's boards as the person who asked you may. Without board: each board's title, id, progress and the session that leads it (its lead hears a post on the board's thread). With board (brd_…, or an open board's exact title): that board as text, its goal and lead, then its rows by lane, each with its item, its note and who works it (the session that holds it, agent sessions and blocks on it). Only this project's; you can't change a board.",
+            schema_for_type::<BoardReadArgs>(),
+        )
+        .with_title("Read the project's boards")
+        .with_annotations(board_read),
         Tool::new(
             WATCH,
             "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12). note (any target: why you watch, at most 200 characters) comes back when it fires or expires. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
@@ -655,6 +672,30 @@ impl Server {
         }
     }
 
+    async fn board_read(&self, session: &str, args: Value) -> Out {
+        let a: BoardReadArgs = parse(args)?;
+        let board = a.board.map(|b| b.trim().to_owned()).filter(|b| !b.is_empty());
+        match self.ask(session, SessionIssuesOp::BoardRead { board }).await? {
+            SessionIssuesGiven::Boards { list } => {
+                let text = list.boards.iter().map(board_line).collect::<Vec<_>>().join("\n");
+                let summary = match list.boards.len() {
+                    0 => format!("Project {} has no boards", list.project),
+                    n => format!("{n} board(s) in project {}; board_read with board reads one:\n{text}", list.project),
+                };
+                done(summary, json!({ "project": list.project, "boards": list.boards, "text": text }))
+            }
+            SessionIssuesGiven::Board { view } => {
+                let text = arugula_control_wire::boards::text(&view);
+                let lead = view.board.lead.as_ref().map(lead_label);
+                done(
+                    format!("{}\n{text}", board_line(&view.board)),
+                    json!({ "board": view.board.id, "title": view.board.title, "lead": lead, "text": text }),
+                )
+            }
+            _ => Err("control answered something else".into()),
+        }
+    }
+
     async fn doc(&self, session: &str, op: SessionIssuesOp) -> Result<(DocView, String), String> {
         match self.ask(session, op).await? {
             SessionIssuesGiven::Doc { view, url } => Ok((view, url)),
@@ -676,6 +717,24 @@ fn message_line(m: &arugula_control_wire::chat::ChatMessage) -> String {
     let thread = m.thread.as_ref().map_or(String::new(), |_| " [has replies]".to_owned());
     let under = m.parent.map_or(String::new(), |p| format!(" (in {p})"));
     format!("{}{under} {who}: {}{thread}", m.seq, m.text.replace('\n', " "))
+}
+
+/// Who leads a board: its session, on its machine.
+fn lead_label(l: &arugula_control_wire::boards::BoardLead) -> String {
+    let on = if l.machine_name.is_empty() { &l.machine } else { &l.machine_name };
+    format!("{} on {on}", l.session)
+}
+
+/// One board, on a line: `Title (brd_…): 3/11 done, led by ux on geek`.
+fn board_line(b: &arugula_control_wire::boards::Board) -> String {
+    let p = &b.progress;
+    let progress = match p.total {
+        0 => "no issues yet".to_owned(),
+        t => format!("{}/{t} done", p.done),
+    };
+    let lead = b.lead.as_ref().map_or_else(|| "no lead".to_owned(), |l| format!("led by {}", lead_label(l)));
+    let closed = if b.closed_at.is_some() { ", closed" } else { "" };
+    format!("{} ({}): {progress}, {lead}{closed}", b.title, b.id)
 }
 
 /// A made or written Doc's answer: its id, sections and link.
@@ -740,6 +799,7 @@ impl ServerHandler for Server {
             READ_DOC => self.read_doc(&session, args).await,
             READ_THREAD => self.read_thread(&session, args).await,
             POST_THREAD => self.post_thread(&session, args).await,
+            BOARD_READ => self.board_read(&session, args).await,
             WATCH => self.watch(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
@@ -903,6 +963,7 @@ mod tests {
                 "read_project_doc",
                 "read_session_thread",
                 "post_session_thread",
+                "board_read",
                 "watch",
             ]
         );
@@ -914,6 +975,39 @@ mod tests {
         assert_eq!(number("#12"), Ok(12));
         assert_eq!(number(" 7 "), Ok(7));
         assert!(number("iss_0123456789abcdef0123456789abcdef").is_err(), "only a number in the project");
+    }
+
+    /// Arugula #1381: who leads a board is in the list, in one call, and
+    /// the read goes to control as the session's op, naming no project.
+    #[test]
+    fn board_read_names_each_boards_lead() {
+        use arugula_control_wire::boards::{Board, BoardLead, BoardProgress};
+        let mut b = Board {
+            id: "brd_1".into(),
+            project: "prj_1".into(),
+            title: "New idea from the phone".into(),
+            progress: BoardProgress { total: 4, done: 1, ..Default::default() },
+            lead: Some(BoardLead {
+                machine: "m1".into(),
+                machine_name: "geek".into(),
+                session: "Native mobile app roadmap".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            board_line(&b),
+            "New idea from the phone (brd_1): 1/4 done, led by Native mobile app roadmap on geek"
+        );
+        b.lead.as_mut().unwrap().machine_name.clear();
+        assert!(board_line(&b).ends_with("led by Native mobile app roadmap on m1"), "a machine with no name yet");
+        (b.lead, b.progress, b.closed_at) = (None, BoardProgress::default(), Some(9));
+        assert_eq!(board_line(&b), "New idea from the phone (brd_1): no issues yet, no lead, closed");
+        let ask = SessionIssuesAsk { session: "ses_1".into(), op: SessionIssuesOp::BoardRead { board: None } };
+        assert_eq!(
+            serde_json::to_value(ask).unwrap(),
+            json!({ "session": "ses_1", "op": "board_read", "board": null })
+        );
     }
 
     fn create(v: Value) -> Result<SessionWatchOp, String> {

@@ -830,8 +830,9 @@ pub struct SessionIssuesAsk {
 
 /// What a session's agent does in its project: read, comment on and open
 /// its native issues, make, write and read its Docs (aru-118), and read and
-/// post in its rooms as its asker's agent (Arugula #1276), nothing else. The route kept its first name, `session/issues`, for the boxes
-/// already calling it.
+/// post in its rooms as its asker's agent (Arugula #1276), and read its
+/// boards (Arugula #1381), nothing else. The route kept its first name,
+/// `session/issues`, for the boxes already calling it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -887,6 +888,13 @@ pub enum SessionIssuesOp {
         #[serde(default)]
         parent: Option<i64>,
     },
+    /// The project's boards, as the session's asker may read them (Arugula
+    /// #1381); with `board` (`brd_…`, or an open board's exact title) that
+    /// one board, with its lead, its rows and who works each.
+    BoardRead {
+        #[serde(default)]
+        board: Option<String>,
+    },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -940,6 +948,14 @@ pub enum SessionIssuesGiven {
     Posted {
         room: String,
         seq: i64,
+    },
+    /// The project's boards (`BoardRead` with no board).
+    Boards {
+        list: crate::boards::BoardList,
+    },
+    /// One board (`BoardRead` with a board).
+    Board {
+        view: crate::boards::BoardView,
     },
     /// Not done, and why (the agent reads it).
     Refused {

@@ -106,3 +106,13 @@ An agent session's MCP (`arugulad-mcp`'s `session`) has two room tools:
 
 Both tools are ops of `POST /api/hosted/work/session/issues`: `ThreadRead` and
 `ThreadPost`.
+
+It reads the project's boards with `board_read {board?}` (Arugula #1381), the
+op `BoardRead`, as the asker may read them, and never changes one:
+
+- with no board: each board's title, id, progress and lead (the session a
+  post on its thread reaches);
+- with `board` (`brd_…`, or an open board's exact title): the board as
+  `board_read` prints it anywhere else: its goal and lead, then its rows by
+  lane, each with who works it (the session that holds it, agent sessions
+  and blocks on it).
