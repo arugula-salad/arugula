@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -57,8 +57,9 @@ test("a row's own data says its word: its question for you, its PR's checks and 
   ];
   const o = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf);
   const by = Object.fromEntries(o.boards[0].doing.map((c) => [c.row.id, c.standing]));
-  assert.deepEqual(by, { r_ask: "asks", r_other: "idle", r_raised: "idle", r_fail: "checks_failing", r_run: "checks_running", r_open: "review", r_merged: "idle", r_stalled: "quiet" });
-  assert.deepEqual(o.boards[0].doing.map((c) => STATE_WORD[c.standing]).filter(Boolean), ["asks you", "checks failing", "quiet", "checks running", "in review"]);
+  assert.deepEqual(by, { r_ask: "asks", r_other: "waits", r_raised: "idle", r_fail: "checks_failing", r_run: "checks_running", r_open: "review", r_merged: "idle", r_stalled: "quiet" });
+  // Someone else's question names them (#1392).
+  assert.deepEqual(o.boards[0].doing.map(wordOf).filter(Boolean), ["asks you", "checks failing", "asks Aaron", "quiet", "checks running", "in review"]);
   // A working session doesn't hide failing checks; checks running don't hide it working.
   const on = (r) => ({ issue: "#1", boards: [{ project: P, board: "brd_b", title: "B", row: r }] });
   const two = [row("rf", "doing", 1, { attachments: [pr("checks_failed")] }), row("rr", "doing", 2, { attachments: [pr("checks_running")] })];
@@ -99,6 +100,34 @@ test("cards that need you come first, then failures, then quiet ones, then worki
   assert.deepEqual(boardSays(o.boards[0]).map((x) => x.words), ["1 needs you", "1 failed", "1 quiet", "1 working"]);
   assert.deepEqual(o.boards.map(asksYou), [true, false]);
   assert.equal(statsLine(o, 1), "5 cards in flight · 1 session working · 1 needs you");
+});
+
+test("a card a teammate's session waits on says whom it asks, not \"asks you\"; only yours count as needing you (#1392)", () => {
+  const rows = [row("r_mine", "doing", 1), row("r_aaron", "doing", 2), row("r_unknown", "doing", 3), row("r_next", "next", 4, { ask: { id: "a", who: "acc_b", who_name: "Bea", question: "?", options: [], asked_by: "Claude", raised: false, mine: false, can_answer: false, created_at: 1 } })];
+  const on = (r, n) => ({ issue: `#${n}`, boards: [{ project: P, board: "brd_a", title: "A", row: r }] });
+  const panes = [
+    pane("workstation", 1, { on_issue: on("r_mine", 1), standing: "needs", agent: true }),
+    pane("aaron-mbp", 2, { on_issue: on("r_aaron", 2), standing: "needs", agent: true, owner: "Aaron", session: { id: 2, name: "s2" } }),
+    pane("box", 3, { on_issue: on("r_unknown", 3), standing: "needs", agent: true, owner: "", session: { id: 3, name: "s3" } }),
+  ];
+  const b = overviewOf(P, [view("brd_a", "A", rows)], panes, null, hostOf).boards[0];
+  const card = (id) => b.doing.find((c) => c.row.id === id);
+  assert.equal(ticketWord(card("r_mine").row, card("r_mine")).word, "asks you");
+  assert.deepEqual(ticketWord(card("r_aaron").row, card("r_aaron")), { word: "asks Aaron", asks: false });
+  assert.equal(ticketWord(card("r_unknown").row, card("r_unknown")).word, "asks someone");
+  assert.equal(ticketWord(rows[3]).word, "asks Bea");
+  // The session's chip names Aaron too.
+  assert.deepEqual([card("r_aaron").sessions[0].standing, wordOf(card("r_aaron").sessions[0])], ["waits", "asks Aaron"]);
+  // The row counts one that needs you, and opens by itself for it; teammates' alone don't open it.
+  assert.deepEqual(boardSays(b).map((x) => x.words), ["1 needs you", "2 asks someone else"]);
+  assert.equal(asksYou(b), true);
+  const theirs = overviewOf(P, [view("brd_a", "A", rows.slice(1))], panes.slice(1), null, hostOf).boards[0];
+  assert.equal(asksYou(theirs), false);
+  // A session the hub names on a teammate's machine, with no pane here, names them by its machine's owner.
+  const byCard = { project: P, groups: [{ card: { id: "iss_1" }, sessions: [{ kind: "agent", id: 9, name: "Claude", on: { kind: "machine", id: "m_c", name: "cam-box" }, state: "needs_input", updated_at: 1 }] }] };
+  const hub = overviewOf(P, [view("brd_a", "A", [row("r1", "doing", 1)])], [], byCard, hostOf, (m) => (m === "m_c" ? "Cam" : undefined)).boards[0];
+  assert.equal(ticketWord(hub.doing[0].row, hub.doing[0]).word, "asks Cam");
+  assert.equal(asksYou(hub), false);
 });
 
 test("a card the board marks stalled is quiet, though a session on it works", () => {

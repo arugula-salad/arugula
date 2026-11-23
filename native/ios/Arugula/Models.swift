@@ -51,7 +51,8 @@ struct BoardDetail: Decodable {
     /// What a row points at; a block names its machine and pane.
     struct Pointer: Decodable { var kind: String; var id: String?; var url: String?; var machine: String?; var pane: String? }
     /// The row's one open question: `mine` when it's for the reader.
-    struct Ask: Decodable { var id: String; var question: String; var options: [String]; var mine: Bool; var can_answer: Bool?; var asked_by: String?; var raised: Bool?; var created_at: Int? }
+    /// `who` is the person it asks (empty: the board raised it), `who_name` their name.
+    struct Ask: Decodable { var id: String; var question: String; var options: [String]; var mine: Bool; var who: String?; var who_name: String?; var can_answer: Bool?; var asked_by: String?; var raised: Bool?; var created_at: Int? }
     struct Attachment: Decodable { var role: String; var pointer: Pointer; var released: Bool?; var live: Live? }
     struct Mark: Decodable { var kind: String }
     struct Row: Decodable, Identifiable {

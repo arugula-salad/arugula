@@ -5,7 +5,7 @@
 // they do there; the row only decides when it's drawn.
 import { useEffect, useState } from "preact/hooks";
 import type { ComponentProps } from "preact";
-import type { Fleet } from "../shell/fleet";
+import type { Fleet, FleetPane } from "../shell/fleet";
 import { groupByOwner } from "../shell/swarm/overview";
 import {
   cardTitle,
@@ -18,11 +18,13 @@ import {
 import { Card, type Bundle } from "../shell/swarm/view";
 import { yours } from "./overview-peek";
 
-/** Whose an ask is: null for yours, else the name its group carries. A
- * teammate's is theirs; a team's box or a hosted session is its starter's,
- * else the team's name. */
-export function askOwner(fleet: Fleet, b: Bundle): string | null {
-  const p = b.panes[0];
+/** Whose an ask is: null for yours, else the name its group carries. */
+export const askOwner = (fleet: Fleet, b: Bundle): string | null => paneOwner(fleet, b.panes[0]);
+
+/** Whose a pane is: null for yours, else a name. A teammate's is theirs; a
+ * team's box or a hosted session is its starter's, else the team's name.
+ * Needs you groups by it, and a card names whom it asks by it (#1392). */
+export function paneOwner(fleet: Fleet, p: FleetPane): string | null {
   if (p.person.kind === "me") return null;
   const name =
     p.person.kind === "person" && !fleet.host(p.host)?.hosted

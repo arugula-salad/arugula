@@ -283,8 +283,15 @@ extension Peeked {
     @MainActor
     var standing: Standing {
         switch self {
-        case .pane(let m, let p): (m.agents + m.panes).first { $0.id == p.id }?.standing ?? p.standing
+        case .pane(let m, let p): m.standing(of: (m.agents + m.panes).first { $0.id == p.id } ?? p)
         case .hosted(let s): s.standing
         }
+    }
+
+    /// Whose it is when it isn't the reader's (Arugula #1392).
+    @MainActor
+    var owner: String? {
+        if case .pane(let m, _) = self { return m.owner }
+        return nil
     }
 }

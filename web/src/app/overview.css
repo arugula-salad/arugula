@@ -203,6 +203,9 @@ button.ov-lead:focus-visible {
 .ov-lead-dot[data-ov-lead-standing="needs"] {
   background: var(--accent);
 }
+.ov-lead-dot[data-ov-lead-standing="waits"] {
+  background: var(--info);
+}
 .ov-lead-dot[data-ov-lead-standing="failed"] {
   background: var(--danger);
 }
