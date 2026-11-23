@@ -187,6 +187,12 @@ test("without labs the swarm still offers its four views, and keeps what this br
   expect(await page.evaluate(() => window.__arugula.fleet.panes.every((p) => !p.unread && !p.mention))).toBe(true);
   // The rest of the bar is still there.
   await expect(page.locator('[data-g="machine"]')).toBeVisible();
+  // Its legend lists only the kinds that can be here: no studio app, no
+  // Managoat (https://app.arugula.io/issues/iss_78ce975b330e471f9827d13cb22024bb).
+  // (Once the fleet's machine has said what it's set up for.)
+  await expect.poll(() => page.evaluate(() => [...(window.__arugula.fleet as unknown as { hosts: Map<string, { client: { features: unknown } | null }> }).hosts.values()].every((e) => e.client?.features))).toBe(true);
+  const legend = page.locator(".swarm-legend span");
+  await expect(legend).toHaveText(["Shell", "Build", "Test", "Agent", "Server", "Logs", "Editor", "Pull request", "Issue"]);
 });
 
 test("an older daemon's mention notification opens only the pane", async ({ page }) => {
@@ -301,6 +307,9 @@ test("setting the flag on the running daemon brings it all back, with no restart
 
   await page.goto("/#swarm");
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
+  // A studio app is in its legend now; Managoat, retired, still isn't.
+  await expect(page.locator(".swarm-legend")).toContainText("Studio app");
+  await expect(page.locator(".swarm-legend")).not.toContainText("Managoat");
 
   // And the Docs page: at its address, and one of the machine's places.
   await page.goto("/#docs");

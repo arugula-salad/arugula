@@ -27,6 +27,7 @@ import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet } from "../shell/fleet";
+import { directory } from "../shell/hosts";
 import { shortHost } from "../shell/swarm/model";
 import type { OvPane, OvSession, Standing } from "../shell/swarm/overview";
 import { titleOf } from "./overview-board";
@@ -67,6 +68,10 @@ interface Item {
   p?: OvPane;
 }
 
+/** The machine a pane is reached on: control's id for it, else, on a
+ * daemon's own page, whose hosts carry no ids, its name (./machine-client). */
+const machineOf = (p: OvPane): string | undefined => p.machine ?? (directory.home !== null ? p.host : undefined);
+
 /** Each session's panes, its agents first. */
 function itemsOf(sessions: OvSession[]): Item[] {
   return sessions.flatMap((s) => (s.panes.length ? [...s.panes].sort((a, b) => Number(b.agent) - Number(a.agent)).map((p) => ({ key: p.key, s, p })) : [{ key: s.key, s }]));
@@ -96,7 +101,10 @@ export function OverviewWork({ card, fleet, sessions, talking, talkTo, openPanes
 
   // Where each live pane is read from: its machine's, or a running box's block.
   const liveAt = (i: Item): { machine: string; pane: string } | null => {
-    if (i.p) return i.p.machine ? { machine: i.p.machine, pane: String(i.p.id) } : null;
+    if (i.p) {
+      const machine = machineOf(i.p);
+      return machine ? { machine, pane: String(i.p.id) } : null;
+    }
     const v = i.s.hosted ? hosted.get(i.s.hosted) : undefined;
     return v ? boxOf(fleet, v) : null;
   };
@@ -174,7 +182,7 @@ function WorkPane({ i, fleet, Live, at, hosted, outlined, talkTo, openPanes }: {
   const branch = fp?.info.branch ?? hosted?.card.branch ?? s.branch ?? null;
   // A teammate's own session is watched; a cloud workspace's, by whoever may not steer it.
   const watch = fp ? !yours(fleet, fp) : hosted ? !hosted.may : false;
-  const far = !p?.machine && !s.hosted;
+  const far = !(p && machineOf(p)) && !s.hosted;
   const kind = fp ? (fp.info.type === "agent" ? "block" : p!.agent ? "agent" : "shell") : s.hosted ? "hosted" : "far";
   let body;
   if (at && Live) body = <Live machine={at.machine} pane={at.pane} watch={watch} />;

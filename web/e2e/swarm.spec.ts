@@ -93,8 +93,9 @@ test("clusters by project (with fallback groups), machine, kind, session and own
   await page.locator('[data-g="owner"]').click();
   await expect.poll(() => clusters(page)).toEqual(["sam", "team infra", "you"]);
   await stop.evaluate((f) => f());
-    // Tiles are coloured by kind: the legend has every kind.
-  await expect(page.locator(".swarm-legend span")).toHaveCount(11);
+  // Tiles are coloured by kind: the legend has every kind these machines
+  // can show (Labs is on here), not Managoat, which is retired.
+  await expect(page.locator(".swarm-legend span")).toHaveCount(10);
 });
 
 test("an agent on an issue wears its chip in the swarm, which clusters by board with No board last (#372)", async ({ page }, testInfo) => {

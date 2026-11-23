@@ -17,7 +17,7 @@
 //   only holds its own slot for a few seconds.
 // - A heartbeat notices a link that died without closing.
 
-import { Client } from "./client";
+import { Client, type FlagName } from "./client";
 import type { Driver, PaneInfo, Presence, State } from "../shared/proto";
 import { chat, chatStore } from "../shared/chat-store";
 import { RelayMux } from "./e2e/relaymux";
@@ -471,6 +471,12 @@ export class Fleet {
   /** A host by its daemon's id (control's name for a machine). */
   hostById(id: string): FleetHost | undefined {
     return this.list.find((h) => h.id === id);
+  }
+
+  /** Whether Labs flag `name` is on for a machine reached here, as its
+   * client says (`Client.flag`): what the swarm's legend lists a Labs kind by. */
+  flag(name: FlagName): boolean {
+    return [...this.hosts.values()].some((e) => !!e.client?.flag(name));
   }
 
   /** How many summary connections are open (or opening). */

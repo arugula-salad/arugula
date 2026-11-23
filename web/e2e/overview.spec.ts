@@ -916,6 +916,24 @@ test.describe("on a computer", () => {
     await expect(none.locator("[data-ov-work-pane]")).toHaveCount(0);
   });
 
+  test("on a daemon's own page, whose machines have no ids, the Work level draws its own panes live and opens them in Panes (https://app.arugula.io/issues/iss_78ce975b330e471f9827d13cb22024bb)", async ({ page }) => {
+    // No made-up id for the suite's daemon here: the page knows it by its name, as a daemon's own page does.
+    const { term, agent } = await overview(page, null, true);
+    await page.goto(`/p/${P}/board/${B}/card/row_b`);
+    const work = page.locator('[data-ov-level-work="row_b"]');
+    await expect(work).toBeVisible({ timeout: 20_000 });
+    const pane = (id: number) => work.locator(`[data-ov-work-pane$=":${id}"]`);
+    await expect(work.locator("[data-ov-work-pane]")).toHaveCount(2);
+    // Live, not "this page doesn't see this session".
+    await expect(pane(term).locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
+    await expect(pane(agent).locator(".agent-composer textarea")).toBeVisible();
+    await expect(work.locator(".ov-work-note")).toHaveCount(0);
+    // And Open in Panes opens its session on its machine's page, on the pane it leads with.
+    await pane(term).locator("[data-ov-work-panes]").click();
+    await expect(page).toHaveURL(new RegExp(`/machines\\?(.*&)?pane=${agent}\\b`));
+    await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible({ timeout: 20_000 });
+  });
+
   test("a session's Work address by the hub's id opens it: a cloud workspace's, and one on a machine here; one not in the project says so (Arugula #1380)", async ({ page }) => {
     // The suite's daemon is the machine `m_suite`, as control names it, so the hub's session names its pane.
     await page.route("**/api/hosts", async (r) => {
