@@ -9,7 +9,6 @@ import { sharedAgents } from "./agents-notify";
 import { pathOffered } from "./attach";
 import { cdTyped } from "./cd";
 import { repoMoved } from "./changes";
-import { conversationHere } from "./conversations";
 import { docOpen } from "./docs";
 import { editorStarted } from "./editor";
 import { printedLink } from "./links";
@@ -175,14 +174,6 @@ export const HINTS: Hint[] = [
     fact: smallTeam,
     copy: () => "Invite with a link · Turn on chat for this team",
     action: { label: "Teams…", command: "control.teams" },
-  },
-  {
-    // Claude Code conversations on this machine, none open.
-    id: "claude-conversations",
-    place: "toast",
-    fact: conversationHere,
-    copy: () => "Pick up a Claude Code conversation here",
-    action: { label: "Claude Code conversations…", command: "conversations.pick" },
   },
   {
     // This device's push on, through control.

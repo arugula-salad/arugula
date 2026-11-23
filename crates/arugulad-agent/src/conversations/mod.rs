@@ -460,11 +460,19 @@ fn is_under(pid: u32, ancestor: u32) -> bool {
     false
 }
 
-/// Is a conversation on the default list (`all`: everything)? Terminal,
-/// desktop, VS Code (#453) and Codex ones, unarchived, whose folder is
+/// Is a conversation on the default list (`all`: everything)? Every one a
+/// person had, whatever it came from (Arugula #1396: one from an
+/// entrypoint we don't name is someone's too), unarchived, whose folder is
 /// still there; a desktop one whose scratch workspace went with it stays.
+/// Not a program's runs: `claude -p` and SDK clients, `codex exec`.
 pub fn shown(c: &Conversation, all: bool) -> bool {
-    all || (c.source != Source::Other && !c.archived && (c.cwd_exists || c.source == Source::Desktop))
+    all || (!run(c) && !c.archived && (c.cwd_exists || c.source == Source::Desktop))
+}
+
+/// Did a program start it, not a person: `claude -p` or an SDK client
+/// (`sdk-cli`, `sdk-ts`: agent blocks too), or `codex exec`?
+fn run(c: &Conversation) -> bool {
+    c.entrypoint.starts_with("sdk") || (c.agent == "codex" && c.source == Source::Other)
 }
 
 fn short(s: &str, max: usize) -> String {
@@ -850,7 +858,7 @@ mod tests {
         let proj = root.join("claude/projects/-work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::create_dir_all(&proj).unwrap();
-        for (id, entry) in [("v1", "claude-vscode"), ("p1", "sdk-cli")] {
+        for (id, entry) in [("v1", "claude-vscode"), ("p1", "sdk-cli"), ("u1", ""), ("j1", "claude-jetbrains")] {
             let line = json!({"type":"user","cwd":work,"entrypoint":entry,"timestamp":"2026-11-01T00:00:00Z","message":{"role":"user","content":"hello"}});
             std::fs::write(proj.join(format!("{id}.jsonl")), format!("{line}\n")).unwrap();
         }
@@ -864,6 +872,13 @@ mod tests {
         let p = all.iter().find(|c| c.id == "p1").unwrap();
         assert_eq!(p.source, Source::Other);
         assert!(!shown(p, false) && shown(p, true));
+        // Arugula #1396: one from an entrypoint we don't name, or none, is a
+        // person's: on the default list, as Other.
+        for id in ["u1", "j1"] {
+            let o = all.iter().find(|c| c.id == id).unwrap();
+            assert_eq!(o.source, Source::Other);
+            assert!(shown(o, false), "{id}");
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 

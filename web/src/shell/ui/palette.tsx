@@ -32,6 +32,7 @@ import { opPath, OPS } from "../ops";
 import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
 import { ariaKeys, keyHint } from "./keys";
+import { openYourWork } from "./conversations";
 import { helpItems, newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 import { currentAccount } from "./app-bar";
 import { needsYou } from "../../shared/needs-you";
@@ -346,6 +347,8 @@ function places(client: Client, phone: boolean): Command[] {
   const out: Command[] = [];
   const go = (key: string, label: string, run: () => void, detail?: string) => out.push({ key: `Places/${key}`, group: "Places", place: true, label, detail, run });
   if (at !== "panes") go("panes", "Go to Panes", toPanes);
+  // Arugula #1396: the owner's conversations, the home with no session open.
+  if (!client.state?.roles) go("your-work", "Your work", () => openYourWork(client), "your Claude Code and Codex conversations");
   // M111, on a computer: this machine's sessions at a glance, and what
   // waits on you on every machine.
   if (!phone) {

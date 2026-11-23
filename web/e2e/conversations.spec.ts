@@ -1,10 +1,13 @@
 // M33 in the client: Claude Code conversations from a terminal or the
-// desktop app, picked from a pane's menu (desktop) or the sheet (phone).
-// Continue here resumes one in a terminal tab named after it (`claude
-// --resume`, a stand-in here: the tab and its pane are what's checked; the
-// daemon's test checks the command and folder), and offers home when its
-// folder is gone; a Codex one too (`codex resume`, a stand-in as well). Open as agent block shows it as a block, continued
-// there; one still open elsewhere forked instead. The Claude directory is
+// desktop app, in Your work (Arugula #1396) opened from a pane's menu
+// (desktop) or the sheet (phone). Continue here resumes one in a terminal
+// tab named after it (`claude --resume`, a stand-in here: the tab and its
+// pane are what's checked; the daemon's test checks the command and
+// folder), and offers home when its folder is gone; a Codex one too
+// (`codex resume`, a stand-in as well). `⋯`'s Open as agent block shows it
+// as a block, continued there; one still open elsewhere is moved here
+// once it's quit there, or forked. The page itself, the owner's home with
+// no session open, is your-work.spec.ts. The Claude directory is
 // the run's own (playwright.config.ts) and Claude Code's adapter is the
 // fake ACP agent, so nothing here costs anything.
 
@@ -13,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { active, menu, paneEl, panes, reset, seedConversation, tab, type Base } from "./helpers";
+import { active, menu, menuItem, paneEl, panes, reset, seedConversation, tab, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
 const codexHome = process.env.CODEX_HOME!;
@@ -73,25 +76,35 @@ function hold(id: string) {
 const agentBlock = (page: Page) =>
   page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id ?? null);
 
-const picker = (page: Page) => page.getByRole("dialog", { name: "Claude Code conversations" });
+const picker = (page: Page) => page.getByRole("dialog", { name: "Your work" });
+
+/** The row's `⋯`, then `item`. */
+async function more(page: Page, id: string, item: string) {
+  const row = picker(page).locator(`[data-conversation="${id}"]`);
+  await row.click();
+  await row.locator("[data-conv-more]").click();
+  await (await menuItem(page, item)).click();
+}
 
 test.describe("desktop", () => {
   test("open a conversation as an agent block from the pane menu, read it, continue it", async ({ page }) => {
     const { id } = seed("kestrel", "Bird watching");
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await menu(page, paneEl(page, term), "Your work…");
     const dialog = picker(page);
     await expect(dialog).toBeVisible();
     const row = dialog.locator(`[data-conversation="${id}"]`);
-    await expect(row).toContainText("Bird watching");
-    await expect(row.locator(".conv-source")).toHaveText("Terminal");
+    // Its first prompt, in the person's words, and whose it is.
+    await expect(row.locator(".yw-first")).toHaveText("remember kestrel");
+    await expect(row.locator(".yw-tool")).toHaveText("Claude Code");
     // Search narrows it.
-    await dialog.locator(".picker-filter").fill("no such words at all");
+    await dialog.locator(".yw-filter").fill("no such words at all");
     await expect(row).toBeHidden();
-    await dialog.locator(".picker-filter").fill("bird");
-    await expect(dialog.locator("[data-continue-here]")).toHaveText("Continue here");
-    await dialog.locator("[data-open-block]").click();
+    await dialog.locator(".yw-filter").fill("bird");
+    await row.click();
+    await expect(row.locator("[data-continue-here]")).toHaveText("Continue here");
+    await more(page, id, "Open as agent block");
     await expect(dialog).toBeHidden();
 
     // A stopped block beside the pane: its transcript, nothing running.
@@ -115,9 +128,11 @@ test.describe("desktop", () => {
     await expect(el.locator(".agent-note", { hasText: "Continued in Arugula" })).toBeVisible();
 
     // Picking it again goes to the block.
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
-    await expect(picker(page).locator(`[data-conversation="${id}"] .chip-tag`)).toHaveText(`%${block}`);
-    await picker(page).locator(`[data-conversation="${id}"]`).click();
+    await menu(page, paneEl(page, term), "Your work…");
+    const again = picker(page).locator(`[data-conversation="${id}"]`);
+    await expect(again.locator("[data-live]")).toHaveText("● in a pane here");
+    await again.click();
+    await again.locator("[data-go-to-pane]").click();
     await expect(picker(page)).toBeHidden();
     expect(await panes(page)).toEqual([term, block]);
   });
@@ -138,9 +153,10 @@ test.describe("desktop", () => {
     ]);
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
-    await picker(page).locator(".picker-filter").fill("colours");
-    await picker(page).locator("[data-open-block]").click();
+    await menu(page, paneEl(page, term), "Your work…");
+    await picker(page).locator(".yw-filter").fill("colours");
+    const id = await picker(page).locator("[data-conversation]").first().getAttribute("data-conversation");
+    await more(page, id!, "Open as agent block");
     await expect.poll(() => agentBlock(page)).not.toBeNull();
     const el = paneEl(page, (await agentBlock(page))!);
     const fold = el.locator(".agent-forgotten");
@@ -152,25 +168,30 @@ test.describe("desktop", () => {
     await expect(fold.locator(".agent-user")).toHaveText("the colour is red");
   });
 
-  test("one open elsewhere can't be continued, only forked", async ({ page }) => {
+  test("one open elsewhere is moved here once it's quit there, or forked", async ({ page }) => {
     const { id } = seed("plover", "Shore birds");
     hold(id);
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await menu(page, paneEl(page, term), "Your work…");
     const row = picker(page).locator(`[data-conversation="${id}"]`);
-    await expect(row.locator(".conv-live")).toBeVisible();
-    await picker(page).locator(".picker-filter").fill("shore");
-    // Not here: two Claude Codes on one conversation write over each other.
-    await expect(picker(page).locator("[data-continue-here]")).toBeDisabled();
-    await picker(page).locator("[data-open-block]").click();
+    await expect(row.locator("[data-live]")).toHaveText("● running in another terminal");
+    // Not here while it runs there: two Claude Codes on one conversation
+    // write over each other. Move here waits for it to be quit there.
+    await row.click();
+    await row.locator("[data-move-here]").click();
+    const ask = page.locator("[data-move-here-dialog]");
+    await expect(ask).toContainText("Quit it in another terminal, and it goes on here");
+    await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    expect(await panes(page)).toEqual([term]);
+
+    // A live one's ⋯ offers only the fork.
+    await row.locator("[data-conv-more]").click();
+    await expect(page.getByRole("menuitem", { name: "Open as agent block" })).toHaveCount(0);
+    await (await menuItem(page, "Fork here")).click();
     await expect.poll(() => agentBlock(page)).not.toBeNull();
     const el = paneEl(page, (await agentBlock(page))!);
-    await expect(el.locator(".agent-status")).toHaveText("Open elsewhere");
-    await expect(el.locator("[data-continue]")).toBeDisabled();
-    await expect(el.locator(".agent-import")).toContainText("Fork it to go on here");
-
-    await el.locator("[data-fork]").click();
     await expect(el.locator(".agent-note", { hasText: "Forked into a new session" })).toBeVisible();
     await expect(el.locator(".agent-status")).toHaveText("Ready");
     await el.locator(".agent-composer textarea").fill("recall");
@@ -180,13 +201,33 @@ test.describe("desktop", () => {
 });
 
 test.describe("continue here", () => {
+  test("Move here goes on here by itself once it's quit where it runs", async ({ page }) => {
+    const { id } = seed("curlew", "Moor birds");
+    hold(id);
+    await reset(page);
+    const [term] = await panes(page);
+    await menu(page, paneEl(page, term), "Your work…");
+    const row = picker(page).locator(`[data-conversation="${id}"]`);
+    await row.click();
+    await row.locator("[data-move-here]").click();
+    const ask = page.locator("[data-move-here-dialog]");
+    await expect(ask).toContainText("/exit");
+    // Quit there: its session file goes, as Claude Code's does.
+    rmSync(join(claude, "sessions", `${process.pid}.json`), { force: true });
+    await expect(ask).toBeHidden();
+    await expect(picker(page)).toBeHidden();
+    await expect.poll(async () => (await tab(page))?.name).toBe("Moor birds");
+    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, await active(page))).toBe("terminal");
+  });
+
   test("resumes it in a terminal tab named after it, no agent block", async ({ page }) => {
     seed("osprey", "Fish hawks");
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
-    await picker(page).locator(".picker-filter").fill("fish hawks");
-    await picker(page).locator("[data-continue-here]").click();
+    await menu(page, paneEl(page, term), "Your work…");
+    await picker(page).locator(".yw-filter").fill("fish hawks");
+    // Enter in the search continues the row it's on.
+    await picker(page).locator(".yw-filter").press("Enter");
     await expect(picker(page)).toBeHidden();
     await expect.poll(async () => (await tab(page))?.name).toBe("Fish hawks");
     const pane = await active(page);
@@ -197,19 +238,20 @@ test.describe("continue here", () => {
   });
 
   test("its folder gone, it says so and runs it in home", async ({ page }) => {
-    const { cwd } = seed("egret", "Gone birds");
-    rmSync(cwd, { recursive: true, force: true });
+    const { id, cwd } = seed("egret", "Gone birds");
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await menu(page, paneEl(page, term), "Your work…");
     const dialog = picker(page);
-    // A gone folder's conversation is listed with All.
-    await dialog.getByRole("switch", { name: "All" }).check();
-    await dialog.locator(".picker-filter").fill("gone birds");
-    await dialog.locator("[data-continue-here]").click();
-    await expect(dialog.locator("[data-folder-gone]")).toContainText(`${cwd} is gone`);
+    const row = dialog.locator(`[data-conversation="${id}"]`);
+    await expect(row).toBeVisible();
+    // Gone while it's listed.
+    rmSync(cwd, { recursive: true, force: true });
+    await row.click();
+    await row.locator("[data-continue-here]").click();
+    await expect(row.locator("[data-folder-gone]")).toContainText(`${cwd} is gone`);
     expect(await panes(page)).toEqual([term]);
-    await dialog.locator("[data-continue-home]").click();
+    await row.locator("[data-continue-home]").click();
     await expect(dialog).toBeHidden();
     await expect.poll(async () => (await tab(page))?.name).toBe("Gone birds");
     expect(await agentBlock(page)).toBeNull();
@@ -221,20 +263,19 @@ test.describe("codex", () => {
     const { id, cwd } = seedCodex("heron");
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await menu(page, paneEl(page, term), "Your work…");
     const dialog = picker(page);
     const row = dialog.locator(`[data-conversation="${id}"]`);
-    await expect(row.locator(".conv-source")).toHaveText("Codex");
-    await expect(row.locator(".conv-title")).toHaveText("count the herons");
-    await expect(dialog.locator(".conv-folder", { hasText: cwd.split("/").pop()! })).toBeVisible();
+    await expect(row.locator(".yw-tool")).toHaveText("Codex");
+    await expect(row.locator(".yw-first")).toHaveText("count the herons");
+    await expect(dialog.locator(`[data-repo="${cwd}"] .yw-repo-name`)).toHaveText(cwd.split("/").pop()!);
 
-    // One way on: Continue here, as Claude Code's, with no agent block
-    // and no Fork.
-    await dialog.locator(".picker-filter").fill("herons");
-    const go = dialog.locator("[data-continue-here]");
+    // One way on: Continue here, as Claude Code's, with no ⋯ (no agent
+    // block, no fork).
+    await row.click();
+    const go = row.locator("[data-continue-here]");
     await expect(go).toHaveText("Continue here");
-    await expect(dialog.locator("[data-open-block]")).toHaveCount(0);
-    await expect(dialog.locator(".picker-actions button", { hasText: "Fork" })).toHaveCount(0);
+    await expect(row.locator("[data-conv-more]")).toHaveCount(0);
     const continued = page.waitForResponse((r) => r.url().includes("/api/conversations/continue"));
     await go.click();
     const res = await continued;
@@ -258,8 +299,10 @@ test.describe("phone", () => {
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
     const dialog = picker(page);
-    await expect(dialog).toHaveClass(/\bphone\b/);
-    await dialog.locator(`[data-conversation="${id}"]`).click();
+    await expect(page.locator(".your-work-dialog")).toHaveClass(/\bphone\b/);
+    const row = dialog.locator(`[data-conversation="${id}"]`);
+    await row.click();
+    await row.locator("[data-continue-here]").click();
     await expect(dialog).toBeHidden();
     await expect.poll(async () => (await tab(page))?.name).toBe("Wading birds");
     expect(await agentBlock(page)).toBeNull();

@@ -30,7 +30,7 @@ import { RulesLayer } from "./rules";
 import { SharingLayer } from "./sharing";
 import { AccessLayer } from "./access";
 import { DocShareLayer } from "./doc-share";
-import { ConversationsLayer } from "./conversations";
+import { ConversationsLayer, openYourWork, YourWork, yourWorkHome } from "./conversations";
 import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
@@ -116,8 +116,10 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
         const mine = machineSettingsItems(client);
         const page = mine.length > 0 && (ws || !!platformOrigin());
         const rows = page ? [{ label: "Settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
+        // Arugula #1396: the owner's conversations, one click away once a pane is open.
+        const work = client.state && !client.state.roles ? [{ label: "Your work…", run: () => openYourWork(client) }] : [];
         // Arugula #1194: whether people may type here through Arugula cloud.
-        return [...remoteInputItems(client), ...rows];
+        return [...work, ...remoteInputItems(client), ...rows];
       }),
     [client, ws],
   );
@@ -276,9 +278,11 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   );
 }
 
-/** The empty state, beside the sessions (or under the phone's header).
- * Through control it says which machine this is and where to switch,
- * since the machine may not be the one meant. A guest can't make one. */
+/** The empty state, beside the sessions (or under the phone's header):
+ * the owner's is Your work (Arugula #1396), their conversations on this
+ * machine. Through control it says which machine this is and where to
+ * switch, since the machine may not be the one meant. A guest can't make
+ * one. */
 function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe(onShownProject);
@@ -311,6 +315,12 @@ function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
             )
           }
         />
+      </div>
+    );
+  if (!guest && yourWorkHome())
+    return (
+      <div class="your-work-home" data-no-sessions data-your-work-home>
+        <YourWork client={client} phone={phone} />
       </div>
     );
   return (
