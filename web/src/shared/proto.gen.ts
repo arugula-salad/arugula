@@ -2202,9 +2202,10 @@ by?: string, };
 export type ConnectTracker = { workspace_slug: string, project: string, api_key: string, webhook_secret: string | null, };
 
 /**
- * `POST /api/conversations/continue`: a Claude Code conversation going on
- * in a terminal pane, the person's own `claude --resume <id>` in its
- * folder, in a new tab named after it: no adapter to install. The pane
+ * `POST /api/conversations/continue`: a Claude Code or Codex conversation
+ * going on in a terminal pane, the person's own `claude --resume <id>` (or
+ * `codex resume <id>`) in its folder, in a new tab named after it: no
+ * adapter to install. The pane
  * or block that has it already, if one of ours does.
  */
 export type ContinueConversationRequest = { 

@@ -24,7 +24,7 @@
 //! | POST | `/api/panes/N/close` | | `Empty` (its output stays in history) |
 //! | POST | `/api/blocks` | `OpenRequest` | `OpenResponse`: `{"block": N}` |
 //! | POST | `/api/conversations/open` | `OpenConversationRequest` | `OpenConversationResponse`: a Claude Code conversation as an agent block (M33) |
-//! | POST | `/api/conversations/continue` | `ContinueConversationRequest` | `ContinueConversationResponse`: a Claude Code conversation going on in a terminal pane, `claude --resume` |
+//! | POST | `/api/conversations/continue` | `ContinueConversationRequest` | `ContinueConversationResponse`: a Claude Code or Codex conversation going on in a terminal pane, `claude --resume` or `codex resume` |
 //! | GET | `/api/blocks/N` | | `Described`: `{info, state}`, `describe` |
 //! | POST | `/api/blocks/N/call/METHOD` | JSON args | the method's answer |
 //! | GET, POST, DELETE | `/api/studio` | POST `StudioLoginRequest` | `StudioStatus`: the studio and whether there's a token (never the token); POST logs in (`StudioLoggedIn`), DELETE forgets it (`Empty`, M35) |
@@ -1421,9 +1421,10 @@ pub struct OpenConversationResponse {
     pub error: Option<String>,
 }
 
-/// `POST /api/conversations/continue`: a Claude Code conversation going on
-/// in a terminal pane, the person's own `claude --resume <id>` in its
-/// folder, in a new tab named after it: no adapter to install. The pane
+/// `POST /api/conversations/continue`: a Claude Code or Codex conversation
+/// going on in a terminal pane, the person's own `claude --resume <id>` (or
+/// `codex resume <id>`) in its folder, in a new tab named after it: no
+/// adapter to install. The pane
 /// or block that has it already, if one of ours does.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

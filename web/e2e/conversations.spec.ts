@@ -3,18 +3,20 @@
 // Continue here resumes one in a terminal tab named after it (`claude
 // --resume`, a stand-in here: the tab and its pane are what's checked; the
 // daemon's test checks the command and folder), and offers home when its
-// folder is gone. Open as agent block shows it as a block, continued
+// folder is gone; a Codex one too (`codex resume`, a stand-in as well). Open as agent block shows it as a block, continued
 // there; one still open elsewhere forked instead. The Claude directory is
 // the run's own (playwright.config.ts) and Claude Code's adapter is the
 // fake ACP agent, so nothing here costs anything.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { active, menu, paneEl, panes, reset, seedConversation, tab, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
+const codexHome = process.env.CODEX_HOME!;
 
 const seeded: string[] = [];
 const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
@@ -27,8 +29,31 @@ const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
 // conversation each later daemon lists (and a hint it offers, aru-127).
 test.afterAll(() => {
   rmSync(join(claude, "projects"), { recursive: true, force: true });
+  rmSync(join(codexHome, "sessions"), { recursive: true, force: true });
   for (const cwd of seeded) rmSync(cwd, { recursive: true, force: true });
 });
+
+/** A Codex session in the run's Codex home, as Codex 0.163 writes its
+ *  rollout: its meta line, then what was typed, as events. */
+function seedCodex(word: string): { id: string; cwd: string } {
+  const cwd = mkdtempSync(join(tmpdir(), `arugula-e2e-codex-${word}-`));
+  seeded.push(cwd);
+  const id = crypto.randomUUID();
+  const now = new Date();
+  const day = join(codexHome, "sessions", `${now.getUTCFullYear()}`, `${now.getUTCMonth() + 1}`.padStart(2, "0"), `${now.getUTCDate()}`.padStart(2, "0"));
+  mkdirSync(day, { recursive: true });
+  const at = now.toISOString();
+  const typed = (text: string) => ({ timestamp: at, type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "text", text }] } } });
+  const lines = [
+    { timestamp: at, type: "session_meta", payload: { session_id: id, id, timestamp: at, cwd, originator: "codex-tui", cli_version: "0.163.0", source: "cli", git: { branch: "main" } } },
+    { timestamp: at, type: "turn_context", payload: { cwd, model: "gpt-6.1-sol" } },
+    typed(`count the ${word}s`),
+    typed("and again"),
+  ];
+  const stamp = at.slice(0, 19).replace(/:/g, "-");
+  writeFileSync(join(day, `rollout-${stamp}-${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  return { id, cwd };
+}
 
 /** This test's process holds the session, as a running Claude Code would. */
 function hold(id: string) {
@@ -187,6 +212,38 @@ test.describe("continue here", () => {
     await dialog.locator("[data-continue-home]").click();
     await expect(dialog).toBeHidden();
     await expect.poll(async () => (await tab(page))?.name).toBe("Gone birds");
+    expect(await agentBlock(page)).toBeNull();
+  });
+});
+
+test.describe("codex", () => {
+  test("a Codex session is listed by its folder and continues in a terminal tab", async ({ page }) => {
+    const { id, cwd } = seedCodex("heron");
+    await reset(page);
+    const [term] = await panes(page);
+    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    const dialog = picker(page);
+    const row = dialog.locator(`[data-conversation="${id}"]`);
+    await expect(row.locator(".conv-source")).toHaveText("Codex");
+    await expect(row.locator(".conv-title")).toHaveText("count the herons");
+    await expect(dialog.locator(".conv-folder", { hasText: cwd.split("/").pop()! })).toBeVisible();
+
+    // One way on: Continue here, as Claude Code's, with no agent block
+    // and no Fork.
+    await dialog.locator(".picker-filter").fill("herons");
+    const go = dialog.locator("[data-continue-here]");
+    await expect(go).toHaveText("Continue here");
+    await expect(dialog.locator("[data-open-block]")).toHaveCount(0);
+    await expect(dialog.locator(".picker-actions button", { hasText: "Fork" })).toHaveCount(0);
+    const continued = page.waitForResponse((r) => r.url().includes("/api/conversations/continue"));
+    await go.click();
+    const res = await continued;
+    expect(res.ok()).toBe(true);
+    expect(await res.json()).toMatchObject({ opened: true, conversation: id, cwd });
+    await expect(dialog).toBeHidden();
+    await expect.poll(async () => (await tab(page))?.name).toBe("count the herons");
+    const pane = await active(page);
+    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, pane)).toBe("terminal");
     expect(await agentBlock(page)).toBeNull();
   });
 });

@@ -30,6 +30,9 @@ runDir("ARUGULA_CLAUDE_IDE_DIR", "arugula-e2e-ide-");
 // of the run's own (conversations.spec.ts seeds it), and Claude Code's
 // adapter is the fake ACP agent, so no test reaches a real Claude.
 mkdirSync(join(runDir("CLAUDE_CONFIG_DIR", "arugula-e2e-claude-"), "sessions"), { recursive: true });
+// Codex's sessions too, from a Codex home of the run's own, never the
+// person's ~/.codex (conversations.spec.ts seeds it).
+runDir("CODEX_HOME", "arugula-e2e-codex-");
 runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
 {
   const bin = join(runDir("ARUGULA_AGENTS_DIR", "arugula-e2e-agents-"), "claude/node_modules/.bin");
@@ -37,12 +40,14 @@ runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
   const fake = fileURLToPath(new URL("../crates/daemon/tests/fake_acp.py", import.meta.url));
   writeFileSync(join(bin, "claude-agent-acp"), `#!/bin/sh\nexec python3 ${fake} "$@"\n`);
   chmodSync(join(bin, "claude-agent-acp"), 0o755);
-  // Continue here runs `claude --resume` in a pane: a stand-in on the
-  // daemon's PATH that says what it was asked and waits, never the
-  // person's own Claude Code.
+  // Continue here runs `claude --resume` or `codex resume` in a pane:
+  // stand-ins on the daemon's PATH that say what they were asked and wait,
+  // never the person's own Claude Code or Codex.
   const path = runDir("ARUGULA_E2E_CLAUDE_DIR", "arugula-e2e-claude-bin-");
-  writeFileSync(join(path, "claude"), `#!/bin/sh\necho "claude $*"\nexec cat >/dev/null\n`);
-  chmodSync(join(path, "claude"), 0o755);
+  for (const agent of ["claude", "codex"]) {
+    writeFileSync(join(path, agent), `#!/bin/sh\necho "${agent} $*"\nexec cat >/dev/null\n`);
+    chmodSync(join(path, agent), 0o755);
+  }
   if (!process.env.PATH?.startsWith(`${path}:`)) process.env.PATH = `${path}:${process.env.PATH}`;
 }
 
