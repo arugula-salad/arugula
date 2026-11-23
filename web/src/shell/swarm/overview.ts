@@ -71,6 +71,9 @@ export interface OvSession {
   panes: OvPane[];
   /** A cloud workspace's session, by the hub's id. */
   hosted?: string;
+  /** The hub's id for it (`ses_…`), where the hub lists it: the Work
+   * level's address takes it as well as the tile's own key (#1380). */
+  hub?: string;
   /** Its branch, where the hub says (a session the machines don't show here). */
   branch?: string | null;
 }
@@ -168,6 +171,8 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
         }
   // 3. The hub's sessions by card: the panes it lists, for those not placed yet.
   const listed = new Set<string>();
+  // A pane's session as the hub names it; an agent's id is its pane, not a session's.
+  const hubOf = new Map<string, string>();
   const unseen: { card: { board: string; row: BoardRow } | null; s: ProjectSession }[] = [];
   for (const g of byCard?.groups ?? []) {
     const at = g.card ? (byIssue.get(g.card.id) ?? null) : null;
@@ -179,6 +184,7 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
       });
       for (const k of keys) {
         listed.add(k);
+        if (s.kind !== "agent" && !hubOf.has(k)) hubOf.set(k, s.id);
         if (!cardOf.has(k)) cardOf.set(k, at);
       }
       if (!keys.length) unseen.push({ card: at, s });
@@ -216,12 +222,13 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
     // Named by its agent where it has one, though the pane it opens is the one asking.
     const agent = t.panes.find((p) => p.agent);
     const name = agent ? agent.name : lead.session && t.panes.length > 1 ? lead.session.name : lead.name;
-    put(t.at, { key: k, name, where: lead.host, standing: worst(t.panes.map((p) => p.standing)), lead, panes: t.panes });
+    const hub = t.panes.map((p) => hubOf.get(p.key)).find(Boolean);
+    put(t.at, { key: k, name, where: lead.host, standing: worst(t.panes.map((p) => p.standing)), lead, panes: t.panes, ...(hub ? { hub } : {}) });
   }
   // The hub's sessions the machines don't show here: named, where they run, no pane.
   for (const { card, s } of unseen) {
     const where = s.on.kind === "hosted" ? "Arugula cloud" : s.on.name;
-    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}) });
+    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}), ...(s.kind !== "agent" ? { hub: s.id } : {}) });
   }
 
   const boards: OvBoard[] = [];
