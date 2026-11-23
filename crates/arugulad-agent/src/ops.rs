@@ -1,4 +1,5 @@
-//! `conversations`: the Claude Code conversations on this machine, listed
+//! `conversations`: the Claude Code conversations on this machine, listed,
+//! continued in a terminal pane running `claude --resume` (Continue here)
 //! and opened as agent blocks (M33, `arugula claude`), the owner's (`serve`
 //! checks that before the handler runs). MCP's `list` kind
 //! conversations and `show` kind conversation are the same two operations: an
@@ -12,10 +13,13 @@ use std::collections::HashMap;
 use arugula_proto::{
     PaneId,
     api::{
-        ConversationList, ConversationRow, ConversationSignal, ConversationsQuery, OpenConversationRequest,
-        OpenConversationResponse, SessionSignal, SessionSignaled,
+        ContinueConversationRequest, ContinueConversationResponse, ConversationList, ConversationRow,
+        ConversationSignal, ConversationsQuery, OpenConversationRequest, OpenConversationResponse, SessionSignal,
+        SessionSignaled,
     },
-    op::ops::{ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal},
+    op::ops::{
+        ConversationContinue, ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
+    },
 };
 use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
@@ -103,6 +107,16 @@ impl Handle<AgentBlock> for ConversationOpen {
             Via::Mcp(_) => None,
         };
         Ok(open_conversation_as(cx.app, who, req).await?)
+    }
+}
+
+impl Handle<AgentBlock> for ConversationContinue {
+    async fn handle(
+        cx: &Cx<'_>,
+        _: (),
+        req: ContinueConversationRequest,
+    ) -> Result<ContinueConversationResponse, OpError> {
+        Ok(continue_conversation(cx.app, req).await?)
     }
 }
 
@@ -414,4 +428,119 @@ async fn open_conversation_as(
         }
     }
     Ok(out)
+}
+
+/// Where and how Continue here resumes `c`: the folder, and the command its
+/// pane's shell runs, the person's own `claude` on their `PATH`. The id is
+/// checked before it goes into a command line, so nothing in it reaches the
+/// shell as anything but itself. `None` for the folder when it's gone and
+/// home wasn't asked for.
+fn resume_here(
+    id: &str,
+    cwd: &str,
+    cwd_exists: bool,
+    home: Option<&std::path::Path>,
+) -> Result<(Option<String>, String), String> {
+    if !arugula_mux::resume::valid_id(id) {
+        return Err(format!("{id:?} isn't a Claude Code session id"));
+    }
+    let dir = match (cwd_exists && !cwd.is_empty(), home) {
+        (true, _) => Some(cwd.to_owned()),
+        (false, Some(h)) => Some(h.display().to_string()),
+        (false, None) => None,
+    };
+    Ok((dir, format!("claude --resume {id}")))
+}
+
+/// Continue here: the conversation's own pane or block if one of ours has
+/// it, else a new tab in its folder running `claude --resume <id>`, named
+/// after it. One that's open outside Arugula is refused: two Claude Codes
+/// on one conversation write over each other.
+async fn continue_conversation(
+    app: &App,
+    req: ContinueConversationRequest,
+) -> Result<ContinueConversationResponse, ApiError> {
+    let id = req.id.clone();
+    let pids = our_pids(app).await;
+    let ours: std::collections::HashSet<PaneId> =
+        app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().map(|p| p.info.id).collect();
+    let c = crate::task::spawn_blocking(move || {
+        let mut ix = crate::conversations::Index::global().lock().unwrap();
+        ix.set_ours(pids);
+        ix.find(&id)
+    })
+    .await
+    .map_err(|e| bad(e.to_string()))?
+    .map_err(|e| ApiError(StatusCode::NOT_FOUND, e))?;
+    let live = c.live.clone().map(|l| l.ours(|p| ours.contains(&p)));
+    let there = blocks_by_session(app).await.get(&c.id).copied().or(live.as_ref().and_then(|l| l.pane.or(l.block)));
+    let answer = |pane, opened, cwd: String, folder_gone| ContinueConversationResponse {
+        pane,
+        opened,
+        conversation: c.id.clone(),
+        cwd,
+        folder_gone,
+    };
+    if let Some(p) = there {
+        return Ok(answer(Some(p), false, c.cwd.clone(), false));
+    }
+    if let Some(l) = &live {
+        return Err(ApiError(
+            StatusCode::CONFLICT,
+            format!("it's {}: go on there, or open it as an agent block and fork it", l.place),
+        ));
+    }
+    let home = if req.home {
+        Some(app.mux.api(Api::AgentEnv).await.map(|(h, _)| h).unwrap_or_else(crate::home))
+    } else {
+        None
+    };
+    let (dir, command) = resume_here(&c.id, &c.cwd, c.cwd_exists, home.as_deref()).map_err(bad)?;
+    let Some(dir) = dir else {
+        return Ok(answer(None, false, c.cwd.clone(), true));
+    };
+    let run = arugula_proto::api::RunRequest {
+        command: Some(command),
+        session: req.session,
+        cwd: Some(dir.clone()),
+        from_pane: req.from_pane,
+        ..Default::default()
+    };
+    let pane = match app.mux.api(|r| Api::Run(run, r)).await {
+        Some(Ok(p)) => p,
+        Some(Err(e)) => return Err(bad(e)),
+        None => return Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
+    };
+    // A tab of its own is what `run` made; this names it.
+    let title = Some(c.title.clone()).filter(|t| !t.trim().is_empty());
+    if let Some(Err(e)) = app.mux.api(|r| Api::OwnTab(pane, title, r)).await {
+        tracing::warn!(pane, "naming the tab of a continued conversation: {e}");
+    }
+    Ok(answer(Some(pane), true, dir, false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resume_here;
+
+    /// Continue here runs the person's own `claude --resume <id>` in the
+    /// conversation's folder; with the folder gone, nowhere until home is
+    /// asked for, then there; and an id that isn't one never reaches the
+    /// shell.
+    #[test]
+    fn continue_here_resumes_in_its_folder() {
+        let id = "0b8f6c1e-2a4d-4e2b-9d1a-7c3e5f6a8b90";
+        let home = std::path::Path::new("/home/sam");
+        let want = format!("claude --resume {id}");
+        assert_eq!(resume_here(id, "/home/sam/dev/x", true, None), Ok((Some("/home/sam/dev/x".into()), want.clone())));
+        assert_eq!(
+            resume_here(id, "/home/sam/dev/x", true, Some(home)),
+            Ok((Some("/home/sam/dev/x".into()), want.clone()))
+        );
+        assert_eq!(resume_here(id, "/home/sam/gone", false, None), Ok((None, want.clone())));
+        assert_eq!(resume_here(id, "/home/sam/gone", false, Some(home)), Ok((Some("/home/sam".into()), want)));
+        for bad in ["x; rm -rf ~", "--help", "$(id)", ""] {
+            assert!(resume_here(bad, "/tmp", true, None).is_err(), "{bad}");
+        }
+    }
 }

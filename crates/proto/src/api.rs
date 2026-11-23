@@ -24,6 +24,7 @@
 //! | POST | `/api/panes/N/close` | | `Empty` (its output stays in history) |
 //! | POST | `/api/blocks` | `OpenRequest` | `OpenResponse`: `{"block": N}` |
 //! | POST | `/api/conversations/open` | `OpenConversationRequest` | `OpenConversationResponse`: a Claude Code conversation as an agent block (M33) |
+//! | POST | `/api/conversations/continue` | `ContinueConversationRequest` | `ContinueConversationResponse`: a Claude Code conversation going on in a terminal pane, `claude --resume` |
 //! | GET | `/api/blocks/N` | | `Described`: `{info, state}`, `describe` |
 //! | POST | `/api/blocks/N/call/METHOD` | JSON args | the method's answer |
 //! | GET, POST, DELETE | `/api/studio` | POST `StudioLoginRequest` | `StudioStatus`: the studio and whether there's a token (never the token); POST logs in (`StudioLoggedIn`), DELETE forgets it (`Empty`, M35) |
@@ -1420,6 +1421,46 @@ pub struct OpenConversationResponse {
     pub error: Option<String>,
 }
 
+/// `POST /api/conversations/continue`: a Claude Code conversation going on
+/// in a terminal pane, the person's own `claude --resume <id>` in its
+/// folder, in a new tab named after it: no adapter to install. The pane
+/// or block that has it already, if one of ours does.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct ContinueConversationRequest {
+    /// Its id, or a unique prefix.
+    pub id: String,
+    /// Its folder is gone: run it in home instead.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub home: bool,
+    /// The new tab's session (name or id). Default: `from_pane`'s, else
+    /// the first.
+    #[serde(default)]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub from_pane: Option<PaneId>,
+}
+
+/// What continuing a conversation answers: the pane it goes on in
+/// (`opened`: made now, not there already), or, with none, that its folder
+/// is gone (`folder_gone`: ask again with `home`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields))]
+pub struct ContinueConversationResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<PaneId>,
+    pub opened: bool,
+    pub conversation: String,
+    /// The folder it runs in, or would have.
+    pub cwd: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub folder_gone: bool,
+}
+
 /// `POST /api/team-pins`: the teams the owner's browser pinned, and those
 /// it left (#233; the owner's). Their rosters are checked against these.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2568,6 +2609,26 @@ mod wire {
             }
             assert_eq!(serde_json::to_value(&typed).unwrap(), old);
         }
+
+        // Continued: the pane, or none and `folder_gone`.
+        let going = ContinueConversationResponse {
+            pane: Some(block),
+            opened: true,
+            conversation: "abc-123".into(),
+            cwd: "/home/sam/x".into(),
+            folder_gone: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&going).unwrap(),
+            json!({ "pane": block, "opened": true, "conversation": "abc-123", "cwd": "/home/sam/x" })
+        );
+        let gone = ContinueConversationResponse { pane: None, opened: false, folder_gone: true, ..going };
+        assert_eq!(
+            serde_json::to_value(&gone).unwrap(),
+            json!({ "opened": false, "conversation": "abc-123", "cwd": "/home/sam/x", "folder_gone": true })
+        );
+        let req: ContinueConversationRequest = serde_json::from_value(json!({ "id": "abc" })).unwrap();
+        assert!(!req.home && req.session.is_none() && req.from_pane.is_none());
 
         // `close` answered `json!({})`.
         assert_eq!(serde_json::to_value(Empty {}).unwrap(), json!({}));

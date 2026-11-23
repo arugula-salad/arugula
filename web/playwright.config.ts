@@ -37,6 +37,13 @@ runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
   const fake = fileURLToPath(new URL("../crates/daemon/tests/fake_acp.py", import.meta.url));
   writeFileSync(join(bin, "claude-agent-acp"), `#!/bin/sh\nexec python3 ${fake} "$@"\n`);
   chmodSync(join(bin, "claude-agent-acp"), 0o755);
+  // Continue here runs `claude --resume` in a pane: a stand-in on the
+  // daemon's PATH that says what it was asked and waits, never the
+  // person's own Claude Code.
+  const path = runDir("ARUGULA_E2E_CLAUDE_DIR", "arugula-e2e-claude-bin-");
+  writeFileSync(join(path, "claude"), `#!/bin/sh\necho "claude $*"\nexec cat >/dev/null\n`);
+  chmodSync(join(path, "claude"), 0o755);
+  if (!process.env.PATH?.startsWith(`${path}:`)) process.env.PATH = `${path}:${process.env.PATH}`;
 }
 
 // #111: *Install* runs this stand-in npm, which "installs" an adapter as

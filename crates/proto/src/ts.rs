@@ -10,9 +10,10 @@ use ts_rs::{Config, TS, TypeVisitor};
 use crate::{
     ClientMsg, ServerMsg,
     api::{
-        ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
-        OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse,
-        SessionLink, Share, ShareRequest, TeamPins, TeamPinsRequest,
+        ActRequest, ActResponse, ContinueConversationRequest, ContinueConversationResponse, GuestInvite,
+        GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest, OpenConversationRequest,
+        OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, SessionLink, Share, ShareRequest,
+        TeamPins, TeamPinsRequest,
     },
     flags::{FlagInfo, FlagSetRequest},
     forge::ForgeState,
@@ -108,6 +109,8 @@ fn generate() -> String {
     c.visit::<OpenResponse>();
     c.visit::<OpenConversationRequest>();
     c.visit::<OpenConversationResponse>();
+    c.visit::<ContinueConversationRequest>();
+    c.visit::<ContinueConversationResponse>();
     c.visit::<NotifyRequest>();
     c.visit::<NotifyPref>();
     c.visit::<ShareRequest>();

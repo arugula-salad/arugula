@@ -220,6 +220,7 @@ mod tests {
             (&p, "/api/agents/adapters/claude/install", Policy::Owner),
             (&g, "/api/conversations", Policy::Owner),
             (&p, "/api/conversations/open", Policy::Owner),
+            (&p, "/api/conversations/continue", Policy::Owner),
             (&g, "/api/machines", Policy::Owner),
             (&p, "/api/machines/4/reset", Policy::Owner),
             (&g, "/api/push/key", Policy::Anyone),

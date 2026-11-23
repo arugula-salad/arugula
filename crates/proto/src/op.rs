@@ -184,6 +184,8 @@ impl Request for crate::api::ConversationsQuery {}
 
 impl Request for crate::api::OpenConversationRequest {}
 
+impl Request for crate::api::ContinueConversationRequest {}
+
 impl Request for crate::api::DocOpenRequest {}
 
 impl Request for crate::api::DocShareRequest {}
@@ -336,6 +338,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::AdapterInstall);
         $m!($crate::op::ops::ConversationsList);
         $m!($crate::op::ops::ConversationOpen);
+        $m!($crate::op::ops::ConversationContinue);
         $m!($crate::op::ops::PaneSessionSignal);
         $m!($crate::op::ops::ConversationSessionSignal);
         $m!($crate::op::ops::MachinesList);
@@ -399,18 +402,18 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
-            ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocMoveRequest,
-            DocMoved, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShareRequest, DocTeams, DriverEntry, Empty,
-            FollowUpAck, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
-            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
-            InviteRequest, Invited, KeysRequest, LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest,
-            MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest,
-            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved, NvimTheme,
-            NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
-            PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules,
-            RunResponse, SendRequest, SessionLink, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
-            WaitRequest, WaitResult, WithdrawRequest,
+            ContinueConversationRequest, ContinueConversationResponse, ConversationList, ConversationsQuery,
+            DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocMoveRequest, DocMoved, DocOpenRequest, DocOpened,
+            DocPreview, DocRow, DocShareRequest, DocTeams, DriverEntry, Empty, FollowUpAck, FollowUpRequest,
+            FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest, MouseRequest, NotifyPref, NotifyRequest,
+            NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies,
+            NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
+            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, SessionLink,
+            Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
+            Subscription, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         feedback::{FeedbackSendRequest, FeedbackSent},
         flags::{FlagInfo, FlagSetRequest},
@@ -1368,6 +1371,22 @@ pub mod ops {
         type Path = ();
         type Req = OpenConversationRequest;
         type Res = OpenConversationResponse;
+    }
+
+    /// `POST /api/conversations/continue`: a conversation going on in a
+    /// terminal pane running the person's own `claude --resume <id>` in its
+    /// folder, a new tab named after it; the pane or block that has it
+    /// already, if one does. Continue here, in the conversations list.
+    pub struct ConversationContinue;
+
+    impl Op for ConversationContinue {
+        const NAME: &'static str = "conversation.continue";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/conversations/continue";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = ContinueConversationRequest;
+        type Res = ContinueConversationResponse;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).

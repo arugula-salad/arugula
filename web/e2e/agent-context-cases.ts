@@ -77,7 +77,9 @@ async function open(page: Page, title: string) {
   await menu(page, paneEl(page, term), "Claude Code conversations…");
   const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
   await dialog.locator(".picker-filter").fill(title);
-  await dialog.locator("[data-conversation]", { hasText: title }).click();
+  // Shown as an agent block, not continued in a terminal (a row's click).
+  await expect(dialog.locator("[data-conversation]", { hasText: title })).toHaveAttribute("aria-selected", "true");
+  await dialog.locator("[data-open-block]").click();
   await expect(dialog).toBeHidden();
   const block = await page.waitForFunction(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id ?? null);
   return paneEl(page, (await block.jsonValue()) as number);
