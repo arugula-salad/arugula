@@ -7,7 +7,10 @@
 //   the daemon says nobody has answered. On control's page it comes after the
 //   account's question (M104) has its answer, or straight away from a
 //   control that doesn't ask: each machine the person owns asks once, as
-//   it's shown there. Not on a read-only link.
+//   it's shown there. Not on a read-only link. Not on a first visit to
+//   the daemon's page either, whose first screen asks nothing
+//   (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b):
+//   it waits until a conversation is continued here, or the next visit.
 // - **The switch** is *Usage and crash reports…* in the machine's settings
 //   (the machine menu, or the account menu's *This machine*), on the
 //   phone's sheet, and in Settings › Machines' Advanced (Arugula #1107), with the
@@ -42,6 +45,22 @@ let mayAsk = () => false;
  * daemon from before M101). */
 let info: TelemetryInfo | null = null;
 let readFor: Client | null = null;
+/** This browser's first visit (none before it): the card waits for a
+ * conversation continued (`conversationContinued`) or the next load.
+ * Under a test runner every load is a later one, unless the spec opts into
+ * a first run (`__arugulaFirstRun`). */
+const VISITED = "arugula.visited";
+let firstVisit = ((): boolean => {
+  try {
+    const before = localStorage.getItem(VISITED) !== null;
+    localStorage.setItem(VISITED, "1");
+    if (navigator.webdriver && !(window as { __arugulaFirstRun?: boolean }).__arugulaFirstRun) return false;
+    return !before;
+  } catch {
+    // No storage to remember a visit in: every one is a later one.
+    return false;
+  }
+})();
 /** The card was put away unanswered on this load: asked again next load. */
 let later = false;
 /** The settings dialog's machine, while it's open. */
@@ -138,6 +157,13 @@ function count() {
   } else if (counting()) stopCounting();
 }
 
+/** A conversation was continued here: a first visit's card may ask now. */
+export function conversationContinued() {
+  if (!firstVisit) return;
+  firstVisit = false;
+  changed();
+}
+
 /** Something `mayAsk` reads changed: draw the card again. */
 export function machineTelemetryChanged() {
   changed();
@@ -167,7 +193,7 @@ export function MachineTelemetryLayer() {
       />
     );
   const c = followed;
-  if (!c || !mayAsk() || !info || info.why !== "not_asked" || later || automated() || !owner(c)) return null;
+  if (!c || !mayAsk() || !info || info.why !== "not_asked" || later || firstVisit || automated() || !owner(c)) return null;
   return (
     <TelemetryCard
       about={ABOUT}

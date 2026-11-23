@@ -320,7 +320,7 @@ test("Getting started: each adapter's state, and one click that installs or upda
   // Claude Code's (the fake, no version) is next to Start an agent.
   await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
   const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 4 / 5 · Agents");
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 4 · Agents");
   await expect(panel.locator('[data-start-adapter="claude"]')).toContainText("Claude Code's adapter");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();
   await panel.getByRole("button", { name: "Close" }).click();

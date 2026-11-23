@@ -7,7 +7,7 @@
 
 use arugula_proto::{
     api::Empty,
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupTailscale},
+    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupHooks, SetupTailscale},
     setup::{ControlJoinRequest, Outcome, SetupQuery},
 };
 use serde_json::Value;
@@ -54,6 +54,12 @@ impl Handle for SetupControl {
 impl Handle for SetupClaude {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Outcome, OpError> {
         Ok(crate::setup::claude_mcp(cx.app).await)
+    }
+}
+
+impl Handle for SetupHooks {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Outcome, OpError> {
+        Ok(crate::setup::claude_hooks(cx.app).await)
     }
 }
 

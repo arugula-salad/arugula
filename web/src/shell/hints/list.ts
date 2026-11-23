@@ -12,6 +12,7 @@ import { repoMoved } from "./changes";
 import { conversationHere } from "./conversations";
 import { docOpen } from "./docs";
 import { editorStarted } from "./editor";
+import { claudeWaiting } from "./hooks";
 import { printedLink } from "./links";
 import { commandMarked } from "./marks";
 import { passkeyWanted } from "./passkeys";
@@ -25,6 +26,18 @@ import { restoredPane } from "./restart";
 import { smallTeam } from "./teams";
 
 export const HINTS: Hint[] = [
+  {
+    // Claude Code waits at a permission prompt in a terminal, without
+    // Arugula's hooks: they'd make it a card, here and on the phone. Seen
+    // once answered (Turn on or ×), so a prompt answered in the terminal
+    // before the chip was read offers it again at the next one.
+    id: "claude-hooks",
+    place: "chip",
+    fact: claudeWaiting,
+    copy: () => "Answer these from anywhere",
+    action: { label: "Turn on", command: "hooks.turn-on" },
+    seenOn: "answer",
+  },
   {
     // A dev server started in a pane: it can be beside the terminal.
     id: "port-listening",

@@ -361,6 +361,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::SetupTailscale);
         $m!($crate::op::ops::SetupControl);
         $m!($crate::op::ops::SetupClaude);
+        $m!($crate::op::ops::SetupHooks);
         $m!($crate::op::ops::SetupAgent);
         // #578 part b: access and credentials.
         $m!($crate::op::ops::SharesList);
@@ -1650,6 +1651,21 @@ pub mod ops {
         const NAME: &'static str = "setup.claude";
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/setup/claude";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::setup::Outcome;
+    }
+
+    /// `POST /api/setup/hooks`: Arugula's hooks added to Claude Code's
+    /// settings (`arugula hooks install`) and nothing else: the hooks offer
+    /// on a terminal waiting at a permission prompt.
+    pub struct SetupHooks;
+
+    impl Op for SetupHooks {
+        const NAME: &'static str = "setup.hooks";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/setup/hooks";
         const ACCESS: Access = Access::Owner;
         type Path = ();
         type Req = Empty;

@@ -261,6 +261,7 @@ mod tests {
             (&p, "/api/setup/tailscale", Policy::Owner),
             (&p, "/api/setup/control", Policy::Owner),
             (&p, "/api/setup/claude", Policy::Owner),
+            (&p, "/api/setup/hooks", Policy::Owner),
             (&p, "/api/setup/agents/claude", Policy::Owner),
         ] {
             assert_eq!(policy(m, path), want, "{m} {path}");

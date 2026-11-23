@@ -366,6 +366,7 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
         ("POST", "/api/setup/tailscale", None),
         ("POST", "/api/setup/control", None),
         ("POST", "/api/setup/claude", None),
+        ("POST", "/api/setup/hooks", None),
         ("POST", "/api/setup/agents/claude", None),
     ] {
         let (status, _, text) = as_("friend", method, path, body);

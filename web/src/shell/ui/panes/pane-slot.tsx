@@ -11,7 +11,6 @@ import { startDrag } from "../drag";
 import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
 import { PaneMarks } from "../people";
-import { HooksOffer } from "../agents-setup";
 import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
@@ -157,7 +156,6 @@ export function PaneSlot({
       <ThreadBadge client={client} pane={id} />
       {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
-      {info?.unhooked && !info.ask && <HooksOffer client={client} id={id} />}
       {waiting && (
         <button
           class="start-pane"

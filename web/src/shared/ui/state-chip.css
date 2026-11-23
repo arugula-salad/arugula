@@ -257,13 +257,19 @@ button.chip-object:disabled {
   white-space: pre;
 }
 
-/* A hint about a pane (shell/hints): one line, its action and ×. */
+/* A hint about a pane (shell/hints): one line, its action and ×. Where
+   it hasn't the room (a toast at a phone's 360px), its words wrap and its
+   buttons stay whole: never wider than where it is, never squeezed. A
+   radius of half a line's height keeps one line a pill, and more lines a
+   rounded box. */
 .hint {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0 2px 0 8px;
-  border-radius: var(--chip-radius);
+  border-radius: min(var(--chip-radius), 12px);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--fg);
@@ -271,7 +277,14 @@ button.chip-object:disabled {
   cursor: default;
 }
 
+.hint-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .hint button {
+  flex: none;
+  white-space: nowrap;
   height: 18px;
   padding: 0 8px;
   border-radius: var(--chip-radius);
