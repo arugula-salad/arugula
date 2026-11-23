@@ -166,6 +166,30 @@ fn session_start_on_an_unjoined_machine_leaves_out_the_issues_context() {
     }
 }
 
+/// A `gh issue create` gets the issues context on a joined machine only
+/// (Arugula #1403), with the daemon's control state asked then; a daemon
+/// that doesn't say counts as not joined.
+#[test]
+fn gh_issue_create_gets_the_issues_context_only_once_joined() {
+    let create = json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s",
+        "tool_input": { "command": "gh issue create -t x" } });
+    let (out, _, code) = hook("gh-joined", Daemon::Up { docs: None, control: "joined" }, Some("3"), create.clone());
+    assert_eq!(code, 0);
+    let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out:?}"));
+    assert_eq!(
+        said,
+        json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING } })
+    );
+    for control in ["not_joined", "dropped"] {
+        let (out, _, code) =
+            hook(&format!("gh-{control}"), Daemon::Up { docs: None, control }, Some("3"), create.clone());
+        assert_eq!((out.as_str(), code), ("", 0), "{control}");
+    }
+    // Not knowing is not joined.
+    let (out, _, code) = hook("gh-gone", Daemon::Gone, Some("3"), create);
+    assert_eq!((out.as_str(), code), ("", 0), "gone");
+}
+
 #[test]
 fn session_start_prints_nothing_outside_a_pane() {
     let (out, _, code) = hook("nopane", Daemon::Up { docs: None, control: "joined" }, None, start("startup"));

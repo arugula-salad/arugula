@@ -31,10 +31,12 @@
 //! MCP's instructions: before, it would send an agent to tools it can't
 //! reach (Arugula #1403). It asks the daemon for at most [`FLAGS_WAIT`],
 //! because Claude Code waits for SessionStart hooks before a headless
-//! session's first turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
-//! sentence again as its context: it doesn't stop the command, which may
-//! be what the user asked for. A `PostToolUse` in a session a person drives
-//! also takes a mention that's waiting (#644), as `additionalContext`.
+//! session's first turn. A `PreToolUse` of Bash that runs `gh issue
+//! create` on a joined machine gets the issues sentence again as its
+//! context (the daemon asked only for that command, for as long): it
+//! doesn't stop the command, which may be what the user asked for. A
+//! `PostToolUse` in a session a person drives also takes a mention that's
+//! waiting (#644), as `additionalContext`.
 //!
 //! Outside an Arugula pane all of them do nothing. Nor do they in an editor
 //! or the desktop app started from one, which inherits its `ARUGULA_PANE`
@@ -87,8 +89,8 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 
 /// `arugula hook`: always exits 0; prints a decision only for a
 /// permission someone answered on a card, the Doc (where `docs` is on) and,
-/// once joined, issues context on `SessionStart`, and the issues context
-/// before a `gh issue create`.
+/// once joined, issues context on `SessionStart`, and, once joined, the
+/// issues context before a `gh issue create`.
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] == "SessionStart" {
@@ -104,7 +106,7 @@ pub fn run(sock: Target) -> i32 {
         return 0;
     }
     if hook["hook_event_name"] != "PermissionRequest" {
-        if let Some(out) = pre_tool_use(&hook) {
+        if let Some(out) = pre_tool_use(&hook, || joined(&sock).recv_timeout(FLAGS_WAIT).ok().flatten()) {
             let mut stdout = std::io::stdout().lock();
             let _ = writeln!(stdout, "{out}");
             let _ = stdout.flush();
@@ -261,16 +263,19 @@ fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
 }
 
 /// What a `PreToolUse` prints: the issues sentence, as context, for a Bash
-/// command that runs `gh issue create`. It never decides.
-fn pre_tool_use(hook: &Value) -> Option<Value> {
+/// command that runs `gh issue create`, if `joined` (asked only then) says
+/// the machine has joined Arugula cloud; not knowing is not joined (Arugula
+/// #1403). It never decides.
+fn pre_tool_use(hook: &Value, joined: impl FnOnce() -> Option<bool>) -> Option<Value> {
     if hook["hook_event_name"] != "PreToolUse" || hook["tool_name"] != "Bash" {
         return None;
     }
-    files_a_github_issue(hook["tool_input"]["command"].as_str()?).then(|| {
-        serde_json::json!({
-            "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING }
-        })
-    })
+    if !files_a_github_issue(hook["tool_input"]["command"].as_str()?) || joined() != Some(true) {
+        return None;
+    }
+    Some(serde_json::json!({
+        "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING }
+    }))
 }
 
 /// Whether a shell command runs `gh issue create` (or its alias `new`).
@@ -429,17 +434,29 @@ mod tests {
     fn only_bash_filing_a_github_issue_gets_the_issues_context() {
         let bash =
             |c: &str| json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": c } });
-        let out = pre_tool_use(&bash("gh issue create -t x")).expect("context");
+        let joined = || Some(true);
+        let out = pre_tool_use(&bash("gh issue create -t x"), joined).expect("context");
         assert_eq!(out["hookSpecificOutput"]["additionalContext"], arugula_proto::flags::ISSUES_STEERING);
         assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PreToolUse");
         assert!(out["hookSpecificOutput"].get("permissionDecision").is_none(), "it never decides");
-        assert!(pre_tool_use(&bash("gh issue view 3")).is_none());
+        // The daemon is asked only for `gh issue create`.
+        let unasked = || -> Option<bool> { panic!("asked the daemon") };
+        assert!(pre_tool_use(&bash("gh issue view 3"), unasked).is_none());
         let mut post = bash("gh issue create");
         post["hook_event_name"] = json!("PostToolUse");
-        assert!(pre_tool_use(&post).is_none());
+        assert!(pre_tool_use(&post, unasked).is_none());
         let mut other = bash("gh issue create");
         other["tool_name"] = json!("Write");
-        assert!(pre_tool_use(&other).is_none());
+        assert!(pre_tool_use(&other, unasked).is_none());
+    }
+
+    /// Arugula #1403: an unjoined machine, or one whose daemon didn't say,
+    /// isn't sent to native issues it can't file.
+    #[test]
+    fn gh_issue_create_on_an_unjoined_machine_gets_no_context() {
+        let create = json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": "gh issue create" } });
+        assert!(pre_tool_use(&create, || Some(false)).is_none(), "not joined");
+        assert!(pre_tool_use(&create, || None).is_none(), "didn't say");
     }
 
     #[test]
