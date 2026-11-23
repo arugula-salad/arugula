@@ -779,16 +779,19 @@ pub struct Former {
 /// is taken as control says, as a team's roster is: control decides who
 /// reaches a machine. The new team's roster is fetched from scratch, checked
 /// against the pin as at a join. One no newer than the last it took is a
-/// replay (or the same one again).
-fn take_move(saved: &mut Saved, m: Move) {
+/// replay (or the same one again). True if it put the machine into a team
+/// (from none, or from another): the caller turns typing through control
+/// off before the move counts, unless the owner said
+/// ([`remote_input_as_moved`]).
+fn take_move(saved: &mut Saved, m: Move) -> bool {
     if m.at <= saved.moved_at {
-        return;
+        return false;
     }
     // A hosted machine is a project's, not an account's (its refresh
     // never asks for moves): one that reached it anyway changes nothing.
     if saved.is_hosted() {
         warn!(by = m.by, "a move from control reached a hosted machine; ignoring it");
-        return;
+        return false;
     }
     let by_control = m.on_controls_word();
     let trusted = saved.own_devices();
@@ -801,15 +804,34 @@ fn take_move(saved: &mut Saved, m: Move) {
             by = m.by,
             "a move from control isn't signed by this account's devices or its team's owners; ignoring it"
         );
-        return;
+        return false;
     }
+    let mut into_team = false;
     if saved.team_pin() != m.team.as_ref() {
         info!(team = m.team.as_ref().map(|p| p.team.as_str()), by_control, "moved");
         // Into a team: its roster is fetched from scratch. Out of one:
         // nothing of it stays.
+        into_team = m.team.is_some();
         saved.kind = m.team.map_or(MachineKind::Personal, |pin| MachineKind::Team(InTeam::new(pin)));
     }
     saved.moved_at = m.at;
+    into_team
+}
+
+/// A move into a team, as a refresh takes it (Arugula issue
+/// iss_d8ce0c357cf0902c51dec39378ef7a1b): typing through control off,
+/// unless the owner said, as a team join is
+/// ([`arugula_proto::sharing::joined_sets`]). Written before the refresh
+/// saves the move or builds on it, so the machine is never in a team with
+/// typing on that nobody chose; if it can't be written, the refresh fails
+/// and the move waits for the next.
+fn remote_input_as_moved(state_dir: &Path) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    if let Some(on) = sharing::joined_sets(sharing::remote_input_said(state_dir), true) {
+        sharing::set_remote_input(state_dir, on).with_context(|| format!("couldn't write {}", sharing::FILE))?;
+        info!("moved into a team: typing through control is off until the owner turns it on here");
+    }
+    Ok(())
 }
 
 /// The account's own certificates and removals, as a refresh takes them
@@ -2971,8 +2993,10 @@ impl Control {
                 // A move on control's word (aru-141, Arugula #1004), or one
                 // a device signed (which this machine can't check: it holds
                 // no devices, and takes only control's word).
-                if let Some(m) = own.moved {
-                    take_move(&mut saved, m);
+                if let Some(m) = own.moved
+                    && take_move(&mut saved, m)
+                {
+                    remote_input_as_moved(&self.state_dir)?;
                 }
             }
             Err(err) if err.is::<Refused>() || err.is::<Removed>() => return Err(err),
@@ -3116,8 +3140,10 @@ impl Control {
         // The round of looking what this refresh brings is stamped with.
         let now = saved.seen.next();
         take_own(&mut saved, own.certs, own.revocations, now);
-        if let Some(m) = own.moved {
-            take_move(&mut saved, m);
+        if let Some(m) = own.moved
+            && take_move(&mut saved, m)
+        {
+            remote_input_as_moved(&self.state_dir)?;
         }
 
         if saved.team().is_some() {
@@ -4362,6 +4388,7 @@ impl Approved {
     /// Pin the account and save `control.json` (a running daemon picks it
     /// up).
     pub fn save(self, state_dir: &Path) -> anyhow::Result<Joined> {
+        remote_input_as_joined(state_dir, &self.saved)?;
         write_saved(state_dir, &self.saved)?;
         Ok(self.joined)
     }
@@ -4372,6 +4399,19 @@ impl Approved {
     pub async fn refuse(self, state_dir: &Path) {
         drop_key(&self.saved.url, state_dir).await;
     }
+}
+
+/// Whether people may type here through control, as a join nobody
+/// answered lands (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b):
+/// on for the account's own machine, off for a team's
+/// ([`arugula_proto::sharing::joined_sets`]). Written before `control.json`,
+/// so nobody reaches a team's machine through control before it's off.
+fn remote_input_as_joined(state_dir: &Path, saved: &Saved) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    if let Some(on) = sharing::joined_sets(sharing::remote_input_said(state_dir), saved.team_id().is_some()) {
+        sharing::set_remote_input(state_dir, on).with_context(|| format!("couldn't write {}", sharing::FILE))?;
+    }
+    Ok(())
 }
 
 /// `typed` names the device `id`: its hex digits, ignoring case, spaces and
@@ -4730,6 +4770,7 @@ pub async fn join_token(url: &str, name: &str, token: &str, state_dir: &Path) ->
     }
     let j: wire::Joined = res.json().await.context("control's answer to the join token")?;
     let (saved, joined) = saved_by_control(&url, &ask, &j)?;
+    remote_input_as_joined(state_dir, &saved)?;
     write_saved(state_dir, &saved)?;
     Ok(joined)
 }
@@ -5568,6 +5609,37 @@ pub(crate) mod tests {
         let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
         assert_eq!(joined.key, fingerprint(&keys.id()));
         (keys, saved)
+    }
+
+    /// A join nobody answered leaves typing through control on for the
+    /// account's own machine, so its owner types from their phone, and
+    /// turns it off for a team's; what the owner said before stands
+    /// (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b).
+    #[test]
+    fn a_join_lands_typing_on_for_the_account_and_off_for_a_team() {
+        use arugula_proto::sharing::{remote_input, remote_input_said, set_remote_input};
+        let dir = std::env::temp_dir().join(format!("arugula-join-typing-{}", std::process::id()));
+        let fresh = || {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+        };
+        let (_, alone) = by_control(None);
+        let (_, in_team) = by_control(Some(wire::JoinedTeam { id: "tm_1".into(), name: "Acme".into() }));
+        fresh();
+        remote_input_as_joined(&dir, &alone).unwrap();
+        assert_eq!((remote_input_said(&dir), remote_input(&dir)), (None, true), "the account's own: on");
+        fresh();
+        remote_input_as_joined(&dir, &in_team).unwrap();
+        assert_eq!(remote_input_said(&dir), Some(false), "a team's: off");
+        for on in [false, true] {
+            for saved in [&alone, &in_team] {
+                fresh();
+                set_remote_input(&dir, on).unwrap();
+                remote_input_as_joined(&dir, saved).unwrap();
+                assert_eq!(remote_input_said(&dir), Some(on), "said before: as it was");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Arugula #1182: whose a machine in a team is, control says at each
@@ -6779,6 +6851,73 @@ pub(crate) mod tests {
             take_move(&mut saved, unsigned(None, 7));
             assert_eq!((saved.team_pin(), saved.moved_at), (None, 7));
         }
+    }
+
+    /// Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b: a move into a
+    /// team (from none, or from another) turns typing through control off
+    /// before it counts, as a team join does, unless the owner said; a move
+    /// out of one, a replay or one refused changes nothing.
+    #[test]
+    fn a_move_into_a_team_turns_typing_off_unless_the_owner_said() {
+        use arugula_proto::sharing::{remote_input, remote_input_said, set_remote_input};
+        let (_, daemon) = device("a", Kind::Daemon);
+        let (mkeys, mallory) = device("m", Kind::Browser);
+        let pin = |team: &str| TeamPin { team: team.into(), founder: "o".into(), founder_root: "r".into() };
+        let unsigned = |team: Option<TeamPin>, at| Move { team, at, by: String::new(), sig: String::new() };
+        let dir = std::env::temp_dir().join(format!("arugula-move-typing-{}", std::process::id()));
+        let fresh = || {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+        };
+        // As a refresh takes one: the move, then typing before it's saved.
+        let take = |saved: &mut Saved, m: Move| {
+            let into = take_move(saved, m);
+            if into {
+                remote_input_as_moved(&dir).unwrap();
+            }
+            into
+        };
+        let mut saved = Saved {
+            url: String::new(),
+            root: Root::Control(ByControl { at: 1, team: None }),
+            cert: daemon.clone(),
+            certs: vec![],
+            revocations: vec![],
+            kind: MachineKind::Personal,
+            seen: Default::default(),
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            held_teams: Default::default(),
+            held_peers: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+        };
+        let personal = saved.clone();
+        let d = daemon.device.as_str();
+
+        // A solo machine, joined with typing on as unsaid, moved into a team.
+        fresh();
+        assert!(!take(&mut saved, mv(&mkeys, &mallory, d, Some(&pin("t1")), 5)), "refused");
+        assert_eq!((remote_input_said(&dir), remote_input(&dir)), (None, true));
+        assert!(take(&mut saved, unsigned(Some(pin("t1")), 5)));
+        assert_eq!((remote_input_said(&dir), remote_input(&dir)), (Some(false), false));
+        // The owner turns it on in the team; moving between teams keeps it.
+        set_remote_input(&dir, true).unwrap();
+        assert!(take(&mut saved, unsigned(Some(pin("t2")), 6)));
+        assert_eq!(remote_input_said(&dir), Some(true), "said: as it was");
+        // Out of the team, and a replay of the move in: nothing.
+        fresh();
+        assert!(!take(&mut saved, unsigned(None, 7)), "out of a team");
+        assert!(!take(&mut saved, unsigned(Some(pin("t1")), 5)), "a replay");
+        assert_eq!(remote_input_said(&dir), None);
+
+        // Said off before the move: off, as it was.
+        let mut saved = personal;
+        fresh();
+        set_remote_input(&dir, false).unwrap();
+        assert!(take(&mut saved, unsigned(Some(pin("t1")), 5)));
+        assert_eq!(remote_input_said(&dir), Some(false));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #332: a member's machine in a team; the team's owners may take it

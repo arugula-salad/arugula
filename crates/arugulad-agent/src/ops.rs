@@ -450,7 +450,13 @@ async fn continue_codex(
     }
     let v = continue_conversation(
         app,
-        ContinueConversationRequest { id: c.id, home: false, session: req.session, from_pane: req.from_pane },
+        ContinueConversationRequest {
+            id: c.id,
+            home: false,
+            session: req.session,
+            from_pane: req.from_pane,
+            move_here: false,
+        },
     )
     .await?;
     match v.pane {
@@ -489,7 +495,8 @@ fn resume_here(
 /// block if one of ours has it, else a new tab in its folder running its
 /// agent's resume command ([`resume_in_pane`]). One that's open outside
 /// Arugula is refused: two agents on one conversation write over each
-/// other.
+/// other. With `move_here`, a Claude Code one running in a terminal is
+/// stopped there first ([`move_here`]).
 async fn continue_conversation(
     app: &App,
     req: ContinueConversationRequest,
@@ -519,8 +526,12 @@ async fn continue_conversation(
         return Ok(answer(Some(p), false, c.cwd.clone(), false));
     }
     if let Some(l) = &live {
-        let or = if c.agent == "claude" { ", or open it as an agent block and fork it" } else { "" };
-        return Err(ApiError(StatusCode::CONFLICT, format!("it's {}: go on there{or}", l.place)));
+        if req.move_here && movable(c.agent, l) {
+            move_here(&c.id, l).await?;
+        } else {
+            let or = if c.agent == "claude" { ", or open it as an agent block and fork it" } else { "" };
+            return Err(ApiError(StatusCode::CONFLICT, format!("it's {}: go on there{or}", l.place)));
+        }
     }
     let home = if req.home {
         Some(app.mux.api(Api::AgentEnv).await.map(|(h, _)| h).unwrap_or_else(crate::home))
@@ -533,6 +544,31 @@ async fn continue_conversation(
     };
     let pane = resume_in_pane(app, &c.title, command, dir.clone(), req.session, req.from_pane).await?;
     Ok(answer(Some(pane), true, dir, false))
+}
+
+/// Whether Move here can take it: Claude Code at a terminal's prompt,
+/// in none of our panes or blocks (the desktop app and an SDK run aren't
+/// stopped from here).
+fn movable(agent: &str, l: &crate::conversations::Live) -> bool {
+    agent == "claude" && l.entrypoint == "cli" && l.pane.is_none() && l.block.is_none()
+}
+
+/// Move here: stop the Claude Code holding conversation `id` in a
+/// terminal, gently ([`crate::conversations::moving::stop`]), and wait
+/// until its session file says it has let go. If it won't, it's still
+/// running there, and the person is asked to quit it.
+async fn move_here(id: &str, l: &crate::conversations::Live) -> Result<(), ApiError> {
+    use crate::conversations::{Index, moving};
+    let (id, pid) = (id.to_owned(), l.pid);
+    let gone = move || Index::global().lock().unwrap().live_for(&id).is_none_or(|l| l.pid != pid);
+    let stopped = crate::task::spawn_blocking(move || moving::stop(pid, gone, moving::Waits::DEFAULT))
+        .await
+        .map_err(|e| bad(e.to_string()))?;
+    stopped.map_err(|r| {
+        let there = l.terminal.as_deref().unwrap_or("another terminal");
+        tracing::info!(pid, "Move here: {}", r.why());
+        ApiError(StatusCode::CONFLICT, format!("Quit it there, then continue here ({}, in {there})", r.why()))
+    })
 }
 
 /// A new tab in `dir` whose pane's shell runs `command` (a resume, checked

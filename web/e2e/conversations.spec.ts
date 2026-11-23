@@ -4,11 +4,12 @@
 // --resume`, a stand-in here: the tab and its pane are what's checked; the
 // daemon's test checks the command and folder), and offers home when its
 // folder is gone; a Codex one too (`codex resume`, a stand-in as well). Open as agent block shows it as a block, continued
-// there; one still open elsewhere forked instead. The Claude directory is
+// there; one still open elsewhere forked instead, or moved here: a stand-in
+// Claude Code process stopped (SIGINT) and the conversation continued. The Claude directory is
 // the run's own (playwright.config.ts) and Claude Code's adapter is the
 // fake ACP agent, so nothing here costs anything.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,18 +56,19 @@ function seedCodex(word: string): { id: string; cwd: string } {
   return { id, cwd };
 }
 
-/** This test's process holds the session, as a running Claude Code would. */
-function hold(id: string) {
+/** A process holds the session, as a running Claude Code would: this
+ *  test's own, or a stand-in's. */
+function hold(id: string, pid = process.pid) {
   // Its start time as Claude Code writes it: field 22 of /proc/<pid>/stat
   // on Linux, `ps -o lstart=` in the C locale and UTC elsewhere.
-  const proc = `/proc/${process.pid}/stat`;
+  const proc = `/proc/${pid}/stat`;
   const stat = existsSync(proc) ? readFileSync(proc, "utf8") : null;
   const procStart = stat
     ? stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[19]
-    : execFileSync("ps", ["-o", "lstart=", "-p", `${process.pid}`], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, encoding: "utf8" }).trim();
+    : execFileSync("ps", ["-o", "lstart=", "-p", `${pid}`], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, encoding: "utf8" }).trim();
   writeFileSync(
-    join(claude, "sessions", `${process.pid}.json`),
-    JSON.stringify({ pid: process.pid, sessionId: id, procStart, kind: "interactive", entrypoint: "cli", status: "idle" }),
+    join(claude, "sessions", `${pid}.json`),
+    JSON.stringify({ pid, sessionId: id, procStart, kind: "interactive", entrypoint: "cli", status: "idle" }),
   );
 }
 
@@ -152,8 +154,9 @@ test.describe("desktop", () => {
     await expect(fold.locator(".agent-user")).toHaveText("the colour is red");
   });
 
-  test("one open elsewhere can't be continued, only forked", async ({ page }) => {
+  test("one open elsewhere isn't continued as it is: moved here, or forked", async ({ page }) => {
     const { id } = seed("plover", "Shore birds");
+    // This test's own process holds it: never moved, only asked about.
     hold(id);
     await reset(page);
     const [term] = await panes(page);
@@ -161,8 +164,13 @@ test.describe("desktop", () => {
     const row = picker(page).locator(`[data-conversation="${id}"]`);
     await expect(row.locator(".conv-live")).toBeVisible();
     await picker(page).locator(".picker-filter").fill("shore");
-    // Not here: two Claude Codes on one conversation write over each other.
-    await expect(picker(page).locator("[data-continue-here]")).toBeDisabled();
+    // Not as it is: two Claude Codes on one conversation write over each
+    // other. Moving it asks first; clicking its row doesn't move it.
+    await row.click();
+    await expect(picker(page).locator("[data-continue-here]")).toHaveCount(0);
+    await expect(picker(page).locator("[data-move-ask]")).toHaveText(/^Running in .+\. Move here\?$/);
+    await expect(picker(page).locator("[data-move-here]")).toHaveText("Move here");
+    await expect(picker(page).locator("[data-fork-here]")).toHaveText("Fork here");
     await picker(page).locator("[data-open-block]").click();
     await expect.poll(() => agentBlock(page)).not.toBeNull();
     const el = paneEl(page, (await agentBlock(page))!);
@@ -213,6 +221,44 @@ test.describe("continue here", () => {
     await expect(dialog).toBeHidden();
     await expect.poll(async () => (await tab(page))?.name).toBe("Gone birds");
     expect(await agentBlock(page)).toBeNull();
+  });
+});
+
+test.describe("move here", () => {
+  test("stops it in the other terminal and continues it here", async ({ page }) => {
+    const { id } = seed("curlew", "Moor birds");
+    // A stand-in Claude Code in another terminal: SIGINT ends it.
+    const other = spawn("sleep", ["300"], { stdio: "ignore" });
+    const ended = new Promise<NodeJS.Signals | null>((resolve) => other.on("exit", (_, signal) => resolve(signal)));
+    try {
+      hold(id, other.pid!);
+      // A narrow window: the question wraps rather than being cut off.
+      await page.setViewportSize({ width: 360, height: 720 });
+      await reset(page);
+      const [term] = await panes(page);
+      await menu(page, paneEl(page, term), "Claude Code conversations…");
+      const dialog = picker(page);
+      await dialog.locator(".picker-filter").fill("moor birds");
+      const ask = dialog.locator("[data-move-ask]");
+      await expect(ask).toHaveText(/^Running in .+\. Move here\?$/);
+      expect(await ask.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      const box = (await ask.boundingBox())!;
+      const frame = (await dialog.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(frame.x + frame.width);
+
+      const continued = page.waitForResponse((r) => r.url().includes("/api/conversations/continue"));
+      await dialog.locator("[data-move-here]").click();
+      expect((await continued).ok()).toBe(true);
+      expect(await ended).toBe("SIGINT");
+      await expect(dialog).toBeHidden();
+      await expect.poll(async () => (await tab(page))?.name).toBe("Moor birds");
+      const pane = await active(page);
+      expect(pane).not.toBe(term);
+      expect(await page.evaluate((p) => window.__arugula.client.info(p)?.type, pane)).toBe("terminal");
+    } finally {
+      other.kill("SIGKILL");
+      rmSync(join(claude, "sessions", `${other.pid}.json`), { force: true });
+    }
   });
 });
 

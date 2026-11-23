@@ -24,7 +24,7 @@
 //! | POST | `/api/panes/N/close` | | `Empty` (its output stays in history) |
 //! | POST | `/api/blocks` | `OpenRequest` | `OpenResponse`: `{"block": N}` |
 //! | POST | `/api/conversations/open` | `OpenConversationRequest` | `OpenConversationResponse`: a Claude Code conversation as an agent block (M33) |
-//! | POST | `/api/conversations/continue` | `ContinueConversationRequest` | `ContinueConversationResponse`: a Claude Code or Codex conversation going on in a terminal pane, `claude --resume` or `codex resume` |
+//! | POST | `/api/conversations/continue` | `ContinueConversationRequest` | `ContinueConversationResponse`: a Claude Code or Codex conversation going on in a terminal pane, `claude --resume` or `codex resume`; `move_here` stops one running in another terminal first |
 //! | GET | `/api/blocks/N` | | `Described`: `{info, state}`, `describe` |
 //! | POST | `/api/blocks/N/call/METHOD` | JSON args | the method's answer |
 //! | GET, POST, DELETE | `/api/studio` | POST `StudioLoginRequest` | `StudioStatus`: the studio and whether there's a token (never the token); POST logs in (`StudioLoggedIn`), DELETE forgets it (`Empty`, M35) |
@@ -1442,6 +1442,12 @@ pub struct ContinueConversationRequest {
     pub session: Option<String>,
     #[serde(default)]
     pub from_pane: Option<PaneId>,
+    /// It's running in a terminal outside Arugula: stop it there first
+    /// (Move here; SIGINT, then SIGTERM, never SIGKILL), then continue it.
+    /// Refused if it won't stop or isn't the owner's.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
+    pub move_here: bool,
 }
 
 /// What continuing a conversation answers: the pane it goes on in
@@ -2629,7 +2635,7 @@ mod wire {
             json!({ "opened": false, "conversation": "abc-123", "cwd": "/home/sam/x", "folder_gone": true })
         );
         let req: ContinueConversationRequest = serde_json::from_value(json!({ "id": "abc" })).unwrap();
-        assert!(!req.home && req.session.is_none() && req.from_pane.is_none());
+        assert!(!req.home && !req.move_here && req.session.is_none() && req.from_pane.is_none());
 
         // `close` answered `json!({})`.
         assert_eq!(serde_json::to_value(Empty {}).unwrap(), json!({}));

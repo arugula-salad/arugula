@@ -2221,7 +2221,13 @@ home?: boolean | null,
  * The new tab's session (name or id). Default: `from_pane`'s, else
  * the first.
  */
-session?: string | null, from_pane?: number | null, };
+session?: string | null, from_pane?: number | null, 
+/**
+ * It's running in a terminal outside Arugula: stop it there first
+ * (Move here; SIGINT, then SIGTERM, never SIGKILL), then continue it.
+ * Refused if it won't stop or isn't the owner's.
+ */
+move_here?: boolean | null, };
 
 /**
  * What continuing a conversation answers: the pane it goes on in

@@ -128,15 +128,14 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 2 / 4 · Cloud");
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
-  // Arugula #1194: may people type into it through Arugula cloud? On this page
-  // (the machine's own, on loopback) it asks; no until answered.
-  const typing = panel.locator("[data-start-remote-input]");
-  await expect(typing).toContainText("May people type into");
-  await expect(typing.locator("[data-start-remote-input-off]")).toBeChecked();
-  await typing.locator("[data-start-remote-input-on]").check();
+  // Nothing asked about typing before sign-in: the join settles it, on for
+  // your account (from your phone too) and off for a team (Arugula issue
+  // iss_d8ce0c357cf0902c51dec39378ef7a1b).
+  await expect(panel.locator("[data-start-remote-input]")).toContainText("type into");
+  await expect(panel.locator("[data-start-remote-input]")).toContainText("from your phone");
+  await expect(panel.locator("input[type=radio]")).toHaveCount(0);
   await panel.locator("[data-start-connect]").click();
-  await expect.poll(() => asked).toEqual({ url, remote_input: true });
-  await expect(typing).toHaveCount(0);
+  await expect.poll(() => asked).toEqual({ url });
 
   const add = panel.locator("[data-start-approve]");
   await expect(add).toHaveText("Add it in Arugula cloud");

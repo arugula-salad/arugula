@@ -970,12 +970,13 @@ export class Client {
    * named after it, or the pane or block that has it already, shown. `home`: its folder is gone, run it
    * there. The answer (`folder_gone` and no pane: ask about home), or null
    * (and the error as a toast). */
-  async continueConversation(o: { id: string; home?: boolean; from?: PaneId; session?: number }): Promise<ContinueConversationResponse | null> {
+  async continueConversation(o: { id: string; home?: boolean; move?: boolean; from?: PaneId; session?: number }): Promise<ContinueConversationResponse | null> {
     this.lastMadeAt = Date.now();
     try {
       const res = await this.request(OPS["conversation.continue"].method, opPath("conversation.continue"), {
         id: o.id,
         home: o.home ?? null,
+        move_here: o.move ?? null,
         from_pane: o.from ?? null,
         session: o.from === undefined ? (o.session?.toString() ?? null) : null,
       } satisfies ContinueConversationRequest);
