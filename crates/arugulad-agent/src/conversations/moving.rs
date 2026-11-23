@@ -193,7 +193,10 @@ mod tests {
         }
 
         fn trap(ignores: &str) -> String {
-            if ignores.is_empty() { String::new() } else { format!("trap '' {ignores};") }
+            // Quitting on SIGINT is said outright: bash (macOS's sh) waits
+            // out a running child before it acts on one, and then only
+            // exits if the child died of it too.
+            if ignores.is_empty() { "trap 'exit 130' INT;".into() } else { format!("trap '' {ignores};") }
         }
 
         /// Stop it, watching it as Move here watches the session file.
