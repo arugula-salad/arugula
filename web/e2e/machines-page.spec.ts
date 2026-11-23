@@ -197,6 +197,47 @@ test.describe("on a computer", () => {
   });
 });
 
+test.describe("on a laptop", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("a session of many tabs shows its first few and +N more, so the next machine's still on the first screen", async ({ page }) => {
+    await stubPins(page, []);
+    await openApp(page, () => `/p/${P}/machines`);
+    // Fifteen tabs of one pane each, the tenth's asking; then a teammate's machine.
+    const tabs: [number, number[]][] = Array.from({ length: 15 }, (_, i) => [20 + i, [i + 1]]);
+    await addMachines(page, [
+      { name: "amy-laptop", id: "a11a000000000001", online: true, sessions: [[1, P, tabs]], asks: [10] },
+      { name: "bob-mini", id: "b0b0000000000001", online: true, owner: "Bob", sessions: [[1, P, [[10, [1]]]]] },
+    ]);
+    const list = page.locator("[data-machines-list]");
+    const busy = list.locator('> [data-machines-group="a11a000000000001"] [data-machines-session="1"]');
+    await expect(busy.locator(".machines-session-meta")).toHaveText("15 tabs · 15 panes");
+    // The first three, and the one that needs you.
+    await expect(busy.locator(".machines-tab")).toHaveText(["Tab 1", "Tab 2", "Tab 3", "Tab 10"]);
+    const more = busy.locator("[data-machines-more]");
+    await expect(more).toHaveText("+11 more tabs");
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+
+    // The next machine's heading is above the fold.
+    const bob = list.locator('> [data-machines-group="b0b0000000000001"] [data-machines-machine-link]');
+    await expect(bob).toBeVisible();
+    const box = (await bob.boundingBox())!;
+    expect(box.y + box.height).toBeLessThanOrEqual(800);
+
+    // +N more opens the rest in place, in order; Show fewer folds them again.
+    await more.click();
+    await expect(busy.locator("[data-machines-tab]")).toHaveCount(15);
+    await expect(busy.locator(".machines-tab").nth(9)).toHaveText("Tab 10");
+    await expect(more).toHaveText("Show fewer");
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await more.click();
+    await expect(busy.locator("[data-machines-tab]")).toHaveCount(4);
+
+    // A session of three tabs or fewer has no +N more.
+    await expect(list.locator("[data-machines-more]")).toHaveCount(1);
+  });
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 

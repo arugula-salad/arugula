@@ -8,6 +8,7 @@
 // had open last stays lit. Only the project's sessions (#1164).
 
 import "./machines-list.css";
+import { useState } from "preact/hooks";
 import { parseMachines, type MachineAt } from "../shared/machine-paths";
 import { needsYou, NEEDS_YOU } from "../shared/needs-you";
 import { EmptyState } from "../shared/ui/block-states";
@@ -75,6 +76,10 @@ function sessionPane(m: MachineSection, s: SessionCard, last: Last): number {
 }
 
 const isAgent = (p: FleetPane) => kindOf(p) === "agent";
+
+/** A card shows this many tabs, and "+N more" for the rest, so one busy
+ * session doesn't push the next machine off a laptop's first screen. */
+const TABS = 3;
 
 type To = (at: MachineAt) => string;
 
@@ -221,10 +226,15 @@ function Machine({ m, count, to, last, phone }: { m: MachineSection; count: numb
 
 /** A session's card: its state, its name (it opens at its last tab), its
  * counts, and its panes, under their tab's name when it has more than one.
- * A pinned one says so, and unpins (`pinned`), and names its machine. */
+ * Its first few tabs, and any with a pane that needs you or the one you had
+ * open last; "+N more" opens the rest in place. A pinned one says so, and
+ * unpins (`pinned`), and names its machine. */
 function Session({ m, s, to, last, phone, pinned, ...data }: { m: MachineSection; s: SessionCard; to: To; last: Last; phone: boolean; pinned?: () => void; [k: `data-${string}`]: unknown }) {
+  const [all, setAll] = useState(false);
   const open = to(machineAt(m, sessionPane(m, s, last)));
   const tabs = s.tabs.length;
+  const few = s.tabs.filter((t, i) => i < TABS || t.panes.some((p) => needsYou(p.info) || isLast(last, m, p)));
+  const more = tabs - few.length;
   return (
     <li class="machines-session-item">
       <Card as="article" class="machines-session" data-machines-session={s.id} data-attention={s.state} {...data}>
@@ -243,9 +253,9 @@ function Session({ m, s, to, last, phone, pinned, ...data }: { m: MachineSection
           {pinned && `on ${shortHost(m.name)} · `}
           {tabs} {tabs === 1 ? "tab" : "tabs"} · {s.panes} {s.panes === 1 ? "pane" : "panes"}
         </p>
-        {s.tabs.map((t, i) => (
+        {(all ? s.tabs : few).map((t) => (
           <div key={t.id} data-machines-tab={t.id}>
-            {tabs > 1 && <h4 class="machines-tab dim">{t.name ?? `Tab ${i + 1}`}</h4>}
+            {tabs > 1 && <h4 class="machines-tab dim">{t.name ?? `Tab ${s.tabs.indexOf(t) + 1}`}</h4>}
             <ul class="panes-rows">
               {t.panes.map((p) => (
                 <Row key={p.key} p={p} to={to(machineAt(m, p.id))} last={isLast(last, m, p)} phone={phone} />
@@ -253,6 +263,11 @@ function Session({ m, s, to, last, phone, pinned, ...data }: { m: MachineSection
             </ul>
           </div>
         ))}
+        {more > 0 && (
+          <button type="button" class="link small machines-more" aria-expanded={all} data-machines-more onClick={() => setAll(!all)}>
+            {all ? "Show fewer" : `+${more} more ${more === 1 ? "tab" : "tabs"}`}
+          </button>
+        )}
       </Card>
     </li>
   );
