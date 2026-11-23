@@ -26,9 +26,12 @@
 //! `flags::ISSUES_STEERING` as `additionalContext`, so Claude Code files a
 //! new issue in Arugula, not on GitHub, and `flags::DOCS_STEERING` before
 //! it, so a report is a Doc, not an Artifact (#1486; everyone's since Docs
-//! left Labs, native #204, unless an older daemon still has them off). It asks the daemon for at most [`FLAGS_WAIT`], because Claude
-//! Code waits for SessionStart hooks before a headless session's first
-//! turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
+//! left Labs, native #204, unless an older daemon still has them off). The
+//! issues sentence only once the machine has joined Arugula cloud, as in
+//! MCP's instructions: before, it would send an agent to tools it can't
+//! reach (Arugula #1403). It asks the daemon for at most [`FLAGS_WAIT`],
+//! because Claude Code waits for SessionStart hooks before a headless
+//! session's first turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
 //! sentence again as its context: it doesn't stop the command, which may
 //! be what the user asked for. A `PostToolUse` in a session a person drives
 //! also takes a mention that's waiting (#644), as `additionalContext`.
@@ -51,7 +54,8 @@ use arugula_proto::{
         PermitAnswer,
     },
     flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING},
-    op::ops::{FlagsList, PaneFollowUpAck, PaneInbox, PanePermit},
+    hosts::ControlState,
+    op::ops::{FlagsList, HostGet, PaneFollowUpAck, PaneInbox, PanePermit},
 };
 
 use crate::http::{Target, call, request, request_op, send_op};
@@ -82,9 +86,9 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 }
 
 /// `arugula hook`: always exits 0; prints a decision only for a
-/// permission someone answered on a card, the issues (and, where `docs` is
-/// on, Doc) context on `SessionStart`, and the issues context before a
-/// `gh issue create`.
+/// permission someone answered on a card, the Doc (where `docs` is on) and,
+/// once joined, issues context on `SessionStart`, and the issues context
+/// before a `gh issue create`.
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] == "SessionStart" {
@@ -169,16 +173,25 @@ fn mention_context(answer: HookAnswer) -> Option<Value> {
 }
 
 /// What `SessionStart` prints, if the daemon answers within `wait`: Claude
-/// Code's `additionalContext`, the issues sentence, with the Doc one first.
-/// Nothing when the daemon doesn't answer in time, or answers something
-/// else.
+/// Code's `additionalContext`, the Doc sentence, then the issues one once
+/// the machine has joined (`joined`). Nothing when the daemon doesn't answer
+/// in time, or answers something else, or there'd be nothing to say.
 fn session_start(sock: &Target, wait: Duration, driven: bool) -> Option<Value> {
-    let mut context = match docs_on(sock, wait)? {
-        true => format!("{DOCS_STEERING} {ISSUES_STEERING}"),
-        false => ISSUES_STEERING.to_owned(),
-    };
-    if driven {
-        context = format!("{context} {MENTIONS_STEERING}");
+    let by = Instant::now() + wait;
+    let joined = joined(sock);
+    let docs = docs_on(sock, wait)?;
+    let joined = joined.recv_timeout(by.saturating_duration_since(Instant::now())).ok().flatten();
+    let context = [
+        docs.then_some(DOCS_STEERING),
+        joined.unwrap_or(false).then_some(ISSUES_STEERING),
+        driven.then_some(MENTIONS_STEERING),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if context.is_empty() {
+        return None;
     }
     Some(serde_json::json!({
         "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": context }
@@ -218,6 +231,21 @@ fn ack(sock: &Target, pane: u32, id: u64, wait: Duration) {
 fn session_driven() -> bool {
     let env = |k| std::env::var(k).ok();
     driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref())
+}
+
+/// Whether this machine has joined Arugula cloud and is still in it, as
+/// MCP's `joined` has it, asked on a thread of its own so it runs beside
+/// [`docs_on`]: the caller waits on the answer. `None`: the daemon didn't
+/// say (an older one, or for someone who isn't the owner), taken as not
+/// joined.
+fn joined(sock: &Target) -> std::sync::mpsc::Receiver<Option<bool>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sock = sock.clone();
+    std::thread::spawn(move || {
+        let got = send_op::<HostGet>(&sock, &(), &Empty {}).and_then(|r| r.json());
+        let _ = tx.send(got.ok().as_ref().and_then(ControlState::of_host).map(|c| c.state == "joined"));
+    });
+    rx
 }
 
 fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {

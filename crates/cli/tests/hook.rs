@@ -1,8 +1,9 @@
 //! #1486: `arugula hook` on `SessionStart` adds the issues context in a
 //! pane whose daemon answers, with the Docs context first where it has
 //! `docs` on, and nothing otherwise; and never keeps a session waiting for
-//! a daemon that doesn't answer. Against a fake daemon
-//! on a Unix socket that plays `flags.list`.
+//! a daemon that doesn't answer. Arugula #1403: the issues context only
+//! once the machine has joined Arugula cloud. Against a fake daemon on a
+//! Unix socket that plays `flags.list` and `host.get`.
 
 #![cfg(unix)]
 
@@ -22,8 +23,10 @@ use serde_json::{Value, json};
 #[derive(Clone, Copy)]
 enum Daemon {
     /// Answers `flags.list`: with no `docs` row (a daemon since Docs left
-    /// Labs, native #204), or an older one's with it on or off.
-    Docs(Option<bool>),
+    /// Labs, native #204), or an older one's with it on or off; and
+    /// `host.get`, with its control state (`joined`, `not_joined`,
+    /// `dropped`).
+    Up { docs: Option<bool>, control: &'static str },
     /// Accepts the connection and never answers.
     Silent,
     /// Nothing listens on the socket.
@@ -54,6 +57,8 @@ fn hook(name: &str, daemon: Daemon, pane: Option<&str>, event: Value) -> (String
                 let Ok(mut s) = s else { break };
                 thread::spawn(move || {
                     let mut r = BufReader::new(s.try_clone().unwrap());
+                    let mut first = String::new();
+                    let _ = r.read_line(&mut first);
                     loop {
                         let mut l = String::new();
                         if r.read_line(&mut l).unwrap_or(0) == 0 || l.trim().is_empty() {
@@ -61,8 +66,12 @@ fn hook(name: &str, daemon: Daemon, pane: Option<&str>, event: Value) -> (String
                         }
                     }
                     match daemon {
-                        Daemon::Docs(on) => {
-                            let out = flags(on).to_string();
+                        Daemon::Up { docs, control } => {
+                            let out = match first.contains(" /api/host ") {
+                                true => json!({ "name": "h", "version": "1", "control_state": { "state": control } }),
+                                false => flags(docs),
+                            }
+                            .to_string();
                             let _ = write!(
                                 s,
                                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{out}",
@@ -77,7 +86,16 @@ fn hook(name: &str, daemon: Daemon, pane: Option<&str>, event: Value) -> (String
     }
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_arugula"));
     cmd.arg("--socket").arg(&sock).arg("hook").env("ARUGULA_STATE_DIR", dir.join("state"));
-    for k in ["ARUGULA_PANE", "ARUGULA_SOCK", "CLAUDECODE", "AI_AGENT", "CLAUDE_PLUGIN_ROOT", "CLAUDE_CONFIG_DIR"] {
+    for k in [
+        "ARUGULA_PANE",
+        "ARUGULA_SOCK",
+        "CLAUDECODE",
+        "AI_AGENT",
+        "CLAUDE_PLUGIN_ROOT",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDE_CODE_SESSION_ATTENDED",
+        "CLAUDE_CODE_ENTRYPOINT",
+    ] {
         cmd.env_remove(k);
     }
     if let Some(p) = pane {
@@ -102,7 +120,8 @@ fn start(source: &str) -> Value {
 #[test]
 fn session_start_adds_the_context_for_every_source() {
     for (source, docs) in [("startup", None), ("resume", None), ("clear", Some(true)), ("compact", None)] {
-        let (out, _, code) = hook(&format!("on-{source}"), Daemon::Docs(docs), Some("3"), start(source));
+        let (out, _, code) =
+            hook(&format!("on-{source}"), Daemon::Up { docs, control: "joined" }, Some("3"), start(source));
         assert_eq!(code, 0);
         let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{source}: {e}: {out:?}"));
         assert_eq!(
@@ -120,7 +139,7 @@ fn session_start_adds_the_context_for_every_source() {
 /// An older daemon, from before Docs left Labs, with its `docs` flag off.
 #[test]
 fn session_start_with_an_older_daemons_docs_off_adds_only_the_issues_context() {
-    let (out, _, code) = hook("off", Daemon::Docs(Some(false)), Some("3"), start("startup"));
+    let (out, _, code) = hook("off", Daemon::Up { docs: Some(false), control: "joined" }, Some("3"), start("startup"));
     assert_eq!(code, 0);
     let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out:?}"));
     assert_eq!(
@@ -130,9 +149,26 @@ fn session_start_with_an_older_daemons_docs_off_adds_only_the_issues_context() {
     );
 }
 
+/// Before the machine joins Arugula cloud, or once control dropped it,
+/// `issue_write` reaches nowhere: no issues sentence (Arugula #1403).
+#[test]
+fn session_start_on_an_unjoined_machine_leaves_out_the_issues_context() {
+    for control in ["not_joined", "dropped"] {
+        let (out, _, code) = hook(control, Daemon::Up { docs: None, control }, Some("3"), start("startup"));
+        assert_eq!(code, 0);
+        let said: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{control}: {e}: {out:?}"));
+        assert_eq!(
+            said,
+            json!({ "hookSpecificOutput": { "hookEventName": "SessionStart",
+                "additionalContext": format!("{DOCS_STEERING} {MENTIONS_STEERING}") } }),
+            "{control}"
+        );
+    }
+}
+
 #[test]
 fn session_start_prints_nothing_outside_a_pane() {
-    let (out, _, code) = hook("nopane", Daemon::Docs(None), None, start("startup"));
+    let (out, _, code) = hook("nopane", Daemon::Up { docs: None, control: "joined" }, None, start("startup"));
     assert_eq!((out.as_str(), code), ("", 0));
 }
 
