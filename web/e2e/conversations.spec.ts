@@ -1,7 +1,10 @@
 // M33 in the client: Claude Code conversations from a terminal or the
-// desktop app, picked from a pane's menu (desktop) or the sheet (phone),
-// shown as an agent block, continued; one still open elsewhere forked
-// instead. The Claude directory is the run's own (playwright.config.ts)
+// desktop app, picked from a pane's menu (desktop) or the sheet (phone).
+// Continue here resumes one in a terminal tab named after it (`claude
+// --resume`, which isn't installed here: the tab and its pane are what's
+// checked; the daemon's test checks the command and folder), and offers
+// home when its folder is gone. Open as agent block shows it as a block,
+// continued there; one still open elsewhere forked instead. The Claude directory is the run's own (playwright.config.ts)
 // and Claude Code's adapter is the fake ACP agent, so nothing here costs
 // anything.
 
@@ -9,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
+import { active, menu, paneEl, panes, reset, seedConversation, tab, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
 
@@ -48,7 +51,7 @@ const agentBlock = (page: Page) =>
 const picker = (page: Page) => page.getByRole("dialog", { name: "Claude Code conversations" });
 
 test.describe("desktop", () => {
-  test("pick a conversation from the pane menu, read it, continue it", async ({ page }) => {
+  test("open a conversation as an agent block from the pane menu, read it, continue it", async ({ page }) => {
     const { id } = seed("kestrel", "Bird watching");
     await reset(page);
     const [term] = await panes(page);
@@ -62,7 +65,8 @@ test.describe("desktop", () => {
     await dialog.locator(".picker-filter").fill("no such words at all");
     await expect(row).toBeHidden();
     await dialog.locator(".picker-filter").fill("bird");
-    await row.click();
+    await expect(dialog.locator("[data-continue-here]")).toHaveText("Continue here");
+    await dialog.locator("[data-open-block]").click();
     await expect(dialog).toBeHidden();
 
     // A stopped block beside the pane: its transcript, nothing running.
@@ -111,7 +115,7 @@ test.describe("desktop", () => {
     const [term] = await panes(page);
     await menu(page, paneEl(page, term), "Claude Code conversations…");
     await picker(page).locator(".picker-filter").fill("colours");
-    await picker(page).locator("[data-conversation]").first().click();
+    await picker(page).locator("[data-open-block]").click();
     await expect.poll(() => agentBlock(page)).not.toBeNull();
     const el = paneEl(page, (await agentBlock(page))!);
     const fold = el.locator(".agent-forgotten");
@@ -131,7 +135,10 @@ test.describe("desktop", () => {
     await menu(page, paneEl(page, term), "Claude Code conversations…");
     const row = picker(page).locator(`[data-conversation="${id}"]`);
     await expect(row.locator(".conv-live")).toBeVisible();
-    await row.click();
+    await picker(page).locator(".picker-filter").fill("shore");
+    // Not here: two Claude Codes on one conversation write over each other.
+    await expect(picker(page).locator("[data-continue-here]")).toBeDisabled();
+    await picker(page).locator("[data-open-block]").click();
     await expect.poll(() => agentBlock(page)).not.toBeNull();
     const el = paneEl(page, (await agentBlock(page))!);
     await expect(el.locator(".agent-status")).toHaveText("Open elsewhere");
@@ -147,11 +154,47 @@ test.describe("desktop", () => {
   });
 });
 
+test.describe("continue here", () => {
+  test("resumes it in a terminal tab named after it, no agent block", async ({ page }) => {
+    seed("osprey", "Fish hawks");
+    await reset(page);
+    const [term] = await panes(page);
+    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await picker(page).locator(".picker-filter").fill("fish hawks");
+    await picker(page).locator("[data-continue-here]").click();
+    await expect(picker(page)).toBeHidden();
+    await expect.poll(async () => (await tab(page))?.name).toBe("Fish hawks");
+    const pane = await active(page);
+    expect(pane).not.toBe(term);
+    expect(await page.evaluate((p) => window.__arugula.client.info(p)?.kind, pane)).toBe("terminal");
+    expect(await agentBlock(page)).toBeNull();
+  });
+
+  test("its folder gone, it says so and runs it in home", async ({ page }) => {
+    const { cwd } = seed("egret", "Gone birds");
+    rmSync(cwd, { recursive: true, force: true });
+    await reset(page);
+    const [term] = await panes(page);
+    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    const dialog = picker(page);
+    // A gone folder's conversation is listed with All.
+    await dialog.getByRole("switch", { name: "All" }).check();
+    await dialog.locator(".picker-filter").fill("gone birds");
+    await dialog.locator("[data-continue-here]").click();
+    await expect(dialog.locator("[data-folder-gone]")).toContainText(`${cwd} is gone`);
+    expect(await panes(page)).toEqual([term]);
+    await dialog.locator("[data-continue-home]").click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(async () => (await tab(page))?.name).toBe("Gone birds");
+    expect(await agentBlock(page)).toBeNull();
+  });
+});
+
 test.describe("phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  test("the sheet lists conversations and opens one", async ({ page }) => {
+  test("the sheet lists conversations and continues one here", async ({ page }) => {
     const { id } = seed("heron", "Wading birds");
     await reset(page);
     await page.locator(".sheet-button").click();
@@ -160,7 +203,7 @@ test.describe("phone", () => {
     await expect(dialog).toHaveClass(/\bphone\b/);
     await dialog.locator(`[data-conversation="${id}"]`).click();
     await expect(dialog).toBeHidden();
-    await expect.poll(() => agentBlock(page)).not.toBeNull();
-    await expect(paneEl(page, (await agentBlock(page))!).locator(".agent-user").first()).toHaveText("remember heron");
+    await expect.poll(async () => (await tab(page))?.name).toBe("Wading birds");
+    expect(await agentBlock(page)).toBeNull();
   });
 });

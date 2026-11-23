@@ -1,9 +1,12 @@
 // Claude Code conversations (M33): every one on the daemon's machine, from
 // a terminal, the desktop app's Code tab or VS Code, grouped by folder, newest
-// first. Picking one shows it as an agent block (stopped, its transcript
-// as it grows), or goes to the block that has it already. Opened from a
-// pane's menu, the agent dialog and the phone's sheet. On a phone it is a
-// full-height sheet.
+// first. Picking one continues it here: a terminal pane in its folder
+// running the person's own `claude --resume <id>`, in a new tab named after
+// it (no adapter to install), or the pane or block that has it already. If
+// its folder is gone, the picker says so and offers to run it in home.
+// *Open as agent block* shows it as an agent block instead (stopped, its
+// transcript as it grows), which forks too. Opened from a pane's menu, the
+// agent dialog and the phone's sheet. On a phone it is a full-height sheet.
 //
 // With more than one host (#78), every host's are listed, grouped by host
 // and then folder: each host is asked over the fleet's connection (M25) at
@@ -21,7 +24,7 @@ import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
-import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
+import type { ContinueConversationRequest, ContinueConversationResponse, OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
 import { getFleet } from "./hosts";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
@@ -146,6 +149,8 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   const [liveOnly, setLiveOnly] = useState(false);
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** The conversation whose folder is gone, as Continue here found: offer home. */
+  const [gone, setGone] = useState<{ id: string; host: string; cwd: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const loads = useRef(0);
@@ -243,6 +248,43 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
   };
 
+  /** Continue here: where it's open already, else `claude --resume` in a
+   * terminal pane on its host. `home`: its folder is gone, run it there. */
+  const goOn = async (c: Conversation, host: string, home = false) => {
+    if (busy) return;
+    const there = host !== here && fleet;
+    if (c.block !== null || inPane(c, host)) {
+      const p = c.block ?? c.live!.pane!;
+      if (there) fleet.open(host, p);
+      else client.focusPane(p);
+      close();
+      return;
+    }
+    setBusy(true);
+    try {
+      let v: ContinueConversationResponse | null;
+      if (there) {
+        const res = await within(fleet.request(host, OPS["conversation.continue"].method, opPath("conversation.continue"), { id: c.id, home } satisfies ContinueConversationRequest), HOST_MS);
+        const body = await res.json<Partial<ContinueConversationResponse> & { error?: string }>().catch(() => null);
+        v = res.ok && typeof body?.conversation === "string" ? (body as ContinueConversationResponse) : null;
+        if (!v) client.toast(body?.error ?? `couldn't continue it on ${host} (${res.status})`);
+      } else {
+        v = await client.continueConversation({ id: c.id, home, from: where.split, session: where.session });
+      }
+      if (!v) return;
+      if (v.pane == null) {
+        if (v.folder_gone) setGone({ id: c.id, host, cwd: v.cwd });
+        return;
+      }
+      if (there) fleet.open(host, v.pane);
+      close();
+    } catch (e) {
+      client.toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const pick = async (c: Conversation, host: string, then?: "continue" | "fork") => {
     if (busy) return;
     if (host !== here && fleet) return pickThere(c, host, then);
@@ -300,13 +342,14 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     } else if (e.key === "Enter") {
       e.preventDefault();
       const r = convs[sel];
-      if (r) void pick(r.c, r.host);
+      if (r) void goOn(r.c, r.host, gone?.id === r.c.id && gone.host === r.host);
     }
   };
 
   const chosenRow = convs[sel];
   const chosen = chosenRow?.c;
   const chosenHost = chosenRow?.host ?? here;
+  const chosenGone = !!chosen && gone?.id === chosen.id && gone.host === chosenHost ? gone : null;
   let i = -1;
   return (
     <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
@@ -369,7 +412,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
               data-host={host}
               onClick={() => {
                 setSel(n);
-                void pick(c, host);
+                void goOn(c, host);
               }}
               title={c.first_prompt ?? c.title}
             >
@@ -401,18 +444,32 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       </ul>
       {error && <p class="error picker-error">{error}</p>}
       <div class="picker-actions">
-        <span class="picker-target" title={chosen?.live?.place ?? chosen?.cwd}>
-          {chosen ? (chosen.live ? chosen.live.place : (chosen.last_prompt ?? chosen.first_prompt ?? "")) : ""}
+        <span class="picker-target" title={chosenGone?.cwd ?? chosen?.live?.place ?? chosen?.cwd} data-folder-gone={chosenGone ? true : undefined}>
+          {chosenGone
+            ? `${chosenGone.cwd} is gone. Run it in your home folder instead?`
+            : chosen
+              ? chosen.live
+                ? chosen.live.place
+                : (chosen.last_prompt ?? chosen.first_prompt ?? "")
+              : ""}
         </span>
-        <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen, chosenHost)}>
-          {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Open"}
-        </button>
-        <button
-          disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
-          title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
-          onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
-        >
-          Continue
+        {chosenGone ? (
+          <button class="primary" data-continue-home disabled={busy} onClick={() => chosen && void goOn(chosen, chosenHost, true)}>
+            Run it in home
+          </button>
+        ) : (
+          <button
+            class="primary"
+            data-continue-here
+            disabled={!chosen || busy || (!!chosen.live && chosen.block === null && !inPane(chosen, chosenHost))}
+            title={chosen?.live && chosen.block === null && !inPane(chosen, chosenHost) ? `It's ${chosen.live.place}: open it as an agent block and fork it` : "Your own claude --resume, in a terminal pane in its folder"}
+            onClick={() => chosen && void goOn(chosen, chosenHost)}
+          >
+            {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Continue here"}
+          </button>
+        )}
+        <button disabled={!chosen || busy} data-open-block title="Stopped, showing its transcript" onClick={() => chosen && void pick(chosen, chosenHost)}>
+          {chosen?.block != null ? "Go to its agent block" : "Open as agent block"}
         </button>
         <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
           Fork

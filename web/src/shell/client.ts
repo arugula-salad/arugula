@@ -30,6 +30,8 @@ import {
   type Intent,
   type NotifyPref,
   type NotifyRequest,
+  type ContinueConversationRequest,
+  type ContinueConversationResponse,
   type OpenConversationRequest,
   type OpenConversationResponse,
   type OpenRequest,
@@ -961,6 +963,33 @@ export class Client {
       } satisfies OpenRequest,
       "couldn't start the chat",
     );
+  }
+
+  /** Continue here: a Claude Code conversation going on in a terminal pane
+   * running `claude --resume`, in a new tab named after it, or the pane or
+   * block that has it already, shown. `home`: its folder is gone, run it
+   * there. The answer (`folder_gone` and no pane: ask about home), or null
+   * (and the error as a toast). */
+  async continueConversation(o: { id: string; home?: boolean; from?: PaneId; session?: number }): Promise<ContinueConversationResponse | null> {
+    this.lastMadeAt = Date.now();
+    try {
+      const res = await this.request(OPS["conversation.continue"].method, opPath("conversation.continue"), {
+        id: o.id,
+        home: o.home ?? null,
+        from_pane: o.from ?? null,
+        session: o.from === undefined ? (o.session?.toString() ?? null) : null,
+      } satisfies ContinueConversationRequest);
+      const v = await res.json<Partial<ContinueConversationResponse> & { error?: string }>().catch(() => null);
+      if (!res.ok || !v || typeof v.conversation !== "string") {
+        this.toast(v?.error ?? `couldn't continue it (${res.status})`);
+        return null;
+      }
+      if (v.pane != null && !v.opened) this.focusPane(v.pane);
+      return v as ContinueConversationResponse;
+    } catch {
+      this.toast("couldn't continue it");
+      return null;
+    }
   }
 
   /** A Claude Code conversation as an agent block (M33), or the block that

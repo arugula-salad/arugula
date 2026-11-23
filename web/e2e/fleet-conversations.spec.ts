@@ -125,7 +125,7 @@ test("every host's conversations in one picker, each opened and continued on its
   await expect(row(page, "jake-mini")).toBeVisible();
 
   // jake-mini's opens on jake-mini, and the page shows it there.
-  await row(page, "jake-mini").click();
+  await dialog.locator("[data-open-block]").click();
   await expect(dialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("jake-mini");
   const mini = `http://127.0.0.1:${portOf.get("jake-mini")}`;
@@ -187,7 +187,7 @@ test.describe("phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  test("the sheet lists every host's and opens one on its host", async ({ page }) => {
+  test("the sheet lists every host's and continues one on its host", async ({ page }) => {
     await reset(page);
     await expect.poll(() => hostStates(page), { timeout: 15_000 }).toEqual({ geek: "connected", "jake-mini": "connected", laptop: "connected" });
     await page.locator(".sheet-button").click();
@@ -197,11 +197,9 @@ test.describe("phone", () => {
     await row(page, "laptop").click();
     await expect(picker(page)).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("laptop");
-    const there = `http://127.0.0.1:${portOf.get("laptop")}`;
-    await expect.poll(() => agentOn(there)).not.toBeNull();
-    const block = (await agentOn(there))!;
-    await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(block);
-    await expect(paneEl(page, block).locator(".agent-user").first()).toHaveText("remember lapwing");
+    // In a terminal tab named after it, on laptop: no agent block.
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.tabView()?.name)).toBe("About lapwing");
+    expect(await agentOn(`http://127.0.0.1:${portOf.get("laptop")}`)).toBeNull();
     await page.evaluate(() => window.__arugula.hosts.select("geek"));
   });
 });
