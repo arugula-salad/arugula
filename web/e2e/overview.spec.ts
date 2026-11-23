@@ -28,7 +28,7 @@
 // behind a skeleton, with no thread opened by the page, and read one by one
 // from a hub that has no such route yet (#1296), the stats line saying
 // so until they land, not 0 in flight, and a session's Work address by the
-// hub's id (#1380); coming back to the page
+// hub's id (#1380), and its talk tab by that id across a reload (#1390); coming back to the page
 // after 30 seconds reading the boards once and the briefing once, and after
 // less reading nothing (#1297); and on a phone, one list
 // with Needs you on top. The platform's boards and the
@@ -986,6 +986,59 @@ test.describe("on a computer", () => {
     // A session the hub doesn't list in the project.
     await page.goto(`/p/${P}/work/ses_e2enotours`);
     await expect(page.locator("[data-ov-level-empty]")).toHaveText("This session isn't in the project now.", { timeout: 20_000 });
+  });
+
+  test("a session's tab opened before its pane is on the page finds it again after a reload, by the hub's id; a tab saved under its tile's key takes that id (Arugula #1390)", async ({ page }, info) => {
+    // The suite's daemon is the machine `m_suite`, as control names it, so the hub's session names its pane.
+    await page.route("**/api/hosts", async (r) => {
+      const list = (await (await r.fetch()).json()) as { this: string; hosts: unknown[] };
+      await r.fulfill({ json: { ...list, hosts: [...list.hosts, { name: list.this, id: "m_suite", urls: [], transport: "tailnet", added_ms: 0, last_seen_ms: null }] } });
+    });
+    await overview(page);
+    // The scratch session's pane, from its row on no card (`host:id`).
+    const loose = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(loose).toHaveAttribute("data-ov-panes", /:\d+$/);
+    const scratch = Number((await loose.getAttribute("data-ov-panes"))!.split(":").pop());
+    // The hub names the scratch session by a pane the page doesn't have yet, as while its daemon restarts.
+    let pane = 999_999;
+    await page.route(`**/api/projects/${P}/sessions/by-card`, (r) =>
+      r.fulfill({
+        json: {
+          project: P,
+          groups: [{ card: null, sessions: [{ kind: "machine", id: "ses_e2escratch", name: "scratch", on: { kind: "machine", id: "m_suite", name: "suite" }, panes: [{ pane, kind: "terminal", work_item: null, state: null }], updated_at: 0 }] }],
+        },
+      }),
+    );
+    const panel = page.locator("[data-ov-panel]");
+    const ready = async () => {
+      await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator(`[data-ov-loose] [data-ov-panes$=":${scratch}"]`)).toBeVisible({ timeout: 20_000 });
+    };
+    await page.reload();
+    await ready();
+    await page.locator('[data-ov-loose] [data-ov-session="machine:m_suite:ses_e2escratch"] [data-ov-row-open]').click();
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(1);
+
+    // Its pane comes onto the page: the reloaded tab is that session's shell, not "isn't in the project now".
+    pane = scratch;
+    await page.reload();
+    await ready();
+    await expect(panel.locator("[data-ov-peek], [data-ov-peek-gone]")).toBeVisible({ timeout: 20_000 });
+    await page.screenshot({ path: info.outputPath("overview-talk-tab-reloaded.png") });
+    await expect(panel.locator("[data-ov-peek-gone]")).toHaveCount(0);
+    await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(1);
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveAttribute("data-ov-tab", "peek:ses_e2escratch");
+
+    // A tab saved under its tile's key (`host#N`) is the same session's, now keyed by the hub's id.
+    const tile = (await page.locator(`[data-ov-loose] [data-ov-panes$=":${scratch}"]`).getAttribute("data-ov-session"))!.split("|").pop()!;
+    expect(tile).not.toContain("ses_");
+    await page.evaluate(({ P, tile }) => sessionStorage.setItem(`arugula.ov-talk:${P}`, JSON.stringify({ tabs: [{ kind: "peek", id: tile, title: "scratch" }], active: `peek:${tile}` })), { P, tile });
+    await page.reload();
+    await ready();
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveAttribute("data-ov-tab", "peek:ses_e2escratch", { timeout: 20_000 });
+    await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
+    expect(await page.evaluate((P) => JSON.parse(sessionStorage.getItem(`arugula.ov-talk:${P}`)!).active, P)).toBe("peek:ses_e2escratch");
   });
 
   test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {
