@@ -171,6 +171,15 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   transform: translateX(-50%);
   padding: 6px 6px 6px 12px;
   box-shadow: var(--shadow-lg);
+  /* Its own width, not half the window's: a long one wraps at a phone's
+     width (360px) instead of squishing, and stays a pill on one line. */
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  border-radius: min(var(--chip-radius), 16px);
+}
+.hint-toast > :not(.hint-copy) {
+  flex: none;
 }
 .hint-empty {
   margin-top: 12px;

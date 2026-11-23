@@ -46,6 +46,7 @@ import { openSettings } from "./settings-route";
 import { openFeedback } from "./feedback";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
+import { signInForPhone } from "./phone-offer";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -490,6 +491,8 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
   "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
   "push.enable": (client) => notifyThisDevice(client),
+  /** The phone offer's Sign in (hints/phone): join, then a QR code. */
+  "phone.sign-in": () => void signInForPhone(),
   /** Follow someone in the session (their client). */
   "people.follow": (client, { client: them }) => client.follow(Number(them)),
   /** The team's settings: the app's, where there is one (its invite links

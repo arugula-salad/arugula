@@ -245,6 +245,12 @@ test("the bell on a device that could be notified: Notify this device turns it o
   try {
     await push.stub(page, "laptop");
     await context.grantPermissions(["notifications"]);
+    // A joined machine's: with no account, the phone offer is said instead
+    // (hints-phone.spec.ts).
+    await page.route(/\/api\/host$/, async (r) => {
+      const real = (await (await r.fetch()).json()) as Record<string, unknown>;
+      return r.fulfill({ json: { ...real, control_state: { state: "joined", url: "https://control.arugula.io", kind: "account", connected: true } } });
+    });
     await reset(page);
     const [term] = await panes(page);
     await expect(toast(page, "push-device")).toHaveCount(0);
