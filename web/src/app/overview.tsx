@@ -33,7 +33,8 @@
 import "./overview.css";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLane, BoardRow, BoardView } from "../shared/proto";
+import type { BoardLane, BoardRow, BoardView, SessionView } from "../shared/proto";
+import { call } from "../shared/chat/session-card";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
@@ -41,7 +42,7 @@ import { epicLine, isCard, pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
 import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
-import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
+import { BY_CARD_EVERY_MS, hubStanding, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
@@ -90,6 +91,8 @@ const levelOf = (zoom?: OverviewZoom): Level => (!zoom ? 0 : "session" in zoom |
 /** A level out from `zoom`: a card's board, else Project. */
 const outOf = (zoom: OverviewZoom, to: Level = (levelOf(zoom) - 1) as Level): OverviewZoom | undefined => (to === 1 && "board" in zoom ? { board: zoom.board } : undefined);
 const zoomKey = (zoom?: OverviewZoom) => (!zoom ? "" : "session" in zoom ? `s:${zoom.session}` : `b:${zoom.board}/${zoom.card ?? ""}`);
+/** The start of a session's hub id, as the page shows one short (`ses_2fab1ab8`): enough of it to tell one from another. */
+const SHORT_SES = /^ses_[0-9a-f]{6,31}$/;
 /** A session's peek, as a tab. */
 const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: peekKey(s), title: s.name });
 
@@ -293,6 +296,29 @@ function useByCard(project: string): SessionsByCard | null | undefined {
   return v;
 }
 
+/** A cloud workspace's session the Work address names (`ses_…`) that the
+ * hub's sessions by card don't list (one stopped or failed): read alone,
+ * kept while it's this project's. undefined while it's read; null when it
+ * isn't one, or isn't this project's (#1380). */
+function useNamedSession(project: string, id: string | null): OvSession | null | undefined {
+  const [v, setV] = useState<{ id: string; s: OvSession | null } | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    let live = true;
+    call<SessionView>("GET", `/api/sessions/${encodeURIComponent(id)}`).then(
+      ({ card: c }) => {
+        const state = c.state;
+        const s: OvSession = { key: `hosted:${c.session}`, name: c.branch, where: "Arugula cloud", standing: hubStanding({ kind: "hosted", id: c.session, name: c.branch, on: { kind: "hosted" }, state, updated_at: c.updated_at }), panes: [], branch: c.branch, hosted: c.session, hub: c.session };
+        if (live) setV({ id, s: c.project === project ? s : null });
+      },
+      () => live && setV({ id, s: null }),
+    );
+    return () => void (live = false);
+  }, [project, id]);
+  if (!id) return null;
+  return v?.id === id ? v.s : undefined;
+}
+
 /** The boards the reader opened or closed on this project's Overview, kept for the tab. */
 function useOpened(project: string): [Map<string, boolean>, (board: string, open: boolean) => void] {
   const key = `arugula.ov-open:${project}`;
@@ -428,7 +454,12 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       const is = (s: OvSession) => peekKey(s) === key || s.hub === key;
       for (const c of ovCards) for (const s of c.sessions) if (is(s)) return { s, card: c };
       const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
-      return s && { s, card: null };
+      if (s) return { s, card: null };
+      // Or by the start of the hub's id, as a short one is shown (`ses_2fab1ab8`), when only one session has it.
+      if (!SHORT_SES.test(key)) return undefined;
+      const all = [...ovCards.flatMap((c) => c.sessions.map((s) => ({ s, card: c as OvCard | null }))), ...o.loose.map((s) => ({ s, card: null }))];
+      const starts = all.filter(({ s }) => s.hub?.startsWith(key));
+      return starts.length === 1 ? starts[0] : undefined;
     },
     openPanes,
     openCard,
@@ -438,14 +469,21 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   // Zooming (Arugula #1287): where the address is, and the way in and out.
   const level = levelOf(zoom);
   const zkey = zoomKey(zoom);
-  const zoomTo = (z?: OverviewZoom) => go(pathOf({ page: "project", project, ...(z ? { zoom: z } : {}) }, names));
+  const zoomTo = (z?: OverviewZoom, replace = false) => go(pathOf({ page: "project", project, ...(z ? { zoom: z } : {}) }, names), replace);
   const zoomBoard = zoom && "board" in zoom ? zoom.board : undefined;
   const zoomCard = zoom && "board" in zoom ? zoom.card : undefined;
   const zoomedBoard = zoomBoard ? o.boards.find((b) => b.id === zoomBoard) : undefined;
   const zoomedView = zoomBoard ? views?.find((v) => v.board.id === zoomBoard) : undefined;
   const zoomedRow = zoomCard ? zoomedView?.zones.flatMap((z) => z.rows).find((r) => r.id === zoomCard) : undefined;
   const zoomedCard = zoomCard ? ovCards.find((c) => c.board === zoomBoard && c.row.id === zoomCard) : undefined;
-  const zoomedSession = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
+  const zoomedListed = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
+  // A cloud workspace's session the hub doesn't list (stopped, failed): read alone, once the list has answered.
+  const named = useNamedSession(project, zoom && "session" in zoom && !zoomedListed && byCardRead !== undefined && /^ses_[0-9a-f]{32}$/.test(zoom.session) ? zoom.session : null);
+  const zoomedSession = zoomedListed ?? named ?? undefined;
+  // An address with the start of a session's id gets the whole of it.
+  useEffect(() => {
+    if (zoom && "session" in zoom && zoomedSession?.hub && zoomedSession.hub !== zoom.session && peekKey(zoomedSession) !== zoom.session) zoomTo({ session: zoomedSession.hub }, true);
+  }, [zoom && "session" in zoom ? zoom.session : null, zoomedSession?.hub]);
   const workSessions = zoomedCard ? zoomedCard.sessions : zoomedSession ? [zoomedSession] : [];
   // A Needs you card's pane: the work it's on, its card's or its own on no card.
   const zoomToWork = (key: string) => {
@@ -570,7 +608,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   // Zoomed in, the field is that level's; at Project, the rows above.
   const talkingPeek = talk.active?.startsWith("peek:") ? talk.active.slice("peek:".length) : null;
   const levelView =
-    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && (fleet.panes.length === 0 || byCardRead === undefined)) ? (
+    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && (fleet.panes.length === 0 || byCardRead === undefined || named === undefined)) ? (
       <p class="dim">Loading…</p>
     ) : level === 1 || zoomCard ? (
       !zoomedBoard || !zoomedView ? (

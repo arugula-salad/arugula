@@ -970,6 +970,42 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-level-empty]")).toHaveText("This session isn't in the project now.", { timeout: 20_000 });
   });
 
+  test("a chief of staff's session, a cloud workspace's started in the staff room, opens at its Work address: by its whole id, by its start (the address then whole), and read alone when the hub's list leaves it out (Arugula #1380)", async ({ page }) => {
+    await overview(page);
+    const S = "ses_2fab1ab82cb8aea4fe4ab554b44dcaed";
+    const BRANCH = "arugula/2fab1ab8-you-are-this-project-s-chief-of-staff";
+    // The session as the platform reads it: started in the staff room (a DM), on no card.
+    const view = (project: string, state: string) => ({ card: { session: S, project, room: "dm_e2estaff", parent: 1, state, branch: BRANCH, machine: null, block: null, parked: false, updated_at: 1 }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: state, at: 1, signed: true, text: "Nothing to do." }] });
+    let listed = true;
+    let home = P;
+    await page.route(`**/api/sessions/${S}`, (r) => r.fulfill({ json: view(home, listed ? "done" : "stopped") }));
+    await page.route(`**/api/projects/${P}/sessions/by-card`, (r) =>
+      r.fulfill({ json: { project: P, groups: listed ? [{ card: null, sessions: [{ kind: "hosted", id: S, name: BRANCH, branch: BRANCH, on: { kind: "hosted" }, state: "done", settled: true, updated_at: 0 }] }] : [] } }),
+    );
+    const work = page.locator("[data-ov-level-work]");
+    const opened = async () => {
+      await expect(work.locator(`[data-ov-work-paused="${S}"]`)).toContainText("Nothing to do.", { timeout: 20_000 });
+      await expect(work.locator("h2")).toContainText(BRANCH);
+      await expect(page.locator("[data-ov-level-empty]")).toHaveCount(0);
+    };
+
+    // Its whole id, with the project's slug.
+    await page.goto(`/p/${P}-arugula/work/${S}`);
+    await opened();
+    // The start of it, as a short id shows: the session, and the address made whole.
+    await page.goto(`/p/${P}-arugula/work/ses_2fab1ab`);
+    await opened();
+    await expect(page).toHaveURL(new RegExp(`/work/${S}$`));
+    // Stopped, so the hub's sessions by card leave it out: read alone.
+    listed = false;
+    await page.goto(`/p/${P}/work/${S}`);
+    await opened();
+    // Another project's: not this one's.
+    home = "prj_aaaa0009";
+    await page.goto(`/p/${P}/work/${S}`);
+    await expect(page.locator("[data-ov-level-empty]")).toHaveText("This session isn't in the project now.", { timeout: 20_000 });
+  });
+
   test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {
     // Launch is led by the project's scratch session on the suite's daemon, which this page knows by its name; Later has no lead.
     let led: unknown;
