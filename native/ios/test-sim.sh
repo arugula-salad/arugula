@@ -38,6 +38,16 @@ print(ios[-1]["identifier"], kinds[-1]["identifier"])
 read -r runtime type <<<"$pick"
 device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
 trap 'xcrun simctl shutdown "$device" 2>/dev/null || true; xcrun simctl delete "$device"' EXIT
+# XCTest's own queries and Accessibility's answers to them log in the app's
+# process, over a hundred thousand lines in a run on an iPad: enough that iOS
+# quarantines the app for logging volume, and XCTest's runtime-issue callback
+# then crashes it (Arugula #1282). Off for this device; the test's own record
+# is xcodebuild's log.
+xcrun simctl boot "$device"
+xcrun simctl bootstatus "$device" >/dev/null
+for subsystem in com.apple.dt.xctest com.apple.Accessibility; do
+  xcrun simctl spawn "$device" log config --subsystem "$subsystem" --mode level:off
+done
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
   TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
   TEST_RUNNER_ARUGULA_CARD_AGENT="${ARUGULA_CARD_AGENT:-}" \
