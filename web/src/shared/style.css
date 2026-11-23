@@ -6893,32 +6893,6 @@ html[data-scheme="light"] .doc {
   letter-spacing: var(--track-caps);
 }
 
-/* Arugula #1194: may people type into it from elsewhere? */
-.start-typing {
-  margin: 14px 0;
-  padding: 0;
-  border: 0;
-  max-width: 64ch;
-}
-
-.start-typing legend {
-  padding: 0;
-  margin-bottom: 6px;
-  font: 600 var(--text-md)/1.3 var(--f-ui);
-}
-
-.start-typing label {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin: 6px 0;
-  color: var(--subtle);
-}
-
-.start-typing label b {
-  color: var(--fg);
-}
-
 .start-said {
   margin: 12px 0;
   padding: 10px 12px;
