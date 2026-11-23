@@ -2874,6 +2874,16 @@ button.agent-image {
   color: var(--dim);
 }
 
+/* A question (Move here?): it wraps onto lines of its own when narrow,
+   above the buttons, rather than being cut off. */
+.picker-target.ask {
+  flex: 1 1 14em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font: var(--text-sm) var(--f-ui);
+  color: var(--fg);
+}
+
 .prompt-backdrop:has(> .picker.phone) {
   padding-top: 0;
   place-items: stretch;

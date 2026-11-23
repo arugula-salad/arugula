@@ -373,6 +373,7 @@ fn holder(pid: u32, ours: &Ours) -> Live {
         pane,
         block,
         place: String::new(),
+        terminal: None,
         cwd: crate::procinfo::cwd(pid).map(|d| d.display().to_string()),
         started: 0,
     };
