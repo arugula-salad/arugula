@@ -56,6 +56,10 @@ Each time it wakes, it:
   - `board.closed`;
   - `session.needs_input`;
   - a reply under each question it asked a lead;
+
+  It never watches its staff room. It leads that room, so your posts there
+  are already its prompts, and a watch would wake it twice for one post
+  (Arugula #1391);
 - **ends its turn** with one line in its thread, which notifies nobody. Then
   the box can pause.
 
