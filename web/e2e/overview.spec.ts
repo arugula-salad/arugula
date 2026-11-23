@@ -133,6 +133,69 @@ async function overview(page: Page, byCard: unknown = null, live = false, lead?:
   return { term, agent: made.agent, scratch: scratch! };
 }
 
+/** Proposals (Arugula #1278): what the chief of staff asks to do as the reader. */
+const START = { id: "prp_start", action: "start", by_session: "ses_cos", issue: { id: "iss_12", number: 12, title: "Fix the installer" }, repo: "acme/app", prompt: null, sessions: [], why: "Nobody works on it and the release waits on it." };
+const CLOSE = {
+  id: "prp_close",
+  action: "close",
+  by_session: "ses_cos",
+  issue: null,
+  repo: null,
+  prompt: null,
+  sessions: [
+    { id: "ses_a", title: "fix-installer", state: "done" },
+    { id: "ses_b", title: "tidy-docs", state: "stopped responding" },
+  ],
+  why: "Both are finished and hold a box each.",
+};
+
+/** The reader's staff room, with `proposal`'s message in it (seq 2), and the
+ * hub's routes for it: the project's open asks, the ask, and its answer
+ * (each body posted in `window.posted`). The fixture page answers chat
+ * itself, so it's made up in the page. */
+async function proposing(page: Page, proposal: typeof START | typeof CLOSE) {
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate(
+    ({ P, proposal }) => {
+      const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 2, read: 1, unread: 1, mentions: 1, wants: 1, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
+      const msg = (seq: number, author: string, text: string, more = {}) => ({ seq, at: Date.now() - (3 - seq) * 60_000, author, name: author ? "Sam's agent on geek" : "", text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: author ? { machine: "m_geek", machine_name: "geek" } : null, reactions: [], files: [], pinned: false, also: false, ...more });
+      let state = "open";
+      const ask = () => ({
+        room: "dm_cos", seq: 2, parent: null, kind: "proposal", asker: "acct_a", asker_name: "Sam", question: "", choices: ["Approve", "Deny"], open: state === "open", mine: true, session: null,
+        proposal: { ...proposal, state, answered_by_name: state === "open" ? null : "Sam", outcome: state === "approved" ? "Started a session on #12." : null, started: state === "approved" && proposal.action === "start" ? "ses_started" : null },
+      });
+      const said = () => [
+        msg(1, "acct_a", "Morning: two boards moved."),
+        msg(2, "", `Your chief of staff asks to start an agent on #12: ${proposal.why}`, { via: `ask:${proposal.id}`, mentions: state === "open" ? ["acct_a"] : [] }),
+      ];
+      const w = window as unknown as { posted: unknown[] };
+      w.posted = [];
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === `/api/projects/${P}/asks`) return json({ asks: state === "open" ? [ask()] : [] });
+        if (url.pathname === "/api/chat/rooms/dm_cos/messages") return json({ room, messages: said(), more: false });
+        if (url.pathname === "/api/chat/rooms/dm_cos/asks/2") {
+          if (init?.method === "POST") {
+            const body = JSON.parse(String(init.body)) as { choice: string };
+            w.posted.push(body);
+            state = body.choice === "Approve" ? "approved" : "denied";
+          }
+          return json(ask());
+        }
+        return before(input, init);
+      };
+      // The room listed: the Overview reads its proposals again, and pins its tab.
+      const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+      c.on = true;
+      c.rooms = [...c.rooms, room];
+      c.emit();
+    },
+    { P, proposal },
+  );
+}
+
 /** Launch's room on control, its messages and what's posted in it (in
  * `window.said`): the fixture page answers chat itself, so it's made up in
  * the page. */
@@ -729,6 +792,58 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
     await expect(panel.locator('[data-ov-who="staff"]')).toHaveText("Talking to your chief of staff, cos on geek: a message goes straight to it.");
+  });
+
+  test("an agent's proposal to start one is under Needs you, counted; Approve sends it and it leaves (Arugula #1278)", async ({ page }) => {
+    await overview(page);
+    await proposing(page, START);
+    const needs = page.locator("[data-ov-panel] > [data-ov-needs]");
+    const card = needs.locator('[data-proposal="prp_start"]');
+    await expect(card).toHaveAttribute("data-proposal-action", "start");
+    await expect(card).toHaveAttribute("data-ask-state", "open");
+    await expect(card.locator("[data-ask-label]")).toHaveText("asks you");
+    await expect(card).toContainText("Chief of staff · start an agent");
+    await expect(card.locator("[data-proposal-issue] a")).toHaveText("#12 Fix the installer");
+    await expect(card.locator("[data-proposal-repo]")).toHaveText("in acme/app");
+    await expect(card.locator("[data-proposal-why]")).toContainText("Nobody works on it and the release waits on it.");
+    await expect(needs.locator("[data-ov-needs-count]")).toHaveText("1");
+    await expect(needs.locator("[data-ov-needs-none]")).toHaveCount(0);
+    await card.locator("[data-proposal-approve]").click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: unknown[] }).posted)).toEqual([{ choice: "Approve" }]);
+    await expect(card).toHaveCount(0);
+    await expect(page.locator("[data-platform-toast]")).toContainText("Sam approved: Started a session on #12.");
+    await expect(needs.locator("[data-ov-needs-count]")).toHaveCount(0);
+  });
+
+  test("an agent's proposal to stop sessions lists them; Deny sends it and it leaves (Arugula #1278)", async ({ page }) => {
+    await overview(page);
+    await proposing(page, CLOSE);
+    const card = page.locator('[data-ov-needs] [data-proposal="prp_close"]');
+    await expect(card).toHaveAttribute("data-proposal-action", "close");
+    await expect(card).toContainText("Chief of staff · stop sessions");
+    await expect(card.locator("[data-proposal-session]")).toHaveText(["fix-installer · done", "tidy-docs · stopped responding"]);
+    await card.locator("[data-proposal-deny]").click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: unknown[] }).posted)).toEqual([{ choice: "Deny" }]);
+    await expect(card).toHaveCount(0);
+    await expect(page.locator("[data-ov-needs-count]")).toHaveCount(0);
+  });
+
+  test("a proposal's message in the staff room is its card in the staff tab; answered, a line (Arugula #1278)", async ({ page }) => {
+    await overview(page);
+    await proposing(page, START);
+    const staff = page.locator('[data-ov-staff="dm_cos"]');
+    const card = staff.locator('[data-proposal="prp_start"]');
+    await expect(card).toHaveAttribute("data-ask", "2");
+    await expect(card.locator("[data-proposal-approve]")).toBeVisible();
+    // Its plain text is only the fallback.
+    await expect(staff).not.toContainText("Your chief of staff asks to start an agent");
+    // Its where opens this tab, from Needs you too.
+    await page.locator('[data-ov-needs] [data-proposal="prp_start"] [data-proposal-open]').click();
+    await expect(page.locator('[data-ov-tab="staff:dm_cos"] [role="tab"]')).toHaveAttribute("aria-selected", "true");
+    await card.locator("[data-proposal-approve]").click();
+    const done = staff.locator('[data-proposal="prp_start"][data-ask-state="answered"]');
+    await expect(done).toHaveText("Sam approved: Started a session on #12. Its session");
+    await expect(done.locator("[data-proposal-started]")).toHaveAttribute("href", /ses_started/);
   });
 
   test("a card's row peeks at its agent, and a session on no card at its shell: last lines, a box that reaches them, Silence and Stop (Arugula #1271)", async ({ page }, info) => {

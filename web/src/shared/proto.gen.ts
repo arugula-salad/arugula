@@ -1174,12 +1174,23 @@ mine: boolean,
 /**
  * The session its answer started, once it's answered.
  */
-session: string | null, };
+session: string | null, 
+/**
+ * What an agent session proposes (`ask:prp_…`, Arugula #1278): its
+ * choices are [`APPROVE`] and [`DENY`]. None for any other ask.
+ */
+proposal: ChatProposal | null, };
 
 /**
  * [`ASK`]'s `POST` body: the choice pressed.
  */
 export type ChatAskAnswer = { choice: string, };
+
+/**
+ * [`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest
+ * first. Agents' proposals for now (Arugula #1278).
+ */
+export type ChatAsks = { asks: Array<ChatAsk>, };
 
 /**
  * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
@@ -1602,6 +1613,60 @@ mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, 
  * One teammate's presence.
  */
 export type ChatPresent = { account: string, state: PresenceState, };
+
+/**
+ * A proposal as its card draws it ([`ChatAsk::proposal`]).
+ */
+export type ChatProposal = { 
+/**
+ * `prp_…`.
+ */
+id: string, 
+/**
+ * `start` or `close`.
+ */
+action: string, 
+/**
+ * The session that proposed it, `ses_…`.
+ */
+by_session: string, 
+/**
+ * `start`: the issue.
+ */
+issue: ProposalIssue | null, 
+/**
+ * `start`: the repo it names, `owner/name`.
+ */
+repo: string | null, 
+/**
+ * `start`: what the new session is told (none: to work on the issue).
+ */
+prompt: string | null, 
+/**
+ * `close`: the sessions, as they are now.
+ */
+sessions: Array<ProposalSession>, 
+/**
+ * Why, in the agent's words.
+ */
+why: string, 
+/**
+ * `open`, `approved`, `denied` or `failed` (approved, and doing it
+ * didn't work: `outcome` says why).
+ */
+state: string, 
+/**
+ * Who answered it, by name.
+ */
+answered_by_name: string | null, 
+/**
+ * What answering it did, in a line.
+ */
+outcome: string | null, 
+/**
+ * `start`, approved: the session it started.
+ */
+started: string | null, };
 
 /**
  * Why control pushed someone.
@@ -5297,6 +5362,32 @@ export type ProjectTeam = { id: string, name: string,
  * The reader's role in it: `owner`, `editor` or `viewer`.
  */
 role: string, members: Array<ProjectMember>, };
+
+/**
+ * [`ChatProposal::issue`].
+ */
+export type ProposalIssue = { 
+/**
+ * `iss_…`.
+ */
+id: string, number: number, title: string, };
+
+/**
+ * One of [`ChatProposal::sessions`].
+ */
+export type ProposalSession = { 
+/**
+ * `ses_…`.
+ */
+id: string, 
+/**
+ * What it works on: its branch's slug, or its issue's title.
+ */
+title: string, 
+/**
+ * Its state now (`working`, `done`, `stopped`, …).
+ */
+state: string, };
 
 /**
  * Which forge.

@@ -39,6 +39,7 @@ use std::{
 use arugula_control_wire::{
     events::{READ_LIMIT_MAX, page_text, read_types},
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
+    sessions::{PROPOSAL_CLOSE_MAX, PROPOSAL_PROMPT_MAX, PROPOSAL_WHY_MAX, Proposal},
     watch::{EventTarget, WatchState, WatchTarget, Watcher, event_target, event_types, expires_ms, until_word_parse},
     work::{
         SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, SessionWatchAsk, SessionWatchGiven, SessionWatchOp,
@@ -70,7 +71,10 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::mcp::{
-    session::{BOARD_READ, COMMENT, CREATE, CREATE_DOC, FILL_DOC, POST_THREAD, READ, READ_DOC, READ_THREAD, WATCH},
+    session::{
+        ASK_APPROVAL, BOARD_READ, COMMENT, CREATE, CREATE_DOC, FILL_DOC, POST_THREAD, READ, READ_DOC, READ_THREAD,
+        WATCH,
+    },
     tools::{Out, done, parse},
 };
 use crate::server::App;
@@ -79,7 +83,7 @@ use crate::server::App;
 const COMMENTS_IN_CHAT: &str =
     "its comments are in chat, which is off for the person who asked you, so they aren't shown";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. read_session_thread reads a room (staff, the asker's own room with their agents, or one of the project's: a board's thread, a channel), and post_session_thread posts there as the asker's agent: a board's lead hears a post on its board's thread, and the asker is told of one in their staff room. board_read lists the project's boards, each with its lead and progress, or reads one (by brd_ id or title) with its lead, its rows and who is working each: read it to find who leads a board, never guess. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. read_session_thread reads a room (staff, the asker's own room with their agents, or one of the project's: a board's thread, a channel), and post_session_thread posts there as the asker's agent: a board's lead hears a post on its board's thread, and the asker is told of one in their staff room. board_read lists the project's boards, each with its lead and progress, or reads one (by brd_ id or title) with its lead, its rows and who is working each: read it to find who leads a board, never guess. ask_approval asks the person who asked you to approve something only they may do: start an agent session on an issue, or stop sessions. It puts a card with Approve and Deny in their staff room and on their phone; you never do it yourself, and chat never approves it. Watch event ask.answered with match {\"ask\": <its id>} to hear how they answered. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadArgs {
@@ -197,6 +201,27 @@ pub struct BoardReadArgs {
     /// it: the project's boards, each with its lead and progress.
     #[serde(default)]
     pub board: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct AskApprovalArgs {
+    /// start (an agent session on an issue) or close (stop sessions).
+    pub action: String,
+    /// start: the issue, as #N or N.
+    #[serde(default)]
+    pub issue: Option<String>,
+    /// start: what the new session is told, at most 4000 characters.
+    /// Without it: to work on the issue.
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// start: the repo it works in, owner/name, when the project has several.
+    #[serde(default)]
+    pub repo: Option<String>,
+    /// close: the sessions to stop (ses_…), at most 10.
+    #[serde(default)]
+    pub sessions: Vec<String>,
+    /// Why, in a line or two (at most 500 characters): the card shows it.
+    pub why: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -340,6 +365,8 @@ fn tools() -> Vec<Tool> {
     let post_thread =
         ToolAnnotations::with_title("Post in a room").read_only(false).destructive(false).open_world(false);
     let board_read = ToolAnnotations::with_title("Read the project's boards").read_only(true).open_world(false);
+    let ask_approval =
+        ToolAnnotations::with_title("Ask for approval").read_only(false).destructive(false).open_world(false);
     let watch = ToolAnnotations::with_title("Watch for something to happen")
         .read_only(false)
         .destructive(false)
@@ -408,6 +435,13 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Read the project's boards")
         .with_annotations(board_read),
+        Tool::new(
+            ASK_APPROVAL,
+            "Ask the person who asked you to approve something only they may do: start an agent session on one of this project's issues (action start: issue #N, prompt, repo), or stop sessions of this project (action close: sessions, ses_…). Say why. It puts a card with Approve and Deny in their staff room and under Needs you, and pushes it to their phone; Approve does it as them, Deny drops it. You never do it yourself, and nothing said in chat approves it. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.",
+            schema_for_type::<AskApprovalArgs>(),
+        )
+        .with_title("Ask for approval")
+        .with_annotations(ask_approval),
         Tool::new(
             WATCH,
             "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12). note (any target: why you watch, at most 200 characters) comes back when it fires or expires. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
@@ -696,11 +730,67 @@ impl Server {
         }
     }
 
+    async fn ask_approval(&self, session: &str, args: Value) -> Out {
+        let proposal = proposal(parse(args)?)?;
+        match self.ask(session, SessionIssuesOp::Propose { proposal }).await? {
+            SessionIssuesGiven::Proposed { ask, room, seq } => done(
+                format!(
+                    "Asked for approval: card {ask} (message {seq} in room {room}). Watch event ask.answered with match {{\"ask\": \"{ask}\"}}, then end your turn."
+                ),
+                json!({ "ask": ask, "room": room, "seq": seq }),
+            ),
+            _ => Err("control answered something else".into()),
+        }
+    }
+
     async fn doc(&self, session: &str, op: SessionIssuesOp) -> Result<(DocView, String), String> {
         match self.ask(session, op).await? {
             SessionIssuesGiven::Doc { view, url } => Ok((view, url)),
             _ => Err("control answered something else".into()),
         }
+    }
+}
+
+/// What `ask_approval` proposes, from its arguments, checked here as
+/// control checks them again.
+fn proposal(a: AskApprovalArgs) -> Result<Proposal, String> {
+    let why = a.why.trim().to_owned();
+    if why.is_empty() {
+        return Err("say why: the card shows it".into());
+    }
+    if why.chars().count() > PROPOSAL_WHY_MAX {
+        return Err(format!("why: at most {PROPOSAL_WHY_MAX} characters"));
+    }
+    let trimmed = |o: Option<String>| o.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+    match a.action.trim() {
+        "start" => {
+            if !a.sessions.is_empty() {
+                return Err("sessions go with close".into());
+            }
+            let number = number(a.issue.as_deref().ok_or("start needs issue: #N")?)?;
+            let prompt = trimmed(a.prompt);
+            if prompt.as_ref().is_some_and(|p| p.chars().count() > PROPOSAL_PROMPT_MAX) {
+                return Err(format!("prompt: at most {PROPOSAL_PROMPT_MAX} characters"));
+            }
+            Ok(Proposal::Start { number, prompt, repo: trimmed(a.repo), why })
+        }
+        "close" => {
+            if a.issue.is_some() || a.prompt.is_some() || a.repo.is_some() {
+                return Err("issue, prompt and repo go with start".into());
+            }
+            let mut sessions: Vec<String> = a.sessions.iter().map(|s| s.trim().to_owned()).collect();
+            sessions.dedup();
+            match sessions.iter().find(|s| !s.starts_with("ses_")) {
+                Some(s) => return Err(format!("sessions: {s:?} isn't an agent session's id, ses_…")),
+                None if sessions.is_empty() => return Err("close needs sessions: ses_…".into()),
+                None if sessions.len() > PROPOSAL_CLOSE_MAX => {
+                    return Err(format!("at most {PROPOSAL_CLOSE_MAX} sessions on one card"));
+                }
+                None => {}
+            }
+            Ok(Proposal::Close { sessions, why })
+        }
+        a => Err(format!("action {a}: start or close")),
     }
 }
 
@@ -800,6 +890,7 @@ impl ServerHandler for Server {
             READ_THREAD => self.read_thread(&session, args).await,
             POST_THREAD => self.post_thread(&session, args).await,
             BOARD_READ => self.board_read(&session, args).await,
+            ASK_APPROVAL => self.ask_approval(&session, args).await,
             WATCH => self.watch(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
@@ -964,6 +1055,7 @@ mod tests {
                 "read_session_thread",
                 "post_session_thread",
                 "board_read",
+                "ask_approval",
                 "watch",
             ]
         );
@@ -975,6 +1067,39 @@ mod tests {
         assert_eq!(number("#12"), Ok(12));
         assert_eq!(number(" 7 "), Ok(7));
         assert!(number("iss_0123456789abcdef0123456789abcdef").is_err(), "only a number in the project");
+    }
+
+    /// Arugula #1278: a card asks for one thing, said whole, with a why;
+    /// the session names neither the person nor the project.
+    #[test]
+    fn ask_approval_proposes_one_thing_with_a_why() {
+        let args = |v: Value| serde_json::from_value::<AskApprovalArgs>(v).unwrap();
+        assert_eq!(
+            proposal(args(json!({ "action": "start", "issue": "#1392", "why": "Jake asked" }))),
+            Ok(Proposal::Start { number: 1392, prompt: None, repo: None, why: "Jake asked".into() })
+        );
+        assert_eq!(
+            proposal(args(json!({ "action": "start", "issue": "7", "prompt": " fix it ", "repo": "o/r", "why": "w" }))),
+            Ok(Proposal::Start { number: 7, prompt: Some("fix it".into()), repo: Some("o/r".into()), why: "w".into() })
+        );
+        assert_eq!(
+            proposal(args(json!({ "action": "close", "sessions": ["ses_a", "ses_a", "ses_b"], "why": "idle 3 days" }))),
+            Ok(Proposal::Close { sessions: vec!["ses_a".into(), "ses_b".into()], why: "idle 3 days".into() })
+        );
+        for (v, says) in [
+            (json!({ "action": "start", "issue": "#1", "why": " " }), "say why"),
+            (json!({ "action": "start", "why": "w" }), "needs issue"),
+            (json!({ "action": "start", "issue": "iss_1", "why": "w" }), "#N"),
+            (json!({ "action": "close", "sessions": [], "why": "w" }), "needs sessions"),
+            (json!({ "action": "close", "sessions": ["pane 3"], "why": "w" }), "ses_"),
+            (json!({ "action": "close", "issue": "#1", "sessions": ["ses_a"], "why": "w" }), "go with start"),
+            (json!({ "action": "spend", "why": "w" }), "start or close"),
+        ] {
+            let e = proposal(args(v.clone())).unwrap_err();
+            assert!(e.contains(says), "{v}: {e}");
+        }
+        let many: Vec<String> = (0..11).map(|i| format!("ses_{i}")).collect();
+        assert!(proposal(args(json!({ "action": "close", "sessions": many, "why": "w" }))).is_err());
     }
 
     /// Arugula #1381: who leads a board is in the list, in one call, and

@@ -295,3 +295,60 @@ export function cardOf(n: number): { board: string; row: string; title: string }
   for (const [id, b] of Object.entries(TICKETS)) if (b.tickets.some((t) => t[0] === n)) return { board: id, row: `row_${n}`, title: b.title };
   return null;
 }
+
+/** Priya's staff room (#1275): her chief of staff, a session on her laptop,
+ * and what it asks to do as her (#1278): start an agent on #15. Only the
+ * proposal's pictures list it (`shots.proposal` in sessionStorage). */
+export const STAFF = "dm_9a3e00staff";
+export const PROPOSAL = {
+  id: "prp_9a3e0001",
+  action: "start",
+  by_session: "ses_9a3e00cos",
+  issue: { id: "iss_15", number: 15, title: "Download a calendar invite (.ics)" },
+  repo: "gamenight/app",
+  prompt: null,
+  sessions: [],
+  why: "It's next on Launch v1 and nobody has it. Your agent on #14 is nearly done, so the box has room.",
+};
+
+/** The staff room as `GET /api/chat` lists it. */
+export function staffRoom(open: boolean): ChatRoom {
+  return {
+    ...room({ id: STAFF, name: "Chief of staff · Game night", kind: "dm", topic: "", said: [] }),
+    with: null,
+    others: [],
+    last: 2,
+    read: 1,
+    unread: 1,
+    mentions: open ? 1 : 0,
+    staff: true,
+    lead: { machine: HERE, machine_name: "priya-mbp", session: "chief-of-staff" },
+  };
+}
+
+/** Its messages: the chief of staff's morning, then the proposal's (the platform's, `via` `ask:<prp>`). */
+export function staffMessages(now: number, open: boolean): ChatMessage[] {
+  const base = { quote: null, pane: null, edited: null, deleted: null, imported: null, reactions: [], files: [], pinned: false, also: false };
+  return [
+    { ...base, seq: 1, at: now - 40 * 60_000, author: ME, name: "Priya's agent on priya-mbp", text: "Morning. #9 is in review with Jen, and Marcus's reminder emails go out at 9am. I'll keep an eye on both.", mentions: [], agent: { machine: HERE, machine_name: "priya-mbp" } },
+    { ...base, seq: 2, at: now - 6 * 60_000, author: "", name: "", text: `Your chief of staff asks to start an agent on #15: ${PROPOSAL.why}`, mentions: open ? [ME] : [], agent: null, via: `ask:${PROPOSAL.id}` },
+  ];
+}
+
+/** The proposal's ask, open or approved. */
+export function proposalAsk(open: boolean) {
+  return {
+    room: STAFF,
+    seq: 2,
+    parent: null,
+    kind: "proposal",
+    asker: ME,
+    asker_name: "Priya",
+    question: "",
+    choices: ["Approve", "Deny"],
+    open,
+    mine: true,
+    session: null,
+    proposal: { ...PROPOSAL, state: open ? "open" : "approved", answered_by_name: open ? null : "Priya", outcome: open ? null : "Started an agent on #15 on priya-mbp.", started: open ? null : "ses_9a3e0015" },
+  };
+}

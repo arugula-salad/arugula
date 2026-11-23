@@ -100,6 +100,7 @@
     {"method":"PATCH","path":"/api/projects/{project}","auth":"session","clients":["page","cli","native"]},
     {"method":"GET","path":"/api/projects/{project}/agent-tokens","auth":"session","clients":["page","cli"]},
     {"method":"POST","path":"/api/projects/{project}/agent-tokens/{id}/revoke","auth":"session","clients":["page","cli"]},
+    {"method":"GET","path":"/api/projects/{project}/asks","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/projects/{project}/board-settings","auth":"session","clients":["page"]},
     {"method":"PUT","path":"/api/projects/{project}/board-settings","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/boards","auth":"session","clients":["page","cli","native"]},

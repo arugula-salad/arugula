@@ -3615,6 +3615,72 @@
         }
       ]
     },
+    "Proposal": {
+      "description": "What an agent session asks its asker to approve (Arugula #1278): it\ndoes nothing itself. The proposal is an ask in their staff room\n(`via` `ask:prp_…`) that mentions them, so it's under Needs you and\npushed to their phone; **Approve** does it as them, through the same\npath their own press would take, and **Deny** drops it. Either way\n`ask.answered` tells the session. Chat never approves it.",
+      "oneOf": [
+        {
+          "description": "An agent session on one of the project's native issues, as\n**Agent on this** starts one: on the box the project's pool picks,\nin `repo` when it's given, told `prompt` (by default, to work on\nthe issue).",
+          "properties": {
+            "action": {
+              "const": "start",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "prompt": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does.",
+          "properties": {
+            "action": {
+              "const": "close",
+              "type": "string"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "sessions"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PublicLink": {
       "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
       "properties": {
@@ -4913,6 +4979,23 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "description": "A proposal for the session's asker to approve or deny (Arugula\n#1278): a card in their staff room, under Needs you and on their\nphone. The session does nothing itself: the person's Approve does\nit, as them, and `ask.answered` tells the session how it went.",
+          "properties": {
+            "op": {
+              "const": "propose",
+              "type": "string"
+            },
+            "proposal": {
+              "$ref": "#/$defs/Proposal"
+            }
+          },
+          "required": [
+            "op",
+            "proposal"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -5146,6 +5229,32 @@
           "required": [
             "kind",
             "view"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Proposed (`Propose`): its id (`prp_…`, what `ask.answered`\nmatches as `ask`), and its card's message in the staff room.",
+          "properties": {
+            "ask": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "proposed",
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "ask",
+            "room",
+            "seq"
           ],
           "type": "object"
         },
@@ -5404,6 +5513,23 @@
           },
           "required": [
             "op"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A proposal for the session's asker to approve or deny (Arugula\n#1278): a card in their staff room, under Needs you and on their\nphone. The session does nothing itself: the person's Approve does\nit, as them, and `ask.answered` tells the session how it went.",
+          "properties": {
+            "op": {
+              "const": "propose",
+              "type": "string"
+            },
+            "proposal": {
+              "$ref": "#/$defs/Proposal"
+            }
+          },
+          "required": [
+            "op",
+            "proposal"
           ],
           "type": "object"
         }

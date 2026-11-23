@@ -33,13 +33,15 @@ import { signedInOf } from "../src/app/signed-in";
 import { setSignedIn } from "../src/shell/signed-in";
 import { setPlatformHere } from "../src/shell/platform-links";
 import { followPlatformLinks } from "../src/app/platform-here";
-import { boards, cardOf, HERE, issues, LABELS, MACHINES, ME, messages, P, PEOPLE, PERSONAL, room, ROOMS, TEAM, view } from "./team";
+import { boards, cardOf, HERE, issues, LABELS, MACHINES, ME, messages, P, PEOPLE, PERSONAL, proposalAsk, room, ROOMS, STAFF, staffMessages, staffRoom, TEAM, view } from "./team";
 
 await startPageKey();
 
 const now = Date.now();
 /** Launch v1's lead, a session on the shots' daemon, as the spec names it. */
 const lead = JSON.parse(sessionStorage.getItem("shots.lead") ?? "null") ?? undefined;
+/** The chief of staff's proposal (#1278), for its pictures: "open", or "approved" once Approve is pressed. */
+const proposal = () => sessionStorage.getItem("shots.proposal");
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const realFetch = window.fetch.bind(window);
@@ -97,8 +99,20 @@ window.fetch = async (input, init) => {
     return i ? json(i) : json({ error: "not found" }, 404);
   }
 
+  // The chief of staff's proposal: its staff room, the project's open asks, the ask and its answer.
+  if (proposal()) {
+    const open = proposal() === "open";
+    if (path === `/api/projects/${P}/asks`) return json({ asks: open ? [proposalAsk(true)] : [] });
+    if (path === `/api/chat/rooms/${STAFF}/messages`) return json({ room: staffRoom(open), messages: staffMessages(now, open), more: false });
+    if (path === `/api/chat/rooms/${STAFF}/read`) return json({});
+    if (path === `/api/chat/rooms/${STAFF}/asks/2`) {
+      if (method === "POST") sessionStorage.setItem("shots.proposal", "approved");
+      return json(proposalAsk(proposal() === "open"));
+    }
+  }
+
   // Chat.
-  if (path === "/api/chat") return json({ rooms: ROOMS.map((r) => room(r)), threads_unread: 0, threads_mentions: 0 });
+  if (path === "/api/chat") return json({ rooms: [...ROOMS.map((r) => room(r)), ...(proposal() ? [staffRoom(proposal() === "open")] : [])], threads_unread: 0, threads_mentions: 0 });
   if (path === "/api/chat/sidebar") return json({ error: "none" }, 404);
   if (path === "/api/chat/presence")
     return json({ mode: "auto", people: PEOPLE.map((p, i) => ({ account: p.account, state: i === 3 ? "away" : "active" })), machines_online: [] });

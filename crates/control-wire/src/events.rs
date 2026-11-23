@@ -329,6 +329,21 @@ pub const CATALOG: &[EventType] = &[
         home: Home::Cloud,
         power: Some("cloud.drive"),
     },
+    // An agent session's proposal (Arugula #1278) answered on its card:
+    // the card is in its asker's staff room, so threads.read.
+    EventType {
+        name: "ask.answered",
+        meaning: "A person answered an agent session's approval card: approved it, denied it, or approved it and doing it failed.",
+        matches: &[
+            m("ask", "the card, prp_…"),
+            PROJECT,
+            m("session", "the session that proposed it, ses_…"),
+            m("action", "what it proposed: start or close"),
+            m("answer", "approved, denied or failed"),
+        ],
+        home: Home::Cloud,
+        power: Some("threads.read"),
+    },
     EventType {
         name: "machine.updated",
         meaning: "A machine's daemon version changed.",
@@ -783,6 +798,11 @@ mod tests {
             assert_eq!(lookup(name).unwrap().power, Some("cloud.drive"), "{name}");
         }
         assert!(lookup("doc.share.answered").is_none(), "no producer yet");
+        let t = lookup("ask.answered").unwrap();
+        assert_eq!((t.home, t.power), (Home::Cloud, Some("threads.read")));
+        assert!(
+            ["ask", "project", "session", "action", "answer"].iter().all(|f| t.matches.iter().any(|m| m.name == *f))
+        );
         assert!(!lookup("github.push").unwrap().matches.iter().any(|f| f.name == "outside"), "a push needs write");
         assert!(lookup("github.pr.merged").unwrap().matches.iter().any(|f| f.name == "outside"));
         assert!(lookup("github.push").unwrap().matches.iter().any(|f| f.name == "branch"));
