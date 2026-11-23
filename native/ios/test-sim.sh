@@ -54,6 +54,22 @@ for subsystem in com.apple.dt.xctest com.apple.Accessibility; do
 </plist>
 PLIST
 done
+# A notification the UI test asks for (HANDOFF/push.json: what it says, as
+# the Notification Service Extension leaves it for the app), delivered as
+# APNs would.
+(
+  while kill -0 $$ 2>/dev/null; do
+    if [ -f "$handoff/push.json" ]; then
+      python3 -c 'import json, sys
+said = open(sys.argv[1]).read()
+s = json.loads(said)
+print(json.dumps({"aps": {"alert": {"title": s["title"], "body": s["body"]}, "sound": "default"}, "said": said}))' \
+        "$handoff/push.json" > "$handoff/push.apns" && rm -f "$handoff/push.json"
+      xcrun simctl push "$device" io.arugula.ios "$handoff/push.apns" >/dev/null
+    fi
+    sleep 1
+  done
+) &
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
   TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
   TEST_RUNNER_ARUGULA_CARD_AGENT="${ARUGULA_CARD_AGENT:-}" \

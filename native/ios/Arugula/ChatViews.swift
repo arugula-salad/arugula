@@ -193,6 +193,7 @@ struct ChatRoomView: View {
                         .font(Face.mono(10, "Bold")).tracking(0.8)
                         .foregroundStyle(live.connected ? Palette.ok : Palette.warn)
                         .accessibilityIdentifier("chat-live")
+                        .accessibilityValue(room.id)
                 }
             }
         }

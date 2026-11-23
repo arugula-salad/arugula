@@ -121,6 +121,24 @@ final class FlowTests: XCTestCase {
         _ = app.wait(for: .runningForeground, timeout: 10)
     }
 
+    /// A notification that says `said`, tapped as a person taps one: the
+    /// app closed, and the banner on the home screen. The script delivers it
+    /// (`simctl push`, from HANDOFF/push.json), with `said` as the
+    /// Notification Service Extension leaves it for the app.
+    private func tapPush(_ app: XCUIApplication, said: [String: Any], title: String, body: String) {
+        app.terminate()
+        var said = said
+        said["title"] = title
+        said["body"] = body
+        let data = try! JSONSerialization.data(withJSONObject: said)
+        try! data.write(to: handoff.appendingPathComponent("push.json"))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let banner = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", body)).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 30), "no notification: \(springboard.debugDescription)")
+        banner.tap()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15), "the tap didn't open the app")
+    }
+
     /// Peek at the lead over the open thread: its session's last lines say
     /// the stand-in is ready. Then close the peek.
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
@@ -268,6 +286,8 @@ final class FlowTests: XCTestCase {
         // stand-in session; ask it something there and peek at its session.
         // Then Boards: the board it leads, whose lead opens the board's
         // thread, and a peek from there. Then back to Default.
+        // The staff room's id, for a notification about it.
+        var staffRoom: String?
         if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
             let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
             go(app, "Home")
@@ -367,6 +387,7 @@ final class FlowTests: XCTestCase {
             draft.typeText(ask)
             send(app)
             XCTAssertTrue(app.staticTexts[ask].shows(within: 20), "the staff room didn't take the ask")
+            staffRoom = app.staticTexts["chat-live"].value as? String
             try ask.write(to: handoff.appendingPathComponent("staff"), atomically: true, encoding: .utf8)
             shot(app, "5-staff-room")
             peekAtLead(app, "5-staff-peek")
@@ -731,6 +752,21 @@ final class FlowTests: XCTestCase {
         sleep(3)
         shot(app, "6-machine")
         XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")
+
+        // A notification about the staff room (#1260), tapped with the app
+        // closed: the room opens on Chat, with the chief of staff's messages.
+        if let staffRoom {
+            tapPush(app, said: ["chat": ["room": staffRoom], "tag": "chat-\(staffRoom)", "control": true],
+                    title: "jhgaylor's agent in Chief of staff", body: "pushed-\(Int.random(in: 1000...9999))")
+            let live = app.staticTexts["chat-live"]
+            XCTAssertTrue(live.shows(within: 30), "the tap opened no room: \(app.debugDescription)")
+            XCTAssertEqual(live.value as? String, staffRoom, "the tap opened another room")
+            let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
+            let shown = morning.shows(within: 20)
+            shot(app, "6-staff-from-push")
+            XCTAssertTrue(shown, "the staff room opened from its notification has no messages: \(app.debugDescription)")
+            if !iPad { goBack(app) }
+        }
 
         // Signing out ends it here: the sign-in again.
         go(app, "You")
