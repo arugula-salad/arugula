@@ -125,17 +125,23 @@ enum class Tone(val color: Color) {
     MUTED(Palette.muted), PEACH(Palette.peach), TEAL(Palette.teal),
 }
 
-/** How a card or a session stands, most urgent first (the Overview's words). */
+/** How a card or a session stands, most urgent first (the Overview's words).
+ * [WAITS]: it, or its question, waits on someone else (Arugula #1392). */
 enum class Standing(val word: String, val tone: Tone) {
     NEEDS("needs you", Tone.ACCENT),
     ASKS("asks you", Tone.ACCENT),
     FAILED("failed", Tone.DANGER),
     CHECKS_FAILING("checks failing", Tone.DANGER),
+    WAITS("asks someone else", Tone.INFO),
     QUIET("quiet", Tone.WARN),
     WORKING("working", Tone.OK),
     CHECKS_RUNNING("checks running", Tone.INFO),
     REVIEW("in review", Tone.INFO),
     IDLE("", Tone.MUTED),
+    ;
+
+    /** Its word, naming whom it waits on when that's someone else: `asks Aaron`, or `asks someone` where that isn't known. */
+    fun word(asks: String?): String = if (this == WAITS) "asks ${asks?.takeIf { it.isNotEmpty() } ?: "someone"}" else word
 }
 
 /** A section's label, as the swarm's: small mono capitals, dim. */

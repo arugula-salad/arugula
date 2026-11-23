@@ -159,7 +159,7 @@ class HomeModel(private val api: Api) {
 /** What a row says of itself, besides its sessions. */
 fun BoardDetail.Row.says(): List<Standing> {
     val out = mutableListOf<Standing>()
-    if (ask?.mine == true) out += Standing.ASKS
+    ask?.let { if (it.mine) out += Standing.ASKS else if (!it.who.isNullOrEmpty()) out += Standing.WAITS }
     if ("stalled" in marks) out += Standing.QUIET
     val work = attachments.filter { it.role == "work" && !it.released }.mapNotNull { it.live }
     for (l in listOfNotNull(live) + work) if (l.kind == "pr") {
@@ -220,7 +220,13 @@ data class Need(
 }
 
 /** A session working on one of a board's cards, as its thread lists it. */
-data class BoardSession(val peeked: Peeked, val name: String, val card: String, val standing: Standing)
+/** [asks]: whom it waits on, when that's someone else ([Standing.WAITS]). */
+data class BoardSession(val peeked: Peeked, val name: String, val card: String, val standing: Standing, val asks: String? = null) {
+    val word get() = if (standing == Standing.IDLE) "quiet" else standing.word(asks)
+}
+
+/** How a pane stands for the reader: one on someone else's machine that needs them waits on them, not on you (Arugula #1392). */
+fun MachineSession.standing(p: PaneRow): Standing = if (p.standing == Standing.NEEDS && machine.ownerName != null) Standing.WAITS else p.standing
 
 /** One open board as home's row reads it. */
 data class BoardLine(
@@ -300,8 +306,8 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
             val flight = rows.filter { it.inFlight }.map { r ->
                 val all = r.says().toMutableList()
                 for ((m, p) in panes) if (works(r, b.id, m.machine.id, p)) {
-                    all += p.standing
-                    on += BoardSession(Peeked.Pane(m, p), m.conversations[p.id] ?: p.name, r.words, p.standing)
+                    all += m.standing(p)
+                    on += BoardSession(Peeked.Pane(m, p), m.conversations[p.id] ?: p.name, r.words, m.standing(p), m.machine.ownerName)
                 }
                 for (s in model.hosted) if (r.pointer?.kind == "issue" && s.issueId == r.pointer.id) {
                     all += s.standing
@@ -310,7 +316,7 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
                 all.minOrNull() ?: Standing.IDLE
             }
             sessions[b.id] = on.sortedWith(compareBy({ it.standing }, { it.name }))
-            var says = listOf(Standing.NEEDS, Standing.ASKS, Standing.FAILED, Standing.CHECKS_FAILING, Standing.QUIET, Standing.WORKING, Standing.CHECKS_RUNNING, Standing.REVIEW)
+            var says = listOf(Standing.NEEDS, Standing.ASKS, Standing.FAILED, Standing.CHECKS_FAILING, Standing.WAITS, Standing.QUIET, Standing.WORKING, Standing.CHECKS_RUNNING, Standing.REVIEW)
                 .map { st -> st to flight.count { it == st } }.filter { it.second > 0 }.map { (st, n) -> st to "$n ${st.word}" }
             val idle = flight.count { it == Standing.IDLE }
             if (flight.isEmpty()) {
@@ -558,7 +564,7 @@ private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<Bo
                             Dot(s.standing.tone, 6)
                             Text(s.name, style = Face.ui(13.sp, FontWeight.SemiBold), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text("${s.card} · ${if (s.standing == Standing.IDLE) "quiet" else s.standing.word}", style = Face.mono(10.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${s.card} · ${s.word}", style = Face.mono(10.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

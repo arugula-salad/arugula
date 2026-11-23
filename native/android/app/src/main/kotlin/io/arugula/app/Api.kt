@@ -104,7 +104,8 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
     data class Pointer(val kind: String, val id: String?, val url: String?, val machine: String?, val pane: String?)
 
     /** The row's one open question: [mine] when it's for the reader. */
-    data class Ask(val id: String, val question: String, val options: List<String>, val mine: Boolean, val canAnswer: Boolean?, val askedBy: String?, val createdAt: Long?)
+    /** [who] is the person it asks (empty: the board raised it), [whoName] their name. */
+    data class Ask(val id: String, val question: String, val options: List<String>, val mine: Boolean, val canAnswer: Boolean?, val askedBy: String?, val createdAt: Long?, val who: String? = null, val whoName: String? = null)
 
     data class Attachment(val role: String, val pointer: Pointer, val released: Boolean, val live: Live?)
 
@@ -124,7 +125,7 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
         private fun row(o: JSONObject) = Row(
             o.getString("id"), o.str("note"), o.str("group"), o.str("lane"), live(o.obj("live")), pointer(o.obj("pointer")),
             o.obj("ask")?.let {
-                Ask(it.getString("id"), it.optString("question"), it.optJSONArray("options").strings(), it.optBoolean("mine"), it.bool("can_answer"), it.str("asked_by"), it.long("created_at"))
+                Ask(it.getString("id"), it.optString("question"), it.optJSONArray("options").strings(), it.optBoolean("mine"), it.bool("can_answer"), it.str("asked_by"), it.long("created_at"), it.str("who"), it.str("who_name"))
             },
             o.list("attachments") { Attachment(it.optString("role"), pointer(it.getJSONObject("pointer"))!!, it.optBoolean("released"), live(it.obj("live"))) },
             o.list("marks") { it.optString("kind") },
@@ -198,9 +199,10 @@ data class ChatMessage(
 
 // ---- machines
 
-data class Machine(val id: String, val name: String, val online: Boolean) {
+/** [ownerName]: whose it is, when it's someone else's (M19). */
+data class Machine(val id: String, val name: String, val online: Boolean, val ownerName: String? = null) {
     companion object {
-        fun of(o: JSONObject) = Machine(o.getString("id"), o.optString("name"), o.optBoolean("online"))
+        fun of(o: JSONObject) = Machine(o.getString("id"), o.optString("name"), o.optBoolean("online"), o.str("owner_name")?.takeIf { it.isNotEmpty() })
     }
 }
 

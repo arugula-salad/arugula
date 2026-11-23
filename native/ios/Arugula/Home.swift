@@ -245,9 +245,10 @@ final class HomeModel: ObservableObject {
 
 // ---- how things stand, in the Overview's words (web/src/shell/swarm/overview.ts)
 
-/// How a card or a session stands, most urgent first.
+/// How a card or a session stands, most urgent first. `waits`: it, or its
+/// question, waits on someone else (Arugula #1392).
 enum Standing: Int, Comparable {
-    case needs, asks, failed, checksFailing, quiet, working, checksRunning, review, idle
+    case needs, asks, failed, checksFailing, waits, quiet, working, checksRunning, review, idle
 
     static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
 
@@ -258,6 +259,7 @@ enum Standing: Int, Comparable {
         case .asks: "asks you"
         case .failed: "failed"
         case .checksFailing: "checks failing"
+        case .waits: "asks someone else"
         case .quiet: "quiet"
         case .working: "working"
         case .checksRunning: "checks running"
@@ -266,13 +268,20 @@ enum Standing: Int, Comparable {
         }
     }
 
+    /// Its word, naming whom it waits on when that's someone else: `asks
+    /// Aaron`, or `asks someone` where that isn't known.
+    func word(asks who: String?) -> String {
+        guard self == .waits else { return word }
+        return "asks \((who ?? "").isEmpty ? "someone" : who!)"
+    }
+
     var tone: Tone {
         switch self {
         case .needs, .asks: .accent
         case .failed, .checksFailing: .danger
         case .quiet: .warn
         case .working: .ok
-        case .checksRunning, .review: .info
+        case .waits, .checksRunning, .review: .info
         case .idle: .muted
         }
     }
@@ -300,6 +309,17 @@ extension PaneRow {
     var isAgent: Bool { type == "agent" || work == "agent" }
 }
 
+extension MachineSession {
+    /// Whose it is when it isn't the reader's: its owner's name (Arugula #1392).
+    var owner: String? { machine.owner_name.flatMap { $0.isEmpty ? nil : $0 } }
+
+    /// How a pane stands for the reader: one on someone else's machine
+    /// that needs them waits on them, not on you (Arugula #1392).
+    func standing(of p: PaneRow) -> Standing {
+        p.standing == .needs && owner != nil ? .waits : p.standing
+    }
+}
+
 extension SessionWave.Row {
     var standing: Standing {
         if waiting != nil { return .needs }
@@ -315,7 +335,7 @@ extension BoardDetail.Row {
     /// What a row says of itself, besides its sessions.
     var says: [Standing] {
         var out: [Standing] = []
-        if ask?.mine == true { out.append(.asks) }
+        if let a = ask { if a.mine { out.append(.asks) } else if !(a.who ?? "").isEmpty { out.append(.waits) } }
         if marks?.contains(where: { $0.kind == "stalled" }) == true { out.append(.quiet) }
         let work = (attachments ?? []).filter { $0.role == "work" && $0.released != true }.compactMap(\.live)
         for l in ([live].compactMap { $0 } + work) where l.kind == "pr" {
@@ -375,7 +395,10 @@ struct BoardSession: Identifiable {
     /// The card: `#983 · Its title`.
     let card: String
     let standing: Standing
+    /// Whom it waits on, when that's someone else (`waits`).
+    var asks: String? = nil
     var id: String { peeked.id }
+    var word: String { standing == .idle ? "quiet" : standing.word(asks: asks) }
 }
 
 /// A lead, a board's (#414) or a staff room's (Arugula #1275), as its chip
@@ -414,7 +437,7 @@ struct LeadLine {
                 || (p.type == "agent" && p.title?.trimmingCharacters(in: .whitespaces) == lead.session)
                 || tabs.contains(p.tab)
         }
-        standing = panes.map(\.standing).min()
+        standing = panes.map { m.standing(of: $0) }.min()
         let best = panes.min { ($0.isAgent ? 0 : 1, $0.standing) < ($1.isAgent ? 0 : 1, $1.standing) }
         peeked = best.map { .pane(m, $0) }
     }
@@ -504,8 +527,8 @@ struct HomeState {
             let flight = rows.filter(\.inFlight).map { r -> Standing in
                 var all = r.says
                 for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
-                    all.append(p.standing)
-                    on.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                    all.append(m.standing(of: p))
+                    on.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: m.standing(of: p), asks: m.owner))
                 }
                 for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
                     all.append(s.standing)
@@ -518,14 +541,14 @@ struct HomeState {
             for r in rows where !(r.lane ?? "").hasSuffix("done") {
                 var mine: [BoardSession] = []
                 for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
-                    mine.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                    mine.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: m.standing(of: p), asks: m.owner))
                 }
                 for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
                     mine.append(BoardSession(peeked: .hosted(s), name: "Arugula cloud", card: r.words, standing: s.standing))
                 }
                 cards["\(b.id)/\(r.id)"] = mine.sorted { ($0.standing, $0.name) < ($1.standing, $1.name) }
             }
-            var says = [Standing.needs, .asks, .failed, .checksFailing, .quiet, .working, .checksRunning, .review]
+            var says = [Standing.needs, .asks, .failed, .checksFailing, .waits, .quiet, .working, .checksRunning, .review]
                 .map { st in (st, flight.filter { $0 == st }.count) }
                 .filter { $0.1 > 0 }
                 .map { ($0.0, "\($0.1) \($0.0.word)") }
@@ -1216,7 +1239,7 @@ struct LeadChip: View {
                     + Text("Led by ").foregroundColor(Palette.dim)
                     + Text(lead.name).font(Face.mono(11, "Bold")).foregroundColor(Palette.fg)
                     + Text(lead.machine.isEmpty ? "" : " on \(lead.machine)").foregroundColor(Palette.dim)
-                    + Text(lead.standing.map { $0 == .idle ? "" : " · \($0.word)" } ?? "").foregroundColor(lead.standing?.tone.color ?? Palette.dim))
+                    + Text(lead.standing.map { $0 == .idle ? "" : " · \($0.word(asks: lead.who))" } ?? "").foregroundColor(lead.standing?.tone.color ?? Palette.dim))
             } else {
                 Text(none).foregroundColor(Palette.dim)
             }
@@ -1325,7 +1348,7 @@ struct BoardThread: View {
                                         Circle().fill(s.standing.tone.color).frame(width: 6, height: 6)
                                         Text(s.name).font(Face.ui(13, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
                                     }
-                                    Text("\(s.card) · \(s.standing == .idle ? "quiet" : s.standing.word)")
+                                    Text("\(s.card) · \(s.word)")
                                         .font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1)
                                 }
                                 .frame(maxWidth: 240, alignment: .leading)

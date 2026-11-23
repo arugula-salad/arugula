@@ -48,9 +48,9 @@ import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
-import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, STATE_WORD } from "../shell/swarm/overview";
+import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
-import { Asks } from "./overview-asks";
+import { Asks, paneOwner } from "./overview-asks";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
 import { useBoards } from "../platform/pages/boards";
@@ -95,6 +95,7 @@ const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: peekKey(s), titl
 
 /** A pane as the Overview groups it. */
 function ovPane(fleet: Fleet, p: FleetPane): OvPane {
+  const owner = paneOwner(fleet, p);
   return {
     key: p.key,
     host: p.host,
@@ -106,6 +107,7 @@ function ovPane(fleet: Fleet, p: FleetPane): OvPane {
     title: cleanTitle(p.info.title ?? ""),
     name: sessionName(p),
     agent: kindOf(p) === "agent",
+    ...(owner !== null ? { owner } : {}),
     standing: standingOf(p),
     last: p.info.activity?.last_ms ?? 0,
   };
@@ -329,9 +331,17 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   const byCard = byCardRead ?? null;
   const briefing = useBriefing(project, byCard, refocus);
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
-  const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf);
+  // Whose a machine is, for a session the hub names that no pane here shows: "" for one this page doesn't know.
+  const machineOwner = (m: string) => {
+    const h = fleet.hostById(m);
+    if (!h) return "";
+    const who = fleet.personOf(h);
+    return who.kind === "me" || who.name === fleet.me ? undefined : who.name;
+  };
+  const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf, machineOwner);
   const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
-  const needs = mine.filter((p) => needsYou(p.info)).length;
+  // What needs you is yours: a teammate's ask is in Needs you under their name, not counted (#1392).
+  const needs = mine.filter((p) => needsYou(p.info) && paneOwner(fleet, p) === null).length;
   const p = platform.project(project);
 
   // Needs you: Swarm's rail, for this project's panes, held still under the pointer as Swarm's is.
@@ -665,7 +675,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
  * thread, which is the row's own button. */
 function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk: () => void }) {
   const name = who ? `${who}'s ${lead.session}` : lead.session;
-  const says = lead.standing ? STATE_WORD[lead.standing] : "";
+  const says = lead.standing ? wordOf({ standing: lead.standing, asks: who }) : "";
   const title = `Led by ${name}${lead.machineName ? ` on ${lead.machineName}` : ""}${says ? `, ${says}` : ""}`;
   const inner = (
     <>

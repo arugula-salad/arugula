@@ -15,7 +15,7 @@ import { EmptyLine } from "../shared/ui/block-states";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet } from "../shell/fleet";
 import { shortHost } from "../shell/swarm/model";
-import { STATE_WORD, type OvBoard, type OvCard, type OvSession } from "../shell/swarm/overview";
+import { ticketWord, wordOf, type OvBoard, type OvCard, type OvSession } from "../shell/swarm/overview";
 import { names } from "../platform/links";
 import { follow, pathOf } from "../platform/router";
 
@@ -130,7 +130,7 @@ function LeadCard({ b, who, leads, talkTo, thread, askChief }: { b: OvBoard; who
       </aside>
     );
   const name = who ? `${who}'s ${l.session}` : l.session;
-  const says = l.standing ? STATE_WORD[l.standing] : "";
+  const says = l.standing ? wordOf({ standing: l.standing, asks: who }) : "";
   return (
     <aside class="ov-bl-lead" data-ov-lead-card={l.session}>
       <span class="dim ov-bl-lead-label">Lead</span>
@@ -149,13 +149,6 @@ function LeadCard({ b, who, leads, talkTo, thread, askChief }: { b: OvBoard; who
       </div>
     </aside>
   );
-}
-
-/** The word a ticket says: it asks you (its question, or a session on it
- * waiting), else its lane's. */
-function ticketWord(r: BoardRow, c?: OvCard): { word: string; asks: boolean } {
-  if (r.ask?.mine || c?.standing === "asks" || c?.standing === "needs") return { word: "asks you", asks: true };
-  return { word: r.lane === "doing" ? "working" : r.lane === "review" ? "in review" : r.lane === "next" ? "next" : "done", asks: false };
 }
 
 /** A ticket's PR or check line: its own PR's, else the first PR attached as its work, as the board's chip says it. */
@@ -204,7 +197,7 @@ function TicketRow({ r, c, project, board, zoom, talkTo }: { r: BoardRow; c?: Ov
 
 /** An agent on a ticket: a dot for how it stands, its name and machine; it opens that agent's tab. */
 function AgentChip({ s, talk }: { s: OvSession; talk: () => void }) {
-  const says = STATE_WORD[s.standing];
+  const says = wordOf(s);
   const title = `${s.name} on ${s.where}${says ? `, ${says}` : ""}: talk to it`;
   return (
     <button type="button" class="ov-lead" title={title} aria-label={title} data-ov-agent-chip={s.key} onClick={talk}>

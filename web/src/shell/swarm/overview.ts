@@ -14,16 +14,19 @@ import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "
 
 /** How a card or a session stands, most urgent first: a session waits on
  * you, the row's question asks you, a session failed, its PR's checks fail,
- * it's quiet, it's working, its PR's checks run, it's in review; or nothing
- * says (`idle`). A session only ever needs you, failed, is quiet or works. */
-export type Standing = "needs" | "asks" | "failed" | "checks_failing" | "quiet" | "working" | "checks_running" | "review" | "idle";
-export const STANDING_ORDER: Standing[] = ["needs", "asks", "failed", "checks_failing", "quiet", "working", "checks_running", "review", "idle"];
+ * it or its question waits on someone else (`waits`, #1392), it's quiet,
+ * it's working, its PR's checks run, it's in review; or nothing says
+ * (`idle`). A session only ever needs you, failed, waits on someone else,
+ * is quiet or works. */
+export type Standing = "needs" | "asks" | "failed" | "checks_failing" | "waits" | "quiet" | "working" | "checks_running" | "review" | "idle";
+export const STANDING_ORDER: Standing[] = ["needs", "asks", "failed", "checks_failing", "waits", "quiet", "working", "checks_running", "review", "idle"];
 /** The one word a row says of how it stands; nothing for `idle`. */
 export const STATE_WORD: Record<Standing, string> = {
   needs: "needs you",
   asks: "asks you",
   failed: "failed",
   checks_failing: "checks failing",
+  waits: "asks someone else",
   quiet: "quiet",
   working: "working",
   checks_running: "checks running",
@@ -52,6 +55,10 @@ export interface OvPane {
   name: string;
   /** Whether it's an agent (it leads its session's tile). */
   agent: boolean;
+  /** Whose it is when it isn't the reader's: their name, or "" where
+   * that isn't known (#1392). Absent: the reader's. A pane of someone
+   * else's that needs them stands `waits`, not `needs`. */
+  owner?: string;
   standing: Standing;
   /** When it last printed (ms), for the order of what's quiet. */
   last: number;
@@ -76,6 +83,8 @@ export interface OvSession {
   hub?: string;
   /** Its branch, where the hub says (a session the machines don't show here). */
   branch?: string | null;
+  /** Whom it waits on, when that's someone else (`waits`): their name, or "" where that isn't known. */
+  asks?: string;
 }
 
 export interface OvCard {
@@ -83,6 +92,9 @@ export interface OvCard {
   row: BoardRow;
   sessions: OvSession[];
   standing: Standing;
+  /** Whom it waits on, when that's someone else (`waits`): its question's
+   * person, else its first session's that waits; "" where that isn't known. */
+  asks?: string;
 }
 
 export interface OvBoard {
@@ -132,8 +144,11 @@ const numberOf = (issue: string): number | null => {
 
 /** The Overview for `project`: its open boards' views, the panes the
  * machines report (every machine's; only the project's are kept) and the
- * hub's sessions by card, null until it answers (or where it can't). */
-export function overviewOf(project: string, views: BoardView[], panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): Overview {
+ * hub's sessions by card, null until it answers (or where it can't).
+ * `ownerOf` says whose a machine is, for a session the hub names that no
+ * pane here shows: as `OvPane.owner`, undefined for the reader's. Without
+ * it, or for a cloud workspace's session, a session is the reader's. */
+export function overviewOf(project: string, views: BoardView[], panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined, ownerOf?: (machine: string) => string | undefined): Overview {
   const open = views.filter((v) => !v.board.closed_at);
   const rows = new Map<string, { board: string; row: BoardRow }>();
   const byIssue = new Map<string, { board: string; row: BoardRow }>();
@@ -223,12 +238,18 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
     const agent = t.panes.find((p) => p.agent);
     const name = agent ? agent.name : lead.session && t.panes.length > 1 ? lead.session.name : lead.name;
     const hub = t.panes.map((p) => hubOf.get(p.key)).find(Boolean);
-    put(t.at, { key: k, name, where: lead.host, standing: worst(t.panes.map((p) => p.standing)), lead, panes: t.panes, ...(hub ? { hub } : {}) });
+    const standing = worst(t.panes.map(paneStanding));
+    // Whom it waits on: the first of its panes that waits.
+    const asks = standing === "waits" ? t.panes.find((p) => paneStanding(p) === "waits")!.owner : undefined;
+    put(t.at, { key: k, name, where: lead.host, standing, lead, panes: t.panes, ...(hub ? { hub } : {}), ...(asks !== undefined ? { asks } : {}) });
   }
   // The hub's sessions the machines don't show here: named, where they run, no pane.
   for (const { card, s } of unseen) {
     const where = s.on.kind === "hosted" ? "Arugula cloud" : s.on.name;
-    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}), ...(s.kind !== "agent" ? { hub: s.id } : {}) });
+    const owner = s.on.kind === "machine" && ownerOf ? ownerOf(s.on.id) : undefined;
+    const said = hubStanding(s);
+    const standing = said === "needs" && owner !== undefined ? "waits" : said;
+    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing, panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}), ...(s.kind !== "agent" ? { hub: s.id } : {}), ...(standing === "waits" ? { asks: owner } : {}) });
   }
 
   const boards: OvBoard[] = [];
@@ -241,7 +262,10 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
           .filter((r) => r.lane === lane)
           .map((r): OvCard => {
             const sessions = sortSessions(onCard.get(`${v.board.id}/${r.id}`) ?? []);
-            return { board: v.board.id, row: r, sessions, standing: worst([...sessions.map((s) => s.standing), ...rowSays(r)]) };
+            const standing = worst([...sessions.map((s) => s.standing), ...rowSays(r)]);
+            // Whom it waits on: its question's person first, else its first session's that waits.
+            const asks = standing !== "waits" ? undefined : r.ask?.who && !r.ask.mine ? r.ask.who_name : sessions.find((s) => s.standing === "waits")?.asks;
+            return { board: v.board.id, row: r, sessions, standing, ...(asks !== undefined ? { asks } : {}) };
           }),
       );
     const doing = cards("doing");
@@ -278,7 +302,7 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
   const pinned = l.pane === undefined ? undefined : panes.find((p) => on(p) && p.id === l.pane);
   const mine = pinned ? [pinned] : guessed;
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
-  const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
+  const standing = mine.length ? worst(mine.map(paneStanding)) : hub ? hubStanding(hub) : null;
   const machineName = l.machine_name || hostOf(l.machine) || "";
   // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row.
   const lead = pinned ?? (mine.length ? leadOf(mine) : undefined);
@@ -290,12 +314,15 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
   return { machine: l.machine, machineName, session: l.session, standing, peek };
 }
 
-/** What a row says of itself, besides its sessions: its question for you
- * (`ask.who`, the reader's), its stalled mark, its PRs' checks and review
- * (the row's own PR, and the PRs attached as its work), and its lane. */
+/** How a pane stands for the reader: one that needs someone else waits on them (#1392). */
+const paneStanding = (p: OvPane): Standing => (p.standing === "needs" && p.owner !== undefined ? "waits" : p.standing);
+
+/** What a row says of itself, besides its sessions: its question (`ask.who`)
+ * for you, or for someone else, its stalled mark, its PRs' checks and
+ * review (the row's own PR, and the PRs attached as its work), and its lane. */
 function rowSays(r: BoardRow): Standing[] {
   const says: Standing[] = [];
-  if (r.ask?.who && r.ask.mine) says.push("asks");
+  if (r.ask?.who) says.push(r.ask.mine ? "asks" : "waits");
   if (r.marks?.some((m) => m.kind === "stalled")) says.push("quiet");
   const prs = [r.live, ...r.attachments.filter((a) => a.role === "work" && !a.released).map((a) => a.live)].filter((l) => l?.kind === "pr");
   for (const l of prs) {
@@ -314,9 +341,26 @@ export function inFlight(b: Pick<OvBoard, "doing" | "review">, max = 4): { shown
   return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
 }
 
-/** The pane a session's tile opens: one that needs you, else its agent, else its first. */
+/** The pane a session's tile opens: one that needs you or someone, else its agent, else its first. */
 function leadOf(panes: OvPane[]): OvPane {
   return panes.find((p) => p.standing === "needs") ?? panes.find((p) => p.agent) ?? panes[0];
+}
+
+/** The word a ticket says on a board's level: it asks you (its question,
+ * or a session of yours on it waiting); it asks someone else, by name
+ * (#1392); else its lane's. */
+export function ticketWord(r: Pick<BoardRow, "ask" | "lane">, c?: Pick<OvCard, "standing" | "asks">): { word: string; asks: boolean } {
+  if (r.ask?.mine || c?.standing === "asks" || c?.standing === "needs") return { word: "asks you", asks: true };
+  if (r.ask?.who && !r.ask.mine) return { word: `asks ${r.ask.who_name || "someone"}`, asks: false };
+  if (c?.standing === "waits") return { word: wordOf(c), asks: false };
+  return { word: r.lane === "doing" ? "working" : r.lane === "review" ? "in review" : r.lane === "next" ? "next" : "done", asks: false };
+}
+
+/** The word a card or a session says: one waiting on someone else names
+ * them (#1392), `asks Aaron`, or says `asks someone` where that isn't
+ * known; anything else, its standing's word. */
+export function wordOf(x: { standing: Standing; asks?: string }): string {
+  return x.standing === "waits" ? `asks ${x.asks || "someone"}` : STATE_WORD[x.standing];
 }
 
 /** Cards by how they stand (`STANDING_ORDER`), the worst first; then the one that moved last. */

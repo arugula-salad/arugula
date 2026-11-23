@@ -331,7 +331,7 @@ struct WorkPane: View {
         case .hosted:
             break
         }
-        bits.append(standing == .idle ? "quiet" : standing.word)
+        bits.append(standing == .idle ? "quiet" : standing.word(asks: slot.peeked.owner))
         return bits.joined(separator: " · ")
     }
 }

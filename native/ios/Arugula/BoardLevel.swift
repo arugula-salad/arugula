@@ -203,7 +203,7 @@ struct LeadCard: View {
     private func facts(_ l: LeadLine) -> String {
         var bits: [String] = []
         if !l.machine.isEmpty { bits.append("on \(l.machine)") }
-        if let s = l.standing { bits.append(s == .idle ? "quiet" : s.word) } else { bits.append("not reached from here") }
+        if let s = l.standing { bits.append(s == .idle ? "quiet" : s.word(asks: l.who)) } else { bits.append("not reached from here") }
         if leads > 1 { bits.append("leads \(leads) boards") }
         return bits.joined(separator: " · ")
     }
@@ -261,10 +261,12 @@ struct TicketCard: View {
         .card(tone, glow: tone == .accent)
     }
 
-    /// Its word: asks you (its ask, or an agent on it waiting), working, in
-    /// review or next.
+    /// Its word: asks you (its ask, or an agent of yours on it waiting); asks
+    /// someone else by name (Arugula #1392); working, in review or next.
     private var standing: (String, Tone) {
         if row.ask?.mine == true || agents.contains(where: { $0.standing == .needs }) { return ("asks you", .accent) }
+        if let a = row.ask, !(a.who ?? "").isEmpty { return (Standing.waits.word(asks: a.who_name), .info) }
+        if let a = agents.first(where: { $0.standing == .waits }) { return (a.word, .info) }
         switch row.lane ?? "" {
         case "lane_doing", "doing": return ("working", .warn)
         case "lane_review", "review": return ("in review", .info)

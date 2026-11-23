@@ -14,15 +14,15 @@ import { isCard, pointerLabel } from "../shared/boards/text";
 import type { Tone } from "../shared/ui/state-chip";
 import type { Fleet } from "../shell/fleet";
 import { shortHost } from "../shell/swarm/model";
-import { STATE_WORD, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
+import { wordOf, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
 
 /** How often an open preview reads its last lines again. */
 const LINE_EVERY_MS = 6000;
 /** How long the pointer rests on a row before its preview opens, so passing over rows opens none. */
 const HOVER_MS = 250;
 
-/** The colour of a row's word: what waits on you, what failed, what's quiet; the rest plain. */
-const TONE: Partial<Record<Standing, Tone>> = { needs: "accent", asks: "accent", failed: "danger", checks_failing: "danger", quiet: "warn" };
+/** The colour of a row's word: what waits on you, what failed, what waits on someone else, what's quiet; the rest plain. */
+const TONE: Partial<Record<Standing, Tone>> = { needs: "accent", asks: "accent", failed: "danger", checks_failing: "danger", waits: "info", quiet: "warn" };
 
 type Data = { [data: `data-${string}`]: unknown };
 
@@ -76,10 +76,11 @@ export function OvRow({ line, open, disabled, title, current, preview, class: cl
   );
 }
 
-/** A row's one word, in its colour; nothing when nothing says. `words`
- * says it otherwise, in the same colour (a board's row: `2 working`). */
-export function Word({ standing, words, ...attrs }: { standing: Standing; words?: string } & Data) {
-  const word = words ?? STATE_WORD[standing];
+/** A row's one word, in its colour; nothing when nothing says. `asks`
+ * names whom it waits on (`asks Aaron`, #1392); `words` says it otherwise,
+ * in the same colour (a board's row: `2 working`). */
+export function Word({ standing, asks, words, ...attrs }: { standing: Standing; asks?: string; words?: string } & Data) {
+  const word = words ?? wordOf({ standing, asks });
   if (!word) return null;
   return (
     <span class={`ov-word tone-${TONE[standing] ?? "plain"}`} {...attrs}>
@@ -109,7 +110,7 @@ export function CardRow({ c, fleet, open, openSession, current, faceOf }: { c: O
           <span class="ov-row-title" data-ov-card-title>
             {title}
           </span>
-          <Word standing={c.standing} data-ov-card-state />
+          <Word standing={c.standing} asks={c.asks} data-ov-card-state />
           {who.length > 0 && (
             <span class="ov-row-who" title={`Assigned to ${who.join(", ")}`}>
               {who.slice(0, 2).map((n) => (
@@ -145,7 +146,7 @@ export function SessionRow({ s, fleet, open }: { s: OvSession; fleet: Fleet; ope
       line={
         <>
           <span class="ov-row-title">{s.name}</span>
-          <Word standing={s.standing} />
+          <Word standing={s.standing} asks={s.asks} />
           <span class="ov-row-where" data-ov-where>
             {shortHost(s.where)}
           </span>
@@ -174,7 +175,7 @@ function Peek({ s, fleet }: { s: OvSession; fleet: Fleet }) {
           {shortHost(s.where)}
         </span>
       </span>
-      {s.lead ? <LastLine fleet={fleet} pane={s.lead} /> : <span class="ov-line dim">{STATE_WORD[s.standing]}</span>}
+      {s.lead ? <LastLine fleet={fleet} pane={s.lead} /> : <span class="ov-line dim">{wordOf(s)}</span>}
     </>
   );
 }
