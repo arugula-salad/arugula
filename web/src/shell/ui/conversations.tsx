@@ -1,7 +1,9 @@
 // Claude Code conversations (M33): every one on the daemon's machine, from
 // a terminal, the desktop app's Code tab or VS Code, grouped by folder, newest
 // first. Picking one shows it as an agent block (stopped, its transcript
-// as it grows), or goes to the block that has it already. Opened from a
+// as it grows), or goes to the block that has it already. Codex's are
+// listed with them, marked Codex: picking one continues it, `codex resume`
+// in a terminal pane in its folder. Opened from a
 // pane's menu, the agent dialog and the phone's sheet. On a phone it is a
 // full-height sheet.
 //
@@ -34,7 +36,9 @@ export interface Conversation {
   cwd: string;
   cwd_exists: boolean;
   branch?: string;
-  source: "terminal" | "desktop" | "vscode" | "other";
+  /** Whose it is: Codex's go on in a terminal pane, not an agent block. */
+  agent?: "claude" | "codex";
+  source: "terminal" | "desktop" | "vscode" | "codex" | "other";
   title: string;
   first_prompt?: string;
   last_prompt?: string;
@@ -109,7 +113,7 @@ function homeOf(list: Conversation[]): string | null {
   return null;
 }
 
-const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", other: "Other" } as const;
+const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", codex: "Codex", other: "Other" } as const;
 
 /** One host's conversations, or why there are none. */
 interface HostConvs {
@@ -307,6 +311,8 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   const chosenRow = convs[sel];
   const chosen = chosenRow?.c;
   const chosenHost = chosenRow?.host ?? here;
+  // Codex's has one way on, and it's the main button.
+  const codex = chosen?.agent === "codex";
   let i = -1;
   return (
     <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
@@ -404,19 +410,28 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
         <span class="picker-target" title={chosen?.live?.place ?? chosen?.cwd}>
           {chosen ? (chosen.live ? chosen.live.place : (chosen.last_prompt ?? chosen.first_prompt ?? "")) : ""}
         </span>
-        <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen, chosenHost)}>
-          {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Open"}
-        </button>
         <button
-          disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
-          title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
-          onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
+          class="primary"
+          disabled={!chosen || busy || (codex && !!chosen.live && !inPane(chosen, chosenHost))}
+          title={codex && chosen?.live && !inPane(chosen, chosenHost) ? `It's ${chosen.live.place}: go on there` : undefined}
+          onClick={() => chosen && void pick(chosen, chosenHost)}
         >
-          Continue
+          {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : codex ? "Continue here" : "Open"}
         </button>
-        <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
-          Fork
-        </button>
+        {!codex && (
+          <button
+            disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
+            title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
+            onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
+          >
+            Continue
+          </button>
+        )}
+        {!codex && (
+          <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
+            Fork
+          </button>
+        )}
         <button onClick={close}>Cancel</button>
       </div>
     </Modal>

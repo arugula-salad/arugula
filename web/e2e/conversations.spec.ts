@@ -6,12 +6,14 @@
 // anything.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { menu, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
+const codexHome = process.env.CODEX_HOME!;
 
 const seeded: string[] = [];
 const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
@@ -24,8 +26,31 @@ const seed = (word: string, title: string, more?: (base: Base) => object[]) => {
 // conversation each later daemon lists (and a hint it offers, aru-127).
 test.afterAll(() => {
   rmSync(join(claude, "projects"), { recursive: true, force: true });
+  rmSync(join(codexHome, "sessions"), { recursive: true, force: true });
   for (const cwd of seeded) rmSync(cwd, { recursive: true, force: true });
 });
+
+/** A Codex session in the run's Codex home, as Codex 0.163 writes its
+ *  rollout: its meta line, then what was typed, as events. */
+function seedCodex(word: string): { id: string; cwd: string } {
+  const cwd = mkdtempSync(join(tmpdir(), `arugula-e2e-codex-${word}-`));
+  seeded.push(cwd);
+  const id = crypto.randomUUID();
+  const now = new Date();
+  const day = join(codexHome, "sessions", `${now.getUTCFullYear()}`, `${now.getUTCMonth() + 1}`.padStart(2, "0"), `${now.getUTCDate()}`.padStart(2, "0"));
+  mkdirSync(day, { recursive: true });
+  const at = now.toISOString();
+  const typed = (text: string) => ({ timestamp: at, type: "event_msg", payload: { type: "item_completed", item: { type: "UserMessage", content: [{ type: "text", text }] } } });
+  const lines = [
+    { timestamp: at, type: "session_meta", payload: { session_id: id, id, timestamp: at, cwd, originator: "codex-tui", cli_version: "0.163.0", source: "cli", git: { branch: "main" } } },
+    { timestamp: at, type: "turn_context", payload: { cwd, model: "gpt-6.1-sol" } },
+    typed(`count the ${word}s`),
+    typed("and again"),
+  ];
+  const stamp = at.slice(0, 19).replace(/:/g, "-");
+  writeFileSync(join(day, `rollout-${stamp}-${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  return { id, cwd };
+}
 
 /** This test's process holds the session, as a running Claude Code would. */
 function hold(id: string) {
@@ -144,6 +169,33 @@ test.describe("desktop", () => {
     await el.locator(".agent-composer textarea").fill("recall");
     await el.locator(".agent-composer textarea").press("Enter");
     await expect(el.locator(".agent-msg").last()).toHaveText("You said plover.");
+  });
+});
+
+test.describe("codex", () => {
+  test("a Codex session is listed by its folder and continues in a terminal pane", async ({ page }) => {
+    const { id, cwd } = seedCodex("heron");
+    await reset(page);
+    const [term] = await panes(page);
+    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    const dialog = picker(page);
+    const row = dialog.locator(`[data-conversation="${id}"]`);
+    await expect(row.locator(".conv-source")).toHaveText("Codex");
+    await expect(row.locator(".conv-title")).toHaveText("count the herons");
+    await expect(dialog.locator(".conv-folder", { hasText: cwd.split("/").pop()! })).toBeVisible();
+
+    // One way on: Continue here, with no agent block and no Fork.
+    await dialog.locator(".picker-filter").fill("herons");
+    const go = dialog.locator(".picker-actions button.primary");
+    await expect(go).toHaveText("Continue here");
+    await expect(dialog.locator(".picker-actions button", { hasText: "Fork" })).toHaveCount(0);
+    const opened = page.waitForResponse((r) => r.url().includes("/api/conversations/open"));
+    await go.click();
+    const res = await opened;
+    expect(res.ok()).toBe(true);
+    const v = await res.json();
+    expect(v).toMatchObject({ opened: true, conversation: id });
+    expect(await agentBlock(page)).toBeNull();
   });
 });
 

@@ -34,12 +34,19 @@ pub fn name(agent: &str) -> &str {
 
 /// The command that resumes `s`, as argv.
 fn argv(s: &PaneConversation) -> Option<Vec<String>> {
-    let (program, flag) = match s.agent.as_str() {
+    command(&s.agent, &s.id)
+}
+
+/// The command that resumes `agent`'s conversation `id`, as argv: what a
+/// restart runs, and what Continue here runs in a new pane. `id` is its own
+/// argument; check it with [`valid_id`] before it goes through a shell.
+pub fn command(agent: &str, id: &str) -> Option<Vec<String>> {
+    let (program, flag) = match agent {
         "claude" => ("claude", "--resume"),
         "codex" => ("codex", "resume"),
         _ => return None,
     };
-    Some(vec![program.into(), flag.into(), s.id.clone()])
+    Some(vec![program.into(), flag.into(), id.to_owned()])
 }
 
 /// Whether a restart of this pane resumes its conversation: its policy says

@@ -30,6 +30,9 @@ runDir("ARUGULA_CLAUDE_IDE_DIR", "arugula-e2e-ide-");
 // of the run's own (conversations.spec.ts seeds it), and Claude Code's
 // adapter is the fake ACP agent, so no test reaches a real Claude.
 mkdirSync(join(runDir("CLAUDE_CONFIG_DIR", "arugula-e2e-claude-"), "sessions"), { recursive: true });
+// Codex's sessions too, from a Codex home of the run's own, never the
+// person's ~/.codex (conversations.spec.ts seeds it).
+runDir("CODEX_HOME", "arugula-e2e-codex-");
 runDir("FAKE_ACP_DIR", "arugula-e2e-fake-acp-");
 {
   const bin = join(runDir("ARUGULA_AGENTS_DIR", "arugula-e2e-agents-"), "claude/node_modules/.bin");

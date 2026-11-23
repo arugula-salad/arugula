@@ -197,7 +197,7 @@ impl McpOp<AgentBlock> for ConversationsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "list",
         kind: "conversations",
-        description: "Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
+        description: "Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, and Codex's (agent codex), newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.",
     };
     type Args = ListConversationsArgs;
     type Answer = serde_json::Value;
@@ -230,7 +230,7 @@ impl McpOp<AgentBlock> for ConversationOpen {
     const SURFACE: Surface = Surface::Kind {
         tool: "show",
         kind: "conversation",
-        description: "A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.",
+        description: "A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on. A Codex one goes on in a terminal pane running codex resume.",
     };
     type Args = OpenConversationArgs;
     type Answer = serde_json::Value;
@@ -340,7 +340,10 @@ async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conversa
         .take(q.limit.unwrap_or(500))
         .map(|mut c| {
             // #398: its estimate, once the pricing thread has read it.
-            c.estimate = crate::conversations::spend::Listed::global().get(&c.path, (c.size, c.updated_ms));
+            // Claude's prices, so Claude Code's transcripts only.
+            if c.agent == "claude" {
+                c.estimate = crate::conversations::spend::Listed::global().get(&c.path, (c.size, c.updated_ms));
+            }
             // #453: what Claude Code said of it from inside, live.
             c.context = signaled.get(&c.id);
             let block = blocks.get(&c.id).copied();
@@ -371,6 +374,9 @@ async fn open_conversation_as(
         .await
         .map_err(|e| bad(e.to_string()))?
         .map_err(|e| ApiError(StatusCode::NOT_FOUND, e))?;
+    if c.agent == "codex" {
+        return continue_codex(app, c, req).await;
+    }
     let existing = blocks_by_session(app).await.get(&c.id).copied();
     let (block, opened) = match existing {
         Some(b) => (b, false),
@@ -414,4 +420,141 @@ async fn open_conversation_as(
         }
     }
     Ok(out)
+}
+
+/// A Codex conversation goes on in a terminal pane in its folder, running
+/// `codex resume <id>`: opening it, or continuing it, both do (there's no
+/// transcript view of one yet), and one already in our pane goes there.
+/// Claude Code's Continue here does the same with `claude --resume`; both
+/// take their command from [`arugula_mux::resume::command`].
+async fn continue_codex(
+    app: &App,
+    c: crate::conversations::Conversation,
+    req: OpenConversationRequest,
+) -> Result<OpenConversationResponse, ApiError> {
+    if req.then.as_deref() == Some("fork") {
+        return Err(bad("a Codex conversation can't be forked here yet: continue it"));
+    }
+    let (run, pane) = codex_run(&c, req)?;
+    if let Some(pane) = pane {
+        // Another daemon's pane on this machine (#77) isn't one to go to.
+        if app.mux.api(|r| Api::Pane(pane, r)).await.flatten().is_none() {
+            return Err(bad(format!("it's open in a terminal (pid {}): go on there", c.live.map_or(0, |l| l.pid))));
+        }
+        return Ok(OpenConversationResponse { block: pane, opened: false, conversation: c.id, error: None });
+    }
+    match app.mux.api(|r| Api::Run(run, r)).await {
+        Some(Ok(pane)) => Ok(OpenConversationResponse { block: pane, opened: true, conversation: c.id, error: None }),
+        Some(Err(e)) => Err(bad(e)),
+        None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
+    }
+}
+
+/// What continuing a Codex conversation runs, or the pane it already runs
+/// in; refused while a Codex elsewhere has it (Codex lets one writer have
+/// a thread) or when its folder is gone.
+fn codex_run(
+    c: &crate::conversations::Conversation,
+    req: OpenConversationRequest,
+) -> Result<(arugula_proto::api::RunRequest, Option<PaneId>), ApiError> {
+    let run = arugula_proto::api::RunRequest::default();
+    if let Some(l) = &c.live {
+        return match l.pane {
+            Some(p) => Ok((run, Some(p))),
+            None => Err(bad(format!("it's {}: go on there", l.place))),
+        };
+    }
+    if !c.cwd_exists {
+        return Err(bad(format!("its folder, {}, is gone", if c.cwd.is_empty() { "unrecorded" } else { &c.cwd })));
+    }
+    let argv = arugula_mux::resume::command("codex", &c.id)
+        .filter(|_| arugula_mux::resume::valid_id(&c.id))
+        .ok_or_else(|| bad(format!("{} isn't a session id Codex would give", c.id)))?;
+    let run = arugula_proto::api::RunRequest {
+        // Through the pane's shell: the id is checked, so it's one word.
+        command: Some(argv.join(" ")),
+        cwd: Some(c.cwd.clone()),
+        session: req.session,
+        split: req.split,
+        from_pane: req.from_pane,
+        ..run
+    };
+    Ok((run, None))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::conversations::{Conversation, Live, Source};
+
+    fn codex(id: &str, cwd: &str) -> Conversation {
+        Conversation {
+            id: id.into(),
+            agent: "codex",
+            path: "/h/.codex/sessions/x.jsonl".into(),
+            cwd: cwd.into(),
+            cwd_exists: Path::new(cwd).is_dir(),
+            branch: None,
+            source: Source::Codex,
+            entrypoint: "codex_cli_rs".into(),
+            title: "t".into(),
+            first_prompt: None,
+            last_prompt: None,
+            model: None,
+            version: String::new(),
+            created_ms: 0,
+            updated_ms: 0,
+            size: 0,
+            forked_from: None,
+            continued_in: None,
+            archived: false,
+            live: None,
+            estimate: None,
+            context: None,
+        }
+    }
+
+    fn req() -> OpenConversationRequest {
+        OpenConversationRequest {
+            id: "x".into(),
+            then: Some("continue".into()),
+            session: None,
+            split: Some(4),
+            from_pane: Some(4),
+        }
+    }
+
+    #[test]
+    fn continuing_codex_resumes_it_in_its_folder() {
+        let dir = std::env::temp_dir();
+        let id = "01a206ce-0c41-7ce0-a62f-517a7a089b86";
+        let (run, pane) = codex_run(&codex(id, dir.to_str().unwrap()), req()).map_err(|e| e.1).unwrap();
+        assert_eq!(pane, None);
+        assert_eq!(run.command.as_deref(), Some(format!("codex resume {id}").as_str()));
+        assert_eq!(run.cwd.as_deref(), dir.to_str());
+        assert_eq!((run.split, run.from_pane), (Some(4), Some(4)));
+
+        // Its folder's gone, or the id would be more than one word.
+        assert!(codex_run(&codex(id, "/no/such/folder"), req()).is_err());
+        assert!(codex_run(&codex("x; rm -rf ~", dir.to_str().unwrap()), req()).is_err());
+
+        // Open in our pane: that pane. Open elsewhere: refused.
+        let live = Live {
+            pid: 9,
+            kind: "interactive".into(),
+            entrypoint: "codex".into(),
+            status: String::new(),
+            pane: Some(3),
+            block: None,
+            place: "open in pane %3".into(),
+            cwd: None,
+            started: 0,
+        };
+        let held = Conversation { live: Some(live.clone()), ..codex(id, dir.to_str().unwrap()) };
+        assert_eq!(codex_run(&held, req()).map_err(|e| e.1).unwrap().1, Some(3));
+        let away = Conversation { live: Some(Live { pane: None, ..live }), ..held };
+        assert!(codex_run(&away, req()).is_err());
+    }
 }
