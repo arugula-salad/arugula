@@ -249,12 +249,13 @@ pub fn remote_input_said(state_dir: &Path) -> Option<bool> {
     doc(state_dir).get("remote_input").and_then(Value::as_bool)
 }
 
-/// What a finished join sets [`remote_input`] to when nobody said as it
-/// joined (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b): nothing
-/// on a machine whose owner already said; nothing on the account's own
-/// machine either, so it stays on and its owner types from their phone;
-/// off on a team's, where teammates watch until the owner turns it on
-/// here. `None`: leave the file alone.
+/// What a finished join, or a move into a team, sets [`remote_input`] to
+/// when nobody said as it joined (Arugula issue
+/// iss_d8ce0c357cf0902c51dec39378ef7a1b): nothing on a machine whose owner
+/// already said; nothing on the account's own machine either, so it stays
+/// on and its owner types from their phone; off on a team's, where
+/// teammates watch until the owner turns it on here. `None`: leave the
+/// file alone.
 pub fn joined_sets(said: Option<bool>, team: bool) -> Option<bool> {
     (said.is_none() && team).then_some(false)
 }

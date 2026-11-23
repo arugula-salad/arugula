@@ -78,8 +78,10 @@ terminal traffic is TLS to the relay.
   remote-input`, or `arugulad join --remote-input on|off` (or
   `ARUGULA_REMOTE_INPUT`). Nothing asks before sign-in: a join nobody
   answered leaves the account's own machine on, so its owner types from
-  their phone, and turns a team's off, both as the join is saved and
-  before `control.json` is, while one set before keeps what it has
+  their phone, and turns a team's off, as the join is saved and before
+  `control.json` is; a move into a team on control's refresh turns it off
+  too, before the move is saved (`control::remote_input_as_moved`), while
+  one set before keeps what it has
   (`sharing::joined_sets`, `control::remote_input_as_joined`; Arugula
   issue iss_d8ce0c357cf0902c51dec39378ef7a1b). `POST /api/setup/control`
   takes `remote_input` only at the machine and refuses it through control

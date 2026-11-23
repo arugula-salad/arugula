@@ -12,13 +12,15 @@ phone found they couldn't type into their own pane from it.
 
 Now nothing asks. The default is decided once the join lands, when the
 daemon knows where it went (`control::remote_input_as_joined`,
-`sharing::joined_sets`):
+`sharing::joined_sets`), and again whenever control moves the machine into
+a team (`control::take_move`, `control::remote_input_as_moved`):
 
-| Where the machine went | Owner said before? | `remote_input` |
+| What happened | Owner said before? | `remote_input` |
 | --- | --- | --- |
-| The person's own account | no | left unset, so **on** |
-| A team | no | written **off** |
-| Either | yes (`arugulad sharing remote-input`, `--remote-input`, an older join's answer) | **unchanged** |
+| Joined the person's own account | no | left unset, so **on** |
+| Joined a team | no | written **off** |
+| Moved into a team (from none, or another) | no | written **off** |
+| Any of these | yes (`arugulad sharing remote-input`, `--remote-input`, an older join's answer) | **unchanged** |
 
 `arugulad join --remote-input on|off` (and `ARUGULA_REMOTE_INPUT`) still
 set it up front, and `POST /api/setup/control` still takes `remote_input`
@@ -66,15 +68,26 @@ flow did, so the team path keeps its behaviour. The off is written to
 `sharing.json` *before* `control.json`, so the daemon never accepts a
 control channel on a team machine while typing is on.
 
+The same holds when a personal machine is later moved into a team.
+Control's refresh hands the daemon the move; `take_move` says whether
+it put the machine into a team, and if the owner never said, the refresh
+writes `off` before it saves the move or builds the new state from it.
+If `sharing.json` can't be written, the refresh fails and the move waits
+for the next one, so the machine is never in a team with typing on unless
+its owner chose that. A move out of a team, a replayed move or a refused
+one changes nothing.
+
+This applies only at a join or a move. A team machine that joined before
+the join question existed (Arugula #1194) and never set `remote_input`
+is still on, as it was, so this change flips no team machine already set up.
+
 ## Known gaps (for the post-launch team question)
 
-- **A personal machine later moved into a team** (`take_move`) keeps
-  remote input on if it was left unset. The move happens on control's
-  refresh, not through a join, and this change doesn't touch it. The
-  team question should ask then; until it does, teammates with an editor
-  role on a shared or team-project session could type there.
-- **A machine that was in a team and rejoins its owner's account** keeps
-  the team's `off` (it was said, so it stands). Safe, but the owner must
+The team question, when it's built, asks at the moments above where this
+writes `off`. Until then:
+
+- **A machine that was in a team and rejoins, or is moved back to, its
+  owner's account** keeps the team's `off` (it was written, so it stands). Safe, but the owner must
   run `arugulad sharing remote-input on` to type from their phone.
 - **A machine whose owner answered "No" under the old flow** stays off for
   the same reason.

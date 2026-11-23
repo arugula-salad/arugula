@@ -176,8 +176,8 @@ signed-in session.
   (`crates/proto/src/sharing.rs`, `remote_input`). Its owner still watches
   every session on it from other devices, and types into none. Nothing through control
   can turn it back on. A machine joining your own account is on, so you can
-  type into your panes from your phone; one joining a team is off until you
-  turn it on there. `arugulad join --remote-input on|off` picks either way,
+  type into your panes from your phone; one joining a team, or moved into
+  one later, is off until you turn it on there. `arugulad join --remote-input on|off` picks either way,
   one set before keeps what it has, and the machine menu says which it is.
 - **A CLI's sign-in is a file on its machine:** `arugula login` keeps a
   session of your account in `cli-session.json` in the config dir
