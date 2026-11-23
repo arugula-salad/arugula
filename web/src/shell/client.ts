@@ -965,9 +965,9 @@ export class Client {
     );
   }
 
-  /** Continue here: a Claude Code conversation going on in a terminal pane
-   * running `claude --resume`, in a new tab named after it, or the pane or
-   * block that has it already, shown. `home`: its folder is gone, run it
+  /** Continue here: a Claude Code or Codex conversation going on in a
+   * terminal pane running `claude --resume` or `codex resume`, in a new tab
+   * named after it, or the pane or block that has it already, shown. `home`: its folder is gone, run it
    * there. The answer (`folder_gone` and no pane: ask about home), or null
    * (and the error as a toast). */
   async continueConversation(o: { id: string; home?: boolean; from?: PaneId; session?: number }): Promise<ContinueConversationResponse | null> {

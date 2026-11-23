@@ -1374,8 +1374,8 @@ pub mod ops {
     }
 
     /// `POST /api/conversations/continue`: a conversation going on in a
-    /// terminal pane running the person's own `claude --resume <id>` in its
-    /// folder, a new tab named after it; the pane or block that has it
+    /// terminal pane running the person's own `claude --resume <id>` (or
+    /// `codex resume <id>`) in its folder, a new tab named after it; the pane or block that has it
     /// already, if one does. Continue here, in the conversations list.
     pub struct ConversationContinue;
 

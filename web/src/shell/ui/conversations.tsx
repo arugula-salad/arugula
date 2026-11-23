@@ -1,12 +1,14 @@
 // Claude Code conversations (M33): every one on the daemon's machine, from
 // a terminal, the desktop app's Code tab or VS Code, grouped by folder, newest
-// first. Picking one continues it here: a terminal pane in its folder
-// running the person's own `claude --resume <id>`, in a new tab named after
-// it (no adapter to install), or the pane or block that has it already. If
-// its folder is gone, the picker says so and offers to run it in home.
-// *Open as agent block* shows it as an agent block instead (stopped, its
-// transcript as it grows), which forks too. Opened from a pane's menu, the
-// agent dialog and the phone's sheet. On a phone it is a full-height sheet.
+// first, and Codex's with them, marked Codex. Picking one continues it
+// here: a terminal pane in its folder running the person's own `claude
+// --resume <id>` (or `codex resume <id>`), in a new tab named after it (no
+// adapter to install), or the pane or block that has it already. If its
+// folder is gone, the picker says so and offers to run it in home. *Open
+// as agent block* shows a Claude Code one as an agent block instead
+// (stopped, its transcript as it grows), which forks too. Opened from a
+// pane's menu, the agent dialog and the phone's sheet. On a phone it is a
+// full-height sheet.
 //
 // With more than one host (#78), every host's are listed, grouped by host
 // and then folder: each host is asked over the fleet's connection (M25) at
@@ -37,7 +39,9 @@ export interface Conversation {
   cwd: string;
   cwd_exists: boolean;
   branch?: string;
-  source: "terminal" | "desktop" | "vscode" | "other";
+  /** Whose it is: Codex's go on in a terminal pane, not an agent block. */
+  agent?: "claude" | "codex";
+  source: "terminal" | "desktop" | "vscode" | "codex" | "other";
   title: string;
   first_prompt?: string;
   last_prompt?: string;
@@ -112,7 +116,7 @@ function homeOf(list: Conversation[]): string | null {
   return null;
 }
 
-const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", other: "Other" } as const;
+const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", codex: "Codex", other: "Other" } as const;
 
 /** One host's conversations, or why there are none. */
 interface HostConvs {
@@ -350,6 +354,8 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   const chosen = chosenRow?.c;
   const chosenHost = chosenRow?.host ?? here;
   const chosenGone = !!chosen && gone?.id === chosen.id && gone.host === chosenHost ? gone : null;
+  // Codex's has one way on, Continue here: no agent block, no fork.
+  const codex = chosen?.agent === "codex";
   let i = -1;
   return (
     <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
@@ -462,18 +468,26 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
             class="primary"
             data-continue-here
             disabled={!chosen || busy || (!!chosen.live && chosen.block === null && !inPane(chosen, chosenHost))}
-            title={chosen?.live && chosen.block === null && !inPane(chosen, chosenHost) ? `It's ${chosen.live.place}: open it as an agent block and fork it` : "Your own claude --resume, in a terminal pane in its folder"}
+            title={
+              chosen?.live && chosen.block === null && !inPane(chosen, chosenHost)
+                ? `It's ${chosen.live.place}: ${codex ? "go on there" : "open it as an agent block and fork it"}`
+                : `Your own ${codex ? "codex resume" : "claude --resume"}, in a terminal pane in its folder`
+            }
             onClick={() => chosen && void goOn(chosen, chosenHost)}
           >
             {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Continue here"}
           </button>
         )}
-        <button disabled={!chosen || busy} data-open-block title="Stopped, showing its transcript" onClick={() => chosen && void pick(chosen, chosenHost)}>
-          {chosen?.block != null ? "Go to its agent block" : "Open as agent block"}
-        </button>
-        <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
-          Fork
-        </button>
+        {!codex && (
+          <button disabled={!chosen || busy} data-open-block title="Stopped, showing its transcript" onClick={() => chosen && void pick(chosen, chosenHost)}>
+            {chosen?.block != null ? "Go to its agent block" : "Open as agent block"}
+          </button>
+        )}
+        {!codex && (
+          <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
+            Fork
+          </button>
+        )}
         <button onClick={close}>Cancel</button>
       </div>
     </Modal>
