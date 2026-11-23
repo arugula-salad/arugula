@@ -623,6 +623,8 @@ mod tests {
         let p = b.prompt.unwrap();
         assert!(p.starts_with("You are this project's chief of staff"), "{p}");
         assert!(p.contains("watch` kind `events`") && p.contains("Never start, stop or close"), "{p}");
+        // Its staff room's posts are its prompts already (Arugula #1391).
+        assert!(p.contains("Never watch `staff`"), "{p}");
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "prompt": "brief me" })), None).unwrap();
         assert!(b.prompt.unwrap().ends_with("\n\nbrief me"));
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "room": "staff" })), None).unwrap();
