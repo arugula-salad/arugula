@@ -1112,6 +1112,12 @@ async fn labs_lists_all_the_tools() {
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
     assert_eq!(s.list_all_tools().await.unwrap().len(), 44 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
+    // A daemon that hasn't joined Arugula cloud says Docs, not issues or
+    // boards (Arugula #1403).
+    let said = instructions(&s);
+    assert!(said.contains(arugula_proto::flags::DOCS_STEERING), "{said}");
+    assert!(!said.contains(arugula_proto::flags::ISSUES_STEERING), "{said}");
+    assert!(!said.contains(arugula_proto::flags::BOARDS_STEERING), "{said}");
 
     // With Labs built in, the `labs` file lists them.
     #[cfg(feature = "labs")]

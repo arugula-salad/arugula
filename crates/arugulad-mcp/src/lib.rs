@@ -289,16 +289,19 @@ way, tell the Arugula team with feedback: say what you were trying to do; don't 
 /// (`flags::ISSUES_STEERING`), the feedback sentence while this machine's
 /// agents may send it (`feedback`, from `arugula_proto::feedback::agents_may`)
 /// and the boards sentence (`flags::BOARDS_STEERING`; everyone's since
-/// boards left Labs, native #191). Chat isn't in the instructions (#1095):
-/// how to reach a teammate's agent is in the thread tools' descriptions
-/// (#574).
-pub fn instructions(feedback: bool) -> String {
+/// boards left Labs, native #191). The issues and boards sentences only
+/// once this machine has joined Arugula cloud (`joined`, from [`joined`]):
+/// before, they would send an agent to tools it can't reach (Arugula
+/// #1403). A machine that joins mid-session tells its next session. Chat
+/// isn't in the instructions (#1095): how to reach a teammate's agent is
+/// in the thread tools' descriptions (#574).
+pub fn instructions(feedback: bool, joined: bool) -> String {
     [
         Some(INSTRUCTIONS_HEAD),
         Some(flags::DOCS_STEERING),
-        Some(flags::ISSUES_STEERING),
+        joined.then_some(flags::ISSUES_STEERING),
         feedback.then_some(INSTRUCTIONS_FEEDBACK),
-        Some(flags::BOARDS_STEERING),
+        joined.then_some(flags::BOARDS_STEERING),
         Some(INSTRUCTIONS_TOUR),
         Some(INSTRUCTIONS_HOOKS),
     ]
@@ -306,6 +309,13 @@ pub fn instructions(feedback: bool) -> String {
     .flatten()
     .collect::<Vec<_>>()
     .join(" ")
+}
+
+/// This machine has joined Arugula cloud and is still in it: control's
+/// tools (native issues, boards, conversations, runs) reach somewhere. A
+/// machine control dropped hasn't.
+pub(crate) fn joined(app: &App) -> bool {
+    app.control.state().state == "joined"
 }
 
 impl ServerHandler for McpServer {
@@ -319,7 +329,10 @@ impl ServerHandler for McpServer {
             ServerCapabilities::builder().enable_tools().enable_tool_list_changed().enable_resources().build(),
         )
         .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
-        .with_instructions(instructions(arugula_proto::feedback::agents_may(self.app.control.state_dir())))
+        .with_instructions(instructions(
+            arugula_proto::feedback::agents_may(self.app.control.state_dir()),
+            joined(&self.app),
+        ))
     }
 
     async fn list_tools(

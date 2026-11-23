@@ -757,6 +757,34 @@ pub(crate) fn can_do(on: On, has: impl Fn(Needs) -> bool) -> Vec<arugula_proto::
         .collect()
 }
 
+/// What only a machine joined to Arugula cloud can use, by name as
+/// [`listed_names`] gives it (Arugula #1403): each tool whose card line
+/// needs control or a grant there, the tools that are part of one, and
+/// `show`'s board. `capabilities` leaves them out before joining, as the
+/// instructions leave out issues and boards.
+pub(crate) fn cloud_only(on: On) -> Vec<String> {
+    let all = defs(on);
+    let needs = |name: &str| {
+        all.iter().find(|d| d.name == name).and_then(|d| match &d.human {
+            Human::Line(a) => Some(a.needs),
+            Human::In(_) => None,
+        })
+    };
+    let mut out: Vec<String> = all
+        .iter()
+        .filter(|d| {
+            let n = match &d.human {
+                Human::Line(a) => Some(a.needs),
+                Human::In(of) => needs(of),
+            };
+            !matches!(n, None | Some(Needs::Nothing | Needs::Forge))
+        })
+        .map(|d| d.name.to_owned())
+        .collect();
+    out.push("show:board".into());
+    out
+}
+
 /// `show`'s blocks.
 const SHOW: &[Kind] = &[
     Kind {
@@ -4402,7 +4430,7 @@ mod tests {
     /// everyone's since M198.)
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
-        let mut prose = vec![super::super::instructions(true)];
+        let mut prose = vec![super::super::instructions(true, true)];
         prose.extend(list(Scope::Full, fl(false), true).iter().map(|t| {
             format!(
                 "{}: {} {}",
@@ -4451,11 +4479,11 @@ mod tests {
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
         assert!(!managoat, "retired direct execution is never advertised");
-        let text = super::super::instructions(true);
+        let text = super::super::instructions(true, true);
         assert!(!text.contains("thread") && !text.contains("@agent"), "{text}");
         // The feedback sentence only while the tool is listed (#1219).
         assert!(text.contains("tell the Arugula team with feedback"), "{text}");
-        let off = super::super::instructions(false);
+        let off = super::super::instructions(false, true);
         assert!(!off.contains("feedback") && off.len() < text.len(), "{off}");
         // Everyone's since Docs left Labs (native #204): the Doc sentence.
         assert!(text.contains(flags::DOCS_STEERING), "{text}");
@@ -4466,6 +4494,44 @@ mod tests {
         assert!(text.contains(flags::BOARDS_STEERING), "{text}");
         // When to show a PR (AR-7).
         assert!(text.contains("show it (kind pr)"), "{text}");
+    }
+
+    /// Before this machine joins Arugula cloud, its instructions don't send
+    /// an agent to issues or boards (Arugula #1403); Docs, panes and blocks
+    /// are said either way, in the same order.
+    #[test]
+    fn the_instructions_name_issues_and_boards_only_once_joined() {
+        let joined = super::super::instructions(true, true);
+        let alone = super::super::instructions(true, false);
+        for text in [&joined, &alone] {
+            assert!(text.contains(flags::DOCS_STEERING), "{text}");
+            assert!(text.contains("show it (kind pr)") && text.contains("arugula hooks install"), "{text}");
+            assert!(!text.contains("thread"), "{text}");
+        }
+        assert!(joined.contains(flags::ISSUES_STEERING) && joined.contains(flags::BOARDS_STEERING), "{joined}");
+        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board"] {
+            assert!(!alone.contains(word), "{word} in: {alone}");
+        }
+        let without = joined.replace(&format!(" {}", flags::ISSUES_STEERING), "");
+        assert_eq!(without.replace(&format!(" {}", flags::BOARDS_STEERING), ""), alone);
+    }
+
+    /// What `capabilities` leaves out before joining is control's: every
+    /// tool whose line needs it, the tools that are part of one, and the
+    /// board block; a pane's and a Doc's tools stay.
+    #[test]
+    fn cloud_only_is_controls_tools() {
+        let cloud = cloud_only(fl(false));
+        for name in ["show", "run", "list", "read_output", "doc"] {
+            assert!(!cloud.iter().any(|n| n == name), "{name} in {cloud:?}");
+        }
+        assert!(cloud.iter().any(|n| n == "show:board"), "{cloud:?}");
+        let listed = listed_names(Scope::Full, fl(false), true);
+        if listed.iter().any(|n| n == "issue_write") {
+            for name in ["issue_write", "board_read", "board_write", "forge_read", "post_thread", "start_run"] {
+                assert!(cloud.iter().any(|n| n == name), "{name} not in {cloud:?}");
+            }
+        }
     }
 
     /// Every tool has its place on the card *What your agent can do here*:
