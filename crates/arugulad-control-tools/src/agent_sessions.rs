@@ -634,7 +634,9 @@ mod tests {
         }
         assert!(start_body(&args(json!({ "recipe": "ceo" })), None).unwrap_err().contains("chief-of-staff"));
         // Every tool the recipe names is a hosted session's.
-        for tool in ["read_session_issues", "read_session_thread", "post_session_thread", "create_session_issue"] {
+        for tool in
+            ["read_session_issues", "read_session_thread", "post_session_thread", "create_session_issue", "board_read"]
+        {
             assert!(RECIPES[0].1.contains(tool), "{tool}");
         }
     }
