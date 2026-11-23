@@ -4362,6 +4362,7 @@ impl Approved {
     /// Pin the account and save `control.json` (a running daemon picks it
     /// up).
     pub fn save(self, state_dir: &Path) -> anyhow::Result<Joined> {
+        remote_input_as_joined(state_dir, &self.saved)?;
         write_saved(state_dir, &self.saved)?;
         Ok(self.joined)
     }
@@ -4372,6 +4373,19 @@ impl Approved {
     pub async fn refuse(self, state_dir: &Path) {
         drop_key(&self.saved.url, state_dir).await;
     }
+}
+
+/// Whether people may type here through control, as a join nobody
+/// answered lands (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b):
+/// on for the account's own machine, off for a team's
+/// ([`arugula_proto::sharing::joined_sets`]). Written before `control.json`,
+/// so nobody reaches a team's machine through control before it's off.
+fn remote_input_as_joined(state_dir: &Path, saved: &Saved) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    if let Some(on) = sharing::joined_sets(sharing::remote_input_said(state_dir), saved.team_id().is_some()) {
+        sharing::set_remote_input(state_dir, on).with_context(|| format!("couldn't write {}", sharing::FILE))?;
+    }
+    Ok(())
 }
 
 /// `typed` names the device `id`: its hex digits, ignoring case, spaces and
@@ -4730,6 +4744,7 @@ pub async fn join_token(url: &str, name: &str, token: &str, state_dir: &Path) ->
     }
     let j: wire::Joined = res.json().await.context("control's answer to the join token")?;
     let (saved, joined) = saved_by_control(&url, &ask, &j)?;
+    remote_input_as_joined(state_dir, &saved)?;
     write_saved(state_dir, &saved)?;
     Ok(joined)
 }
@@ -5568,6 +5583,37 @@ pub(crate) mod tests {
         let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
         assert_eq!(joined.key, fingerprint(&keys.id()));
         (keys, saved)
+    }
+
+    /// A join nobody answered leaves typing through control on for the
+    /// account's own machine, so its owner types from their phone, and
+    /// turns it off for a team's; what the owner said before stands
+    /// (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b).
+    #[test]
+    fn a_join_lands_typing_on_for_the_account_and_off_for_a_team() {
+        use arugula_proto::sharing::{remote_input, remote_input_said, set_remote_input};
+        let dir = std::env::temp_dir().join(format!("arugula-join-typing-{}", std::process::id()));
+        let fresh = || {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+        };
+        let (_, alone) = by_control(None);
+        let (_, in_team) = by_control(Some(wire::JoinedTeam { id: "tm_1".into(), name: "Acme".into() }));
+        fresh();
+        remote_input_as_joined(&dir, &alone).unwrap();
+        assert_eq!((remote_input_said(&dir), remote_input(&dir)), (None, true), "the account's own: on");
+        fresh();
+        remote_input_as_joined(&dir, &in_team).unwrap();
+        assert_eq!(remote_input_said(&dir), Some(false), "a team's: off");
+        for on in [false, true] {
+            for saved in [&alone, &in_team] {
+                fresh();
+                set_remote_input(&dir, on).unwrap();
+                remote_input_as_joined(&dir, saved).unwrap();
+                assert_eq!(remote_input_said(&dir), Some(on), "said before: as it was");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Arugula #1182: whose a machine in a team is, control says at each

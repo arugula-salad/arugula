@@ -75,12 +75,15 @@ terminal traffic is TLS to the relay.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
   `remote_input`). It's set on the machine only: `arugulad sharing
-  remote-input`, or the answer when it joins (Arugula #1194: `arugulad join`
-  asks on a terminal, or takes `--remote-input on|off` or
-  `ARUGULA_REMOTE_INPUT`, and Getting started asks on the machine's own page
-  on loopback; unanswered, a machine joining for the first time is off, and
-  one already joined or set before keeps what it has, `sharing::join_sets`; `POST /api/setup/control`
-  refuses the answer through control or the tailnet, `Cx::at_the_machine`).
+  remote-input`, or `arugulad join --remote-input on|off` (or
+  `ARUGULA_REMOTE_INPUT`). Nothing asks before sign-in: a join nobody
+  answered leaves the account's own machine on, so its owner types from
+  their phone, and turns a team's off, both as the join is saved and
+  before `control.json` is, while one set before keeps what it has
+  (`sharing::joined_sets`, `control::remote_input_as_joined`; Arugula
+  issue iss_d8ce0c357cf0902c51dec39378ef7a1b). `POST /api/setup/control`
+  takes `remote_input` only at the machine and refuses it through control
+  or the tailnet (`Cx::at_the_machine`).
   The machine menu says which way it is (`/api/host`'s
   `features.remote_input`), and so does Settings, under Remote sessions.
 - **A team's members, roles, invites and lock are control's** (#1005). An
