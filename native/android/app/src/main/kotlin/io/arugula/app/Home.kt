@@ -228,6 +228,14 @@ data class Need(
     }
 }
 
+/** What a pane that needs you asks, as Needs you lists it and answers it in the row (and Machines, in the pane). */
+fun paneNeed(m: MachineSession, p: PaneRow) = Need(
+    "pane:${m.machine.id}:${p.id}", p.asking?.id ?: "${p.reasonKind}:${p.sinceMs}", p.needsYouRank,
+    p.sinceMs ?: p.askAt ?: 0, m.conversations[p.id] ?: p.name, p.standing, m.machine.name + (p.onIssue?.let { " · $it" } ?: ""),
+    p.headline?.takeIf { it.isNotEmpty() } ?: p.askMessage ?: "", p.asking?.approve == true || p.failed,
+    Need.Target.Pane(m, p),
+)
+
 /** A session working on one of a board's cards, as its thread lists it. */
 /** [asks]: whom it waits on, when that's someone else ([Standing.WAITS]). */
 data class BoardSession(val peeked: Peeked, val name: String, val card: String, val standing: Standing, val asks: String? = null) {
@@ -263,15 +271,7 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
             (m.panes + m.agents).filter { p -> shown.shows(p.sessionProject, p.onIssueProject, m.machine.yours) }.map { m to it }
         }
 
-        for ((m, p) in panes) if (p.needsYou) {
-            val card = p.onIssue?.let { " · $it" } ?: ""
-            needs += Need(
-                "pane:${m.machine.id}:${p.id}", p.asking?.id ?: "${p.reasonKind}:${p.sinceMs}", p.needsYouRank,
-                p.sinceMs ?: p.askAt ?: 0, m.conversations[p.id] ?: p.name, p.standing, m.machine.name + card,
-                p.headline?.takeIf { it.isNotEmpty() } ?: p.askMessage ?: "", p.asking?.approve == true || p.failed,
-                Need.Target.Pane(m, p),
-            )
-        }
+        for ((m, p) in panes) if (p.needsYou) needs += paneNeed(m, p)
 
         for (b in model.boards) {
             val v = model.views[b.id] ?: continue
@@ -541,7 +541,7 @@ fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            DetailBar(board.title, boardButton)
+            DetailBar(board.title, trailing = boardButton)
             Loaded(key = board.id, load = { model.thread(board) }) { room, _ ->
                 ChatRoomScreen(api, room, live, title = board.title, bar = false, heading = { BoardThreadHeading(board, model, sessions) { peek = it } })
             }

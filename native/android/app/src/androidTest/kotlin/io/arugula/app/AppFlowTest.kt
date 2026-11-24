@@ -98,6 +98,15 @@ class AppFlowTest {
 
             // Machines: a new terminal on the machine, typed into, its answer on screen.
             tap("tab-Machines")
+            // A machine with nothing in the project is folded into one line.
+            until("the machine or the fold", 20_000) {
+                listOf("machine-$machine", "machines-quiet").any { rule.onAllNodes(hasTestTag(it)).fetchSemanticsNodes().isNotEmpty() }
+            }
+            if (rule.onAllNodes(hasTestTag("machine-$machine")).fetchSemanticsNodes().isEmpty()) {
+                rule.onNode(hasTestTag("machines-list")).performScrollToNode(hasTestTag("machines-quiet"))
+                tap("machines-quiet")
+            }
+            rule.onNode(hasTestTag("machines-list")).performScrollToNode(hasTestTag("machine-$machine"))
             wait("machine-$machine", 20_000)
             tap("machine-$machine")
             until("New terminal enabled", 60_000) {
