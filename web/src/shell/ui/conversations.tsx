@@ -39,7 +39,7 @@ import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
 import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
-import { IconButton, MoreIcon } from "../../shared/ui/icons";
+import { CloseIcon, IconButton, MoreIcon } from "../../shared/ui/icons";
 import { useSubscribe } from "../../shared/ui/hooks";
 
 export interface Conversation {
@@ -608,6 +608,10 @@ export function YourWork({
         <div class="yw-dialog-head">
           <h2>Your work</h2>
           <span class="yw-sub">{sub}</span>
+          {/* A phone has no Escape: × closes it. */}
+          <IconButton label="Close" title="Close" class="yw-close" data-your-work-close onClick={close}>
+            <CloseIcon size="md" />
+          </IconButton>
           <input
             ref={input}
             class="yw-filter"

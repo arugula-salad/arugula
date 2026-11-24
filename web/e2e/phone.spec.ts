@@ -125,11 +125,11 @@ test("with no sessions, the sheet's New tab makes one; New agent and Conversatio
 
   await sheet();
   await page.locator(".sheet [data-conversations]").tap();
-  const conversations = page.getByRole("dialog", { name: "Claude Code conversations" });
+  const conversations = page.getByRole("dialog", { name: "Your work" });
   await expect(conversations).toBeVisible();
   // Its filter isn't focused on a phone (no keyboard popping up), so no
-  // Escape: Cancel closes it.
-  await conversations.getByRole("button", { name: "Cancel" }).tap();
+  // Escape: × closes it.
+  await conversations.getByRole("button", { name: "Close" }).tap();
   await expect(conversations).toHaveCount(0);
 
   await sheet();
