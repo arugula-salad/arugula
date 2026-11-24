@@ -777,11 +777,13 @@ final class FlowTests: XCTestCase {
         // beside the list, so the tabs stay in reach.
         if !iPad { app.navigationBars.buttons.firstMatch.tap() }
         go(app, "Machines")
-        let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
-        XCTAssertTrue(machine.shows(within: 30), "machine not listed")
-        machine.tap()
-        let new = app.buttons["new-terminal"]
-        XCTAssertTrue(new.shows(within: 30))
+        // One page of machines (Arugula #1357): New terminal is on the
+        // machine's heading, or in the fold of machines with nothing here.
+        let name = env["ARUGULA_MACHINE"] ?? "box-systemd"
+        let machine = app.descendants(matching: .any)["machine-\(name)"]
+        let new = app.buttons["new-terminal-\(name)"]
+        if !new.shows(within: 30), app.buttons["machines-quiet"].exists { app.buttons["machines-quiet"].tap() }
+        XCTAssertTrue(new.shows(within: 30), "machine not listed")
         XCTAssertTrue(new.waitFor(enabled: true, timeout: 45), "never connected: \(app.staticTexts["machine-problem"].label)")
         new.tap()
         let terminal = app.descendants(matching: .any)["terminal-view"]
@@ -810,7 +812,7 @@ final class FlowTests: XCTestCase {
         }
         sleep(3)
         shot(app, "6-machine")
-        XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")
+        XCTAssertTrue(machine.shows(within: 10), "not back on Machines")
 
         // A notification about the staff room (#1260), tapped with the app
         // closed: the room opens on Chat, with the chief of staff's messages.
