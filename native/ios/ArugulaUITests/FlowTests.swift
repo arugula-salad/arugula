@@ -223,6 +223,18 @@ final class FlowTests: XCTestCase {
         }
         XCTAssertTrue(app.buttons["heading-inbox"].firstMatch.shows(within: 10), "no bell in the heading")
         XCTAssertTrue(app.buttons["account"].firstMatch.shows(within: 10), "no picture in the heading")
+
+        // Docs (Arugula #1363): the project's Docs, newest first, or a plain
+        // word that it has none yet.
+        tab(app, "Docs").tap()
+        let docRow = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'doc-row-'")).firstMatch
+        let noDocs = app.descendants(matching: .any)["docs-none"].firstMatch
+        let deadlineDocs = Date().addingTimeInterval(30)
+        while !docRow.exists && !noDocs.exists && Date() < deadlineDocs { sleep(1) }
+        shot(app, "2-docs")
+        XCTAssertTrue(docRow.exists || noDocs.exists, "Docs listed nothing and said nothing: \(app.debugDescription)")
+        tab(app, "Overview").tap()
+        XCTAssertTrue(switcher.shows(within: 10), "not back on the Overview from Docs")
         switcher.tap()
         let issuesItem = app.buttons["project-issues"]
         XCTAssertTrue(issuesItem.shows(within: 10), "no Issues in the project's menu")
