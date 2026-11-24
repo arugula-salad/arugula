@@ -290,6 +290,7 @@ jobs:
           rust: "false"
           fetch: run-debug
           claude-code: "true"
+          mise: "false"
       - uses: ./.github/actions/e2e-shard
         with:
           shard: ${{ matrix.shard }}

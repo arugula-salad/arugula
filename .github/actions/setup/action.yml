@@ -32,6 +32,9 @@ inputs:
   user-manager:
     description: A systemd user manager for the job, for the tests that start the daemon as a service
     default: "false"
+  mise:
+    description: mise, with .mise.toml's Zig and nextest ("false" for a job that only runs built binaries, such as the e2e shards)
+    default: "true"
 runs:
   using: composite
   steps:
@@ -212,6 +215,13 @@ runs:
     - name: mise (Zig for libghostty, nextest)
       shell: bash
       run: |
+        # ~/.local/bin is on PATH either way: Claude Code installs there.
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        # A job that only runs built binaries needs neither tool, and each
+        # is a download from GitHub that can fail it: the e2e shards' mise
+        # installer got a 403 and their nextest download timed out, ejecting
+        # 3 of the 139 merge groups from 11-19 to 11-24 (#725).
+        if [ "$MISE" = false ]; then exit 0; fi
         # mise.run's installer downloads from GitHub itself, without retrying,
         # so the install as a whole is tried again (#797).
         if ! command -v mise >/dev/null; then
@@ -219,10 +229,12 @@ runs:
           for i in 1 2 3; do sh "$RUNNER_TEMP/mise-install.sh" && break; sleep 10; done
           "$HOME/.local/bin/mise" --version
         fi
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      env:
+        MISE: ${{ inputs.mise }}
     # mise's Zig and nextest: Zig's community mirror answered 429 once and
     # failed a job (#524).
     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      if: inputs.mise != 'false'
       with:
         path: ~/.local/share/mise/installs
         key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
