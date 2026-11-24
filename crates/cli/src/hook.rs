@@ -66,8 +66,9 @@ use crate::http::{Target, call, request, request_op, send_op};
 /// permission to the terminal.
 const GIVE_UP: Duration = Duration::from_secs(60);
 
-/// The longest `SessionStart` waits for the daemon's flags. A session must
-/// never wait on Arugula.
+/// The longest the hook waits for each thing it asks the daemon, but a
+/// permission: `SessionStart`'s flags, and every other event's post. A
+/// session must never wait on Arugula.
 const FLAGS_WAIT: Duration = Duration::from_secs(2);
 
 /// The pane and the hook's input, unless this is outside a pane, or the
@@ -117,8 +118,7 @@ pub fn run(sock: Target) -> i32 {
             hook[HOOK_TAKES_MENTION] = true.into();
             hook[HOOK_ACKS] = true.into();
         }
-        let answer = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
-        let answer = answer.ok().and_then(|r| r.parse::<HookAnswer>().ok()).filter(|_| asks);
+        let answer = post_hook(&sock, pane, hook, FLAGS_WAIT).filter(|_| asks);
         let id = answer.as_ref().and_then(|a| a.follow_up.as_ref()).and_then(|f| f.id);
         if let Some(out) = answer.and_then(mention_context) {
             let mut stdout = std::io::stdout().lock();
@@ -200,34 +200,42 @@ fn session_start(sock: &Target, wait: Duration, driven: bool) -> Option<Value> {
     }))
 }
 
-/// Whether the daemon has Docs, asked on a thread of its own so that a
-/// daemon that accepts and never answers still costs only `wait` (the thread
-/// ends with the process). `None`: it didn't answer. Every daemon since
-/// native #204 has them; an older one has them where its `docs` flag is on.
+/// `f`, on a thread of its own, for at most `wait`, so that a daemon that
+/// accepts and never answers still costs only `wait` (the thread ends with
+/// the process). `None`: it didn't finish in time.
+fn within<T: Send + 'static>(wait: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(wait).ok()
+}
+
+/// Passes an event to the daemon (`/api/panes/N/hook`) for at most `wait`
+/// (Arugula #1418), and its answer. `None`: it didn't answer in time, or
+/// answered something else; the hook carries on as if there were no daemon.
+fn post_hook(sock: &Target, pane: u32, hook: Value, wait: Duration) -> Option<HookAnswer> {
+    let sock = sock.clone();
+    within(wait, move || {
+        let res = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
+        res.ok().and_then(|r| r.parse::<HookAnswer>().ok())
+    })
+    .flatten()
+}
+
 /// Tells the daemon this session heard [`MENTIONS_STEERING`] (#644), for at
 /// most `wait`: a session must never wait on Arugula.
 fn say_mentions_told(sock: &Target, pane: u32, mut hook: Value, wait: Duration) {
     hook[HOOK_MENTIONS_TOLD] = true.into();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let sock = sock.clone();
-    std::thread::spawn(move || {
-        let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
-        let _ = tx.send(());
-    });
-    let _ = rx.recv_timeout(wait);
+    let _ = post_hook(sock, pane, hook, wait);
 }
 
 /// Tells the daemon the follow-up `id` is printed (#630), for at most
 /// `wait`: one never acked is offered again, so a lost ack costs at most a
 /// second copy, never the follow-up.
 fn ack(sock: &Target, pane: u32, id: u64, wait: Duration) {
-    let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
-    std::thread::spawn(move || {
-        let _ = send_op::<PaneFollowUpAck>(&sock, &pane, &FollowUpAck { id });
-        let _ = tx.send(());
-    });
-    let _ = rx.recv_timeout(wait);
+    within(wait, move || send_op::<PaneFollowUpAck>(&sock, &pane, &FollowUpAck { id }));
 }
 
 fn session_driven() -> bool {
@@ -250,16 +258,13 @@ fn joined(sock: &Target) -> std::sync::mpsc::Receiver<Option<bool>> {
     rx
 }
 
+/// Whether the daemon has Docs, for at most `wait`. `None`: it didn't
+/// answer. Every daemon since native #204 has them; an older one has them
+/// where its `docs` flag is on.
 fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
-    let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
-    std::thread::spawn(move || {
-        let _ = tx.send(call::<FlagsList>(&sock, &(), &Empty {}));
-    });
-    match rx.recv_timeout(wait) {
-        Ok(Ok(all)) => Some(!all.iter().any(|f| f.name == "docs" && !f.on)),
-        _ => None,
-    }
+    let all = within(wait, move || call::<FlagsList>(&sock, &(), &Empty {}))?.ok()?;
+    Some(!all.iter().any(|f| f.name == "docs" && !f.on))
 }
 
 /// What a `PreToolUse` prints: the issues sentence, as context, for a Bash
@@ -413,7 +418,7 @@ pub fn session_signal(sock: Target) -> i32 {
 mod tests {
     use serde_json::json;
 
-    use super::{driven, files_a_github_issue, pre_tool_use};
+    use super::{driven, files_a_github_issue, post_hook, pre_tool_use};
 
     #[test]
     fn gh_issue_create_is_seen_wherever_it_is_in_the_command() {
@@ -468,5 +473,35 @@ mod tests {
         assert!(!driven(None, Some("sdk-py")), "an older SDK");
         assert!(driven(None, Some("cli")), "an older terminal claude");
         assert!(driven(None, None), "no word either way: wait, as before");
+    }
+
+    /// Arugula #1418: a daemon that accepts the hook's post and never
+    /// answers holds Claude Code's tool call only for the hook's limit, and
+    /// the hook carries on as if no daemon answered.
+    #[cfg(unix)]
+    #[test]
+    fn a_daemon_that_never_answers_costs_only_the_limit() {
+        use std::{os::unix::net::UnixListener, time::Instant};
+
+        use super::{FLAGS_WAIT, Target};
+
+        let dir = std::env::temp_dir().join(format!("arugula-hook-hung-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for conn in listener.incoming() {
+                held.push(conn);
+            }
+        });
+        let hook = json!({ "hook_event_name": "PostToolUse", "tool_name": "Bash" });
+        let started = Instant::now();
+        let answer = post_hook(&Target::Socket(path), 1, hook, FLAGS_WAIT);
+        let took = started.elapsed();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(answer.is_none(), "no answer, as if no daemon");
+        assert!(took < FLAGS_WAIT + std::time::Duration::from_millis(500), "took {took:?}");
     }
 }
