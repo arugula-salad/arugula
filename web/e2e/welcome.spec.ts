@@ -1,65 +1,86 @@
-// #110: Getting started opens once per browser (on a daemon's own page; on
-// control's, once per account: getting-started-control.spec.ts), then from
-// the account menu and the phone's sheet. Its last step, Things to try, is a
-// button for each thing, marked done once used. #96: what a phone that
-// can't be notified is told.
+// #110: Getting started, from the command palette's Help, Settings and the
+// phone's sheet. It doesn't open by itself, not even on a first visit
+// (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b), and
+// Tailscale left it for Settings (a dialog of its own). Its last step,
+// Things to try, is a button for each thing, marked done once used. #96:
+// what a phone that can't be notified is told.
 
 import { devices, expect, test } from "@playwright/test";
-import { reset, closeContexts, sheetTab, paletteCommand } from "./helpers";
+import { reset, closeContexts, sheetTab, paletteCommand, settingsRow } from "./helpers";
 
 test.afterAll(closeContexts);
 
-// The app doesn't greet automation (every other spec wants a clean first
-// screen); these pretend to be a person.
-const person = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
+// A person's browser, not automation's: what a first visit would do, it
+// does here (every other spec starts as a later one).
+const person = () => {
+  Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
+  Object.assign(window, { __arugulaFirstRun: true });
+};
 
-test("opens once on first run, a step at a time, then from the account menu", async ({ browser }) => {
+test("a first visit opens on the work, with no Getting started; the palette opens it, without Tailscale", async ({ browser }) => {
   const ctx = await browser.newContext();
   await ctx.addInitScript(person);
   const page = await ctx.newPage();
   await reset(page);
+  await expect(page.locator(".session-button")).toBeVisible();
   const panel = page.getByRole("dialog", { name: "Getting started" });
+  // Nothing opens by itself: no Getting started, no What's new, no telemetry card.
+  await page.waitForTimeout(1500);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("[data-whats-new], [data-telemetry-card], [data-agents-nudge]")).toHaveCount(0);
+
+  // In the command palette's Help, four steps: no Phone.
+  await paletteCommand(page, "Help/Getting started");
   await expect(panel).toBeVisible();
   const progress = panel.locator("[data-start-progress]");
-  await expect(progress).toHaveText("Step 1 / 5 · Welcome");
+  await expect(progress).toHaveText("Step 1 / 4 · Welcome");
   await expect(panel.getByRole("heading", { name: "Right-click anything" })).toBeVisible();
-
-  // Next walks the steps; the rail jumps to one.
+  await expect(panel.locator('[data-start-seg="phone"], [data-start-serve]')).toHaveCount(0);
   await panel.locator("[data-start-next]").click();
-  await expect(progress).toHaveText("Step 2 / 5 · Phone");
-  // What the daemon says about Tailscale: the test machine may or may not
-  // have it, but the button is there until it serves this daemon.
-  await expect(panel.locator("[data-start-serve]")).toBeVisible();
-  await panel.locator("[data-start-next]").click();
-  await expect(progress).toHaveText("Step 3 / 5 · Cloud");
+  await expect(progress).toHaveText("Step 2 / 4 · Cloud");
   await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to Arugula cloud");
   await panel.locator("[data-start-next]").click();
-  await expect(progress).toHaveText("Step 4 / 5 · Agents");
+  await expect(progress).toHaveText("Step 3 / 4 · Agents");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();
   await panel.locator('[data-start-seg="try"]').click();
-  await expect(progress).toHaveText("Step 5 / 5 · Things to try");
-  // The test daemon isn't joined or served: those are still to do.
+  await expect(progress).toHaveText("Step 4 / 4 · Things to try");
+  // The test daemon isn't joined: that's still to do; Tailscale isn't on the list.
   await expect(panel.locator('[data-start-todo] [data-check="todo"]').first()).toBeVisible();
+  await expect(panel.locator("[data-start-todo]")).not.toContainText("Tailscale");
   await panel.getByRole("button", { name: "Done" }).click();
   await expect(panel).toBeHidden();
   // Closing says where it went.
   await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in the command palette, under Help, any time.");
 
-  // Remembered: not again on reload.
+  // Not by itself on the next visit either.
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
   await expect(page.locator(".session-button")).toBeVisible();
+  await page.waitForTimeout(1000);
   await expect(panel).toBeHidden();
 
-  // Always in the command palette's Help, from the start.
-  await paletteCommand(page, "Help/Getting started");
-  await expect(panel).toBeVisible();
-  await expect(progress).toHaveText("Step 1 / 5 · Welcome");
   // Its agents step opens the agent dialog.
+  await paletteCommand(page, "Help/Getting started");
   await panel.locator('[data-start-seg="agents"]').click();
   await panel.locator("[data-start-agent]").click();
   await expect(panel).toBeHidden();
   await ctx.close();
+});
+
+test("Tailscale is in Settings, a dialog of its own", async ({ page }) => {
+  await reset(page);
+  await settingsRow(page, "Tailscale…");
+  const dialog = page.getByRole("dialog", { name: "Tailscale" });
+  await expect(dialog.getByRole("heading", { name: /from your phone$/ })).toBeVisible();
+  // What the daemon says about Tailscale: the test machine may or may not
+  // have it, but the button is there until it serves this daemon.
+  await expect(dialog.locator("[data-start-serve]")).toBeVisible();
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(dialog).toBeHidden();
+  // The desktop app's menu, opening Getting started at its old Phone step, gets it too.
+  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "phone" })));
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
 });
 
 test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page }) => {
@@ -75,7 +96,7 @@ test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page
     ),
   );
   await expect(panel).toBeVisible();
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 2 / 4 · Cloud");
 });
 
 // #1003: joining Arugula cloud is one click. Connect shows the link that
@@ -105,7 +126,7 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   });
   await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "cloud" })));
   const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 2 / 4 · Cloud");
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
   // Nothing asked about typing before sign-in: the join settles it, on for
   // your account (from your phone too) and off for a team (Arugula issue

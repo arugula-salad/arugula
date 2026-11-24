@@ -12,7 +12,7 @@ import { devices, expect, test, type Page } from "@playwright/test";
 import type { PaneId } from "../src/shared/proto";
 import { inProject, menu, open, paneEl, panes, ready, reset, text } from "../e2e/helpers";
 import { fixturePage } from "../e2e/fixture-page";
-import { HERE, LAUNCH, MINE, P, PERSONAL, ROOMS } from "./team";
+import { HERE, LAUNCH, MINE, P, PERSONAL, ROOMS, STAFF } from "./team";
 import "../e2e/local-token";
 
 // SHOTS_PORT moves the daemon (and its block port, the next one up) and
@@ -678,6 +678,18 @@ async function atPane(page: Page, pane: PaneId) {
 /** A pane's text, in the app. */
 const appText = (page: Page, pane: PaneId) => page.evaluate((p) => (window as unknown as { __app: { text(p: number): string } }).__app.text(p), pane);
 
+/** The Overview with the chief of staff's proposal open (#1278): under
+ * Needs you, and its message in the staff room's tab. */
+async function proposalOverview(page: Page) {
+  await open(page);
+  await onCard(page, await agentBlock(page));
+  await page.evaluate(() => sessionStorage.setItem("shots.proposal", "open"));
+  await inApp(page, `/p/${P}`, true, OVERVIEW);
+  await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(`[data-ov-staff="${STAFF}"] [data-msg="2"]`)).toBeVisible({ timeout: 20_000 });
+  await settled(page, 2500);
+}
+
 /** The sessions the Overview's pictures show: Priya's agent's and her terminals'. */
 const OVERVIEW = ["launch", "work"];
 
@@ -714,6 +726,20 @@ test.describe("the app", () => {
     await page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).click();
     await settled(page, 2000);
     await page.screenshot({ path: join(out, "overview-board.png") });
+  });
+
+  test("the chief of staff asks to start an agent: under Needs you, and its card in the staff room", async ({ page }) => {
+    await proposalOverview(page);
+    await page.screenshot({ path: join(out, "overview-proposal.png") });
+    // Approved from Needs you: it leaves, and its room says what came of it.
+    const approve = page.locator("[data-ov-needs] [data-proposal-approve]");
+    if (!(await approve.count())) return;
+    await approve.click();
+    await expect(page.locator("[data-ov-needs] [data-proposal]")).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator(`[data-ov-staff="${STAFF}"] [data-ask-state="answered"]`)).toBeVisible({ timeout: 20_000 });
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "overview-proposal-approved.png") });
   });
 
   test("a board", async ({ page }) => {
@@ -824,5 +850,13 @@ test.describe("phone", () => {
     await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
     await settled(page, 2500);
     await page.screenshot({ path: join(out, "phone-overview.png") });
+  });
+
+  test("the chief of staff's proposal on a phone: Needs you on top, the staff room below", async ({ page }) => {
+    await proposalOverview(page);
+    await page.screenshot({ path: join(out, "phone-overview-proposal.png") });
+    await page.locator(`[data-ov-staff="${STAFF}"] [data-msg="2"]`).scrollIntoViewIfNeeded();
+    await settled(page, 800);
+    await page.screenshot({ path: join(out, "phone-overview-proposal-staff.png") });
   });
 });

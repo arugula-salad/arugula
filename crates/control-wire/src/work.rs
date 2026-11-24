@@ -895,6 +895,11 @@ pub enum SessionIssuesOp {
         #[serde(default)]
         board: Option<String>,
     },
+    /// A proposal for the session's asker to approve or deny (Arugula
+    /// #1278): a card in their staff room, under Needs you and on their
+    /// phone. The session does nothing itself: the person's Approve does
+    /// it, as them, and `ask.answered` tells the session how it went.
+    Propose { proposal: crate::sessions::Proposal },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -956,6 +961,13 @@ pub enum SessionIssuesGiven {
     /// One board (`BoardRead` with a board).
     Board {
         view: crate::boards::BoardView,
+    },
+    /// Proposed (`Propose`): its id (`prp_…`, what `ask.answered`
+    /// matches as `ask`), and its card's message in the staff room.
+    Proposed {
+        ask: String,
+        room: String,
+        seq: i64,
     },
     /// Not done, and why (the agent reads it).
     Refused {

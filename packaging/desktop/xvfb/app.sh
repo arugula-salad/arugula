@@ -115,12 +115,9 @@ start_app() {
   # The client is up once it has opened a tab and sized it.
   wait_for 60 sized_panes_at_least 1 || { echo "the window never showed a pane" >&2; exit 1; }
   sleep 1
-  # A new profile opens Getting started over everything: close it (a
-  # click on it, then Escape).
+  # Nothing opens over a new profile's first screen (Getting started waits
+  # to be asked): focus the window, and send no keys a pane would record.
   xdotool windowactivate --sync "$(window)"
-  click_terminal
-  sleep 0.3
-  xdotool key Escape
   sleep 0.5
 }
 stop_app() {

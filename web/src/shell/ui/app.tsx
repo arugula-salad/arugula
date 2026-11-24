@@ -34,7 +34,7 @@ import { ConversationsLayer, openYourWork, YourWork, yourWorkHome } from "./conv
 import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
-import { GettingStartedLayer, useFirstRun } from "./welcome";
+import { GettingStartedLayer, gettingStartedFor } from "./welcome";
 import { machineSettingsItems, machineShown, remoteInputItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
@@ -46,6 +46,7 @@ import { HintEmpty, HintsWatch, HintToast } from "./hints";
 import { NvimWatch } from "../open-in-editor";
 import { NvimBlockColors } from "../nvim-block";
 import { WhatsNewLayer } from "./whats-new";
+import { PhoneOfferLayer } from "./phone-offer";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
@@ -100,7 +101,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   useHoverToSwitchTabs(client);
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
-  useFirstRun(client);
+  gettingStartedFor(client);
   useTabTitle(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
@@ -176,6 +177,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       {state && <NvimWatch client={client} />}
       {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
+      <PhoneOfferLayer />
       <WhatsNewLayer client={client} />
     </>
   );
@@ -272,6 +274,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       {state && <NvimWatch client={client} />}
       {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
+      <PhoneOfferLayer />
       <WhatsNewLayer client={client} />
       <StatusPill client={client} />
     </div>

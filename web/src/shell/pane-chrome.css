@@ -172,13 +172,17 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   left: 50%;
   bottom: 40px;
   transform: translateX(-50%);
-  box-sizing: border-box;
-  width: max-content;
-  max-width: calc(100vw - 24px);
   flex-wrap: wrap;
   row-gap: 4px;
   padding: 6px 6px 6px 12px;
   box-shadow: var(--shadow-lg);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  border-radius: min(var(--chip-radius), 16px);
+}
+.hint-toast > :not(.hint-copy) {
+  flex: none;
 }
 .hint-toast .hint-copy {
   flex: 1 1 14em;

@@ -33,7 +33,7 @@
 import "./overview.css";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLane, BoardRow, BoardView } from "../shared/proto";
+import type { BoardLane, BoardRow, BoardView, ChatAsk } from "../shared/proto";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
@@ -50,7 +50,8 @@ import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } 
 import { cleanTitle } from "../shared/titles";
 import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
-import { Asks, paneOwner } from "./overview-asks";
+import { Asks, paneOwner, useProposals } from "./overview-asks";
+import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
 import { useBoards } from "../platform/pages/boards";
@@ -342,7 +343,11 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf, machineOwner);
   const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
   // What needs you is yours: a teammate's ask is in Needs you under their name, not counted (#1392).
-  const needs = mine.filter((p) => needsYou(p.info) && paneOwner(fleet, p) === null).length;
+  const paneNeeds = mine.filter((p) => needsYou(p.info) && paneOwner(fleet, p) === null).length;
+  // And what the reader's agents propose to do as them (#1278), read again as their staff room moves.
+  const staffRoom = chat.rooms.find((r) => r.staff && r.project === project);
+  const proposals = useProposals(project, `${staffRoom?.id}:${staffRoom?.last}:${staffRoom?.mentions}`, refocus);
+  const needs = paneNeeds + proposals.asks.length;
   const p = platform.project(project);
 
   // Needs you: Swarm's rail, for this project's panes, held still under the pointer as Swarm's is.
@@ -624,8 +629,14 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       </Stage>
     </div>
   );
+  // Answered here, a proposal leaves Needs you, and a toast says what came of it.
+  const answered = (a: ChatAsk) => {
+    if (a.proposal?.state === "open") return;
+    proposals.drop(a);
+    api.toast(answeredLine(a));
+  };
   // Nothing needs you: one quiet line, not a column.
-  const rail = railed.length === 0 ? (
+  const rail = railed.length === 0 && proposals.asks.length === 0 ? (
     <section class="ov-needs ov-needs-none" aria-label={NEEDS_YOU} data-ov-needs>
       <EmptyLine data-ov-needs-none>Nothing needs you.</EmptyLine>
     </section>
@@ -635,26 +646,35 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
         <h2>{NEEDS_YOU}</h2>
         {needs > 0 && <span data-ov-needs-count>{needs}</span>}
       </header>
-      <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-        <Asks
-          asks={railed}
-          fleet={fleet}
-          pin={pin}
-          card={(b) => {
-            const first = b.panes[0];
-            const at = o.cardOf.get(first.key);
-            return {
-              work: at ? cardWords(at.row) : "Not on a card",
-              show: () => zoomToWork(first.key),
-              open: () => paneAt(first),
-              share: () => paneAt(first, true),
-              follow: () => paneAt(first),
-              acted: () => acted.current.add(b.key),
-              back: () => {},
-            };
-          }}
-        />
-      </div>
+      {proposals.asks.length > 0 && (
+        <div class="ov-proposals" data-ov-proposals>
+          {proposals.asks.map((a) => (
+            <ProposalCard key={a.proposal!.id} a={a} project={project} answered={answered} open={chief ? () => pickChief(chief) : undefined} />
+          ))}
+        </div>
+      )}
+      {railed.length > 0 && (
+        <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
+          <Asks
+            asks={railed}
+            fleet={fleet}
+            pin={pin}
+            card={(b) => {
+              const first = b.panes[0];
+              const at = o.cardOf.get(first.key);
+              return {
+                work: at ? cardWords(at.row) : "Not on a card",
+                show: () => zoomToWork(first.key),
+                open: () => paneAt(first),
+                share: () => paneAt(first, true),
+                follow: () => paneAt(first),
+                acted: () => acted.current.add(b.key),
+                back: () => {},
+              };
+            }}
+          />
+        </div>
+      )}
     </section>
   );
   return (

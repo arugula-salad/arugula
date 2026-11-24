@@ -41,6 +41,7 @@ import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { CloseIcon, IconButton, MoreIcon } from "../../shared/ui/icons";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { conversationContinued } from "./machine-telemetry";
 
 export interface Conversation {
   id: string;
@@ -371,6 +372,7 @@ export function YourWork({
         return;
       }
       if (there) fleet.open(host, v.pane);
+      conversationContinued();
       close();
     } catch (e) {
       client.toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
@@ -391,7 +393,9 @@ export function YourWork({
     setBusy(true);
     const block = await client.openConversation({ id: c.id, then, split: where.split, session: where.session });
     setBusy(false);
-    if (block !== null) close();
+    if (block === null) return;
+    conversationContinued();
+    close();
   };
 
   // Another host's: opened there (its first session, a tab of its own),
@@ -413,6 +417,7 @@ export function YourWork({
       }
       if (v.error) client.toast(v.error);
       f.open(host, v.block);
+      conversationContinued();
       close();
     } catch (e) {
       client.toast(`couldn't open it on ${host}: ${(e as Error).message}`);

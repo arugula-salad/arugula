@@ -3,7 +3,8 @@
 // the zoom to a board and a card's work and back, by taps and by address,
 // a board's thread and its lanes,
 // an agent's permission prompt and question answered from home, projects,
-// a Doc in a room, chat, a terminal. The script
+// a Doc in a room, chat, a terminal, a deploy approved and a project's runs
+// (Arugula #604). The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -121,6 +122,24 @@ final class FlowTests: XCTestCase {
         _ = app.wait(for: .runningForeground, timeout: 10)
     }
 
+    /// A notification that says `said`, tapped as a person taps one: the
+    /// app closed, and the banner on the home screen. The script delivers it
+    /// (`simctl push`, from HANDOFF/push.json), with `said` as the
+    /// Notification Service Extension leaves it for the app.
+    private func tapPush(_ app: XCUIApplication, said: [String: Any], title: String, body: String) {
+        app.terminate()
+        var said = said
+        said["title"] = title
+        said["body"] = body
+        let data = try! JSONSerialization.data(withJSONObject: said)
+        try! data.write(to: handoff.appendingPathComponent("push.json"))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let banner = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", body)).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 30), "no notification: \(springboard.debugDescription)")
+        banner.tap()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15), "the tap didn't open the app")
+    }
+
     /// Peek at the lead over the open thread: its session's last lines say
     /// the stand-in is ready. Then close the peek.
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
@@ -153,6 +172,7 @@ final class FlowTests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["ARUGULA_RESET"] = "1"
         app.launchEnvironment["ARUGULA_SIGNIN_BY_HAND"] = "1"
+        app.launchEnvironment["ARUGULA_APPROVE_BY_HAND"] = "1"
         app.launchEnvironment["ARUGULA_CONTROL_URL"] = env["ARUGULA_CONTROL_URL"] ?? ""
         app.launch()
 
@@ -206,6 +226,63 @@ final class FlowTests: XCTestCase {
         shot(app, "2-issues")
         app.buttons["issues-done"].tap()
         XCTAssertTrue(switcher.shows(within: 10), "not back home from the issues")
+
+        // What a passkey approves (Arugula #604). A deploy waiting on this
+        // account is first under Needs you, and opens over the app; Approve
+        // would open control's dialog in a web sheet, where the passkey is:
+        // here the app shows that address, the script approves the deploy
+        // with the account's passkey as the dialog would, and Done stands in
+        // for the sheet coming back. The app reads it again: approved. Then
+        // the project's Runs, from its menu, shows its grant.
+        if let deploy = env["ARUGULA_DEPLOY"], !deploy.isEmpty {
+            let row = app.buttons["need-deploy-\(deploy)"]
+            XCTAssertTrue(row.shows(within: 30), "the waiting deploy isn't under Needs you: \(app.debugDescription)")
+            shot(app, "2-deploy-need")
+            row.tap()
+            let state = app.staticTexts["deploy-state"]
+            XCTAssertTrue(state.shows(within: 20), "the deploy didn't open")
+            XCTAssertEqual(state.value as? String, "pending")
+            let approve = app.buttons["deploy-approve"]
+            XCTAssertTrue(approve.shows(within: 10), "no Approve on a deploy waiting for this owner")
+            shot(app, "2-deploy-sheet")
+            approve.tap()
+            let link = app.staticTexts["approve-link"]
+            XCTAssertTrue(link.shows(within: 10), "Approve opened nothing")
+            XCTAssertTrue(link.label.hasSuffix("/#deploy=\(deploy)&app"), "Approve opens \(link.label)")
+            let approved = handoff.appendingPathComponent("approved")
+            try? FileManager.default.removeItem(at: approved)
+            try link.label.write(to: handoff.appendingPathComponent("approve"), atomically: true, encoding: .utf8)
+            let approveBy = Date().addingTimeInterval(120)
+            while !FileManager.default.fileExists(atPath: approved.path) && Date() < approveBy { sleep(1) }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: approved.path), "nobody approved the deploy")
+            app.buttons["approve-done"].tap()
+            let decidedBy = Date().addingTimeInterval(20)
+            while state.value as? String == "pending" && Date() < decidedBy { sleep(1) }
+            shot(app, "2-deploy-approved")
+            // Approved, and maybe gone on from there (testnet's driver makes
+            // its box, or fails to): read again, not waiting any more.
+            let after = state.value as? String ?? ""
+            XCTAssertTrue(!["pending", "denied", ""].contains(after), "the deploy reads \(after) after")
+            XCTAssertFalse(app.buttons["deploy-approve"].exists, "an approved deploy still offers Approve")
+            app.buttons["deploy-close"].tap()
+            let goneBy = Date().addingTimeInterval(15)
+            while row.exists && Date() < goneBy { sleep(1) }
+            XCTAssertFalse(row.exists, "the approved deploy is still under Needs you")
+
+            switcher.tap()
+            let runs = app.buttons["project-runs"]
+            XCTAssertTrue(runs.shows(within: 10), "no Runs in the project's menu")
+            runs.tap()
+            let grant = app.staticTexts["runs-grant"]
+            XCTAssertTrue(grant.shows(within: 20), "the project's runs didn't open")
+            shot(app, "2-runs")
+            // Testnet's project has no cloud workspaces: nothing to allow, so
+            // no button to control's dialog (which would say the same).
+            XCTAssertEqual(grant.value as? String, "no")
+            XCTAssertFalse(app.buttons["runs-change"].exists, "Allow runs offered with no cloud workspaces")
+            app.buttons["runs-close"].tap()
+            XCTAssertTrue(switcher.shows(within: 10), "not back home from the runs")
+        }
 
         // A Doc in a conversation (Arugula #1259): its card opens the Doc's page
         // in a web view, signed in as the app; on an iPad in the right-hand
@@ -268,6 +345,8 @@ final class FlowTests: XCTestCase {
         // stand-in session; ask it something there and peek at its session.
         // Then Boards: the board it leads, whose lead opens the board's
         // thread, and a peek from there. Then back to Default.
+        // The staff room's id, for a notification about it.
+        var staffRoom: String?
         if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
             let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
             go(app, "Home")
@@ -367,6 +446,7 @@ final class FlowTests: XCTestCase {
             draft.typeText(ask)
             send(app)
             XCTAssertTrue(app.staticTexts[ask].shows(within: 20), "the staff room didn't take the ask")
+            staffRoom = app.staticTexts["chat-live"].value as? String
             try ask.write(to: handoff.appendingPathComponent("staff"), atomically: true, encoding: .utf8)
             shot(app, "5-staff-room")
             peekAtLead(app, "5-staff-peek")
@@ -731,6 +811,21 @@ final class FlowTests: XCTestCase {
         sleep(3)
         shot(app, "6-machine")
         XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")
+
+        // A notification about the staff room (#1260), tapped with the app
+        // closed: the room opens on Chat, with the chief of staff's messages.
+        if let staffRoom {
+            tapPush(app, said: ["chat": ["room": staffRoom], "tag": "chat-\(staffRoom)", "control": true],
+                    title: "jhgaylor's agent in Chief of staff", body: "pushed-\(Int.random(in: 1000...9999))")
+            let live = app.staticTexts["chat-live"]
+            XCTAssertTrue(live.shows(within: 30), "the tap opened no room: \(app.debugDescription)")
+            XCTAssertEqual(live.value as? String, staffRoom, "the tap opened another room")
+            let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
+            let shown = morning.shows(within: 20)
+            shot(app, "6-staff-from-push")
+            XCTAssertTrue(shown, "the staff room opened from its notification has no messages: \(app.debugDescription)")
+            if !iPad { goBack(app) }
+        }
 
         // Signing out ends it here: the sign-in again.
         go(app, "You")

@@ -16,6 +16,7 @@ struct HomeView: View {
     @StateObject private var scope = Scope()
     @ObservedObject private var push = PushCenter.shared
     @ObservedObject private var zoom = ZoomCenter.shared
+    @ObservedObject private var approvals = Approvals.shared
     /// What home reads, kept while another tab is open, so coming back is at once.
     @StateObject private var model = HomeModel()
     @StateObject private var fleet = HomeFleet()
@@ -58,12 +59,25 @@ struct HomeView: View {
             case .pane(let machine, let pane): open(machine: machine, pane: pane)
             case .room: tab = .chat
             case .issue: tab = .home
+            // A deploy waiting for approval opens over whatever's open (#604).
+            case .deploy(let id):
+                push.route = nil
+                approvals.open = .deploy(id)
             case nil: break
             }
         }
         // An address (Arugula #1304): home zooms to it.
         .onChange(of: zoom.route, initial: true) { _, route in
             if route != nil { tab = .home }
+        }
+        // What a passkey approves (#604): a deploy, a project's runs.
+        .sheet(item: $approvals.open) { what in
+            switch what {
+            case .deploy(let id):
+                DeploySheet(control: control, id: id) { approvals.open = nil }
+            case .runs(let project, let name):
+                RunsSheet(control: control, project: project, name: name) { approvals.open = nil }
+            }
         }
         .sheet(isPresented: $issues) {
             IssuesView(control: control) { issues = false }
@@ -75,6 +89,7 @@ struct HomeView: View {
         .environment(\.goHome, { tab = .home })
         .environment(\.showIssues, { issues = true })
         .task { await scope.load(control) }
+        .task { await approvals.load(control) }
     }
 
     /// A notification about a pane: its card's Work level when it's on one,

@@ -429,3 +429,10 @@ a.session-card-id:hover {
   font: 700 var(--text-xs) var(--f-mono);
   box-sizing: border-box;
 }
+
+/* A proposal's sessions to stop (Arugula #1278, ./ask-card): one line each. */
+.proposal-sessions {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--text-sm);
+}

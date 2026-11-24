@@ -86,11 +86,16 @@ enum SessionStore {
 /// run off the main thread.
 final class Control: @unchecked Sendable {
     let ptr: OpaquePointer
+    /// Where control is, as the session was kept: its page opens here
+    /// (Approvals.swift).
+    let url: String?
 
     init(stored: String) throws {
         var err: UnsafeMutablePointer<CChar>?
         guard let p = aru_control_open(stored, &err) else { throw err.map(CoreError.init(taking:)) ?? CoreError("not signed in") }
         ptr = p
+        let v = (try? JSONSerialization.jsonObject(with: Data(stored.utf8))) as? [String: Any]
+        url = v?["url"] as? String
     }
 
     deinit { aru_control_free(ptr) }

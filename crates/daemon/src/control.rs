@@ -1156,6 +1156,11 @@ fn team_pin(team: &str, root: &str) -> Option<TeamPin> {
 
 pub use wire::PeerCerts;
 
+/// Which push service an endpoint is at (its host), never the endpoint.
+fn service(endpoint: &str) -> String {
+    reqwest::Url::parse(endpoint).ok().and_then(|u| u.host_str().map(str::to_owned)).unwrap_or_default()
+}
+
 /// How a push through control went (#232), by subscription.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Pushed {
@@ -3245,9 +3250,15 @@ impl Control {
         extra: Option<serde_json::Value>,
         to: impl Fn(&Principal) -> bool,
     ) {
-        let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else { return };
+        let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else {
+            info!(pane, "no push through control: not joined, or nobody it's for has a device subscribed");
+            return;
+        };
         let me = self.clone();
-        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move {
+            let got = me.relay_push(&e, subs, &payload).await;
+            info!(pane, matched = got.matched, relayed = got.relayed, refused = got.refused, "pushed through control");
+        });
     }
 
     /// [`Control::push`], waited for (#232): how many subscriptions `to`
@@ -3328,7 +3339,17 @@ impl Control {
                 urgency: None,
             };
             match self.post_json(e, wire::PUSH, &req).send().await {
-                Ok(r) if r.status().is_success() => got.relayed += 1,
+                Ok(r) if r.status().is_success() => {
+                    got.relayed += 1;
+                    // What the device's push service said (APNs' for the
+                    // iPhone app): control took it, and it may still not have
+                    // gone (#1260).
+                    if let Ok(a) = r.json::<wire::PushAnswer>().await
+                        && !(200..300).contains(&a.status)
+                    {
+                        warn!(status = a.status, service = %service(&req.endpoint), "a push service refused a push");
+                    }
+                }
                 Ok(r) if r.status() == reqwest::StatusCode::FORBIDDEN => got.refused += 1,
                 Ok(r) => warn!(status = %r.status(), "control didn't relay a push"),
                 Err(err) => warn!(error = %err, "can't push through control"),

@@ -625,6 +625,11 @@ mod tests {
         assert!(p.contains("watch` kind `events`") && p.contains("Never start, stop or close"), "{p}");
         // Its staff room's posts are its prompts already (Arugula #1391).
         assert!(p.contains("Never watch `staff`"), "{p}");
+        // Asks for a start or a close on a card, never a lead (Arugula #1278).
+        assert!(
+            p.contains("`ask_approval`") && p.contains("`ask.answered`") && p.contains("Never ask a board's lead"),
+            "{p}"
+        );
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "prompt": "brief me" })), None).unwrap();
         assert!(b.prompt.unwrap().ends_with("\n\nbrief me"));
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "room": "staff" })), None).unwrap();
@@ -636,9 +641,14 @@ mod tests {
         }
         assert!(start_body(&args(json!({ "recipe": "ceo" })), None).unwrap_err().contains("chief-of-staff"));
         // Every tool the recipe names is a hosted session's.
-        for tool in
-            ["read_session_issues", "read_session_thread", "post_session_thread", "create_session_issue", "board_read"]
-        {
+        for tool in [
+            "read_session_issues",
+            "read_session_thread",
+            "post_session_thread",
+            "create_session_issue",
+            "board_read",
+            "ask_approval",
+        ] {
             assert!(RECIPES[0].1.contains(tool), "{tool}");
         }
     }
