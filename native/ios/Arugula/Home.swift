@@ -1,16 +1,18 @@
-// Home (Arugula #1255): the project's conversations, sorted by what needs you,
-// as the desktop's Overview reads them (web/src/app/overview.tsx). In a team's
+// The Overview (Arugula #1255; Home until #1361): the project's
+// conversations, sorted by what needs you, as the desktop's Overview reads
+// them (web/src/app/overview.tsx). In a team's
 // project the chief of staff comes first (Arugula #1279): the reader's staff
 // room and who leads it. Then Needs you, merged from every machine's panes,
 // the boards' rows and the hosted sessions, worst first; then one row per open
 // board, with its lane bar, its count, its lead and what's going on in words;
-// then the people, its channels and DMs. Home is the Overview's Project level
+// then the people, its channels and DMs. It is the zoom's Project level
 // (Arugula #1304): a board's row zooms to its Board level and a ticket there
 // to its Work level (Zoom.swift), each at an address a link or a notification
-// opens. Home is the first of the app's tabs (Arugula #1262). On an iPad home
+// opens. It is the first of the app's places (Arugula #1262). On an iPad it
 // is the left column of a split view, and what it opens sits beside it. A row of Needs you is answered where it is
-// (Answer.swift), and a session opens a peek. New tells a board or starts a
-// New idea (New.swift), whose conversations are listed under New ideas.
+// (Answer.swift), and a session opens a peek. New, in every place's heading,
+// tells a board or starts a New idea (New.swift), whose conversations are
+// listed under New ideas.
 
 import Combine
 import SwiftUI
@@ -35,24 +37,26 @@ enum Opened: Hashable {
     case issue(String)
 }
 
-/// The app's tabs, always on its bar (Arugula #1262): home first. Issues
-/// aren't a tab: a board's rows open theirs, and the project's menu opens
-/// the list.
+/// The app's places, always on its bar (Arugula #1262), as the web's rail
+/// has them (Arugula #1361): Overview, Boards and Docs lead, then Machines
+/// and Chat. Issues aren't a place: a board's rows open theirs, and the
+/// project's menu opens the list. The Inbox and the account are in every
+/// place's heading (TabHeading), not on the bar.
 enum AppTab: String, CaseIterable, Identifiable {
-    case home = "Home", boards = "Boards", chat = "Chat", machines = "Machines", you = "You"
+    case overview = "Overview", boards = "Boards", docs = "Docs", machines = "Machines", chat = "Chat"
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .home: "house"
+        case .overview: "square.grid.2x2"
         case .boards: "rectangle.split.3x1"
-        case .chat: "bubble.left.and.bubble.right"
+        case .docs: "doc.text"
         case .machines: "terminal"
-        case .you: "person.crop.circle"
+        case .chat: "bubble.left.and.bubble.right"
         }
     }
 }
 
-private struct GoHomeKey: EnvironmentKey {
+private struct GoOverviewKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
@@ -60,17 +64,38 @@ private struct ShowIssuesKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
+private struct MakeNewKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+private struct ShowInboxKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
 extension EnvironmentValues {
-    /// Select the Home tab.
-    var goHome: (() -> Void)? {
-        get { self[GoHomeKey.self] }
-        set { self[GoHomeKey.self] = newValue }
+    /// Select the Overview.
+    var goOverview: (() -> Void)? {
+        get { self[GoOverviewKey.self] }
+        set { self[GoOverviewKey.self] = newValue }
     }
 
     /// Open the current project's issues, from its menu.
     var showIssues: (() -> Void)? {
         get { self[ShowIssuesKey.self] }
         set { self[ShowIssuesKey.self] = newValue }
+    }
+
+    /// New, from any place's heading: tell a board or start a New idea.
+    /// Unset, the heading has no New.
+    var makeNew: (() -> Void)? {
+        get { self[MakeNewKey.self] }
+        set { self[MakeNewKey.self] = newValue }
+    }
+
+    /// The bell in a place's heading: the Inbox. Unset, no bell.
+    var showInbox: (() -> Void)? {
+        get { self[ShowInboxKey.self] }
+        set { self[ShowInboxKey.self] = newValue }
     }
 }
 
@@ -604,6 +629,8 @@ struct PhoneHome: View {
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
+    /// What New made, from any place's heading: opened here.
+    @Binding var handed: Opened?
     @ObservedObject private var push = PushCenter.shared
     @ObservedObject private var zoomCenter = ZoomCenter.shared
     @ObservedObject private var approvals = Approvals.shared
@@ -619,7 +646,6 @@ struct PhoneHome: View {
     @State private var folded: Set<String> = []
     @State private var said: String?
     @State private var peek: Peeked?
-    @State private var making = false
     /// The Doc open (Arugula #1259): the right-hand column on an iPad, over
     /// everything on a phone.
     @State private var doc: DocRef?
@@ -664,12 +690,6 @@ struct PhoneHome: View {
         .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
-        .sheet(isPresented: $making) {
-            NewSheet(control: control, model: model, fleet: fleet, open: { opened = $0 }, toast: show) {
-                Task { await refresh() }
-            }
-                .environmentObject(scope)
-        }
         .sheet(item: $peek) { p in
             SessionPeek(
                 control: control, peeked: p,
@@ -685,6 +705,11 @@ struct PhoneHome: View {
         }
         .overlay(alignment: .bottom) {
             if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
+        }
+        .onChange(of: handed, initial: true) { _, h in
+            guard let h else { return }
+            handed = nil
+            opened = h
         }
         .onChange(of: opened) { _, _ in
             path = NavigationPath()
@@ -753,7 +778,7 @@ struct PhoneHome: View {
 
     private var sidebar: some View {
         list
-            .homeHeading { making = true }
+            .tabHeading(AppTab.overview.rawValue)
             .background(Palette.void)
     }
 
@@ -1097,53 +1122,6 @@ struct PhoneHome: View {
 
 /// The label for what needs you, as the web's (web/src/shared/needs-you.ts).
 let NEEDS_YOU = "Needs you"
-
-/// Home's heading: the project, as a menu of every project and its issues,
-/// and New.
-struct HomeHeading: ViewModifier {
-    let new: () -> Void
-    @EnvironmentObject private var scope: Scope
-
-    func body(content: Content) -> some View {
-        content
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Menu {
-                            ProjectMenu()
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text((scope.current?.name ?? "Arugula").uppercased())
-                                    .font(Face.display(30)).foregroundStyle(Palette.fg).lineLimit(1)
-                                Image(systemName: "chevron.down").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
-                            }
-                        }
-                        .accessibilityIdentifier("project-switcher")
-                        Spacer(minLength: 8)
-                        Button("New", action: new)
-                            .buttonStyle(AnswerButton(primary: true))
-                            .accessibilityIdentifier("home-new")
-                    }
-                    if let team = scope.current?.team {
-                        Caps("\(team.name) · \(team.role)")
-                    }
-                    if let problem = scope.problem {
-                        Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom, 10)
-                .background(Palette.void)
-            }
-    }
-}
-
-extension View {
-    func homeHeading(new: @escaping () -> Void) -> some View { modifier(HomeHeading(new: new)) }
-}
 
 /// The project menu's items: every project to pick, then the current one's
 /// issues.

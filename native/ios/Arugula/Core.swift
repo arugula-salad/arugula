@@ -30,7 +30,7 @@ func takeString(_ p: UnsafeMutablePointer<CChar>?) -> String? {
 }
 
 /// The project the app shows, as the core's rule reads it (Arugula #1355):
-/// Machines and Home show only its sessions; one placed nowhere is yours, on
+/// Machines and the Overview show only its sessions; one placed nowhere is yours, on
 /// your own machine, in your personal project.
 struct Shown: Equatable {
     var id: String

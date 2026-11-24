@@ -1,5 +1,5 @@
 // The Board level (Arugula #1306, the web's #1288): a board zoomed to from
-// Home. Its goal and progress; a card for its lead, with Talk to the lead
+// the Overview. Its goal and progress; a card for its lead, with Talk to the lead
 // (that agent) and Board thread as two buttons; and its open tickets as the
 // board groups them, each with its PR or checks, a word for how it stands
 // and the agents on it, whose names open them. A ticket zooms to its Work
