@@ -83,6 +83,21 @@ grant), the app says why and offers your online machines. There it starts a
 Claude Code agent block on the same issue (`POST /api/blocks` over the link),
 told to talk in the issue's thread.
 
+**What a passkey approves** (`Arugula/Approvals.swift`, #604): a deploy
+waiting on you is first under Needs you (`GET /api/deploys/waiting`), and a
+tapped deploy notification opens it over whatever's open. Its sheet shows
+the project, what's deployed from where, who asked and the plan; the
+project menu's **Runs** shows the project's standing grant for runs. Each
+approval is signed with a passkey of the account's, whose RP is control's
+host, and the app isn't associated with it (no `webcredentials`), so it
+never asks for one itself: **Approve or deny with passkey** (and **Allow
+runs**, **Renew or revoke**) opens control's own dialog, `#deploy=…&app` or
+`#run-grant=…&app`, in a browser sheet (`ASWebAuthenticationSession`,
+sharing Safari's sign-in). There the page checks what's signed and asks for
+the passkey; done or closed, it goes to `arugula://back`, the sheet closes,
+and the app reads the deploy or the grant again. Owner changes stay on the
+web: the app has no team screen.
+
 A Doc linked in a message is a card that opens the Doc's page from control
 (`/embed/p/:project/docs/:doc`) in a web view (`DocViews.swift`). Control
 sets no cookie there: the app puts its own session's cookie in the view's
@@ -108,7 +123,12 @@ runner loads.
   board's from home (the claim checks the agent went on); tells the board and
   starts a New idea (testnet has no hosted sessions, so it runs on
   box-systemd, which the claim checks), then reads projects,
-  posts in chat and runs a command in a relayed terminal.
+  posts in chat and runs a command in a relayed terminal. A deploy the claim
+  planned waits under Needs you: the test opens it and hands over the
+  address Approve opens, the claim approves it with the account's passkey
+  (as control's dialog would, in the web sheet a test can't drive), and
+  the app reads it approved; then the project's Runs opens its grant's
+  dialog the same way.
   `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
 - **Signing in** is the desktop app's and the CLI's way (#999): the app opens
   control's page in a web sheet (`ASWebAuthenticationSession`), someone signed
@@ -138,7 +158,7 @@ a browser's Web Push is, so neither control nor Apple reads them:
   `e` with CryptoKit (`Shared/WebPush.swift`) and shows the real title and
   body; one per pane or room, the newest replacing the last.
 - **Tapping it** opens what it's about: a pane on a machine (an agent's
-  question), a chat room or an issue.
+  question), a chat room, an issue, or a deploy waiting for approval.
 
 `PushTests/run.sh` checks the decrypting on a Mac against RFC 8291's example
 and a daemon's own bytes (`just native-ios` runs it). The App IDs need Push
