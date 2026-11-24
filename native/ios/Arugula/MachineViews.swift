@@ -340,10 +340,67 @@ enum WhereYouWere {
     }
 }
 
+/// The sessions this account pinned, as the platform keeps them, shared with
+/// the web (its session-pins-store.ts, Arugula #1359): read as Machines
+/// shows, written whole on each change, the last write winning.
+@MainActor
+final class SessionPins: ObservableObject {
+    /// Oldest first.
+    @Published private(set) var pins: [Pin] = []
+    /// Whether the platform keeps pins for this sign-in: nil until it said.
+    /// Until it does, there's no Pin to offer.
+    @Published private(set) var on: Bool?
+    /// Edits sent and not yet answered: what's read meanwhile is older.
+    private var pending = 0
+
+    static let path = "/api/sessions/pins"
+    /// Pins an account may keep (control-wire's `MAX_PINS`).
+    static let most = 100
+
+    private struct List: Codable { var pins: [Pin] }
+
+    func load(_ control: Control) async {
+        let got = try? await control.get(Self.path, as: List.self)
+        guard pending == 0 else { return }
+        // A dropped read isn't an empty list: kept as they were.
+        guard let got else {
+            if on == nil { on = false }
+            return
+        }
+        on = true
+        pins = got.pins
+    }
+
+    func has(_ machine: String, _ session: UInt32) -> Bool {
+        pins.contains(Pin(machine: machine, session: session))
+    }
+
+    /// Pinned last, or unpinned: shown at once and kept on the platform. If
+    /// it refuses, they're read again so the page shows what's kept.
+    func toggle(_ machine: String, _ session: UInt32, _ control: Control) async {
+        guard on == true else { return }
+        let p = Pin(machine: machine, session: session)
+        if pins.contains(p) {
+            pins.removeAll { $0 == p }
+        } else if pins.count < Self.most {
+            pins.append(p)
+        } else {
+            return
+        }
+        pending += 1
+        let body: [String: Any] = ["pins": pins.map { ["machine": $0.machine, "session": $0.session] as [String: Any] }]
+        let kept = try? await control.call("PUT", Self.path, body: body)
+        pending -= 1
+        guard let kept, let list = try? JSONDecoder().decode(List.self, from: kept) else { return await load(control) }
+        if pending == 0 { pins = list.pins }
+    }
+}
+
 /// Machines, as the web's page (web/src/app/machines-list.tsx): each machine
 /// in the core's order with its sessions in the project as cards, and each
 /// card's panes as one-line rows. Machines with nothing in the project fold
-/// into one line, and an offline one can't be opened. On an iPhone a
+/// into one line, and an offline one can't be opened. The sessions you
+/// pinned come first, as cards; a long press pins or unpins one. On an iPhone a
 /// session's name opens the session, a tab at a time with its panes
 /// stacked, and a row opens its pane full screen to type into. On an iPad
 /// the page is the left column with a tab live on the right: before
@@ -353,6 +410,7 @@ struct MachinesView: View {
     @ObservedObject var fleet: HomeFleet
     @EnvironmentObject private var scope: Scope
     @ObservedObject private var push = PushCenter.shared
+    @StateObject private var pins = SessionPins()
     @Environment(\.horizontalSizeClass) private var width
     /// An iPhone's: the session opened.
     @State private var path: [SessionRef] = []
@@ -406,6 +464,7 @@ struct MachinesView: View {
         .task {
             while !Task.isCancelled {
                 await fleet.load(control)
+                await pins.load(control)
                 loaded = true
                 try? await Task.sleep(for: .seconds(30))
             }
@@ -442,13 +501,14 @@ struct MachinesView: View {
         let hosts = fleet.directory.map { d in
             HostIn(id: d.id, name: d.name, online: d.online == true, owner: d.owner, panes: reached(d.id)?.summary)
         }
-        return Sections.of(hosts, shown: shown, recent: UserDefaults.standard.string(forKey: Self.lastKey))
+        return Sections.of(hosts, shown: shown, recent: UserDefaults.standard.string(forKey: Self.lastKey), pins: pins.pins)
     }
 
     // ---- the page
 
     private var page: some View {
         let s = sections
+        let pinned = s?.pinnedCards ?? []
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
                 if let p = problem {
@@ -456,16 +516,20 @@ struct MachinesView: View {
                 }
                 if fleet.directory.isEmpty {
                     Caps(loaded ? "No machines yet" : "Looking")
-                } else if let s, s.machines.isEmpty {
+                } else if let s, s.machines.isEmpty, pinned.isEmpty {
                     Text("Nothing in \(scope.current?.name ?? "this project") is running on a machine.")
                         .font(Face.ui(14)).foregroundStyle(Palette.dim)
                 }
+                if !pinned.isEmpty { pinnedSection(pinned) }
                 ForEach(s?.machines ?? []) { m in machine(m) }
                 if let q = s?.quiet, !q.isEmpty { fold(q) }
             }
             .padding()
         }
-        .refreshable { await fleet.load(control) }
+        .refreshable {
+            await fleet.load(control)
+            await pins.load(control)
+        }
         .tabHeading("Machines")
         .background(Palette.void)
     }
@@ -473,14 +537,44 @@ struct MachinesView: View {
     private func machine(_ m: Sections.Section) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             head(m)
-            if let link = reached(m.id) {
-                ForEach(m.sessions) { c in
-                    SessionCardView(
-                        session: link, card: c, compact: width != .regular,
-                        last: last?.machine == m.id ? last?.pane : nil,
-                        lit: picked?.machine == m.id ? picked?.pane : nil,
-                        open: { openSession(link, c) },
-                        openPane: { openRow(link, c, $0) })
+            ForEach(m.sessions) { c in card(c, on: m) }
+        }
+    }
+
+    /// The sessions you pinned, in the order you pinned them, each naming its machine.
+    private func pinnedSection(_ cards: [Sections.PinnedCard]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "pin.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.accent)
+                Text("PINNED").font(Face.display(20)).foregroundStyle(Palette.fg)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("machines-pinned")
+            ForEach(cards) { p in card(p.card, on: p.machine, pinned: true) }
+        }
+    }
+
+    /// A session's card on machine `m`, once it's reached. A long press pins
+    /// or unpins it.
+    @ViewBuilder
+    private func card(_ c: Sections.Card, on m: Sections.Section, pinned: Bool = false) -> some View {
+        if let link = reached(m.id) {
+            SessionCardView(
+                session: link, card: c, compact: width != .regular,
+                pinnedOn: pinned ? Self.short(m.name) : nil,
+                last: last?.machine == m.id ? last?.pane : nil,
+                lit: picked?.machine == m.id ? picked?.pane : nil,
+                open: { openSession(link, c) },
+                openPane: { openRow(link, c, $0) })
+            .contextMenu {
+                if pins.on == true {
+                    Button {
+                        Task { await pins.toggle(m.id, c.id, control) }
+                    } label: {
+                        pinned ? Label("Unpin session", systemImage: "pin.slash") : Label("Pin session", systemImage: "pin")
+                    }
+                    .accessibilityIdentifier(pinned ? "unpin-session" : "pin-session")
                 }
             }
         }
@@ -670,6 +764,8 @@ struct SessionCardView: View {
     let card: Sections.Card
     /// An iPhone's: no kind or branch on a row.
     let compact: Bool
+    /// In Pinned: its machine's name, which the card says.
+    var pinnedOn: String? = nil
     /// The pane you were last in, on this machine.
     let last: UInt32?
     /// The pane lit on an iPad's right side.
@@ -692,6 +788,9 @@ struct SessionCardView: View {
                     Circle().fill(tone.color).frame(width: 8, height: 8)
                         .shadow(color: card.state == "needs_input" ? tone.color : .clear, radius: 4)
                     Text(card.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                    if pinnedOn != nil {
+                        Image(systemName: "pin.fill").font(.system(size: 11)).foregroundStyle(Palette.dim).accessibilityLabel("Pinned")
+                    }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.dim)
                 }
@@ -723,7 +822,8 @@ struct SessionCardView: View {
 
     private var meta: String {
         let t = card.tabs.count
-        return "\(t) \(t == 1 ? "tab" : "tabs") · \(card.panes) \(card.panes == 1 ? "pane" : "panes")"
+        let on = pinnedOn.map { "on \($0) · " } ?? ""
+        return "\(on)\(t) \(t == 1 ? "tab" : "tabs") · \(card.panes) \(card.panes == 1 ? "pane" : "panes")"
     }
 
     private func row(_ id: UInt32) -> PaneRow? {
