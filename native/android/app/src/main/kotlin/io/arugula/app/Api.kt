@@ -248,7 +248,7 @@ fun sections(hosts: List<JSONObject>, shown: Shown?, recent: String?): JSONObjec
 }.getOrNull()
 
 fun Machine.host(panes: String? = null): JSONObject = JSONObject().put("id", id).put("name", name).put("online", online).apply {
-    owner?.let { put("owner", it) }
+    (ownerName ?: account)?.let { put("owner", it) }
     panes?.let { runCatching { put("panes", JSONObject(it)) } }
 }
 
