@@ -605,6 +605,18 @@
         "response: a JSON object built in place"
       ]
     },
+    "GET /api/me/prefs": {
+      "handler": "crates/control/src/push.rs#prefs",
+      "untyped": [
+        "response: the account's prefs, a JSON object of strings"
+      ]
+    },
+    "POST /api/me/prefs": {
+      "handler": "crates/control/src/push.rs#set_prefs",
+      "untyped": [
+        "request and response: a JSON object of the account's prefs, a key's null removing it"
+      ]
+    },
     "POST /api/push/subscribe": {
       "handler": "crates/control/src/push.rs#subscribe",
       "untyped": [
