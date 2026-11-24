@@ -27,6 +27,7 @@ import { ACCOUNT_HASH, AccountPanel, GITHUB_LINK_HASH } from "./account";
 import { EMAIL_HASH } from "./email";
 import { JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
+import { RUN_GRANT_HASH, RunGrantPrompt } from "./run-grants";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
 import { Devices } from "./devices";
 import { AddMachine } from "./machines";
@@ -88,8 +89,12 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (appLogin) return <AppLoginPrompt s={s} id={appLogin} />;
   if (hash === "#app-done") return <AppLoginDone />;
   // M218: a deploy's approval, from the platform page's Approve or Deny.
-  const deploy = DEPLOY_HASH.exec(hash)?.[1];
-  if (deploy) return <DeployPrompt key={deploy} s={s} id={deploy} />;
+  // The phone app's web sheet adds `&app` (Arugula #604): back to it after.
+  const deploy = DEPLOY_HASH.exec(hash);
+  if (deploy) return <DeployPrompt key={deploy[1]} s={s} id={deploy[1]} app={!!deploy[2]} />;
+  // A project's standing grant for runs, from its settings or the phone app.
+  const grant = RUN_GRANT_HASH.exec(hash);
+  if (grant) return <RunGrantPrompt key={grant[1]} s={s} project={grant[1]} app={!!grant[2]} />;
   const invite = inviteInHash(hash) ?? inviteInHash(usedLink);
   if (invite)
     return invite.presigned ? (

@@ -3,7 +3,8 @@
 // the zoom to a board and a card's work and back, by taps and by address,
 // a board's thread and its lanes,
 // an agent's permission prompt and question answered from home, projects,
-// a Doc in a room, chat, a terminal. The script
+// a Doc in a room, chat, a terminal, a deploy approved and a project's runs
+// (Arugula #604). The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -153,6 +154,7 @@ final class FlowTests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["ARUGULA_RESET"] = "1"
         app.launchEnvironment["ARUGULA_SIGNIN_BY_HAND"] = "1"
+        app.launchEnvironment["ARUGULA_APPROVE_BY_HAND"] = "1"
         app.launchEnvironment["ARUGULA_CONTROL_URL"] = env["ARUGULA_CONTROL_URL"] ?? ""
         app.launch()
 
@@ -206,6 +208,64 @@ final class FlowTests: XCTestCase {
         shot(app, "2-issues")
         app.buttons["issues-done"].tap()
         XCTAssertTrue(switcher.shows(within: 10), "not back home from the issues")
+
+        // What a passkey approves (Arugula #604). A deploy waiting on this
+        // account is first under Needs you, and opens over the app; Approve
+        // would open control's dialog in a web sheet, where the passkey is:
+        // here the app shows that address, the script approves the deploy
+        // with the account's passkey as the dialog would, and Done stands in
+        // for the sheet coming back. The app reads it again: approved. Then
+        // the project's Runs, from its menu, opens its grant's dialog the
+        // same way.
+        if let deploy = env["ARUGULA_DEPLOY"], !deploy.isEmpty {
+            let row = app.buttons["need-deploy-\(deploy)"]
+            XCTAssertTrue(row.shows(within: 30), "the waiting deploy isn't under Needs you: \(app.debugDescription)")
+            shot(app, "2-deploy-need")
+            row.tap()
+            let state = app.staticTexts["deploy-state"]
+            XCTAssertTrue(state.shows(within: 20), "the deploy didn't open")
+            XCTAssertEqual(state.value as? String, "pending")
+            let approve = app.buttons["deploy-approve"]
+            XCTAssertTrue(approve.shows(within: 10), "no Approve on a deploy waiting for this owner")
+            shot(app, "2-deploy-sheet")
+            approve.tap()
+            let link = app.staticTexts["approve-link"]
+            XCTAssertTrue(link.shows(within: 10), "Approve opened nothing")
+            XCTAssertTrue(link.label.hasSuffix("/#deploy=\(deploy)&app"), "Approve opens \(link.label)")
+            let approved = handoff.appendingPathComponent("approved")
+            try? FileManager.default.removeItem(at: approved)
+            try link.label.write(to: handoff.appendingPathComponent("approve"), atomically: true, encoding: .utf8)
+            let approveBy = Date().addingTimeInterval(120)
+            while !FileManager.default.fileExists(atPath: approved.path) && Date() < approveBy { sleep(1) }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: approved.path), "nobody approved the deploy")
+            app.buttons["approve-done"].tap()
+            let decidedBy = Date().addingTimeInterval(20)
+            while state.value as? String == "pending" && Date() < decidedBy { sleep(1) }
+            shot(app, "2-deploy-approved")
+            // Approved, and maybe gone on from there (testnet's driver makes
+            // its box, or fails to): read again, not waiting any more.
+            let after = state.value as? String ?? ""
+            XCTAssertTrue(!["pending", "denied", ""].contains(after), "the deploy reads \(after) after")
+            XCTAssertFalse(app.buttons["deploy-approve"].exists, "an approved deploy still offers Approve")
+            app.buttons["deploy-close"].tap()
+            let goneBy = Date().addingTimeInterval(15)
+            while row.exists && Date() < goneBy { sleep(1) }
+            XCTAssertFalse(row.exists, "the approved deploy is still under Needs you")
+
+            switcher.tap()
+            let runs = app.buttons["project-runs"]
+            XCTAssertTrue(runs.shows(within: 10), "no Runs in the project's menu")
+            runs.tap()
+            let grant = app.staticTexts["runs-grant"]
+            XCTAssertTrue(grant.shows(within: 20), "the project's runs didn't open")
+            shot(app, "2-runs")
+            app.buttons["runs-change"].tap()
+            XCTAssertTrue(link.shows(within: 10), "Allow runs opened nothing")
+            XCTAssertNotNil(link.label.range(of: #"/#run-grant=prj_[0-9a-f]{32}&app$"#, options: .regularExpression), "Allow runs opens \(link.label)")
+            app.buttons["approve-done"].tap()
+            app.buttons["runs-close"].tap()
+            XCTAssertTrue(switcher.shows(within: 10), "not back home from the runs")
+        }
 
         // A Doc in a conversation (Arugula #1259): its card opens the Doc's page
         // in a web view, signed in as the app; on an iPad in the right-hand
