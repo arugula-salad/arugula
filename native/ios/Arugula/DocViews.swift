@@ -244,7 +244,7 @@ struct DocWebView: UIViewRepresentable {
                 parent.title = intent.title
                 parent.loading = false
             case "signed_out":
-                parent.problem = "Control didn't take this app's sign-in for the Doc. Sign in again from You."
+                parent.problem = "Control didn't take this app's sign-in for the Doc. Sign out and in again from your picture."
             case "doc":
                 if let p = intent.project, let id = intent.id { parent.open(.doc(DocRef(project: p, doc: id))) }
             case "board":
@@ -302,5 +302,28 @@ private final class WeakHandler: NSObject, WKScriptMessageHandler {
     init(_ t: WKScriptMessageHandler) { target = t }
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
         target?.userContentController(c, didReceive: m)
+    }
+}
+
+/// Docs, the third place (Arugula #1361). The project's Docs, newest first,
+/// come with Arugula #1363; until then the place says so, and a Doc opens
+/// from its link in a thread or on a board.
+struct DocsPlace: View {
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                Image(systemName: AppTab.docs.symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Palette.muted)
+                Caps("The project's Docs come here next")
+                Text("Arugula #1363 lists them, newest first. Until then, a Doc opens from its link in a thread, a board or Chat.")
+                    .font(Face.ui(14)).foregroundStyle(Palette.subtle)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.void)
+            .tabHeading(AppTab.docs.rawValue)
+        }
+        .accessibilityIdentifier("docs-place")
     }
 }

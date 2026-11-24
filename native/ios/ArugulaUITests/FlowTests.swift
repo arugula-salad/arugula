@@ -212,12 +212,17 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(switcher.label.lowercased().contains("default"), "not in the Default project: \(switcher.label)")
         shot(app, "2-projects")
 
-        // The tab bar is there from the start, Home first (Arugula #1262), and
-        // the project's issues open from its menu.
-        for name in ["Home", "Boards", "Chat", "Machines", "You"] {
+        // The web's five places are there from the start, Overview first
+        // (Arugula #1262, #1361); the bell and your picture are in the
+        // heading, not tabs, and the project's issues open from its menu.
+        for name in ["Overview", "Boards", "Docs", "Machines", "Chat"] {
             XCTAssertTrue(tab(app, name).shows(within: 10), "no \(name) on the tab bar")
         }
-        XCTAssertFalse(tab(app, "Issues").exists, "Issues is still a tab")
+        for gone in ["Home", "You", "Issues"] {
+            XCTAssertFalse(tab(app, gone).exists, "\(gone) is still a tab")
+        }
+        XCTAssertTrue(app.buttons["heading-inbox"].firstMatch.shows(within: 10), "no bell in the heading")
+        XCTAssertTrue(app.buttons["account"].firstMatch.shows(within: 10), "no picture in the heading")
         switcher.tap()
         let issuesItem = app.buttons["project-issues"]
         XCTAssertTrue(issuesItem.shows(within: 10), "no Issues in the project's menu")
@@ -349,9 +354,9 @@ final class FlowTests: XCTestCase {
         var staffRoom: String?
         if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
             let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
-            go(app, "Home")
+            go(app, "Overview")
             pick(app, team)
-            // Home and Boards in the team's project as they look, before
+            // Overview and Boards in the team's project as they look, before
             // anything is asked of them: on main's app, the Before shots.
             let boardShown = app.buttons["board-\(led)"]
             _ = app.buttons["home-board-\(led)"].shows(within: 45)
@@ -361,7 +366,7 @@ final class FlowTests: XCTestCase {
             _ = boardShown.shows(within: 45)
             sleep(2)
             shot(app, "5-team-boards")
-            go(app, "Home")
+            go(app, "Overview")
             // A lead's name on home opens that agent, not its board's thread
             // (Arugula #1305); the thread is a button of its own.
             let homeLead = app.buttons["home-lead-\(led)"]
@@ -407,7 +412,7 @@ final class FlowTests: XCTestCase {
                 _ = homeThread.shows(within: 10)
             }
             XCTAssertTrue(homeThread.exists, "no Board thread on home's row: \(app.debugDescription)")
-            // Home slides back in: a tap as it settles opens nothing, so again.
+            // The Overview slides back in: a tap as it settles opens nothing, so again.
             let homeThreadLead = app.descendants(matching: .any)["board-lead"]
             for _ in 0..<3 where !homeThreadLead.exists {
                 _ = homeThread.waitFor(hittable: true, timeout: 5)
@@ -500,10 +505,10 @@ final class FlowTests: XCTestCase {
             }
             XCTAssertTrue(chip.shows(within: 10), "not back on Boards: \(app.debugDescription)")
             pick(app, "Default")
-            go(app, "Home")
+            go(app, "Overview")
         }
 
-        // Home (Arugula #1255) and the zoom (Arugula #1304): the board the
+        // The Overview (Arugula #1255) and the zoom (Arugula #1304): the board the
         // script made, its row's question under Needs you. Its row zooms to
         // the Board level, a ticket there to its Work level, and the path bar
         // zooms back out. The board's thread and lanes are a tap away from
@@ -518,7 +523,7 @@ final class FlowTests: XCTestCase {
             }
             clearAlerts()
             shot(app, "2-home")
-            // Home reloads its list after the project switch above: a tap as
+            // The Overview reloads its list after the project switch above: a tap as
             // it does opens nothing, so tap again until the board is there.
             let level = app.descendants(matching: .any)["board-level"]
             var zoomed = false
@@ -701,8 +706,8 @@ final class FlowTests: XCTestCase {
         // which has no hosted sessions, a machine's: box-systemd's), whose
         // conversation opens and is listed under New ideas.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
-            let new = app.buttons["home-new"]
-            XCTAssertTrue(new.shows(within: 15), "no New on home")
+            let new = app.buttons["heading-new"].firstMatch
+            XCTAssertTrue(new.shows(within: 15), "no New in the Overview's heading")
             new.tap()
             XCTAssertTrue(app.buttons["new-board"].shows(within: 10), "no Tell a board")
             app.buttons["new-board"].tap()
@@ -721,7 +726,7 @@ final class FlowTests: XCTestCase {
             if !iPad { goBack(app) }
 
             XCTAssertTrue(new.shows(within: 15), "not back home")
-            // Home slides back in: a tap before it settles opens nothing, so
+            // The Overview slides back in: a tap before it settles opens nothing, so
             // wait for New to take taps, and tap again if its menu didn't come.
             for _ in 0..<3 where !app.buttons["new-idea"].exists {
                 _ = new.waitFor(hittable: true, timeout: 5)
@@ -829,10 +834,13 @@ final class FlowTests: XCTestCase {
             if !iPad { goBack(app) }
         }
 
-        // Signing out ends it here: the sign-in again.
-        go(app, "You")
+        // Signing out, under your picture, ends it here: the sign-in again.
+        go(app, "Overview")
+        let picture = app.buttons["account"].firstMatch
+        XCTAssertTrue(picture.shows(within: 30), "no picture in the heading")
+        picture.tap()
         let signOut = app.buttons["sign-out"]
-        XCTAssertTrue(signOut.shows(within: 30), "no sign-out")
+        XCTAssertTrue(signOut.shows(within: 10), "no sign-out under your picture")
         shot(app, "7-you")
         signOut.tap()
         XCTAssertTrue(app.buttons["signin-start"].shows(within: 15), "still signed in")

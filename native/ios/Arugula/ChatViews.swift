@@ -36,7 +36,7 @@ struct ChatRoomsView: View {
                 .voidList()
                 .overlay { if rooms.isEmpty { Caps("No rooms yet") } }
             }
-            .tabHeading("Chat", project: true)
+            .tabHeading("Chat")
             .background(Palette.void)
         } detail: {
             NavigationStack {

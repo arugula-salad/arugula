@@ -8,15 +8,22 @@ to Swift through a small C interface, `Arugula/arugula_core.h` and
 One app for both: on an iPhone each screen is one at a time, and on an iPad
 a list sits beside what's open from it (a project, a chat room, a machine).
 
-The tab bar is always there (#1262): **Home · Boards · Chat · Machines · You**.
-Issues aren't a tab: a board's rows open their issues, and the project's menu
-(the project name heading Home, Boards and Chat) opens its list.
+The tab bar is always there (#1262), with the web's five places (#1361):
+**Overview · Boards · Docs · Machines · Chat**. On an iPad it's
+`.sidebarAdaptable`: a sidebar in landscape that folds into the floating bar
+in portrait. Every place is headed by the project's menu, **New**, the
+**bell** (the Inbox) and **your picture** (your name, Settings, Send feedback,
+the version and Sign out: `Arugula/Account.swift`), which fit on a 390pt
+phone. Settings opens the web's page in the browser: control doesn't take
+the app's session there. Issues aren't a place: a board's rows open their
+issues, and the project's menu opens its list. Docs lists the project's Docs
+with #1363; until then it says so.
 
-**Home** (`Arugula/Home.swift`, #1255) is the first tab: the current project's
-conversations, sorted by what needs you, as the desktop's Overview reads them.
+The **Overview** (`Arugula/Home.swift`, #1255; Home until #1361) is the first
+place: the current project's conversations, sorted by what needs you, as the desktop's Overview reads them.
 It is the Overview's Project level (#1304, the web's #1287): a board's row
 zooms to its **Board level** and a ticket there to its **Work level**
-(`Arugula/Zoom.swift`), pushed on an iPhone and beside home's list on an iPad;
+(`Arugula/Zoom.swift`), pushed on an iPhone and beside the Overview's list on an iPad;
 Back or the path bar over each level zooms out. Each level has the web's
 address under `arugula://`, which the app registers: `arugula://p/PROJECT`,
 `…/board/BOARD`, `…/board/BOARD/card/ROW` and `…/work/SESSION` (a session's
@@ -47,16 +54,16 @@ each, as the web's fleet opens them), the boards' rows that ask you, fail
 their checks or wait for review, and the hosted sessions that wait on you,
 worst first. Then one row per open board (its lane bar, `done/total`, what's
 going on and who leads it), which zooms to the board, whose Thread and
-Lanes buttons open its thread and its lanes; then the channels and DMs. On an iPad home is the
-left column, and what it opens sits beside it. A notification opens its tab:
-a pane's on Machines, a room's on Chat, an issue's beside home.
+Lanes buttons open its thread and its lanes; then the channels and DMs. On an iPad the Overview is the
+left column, and what it opens sits beside it. A notification opens its place:
+a pane's on Machines, a room's on Chat, an issue's beside the Overview.
 
 A row of Needs you is **answered where it is** (`Arugula/Answer.swift`, #1256),
 and folds away with a word of what was done: a pane's permission (Allow,
 Deny) or question (its choices) through its daemon's `POST
 /api/attention/act` over the link, a hosted session's through control's
 `POST /api/sessions/{ses}/actions`, a board's ask through its answer route.
-A lead's or an agent's name opens **that agent** (#1305): on Home's board
+A lead's or an agent's name opens **that agent** (#1305): on the Overview's board
 rows, on **Boards** (where a lead shows its state dot, its session, a
 teammate's with their name, and its machine) and over a board's thread or the
 staff room, it opens the session's Work level, where you type to it; one on
@@ -70,8 +77,8 @@ its last lines, a reply to its agent, Silence (the owner's: teammates'
 agents can't mention it), Stop (asked first) and its terminal or thread. A
 viewer of a machine's session reads it, with no buttons.
 
-**New** on home (`Arugula/New.swift`, #1257) tells a board (its thread opens,
-and a post there reaches the session that leads it) or starts a **New idea**.
+**New**, in every place's heading (`Arugula/New.swift`, #1257, #1361), tells
+a board (its thread opens, and a post there reaches the session that leads it) or starts a **New idea**.
 What you say (typed, or dictated with the keyboard's mic) becomes a native
 issue, "Idea: …", whose body holds the agent's instructions (ask at most two
 questions in the thread, write a project Doc, with a prototype when one fits,
@@ -106,7 +113,7 @@ store, so the page reads and comments as the app, a native session. The
 page's links to a board, an issue, a room or another Doc come back as intents
 on `window.webkit.messageHandlers.arugula` and open in the app. On an iPhone
 the Doc is over everything; on an iPad it's a third column beside the
-conversation, home's list folded away until Close. Debug builds allow plain
+conversation, the Overview's list folded away until Close. Debug builds allow plain
 http to `*.localhost` (`Arugula-Debug-Info.plist`) so a testnet's prototype
 runner loads.
 
@@ -118,10 +125,10 @@ runner loads.
   its testnet drives this: `ARUGULA_NATIVE_SIM_HOST=MAC just testnet test control
   native-sim` there, with this repository's branch at `~/src/native-app` on the
   Mac (`ARUGULA_NATIVE_SIM_DIR` names another). Its UI test signs in, finds the
-  board the claim made on home with its row's question under Needs you, opens
+  board the claim made on the Overview with its row's question under Needs you, opens
   the board's thread, posts there and opens its lanes; peeks at a stand-in
   agent, allows its permission prompt and answers its question and the
-  board's from home (the claim checks the agent went on); tells the board and
+  board's from the Overview (the claim checks the agent went on); tells the board and
   starts a New idea (testnet has no hosted sessions, so it runs on
   box-systemd, which the claim checks), then reads projects,
   posts in chat and runs a command in a relayed terminal. A deploy the claim
