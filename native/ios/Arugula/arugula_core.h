@@ -75,6 +75,10 @@ void aru_link_free(AruLink *l);
 int32_t aru_shown(const char *at_id, int32_t at_personal, const char *session_project, const char *on_issue_project, int32_t yours);
 // The machines as Machines lists them: {at, recent, hosts, pins} in, {order, machines, quiet, pinned} out.
 char *aru_machines(const char *input, char **err);
+// Where you were in a project (Arugula #1360), from its app.pane.<project>
+// pref: {machine, pane}, or NULL. And that pref's value for a pane.
+char *aru_kept_pane(const char *path, const char *project);
+char *aru_pane_path(const char *project, const char *machine, uint32_t pane);
 
 // Chat's live stream: notify fires from its thread; take events on the main one.
 AruChatLive *aru_chat_live_open(const AruControl *c, AruNotify notify, void *ctx, char **err);

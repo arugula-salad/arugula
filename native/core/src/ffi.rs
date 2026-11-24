@@ -620,6 +620,26 @@ pub unsafe extern "C" fn aru_machines(input: *const c_char, err: *mut *mut c_cha
     unsafe { give(r, err, to_c) }
 }
 
+/// Where you were in `project`, from its `app.pane.<project>` pref
+/// (Arugula #1360): `{"machine": id, "pane": n}`, or NULL when it names no
+/// pane an app can place.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_kept_pane(path: *const c_char, project: *const c_char) -> *mut c_char {
+    let (path, project) = unsafe { (text(path), text(project)) };
+    match shown::kept_pane(&path, &project) {
+        Some(k) => to_c(json!(k).to_string()),
+        None => ptr::null_mut(),
+    }
+}
+
+/// The `app.pane.<project>` pref's value for `pane` on `machine`, as the
+/// web writes it: that machine page's path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_pane_path(project: *const c_char, machine: *const c_char, pane: u32) -> *mut c_char {
+    let (project, machine) = unsafe { (text(project), text(machine)) };
+    to_c(shown::pane_path(&project, &machine, pane))
+}
+
 // ---- chat's live stream
 
 pub struct AruChatLive(pub(crate) ChatLive);

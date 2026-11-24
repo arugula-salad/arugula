@@ -3,7 +3,8 @@
 // web's Machines page. Machines with nothing in the project fold into one
 // line, and an offline one can't be opened. On a tablet the page sits beside
 // the session's live tab (ListDetailPaneScaffold), and before anything is
-// picked that's where you were; on a phone a session opens a tab at a time,
+// picked that's where you were, the same pane the web lights (#1360); on a
+// phone a session opens a tab at a time,
 // its panes stacked and live. The sessions you pinned come first, as cards,
 // shared with the web (#1359); a long press pins or unpins one. Any pane
 // opens full screen, with the keyboard
@@ -69,6 +70,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -116,6 +118,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.arugula.core.Core
 import io.arugula.core.Frame
 import io.arugula.core.Key
 import io.arugula.core.Mods
@@ -154,7 +157,7 @@ fun MachinesScreen(api: Api, fleet: HomeFleet, home: HomeModel, top: Dest?, deta
             listPane = {
                 AnimatedPane(Modifier.preferredWidth(380.dp)) {
                     Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { MachinesPage(fleet, pins, top) }
+                        Box(Modifier.weight(1f)) { MachinesPage(api, fleet, pins, top) }
                         if (wide) VerticalDivider(color = Palette.raised)
                     }
                 }
@@ -234,18 +237,65 @@ private const val LAST_MACHINE = "last-machine"
 /** Where you were in a project, on this device: the pane you last had open there. */
 private const val WAS = "last-pane."
 
-data class KeptPane(val machine: String, val tab: Int, val pane: Int)
+/** The pane last opened in a project: its machine's id and its own. */
+data class KeptPane(val machine: String, val pane: Int)
 
+/** This device's copy (`machine pane`; before #1360, `machine tab pane`). */
 private fun SharedPreferences.keptPane(project: String): KeptPane? {
-    val parts = getString(WAS + project, null)?.split(' ')?.takeIf { it.size == 3 } ?: return null
-    return KeptPane(parts[0], parts[1].toIntOrNull() ?: return null, parts[2].toIntOrNull() ?: return null)
+    val parts = getString(WAS + project, null)?.split(' ')?.takeIf { it.size in 2..3 } ?: return null
+    return KeptPane(parts[0], parts.last().toIntOrNull() ?: return null)
 }
 
 /** You were here: the pane, in the project, and its machine is the one used last. */
 private fun SharedPreferences.keep(project: String?, k: KeptPane) {
     val e = edit().putString(LAST_MACHINE, k.machine)
-    project?.let { e.putString(WAS + it, "${k.machine} ${k.tab} ${k.pane}") }
+    project?.let { e.putString(WAS + it, "${k.machine} ${k.pane}") }
     e.apply()
+}
+
+/**
+ * Where you were in each project, shared with the web (Arugula #1360):
+ * Machines lights the pane's row, and a tablet shows its tab before anything
+ * is picked. Kept in the account's prefs as the web keeps it
+ * (`app.pane.<project>` in `/api/me/prefs`, its places-kept.ts), and on this
+ * device for when control can't be asked (offline, or a control that
+ * doesn't let the app read prefs yet).
+ */
+object PlacesKept {
+    private const val PREFS = "/api/me/prefs"
+
+    private fun pref(project: String) = "app.pane.$project"
+
+    /** The account's, by project, once read: null where it has none. */
+    private val read = mutableStateMapOf<String, KeptPane?>()
+
+    /** When a pane was last opened: a read of the account's from before then is older. */
+    private var notedAt = 0L
+
+    /** Where you were in [project]: the account's once read, else this device's. */
+    fun of(prefs: SharedPreferences, project: String?): KeptPane? = when {
+        project == null -> null
+        project in read -> read[project]
+        else -> prefs.keptPane(project)
+    }
+
+    /** Read the account's, as the web lights it. Not answered, the device's stays. */
+    suspend fun load(api: Api, project: String) {
+        val asked = System.currentTimeMillis()
+        val all = runCatching { api.get(PREFS) }.getOrNull() ?: return
+        // One opened since, or still being written, is newer.
+        if (notedAt + 10_000 >= asked) return
+        read[project] = all.str(pref(project))?.let { Core.keptPane(it, project) }?.let { KeptPane(it.getString("machine"), it.getInt("pane")) }
+    }
+
+    /** It was opened: kept for the account and on this device. */
+    suspend fun note(api: Api, prefs: SharedPreferences, project: String?, k: KeptPane) {
+        prefs.keep(project, k)
+        project ?: return
+        notedAt = System.currentTimeMillis()
+        read[project] = k
+        runCatching { api.post(PREFS, JSONObject().put(pref(project), Core.panePath(project, k.machine, k.pane))) }
+    }
 }
 
 @Composable
@@ -258,7 +308,7 @@ private fun prefs(): SharedPreferences = LocalContext.current.getSharedPreferenc
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MachinesPage(fleet: HomeFleet, pins: SessionPins, top: Dest?) {
+private fun MachinesPage(api: Api, fleet: HomeFleet, pins: SessionPins, top: Dest?) {
     val project = LocalScope.current.current
     val prefs = prefs()
     val coroutines = rememberCoroutineScope()
@@ -269,7 +319,8 @@ private fun MachinesPage(fleet: HomeFleet, pins: SessionPins, top: Dest?) {
         launch { pins.load() }
         fleet.load()
     }
-    val was = project?.let { prefs.keptPane(it.id) }
+    LaunchedEffect(project?.id) { project?.let { PlacesKept.load(api, it.id) } }
+    val was = PlacesKept.of(prefs, project?.id)
     // Read again as any machine's panes move.
     val page = Sections.of(sections(fleet.directory.map { m -> fleet.find(m.id)?.host() ?: m.host() }, project?.shown, prefs.getString(LAST_MACHINE, null), pins.pins))
     val open = top as? Dest.Session
@@ -282,6 +333,7 @@ private fun MachinesPage(fleet: HomeFleet, pins: SessionPins, top: Dest?) {
                 coroutines.launch {
                     refreshing = true
                     launch { pins.load() }
+                    project?.let { launch { PlacesKept.load(api, it.id) } }
                     fleet.load()
                     refreshing = false
                 }
@@ -491,13 +543,15 @@ private fun PaneLine(m: MachineSession, p: PaneRow, lit: Boolean, was: Boolean, 
 @Composable
 private fun WhereYouWere(api: Api, fleet: HomeFleet, home: HomeModel) {
     val project = LocalScope.current.current
-    val was = project?.let { prefs().keptPane(it.id) }
-    val card = was?.let { w -> fleet.find(w.machine)?.cards(project?.shown)?.firstOrNull { c -> c.tabs.any { it.id == w.tab } } }
+    val was = PlacesKept.of(prefs(), project?.id)
+    val m = was?.let { fleet.find(it.machine) }
+    val tab = was?.let { m?.pane(it.pane)?.tab }
+    val card = m?.cards(project?.shown)?.firstOrNull { c -> c.tabs.any { it.id == tab } }
     if (was == null || card == null) {
         Pick(AppTab.MACHINES)
         return
     }
-    SessionScreen(api, Dest.Session(was.machine, card.id, was.tab, was.pane), fleet, home, label = "Where you were")
+    SessionScreen(api, Dest.Session(was.machine, card.id, tab, was.pane), fleet, home, label = "Where you were")
 }
 
 /** The machine's link: home's, when it keeps one, else one for this screen. */
@@ -517,7 +571,7 @@ fun MachineScreen(api: Api, machine: Machine, fleet: HomeFleet) {
     val session = sessionFor(api, machine, fleet)
     val coroutines = rememberCoroutineScope()
     var problem by remember { mutableStateOf<String?>(null) }
-    val was = project?.let { prefs().keptPane(it.id) }
+    val was = PlacesKept.of(prefs(), project?.id)
     LaunchedEffect(session) { session.connect() }
     Column(Modifier.fillMaxSize()) {
         DetailBar(machine.name) {
@@ -577,7 +631,7 @@ fun SessionScreen(api: Api, d: Dest.Session, fleet: HomeFleet, home: HomeModel, 
     val card = m?.cards(project?.shown)?.firstOrNull { it.id == d.session }
     var picked by remember(d) { mutableStateOf(d.tab) }
     // A pane picked on a tablet is where you are now.
-    LaunchedEffect(d) { if (label == null && d.tab != null && d.lit != null) prefs.keep(project?.id, KeptPane(d.machine, d.tab, d.lit)) }
+    LaunchedEffect(d) { if (label == null && d.lit != null) PlacesKept.note(api, prefs, project?.id, KeptPane(d.machine, d.lit)) }
     if (m != null) LaunchedEffect(m) { m.connect() }
 
     Column(Modifier.fillMaxSize().testTag("session")) {
@@ -824,7 +878,7 @@ fun TerminalScreen(api: Api, d: Dest.Terminal, fleet: HomeFleet) {
     val prefs = prefs()
 
     // The pane you're in: where you were, next time.
-    LaunchedEffect(d) { prefs.keep(project, KeptPane(d.machine, d.tab, d.pane)) }
+    LaunchedEffect(d) { PlacesKept.note(api, prefs, project, KeptPane(d.machine, d.pane)) }
 
     DisposableEffect(session, term) {
         session.terms[d.pane] = term
