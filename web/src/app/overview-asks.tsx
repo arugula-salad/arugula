@@ -2,9 +2,15 @@
 // row (a kind mark and the question, then whose and where) that opens to
 // the rail card's body: the full question, its details and its actions.
 // The body is Swarm's `Card`, so approving, answering and opening act as
-// they do there; the row only decides when it's drawn.
-import { useEffect, useState } from "preact/hooks";
+// they do there; the row only decides when it's drawn. Above them, what
+// the reader's agents propose to do as them (Arugula #1278): the hub's
+// open proposals in the project, each its chat card (../shared/chat/
+// ask-card.tsx), Approve and Deny in place.
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentProps } from "preact";
+import { platformFetch } from "../shared/maintenance";
+import type { ChatAsk, ChatAsks } from "../shared/proto";
+import { BY_CARD_EVERY_MS } from "../shared/project-sessions";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { groupByOwner } from "../shell/swarm/overview";
 import {
@@ -31,6 +37,44 @@ export function paneOwner(fleet: Fleet, p: FleetPane): string | null {
       ? p.person.name
       : (p.owner ?? p.person.name);
   return name === fleet.me ? null : name;
+}
+
+/** The reader's open proposals in `project`, oldest first: read now, when
+ * `moved` changes (the staff room's last message and mentions), on
+ * `refocus`, and every minute; none where the hub has no such route.
+ * `drop` takes one answered here out at once, and a read already on its
+ * way doesn't bring it back. */
+export function useProposals(project: string, moved: string, refocus: number): { asks: ChatAsk[]; drop(a: ChatAsk): void } {
+  const [asks, setAsks] = useState<ChatAsk[]>([]);
+  const gone = useRef(new Set<string>());
+  useEffect(() => {
+    let live = true;
+    const read = () =>
+      projectAsks(project).then(
+        (v) => live && setAsks(v.filter((a) => !gone.current.has(a.proposal!.id))),
+        // Not now: as it was, and the next read tries again.
+        () => {},
+      );
+    void read();
+    const t = setInterval(() => document.visibilityState === "visible" && void read(), BY_CARD_EVERY_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [project, moved, refocus]);
+  const drop = (a: ChatAsk) => {
+    gone.current.add(a.proposal!.id);
+    setAsks((was) => was.filter((x) => x.proposal!.id !== a.proposal!.id));
+  };
+  return { asks, drop };
+}
+
+/** `GET /api/projects/:project/asks`, its proposals; none from a hub without it. */
+async function projectAsks(project: string): Promise<ChatAsk[]> {
+  const res = await platformFetch(`/api/projects/${encodeURIComponent(project)}/asks`, { credentials: "same-origin" });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return ((await res.json()) as ChatAsks).asks.filter((a) => a.proposal);
 }
 
 type CardProps = Omit<ComponentProps<typeof Card>, "b" | "fleet" | "bare">;

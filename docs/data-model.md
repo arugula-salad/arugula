@@ -137,7 +137,11 @@ its pane, on the swarm and on the phone: an agent's question or permission
 diff, or a gate. An agent's invite and its Doc share are an `Ask` too,
 raised on the invite block or the Doc block, never on the agent's pane. A
 deploy waiting for approval is the platform's card, in its inbox
-([web/src/platform/pages/inbox.tsx](../web/src/platform/pages/inbox.tsx)). A
+([web/src/platform/pages/inbox.tsx](../web/src/platform/pages/inbox.tsx)).
+An agent session's proposal (`Proposal` in
+[crates/control-wire/src/sessions.rs](../crates/control-wire/src/sessions.rs),
+Arugula #1278) is a card too: an ask in its asker's staff room that only
+they approve. A
 **session card** is the chat message that shows an agent session's state
 (`SessionCard` in
 [crates/control-wire/src/sessions.rs](../crates/control-wire/src/sessions.rs)).

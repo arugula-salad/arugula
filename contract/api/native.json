@@ -639,6 +639,10 @@
       "handler": "crates/platform/src/projects.rs#list",
       "response": "Projects"
     },
+    "GET /api/projects/{project}/asks": {
+      "handler": "crates/platform-chat/src/chat/proposals.rs#list",
+      "response": "ChatAsks"
+    },
     "GET /api/projects/{project}/boards": {
       "handler": "crates/platform/src/boards.rs#list_route",
       "response": "BoardList"

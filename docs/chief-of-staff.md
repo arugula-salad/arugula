@@ -56,6 +56,7 @@ Each time it wakes, it:
   - `board.closed`;
   - `session.needs_input`;
   - a reply under each question it asked a lead;
+  - `ask.answered` for each approval card it's waiting on;
 
   It never watches its staff room. It leads that room, so your posts there
   are already its prompts, and a watch would wake it twice for one post
@@ -73,7 +74,7 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
 | Make and fill its own Docs | Write other people's Docs |
-| Suggest starting, stopping or closing a session | Start, stop or close one. Chat approves nothing, and approval cards are #1278 |
+| Ask you to approve starting a session on an issue, or stopping sessions, on a card | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
 
 It acts with your rights, in this project only. Events carry ids and states,
@@ -90,8 +91,9 @@ text as information, not instructions.
 - **Gaps today:**
   - `github.pr.ready` can't be matched by reviewer, and a session can't read
     the forge. So "PRs waiting on your review" is "PRs ready".
-  - There's no `ask.answered` event for your answer on an approval card yet
-    (#1278).
+  - An approval card starts a session only on a native issue, on the
+    project's Cloud workspace. Not on one of your machines, and not as a
+    board's lead.
 
 ## For agents: a session's rooms
 
@@ -120,3 +122,28 @@ op `BoardRead`, as the asker may read them, and never changes one:
   `board_read` prints it anywhere else: its goal and lead, then its rows by
   lane, each with who works it (the session that holds it, agent sessions
   and blocks on it).
+
+## Approval cards
+
+When you ask the chief of staff to "get an agent on #N" or to close some
+sessions, it doesn't ask a lead and it doesn't do it itself (Arugula #1278).
+It asks you on a card:
+
+1. It calls `ask_approval`: `action` `start` with `issue` (and `prompt` or
+   `repo` if you named one), or `action` `close` with `sessions`, plus a
+   `why`. The tool is the op `Propose` of `POST /api/hosted/work/session/issues`.
+   Control checks the proposal as you: you must be able to see the issue, or
+   stop each session.
+2. The card is the platform's ask message in your staff room (`via`
+   `ask:prp_…`). It mentions you until it's answered, so it's under Needs
+   you (`GET /api/projects/{project}/asks`) and pushed to your phone once.
+3. **Approve** does it as you, through the same path your own press takes.
+   A start is **Agent on this** on the issue, so `@arugula` on it with the
+   same checks and the same box. A close is each session card's **Stop**.
+   **Deny** drops it. Only you can answer it, and only once. Nothing posted
+   in chat answers it.
+4. Control emits `ask.answered`, with the card (`ask`), the session that
+   asked, the `action` and the `answer` (`approved`, `denied` or `failed`)
+   and, for a start, the session it `started`. The chief of staff watches it
+   for each card, so your answer wakes it. The card's message gets a line
+   saying who answered and what happened.

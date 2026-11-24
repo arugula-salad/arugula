@@ -4724,6 +4724,55 @@
         }
       }
     },
+    "/api/projects/{project}/asks": {
+      "get": {
+        "operationId": "GET_api_projects_project_asks",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAsks"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/projects/{project}/boards": {
       "get": {
         "operationId": "GET_api_projects_project_boards",
@@ -7840,6 +7889,18 @@
               "null"
             ]
           },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatProposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What an agent session proposes (`ask:prp_…`, Arugula #1278): its\nchoices are [`APPROVE`] and [`DENY`]. None for any other ask."
+          },
           "question": {
             "type": "string"
           },
@@ -7880,6 +7941,21 @@
         },
         "required": [
           "choice"
+        ],
+        "type": "object"
+      },
+      "ChatAsks": {
+        "description": "[`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest\nfirst. Agents' proposals for now (Arugula #1278).",
+        "properties": {
+          "asks": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAsk"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "asks"
         ],
         "type": "object"
       },
@@ -9225,6 +9301,93 @@
           "mentions",
           "unreached",
           "pushed"
+        ],
+        "type": "object"
+      },
+      "ChatProposal": {
+        "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
+        "properties": {
+          "action": {
+            "description": "`start` or `close`.",
+            "type": "string"
+          },
+          "answered_by_name": {
+            "description": "Who answered it, by name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "by_session": {
+            "description": "The session that proposed it, `ses_…`.",
+            "type": "string"
+          },
+          "id": {
+            "description": "`prp_…`.",
+            "type": "string"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalIssue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`start`: the issue."
+          },
+          "outcome": {
+            "description": "What answering it did, in a line.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "description": "`start`: what the new session is told (none: to work on the issue).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "`start`: the repo it names, `owner/name`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessions": {
+            "description": "`close`: the sessions, as they are now.",
+            "items": {
+              "$ref": "#/components/schemas/ProposalSession"
+            },
+            "type": "array"
+          },
+          "started": {
+            "description": "`start`, approved: the session it started.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why).",
+            "type": "string"
+          },
+          "why": {
+            "description": "Why, in the agent's words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "by_session",
+          "sessions",
+          "why",
+          "state"
         ],
         "type": "object"
       },
@@ -12807,6 +12970,52 @@
             "type": "string"
           }
         ]
+      },
+      "ProposalIssue": {
+        "description": "[`ChatProposal::issue`].",
+        "properties": {
+          "id": {
+            "description": "`iss_…`.",
+            "type": "string"
+          },
+          "number": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "title"
+        ],
+        "type": "object"
+      },
+      "ProposalSession": {
+        "description": "One of [`ChatProposal::sessions`].",
+        "properties": {
+          "id": {
+            "description": "`ses_…`.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Its state now (`working`, `done`, `stopped`, …).",
+            "type": "string"
+          },
+          "title": {
+            "description": "What it works on: its branch's slug, or its issue's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "state"
+        ],
+        "type": "object"
       },
       "PublicLink": {
         "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",

@@ -241,6 +241,7 @@ fn generate() -> String {
         c.visit::<SessionMove>();
         c.visit::<ChatAsk>();
         c.visit::<ChatAskAnswer>();
+        c.visit::<ChatAsks>();
         // Which model its agents use (Arugula #215).
         c.visit::<SessionSettings>();
         // A wave of them (Fleet 5).

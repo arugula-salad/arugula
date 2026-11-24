@@ -2345,10 +2345,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 202 tables in two planes ("Two planes, two trust rules"):
+Control's database has 203 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (58 tables) is what control needs to decide who reaches a machine and to route to it: ids, names, addresses, public keys and signed statements. What moves between a client and a machine passes through control's relay, which can read it and is built to keep none of it ([What control can do to your machines](#what-control-can-do-to-your-machines)).
-- **The platform plane** (144 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (145 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -2449,6 +2449,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_sidebars` | metadata | How a person arranges their chat sidebar: starred rooms, their own sections, what is collapsed and how each is sorted. | The same sidebar on every device, with every machine asleep. | yes |  |
 | `session_pins` | metadata | The sessions a person pinned, in the order they pinned them: a machine's id and a session's id on it, at most 100. No session's name or contents. | The same pins on every device, with every machine asleep. | yes |  |
 | `overview_seen` | metadata | Where a person last looked at a project's Overview: the event log's number it showed them, and when. No event, title or text. | The Overview's briefing line counts what happened since, with every machine asleep. | yes |  |
+| `session_proposals` | **plaintext** | What an agent session asks its asker to approve (Arugula #1278): start a session on an issue (the issue, a prompt, a repo) or stop named sessions, the agent's why, the card's message in their staff room, and once answered, how (approved, denied or failed), by whom, when, what it did and the session it started. | A person approves their chief of staff's card on their phone with every machine asleep, and the session starts on a cloud workspace. | partly: those that wait on the account go, and those of projects that go with it. Where it only answered, its name goes. |  |
 | `chat_reads` | metadata | A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default). | Unread counts and pushes, with every machine asleep. | yes |  |
 | `notify_prefs` | metadata | A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text. | Chat's pushes are decided from it with every machine asleep but the platform's. | yes |  |
 | `chat_saved` | metadata | The messages a person saved for later (#116): which room and message number, when, whether it's done, and when to remind them once. Private to them; never the message's text. | Saved lists and reminder pushes come from control alone, with every machine asleep. | yes |  |

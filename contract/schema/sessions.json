@@ -286,6 +286,18 @@
             "null"
           ]
         },
+        "proposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatProposal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What an agent session proposes (`ask:prp_…`, Arugula #1278): its\nchoices are [`APPROVE`] and [`DENY`]. None for any other ask."
+        },
         "question": {
           "type": "string"
         },
@@ -329,6 +341,108 @@
       ],
       "type": "object"
     },
+    "ChatAsks": {
+      "description": "[`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest\nfirst. Agents' proposals for now (Arugula #1278).",
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/ChatAsk"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "asks"
+      ],
+      "type": "object"
+    },
+    "ChatProposal": {
+      "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
+      "properties": {
+        "action": {
+          "description": "`start` or `close`.",
+          "type": "string"
+        },
+        "answered_by_name": {
+          "description": "Who answered it, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by_session": {
+          "description": "The session that proposed it, `ses_…`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`prp_…`.",
+          "type": "string"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalIssue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`start`: the issue."
+        },
+        "outcome": {
+          "description": "What answering it did, in a line.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "`start`: what the new session is told (none: to work on the issue).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`start`: the repo it names, `owner/name`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessions": {
+          "description": "`close`: the sessions, as they are now.",
+          "items": {
+            "$ref": "#/$defs/ProposalSession"
+          },
+          "type": "array"
+        },
+        "started": {
+          "description": "`start`, approved: the session it started.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why).",
+          "type": "string"
+        },
+        "why": {
+          "description": "Why, in the agent's words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "by_session",
+        "sessions",
+        "why",
+        "state"
+      ],
+      "type": "object"
+    },
     "IssueAgent": {
       "description": "[`ISSUE_AGENT`]'s answer: the issue's thread and the message that asked,\nand the session it started, if it did (else the thread says why, or\nasks which box or repo).",
       "properties": {
@@ -349,6 +463,118 @@
       "required": [
         "room",
         "seq"
+      ],
+      "type": "object"
+    },
+    "Proposal": {
+      "description": "What an agent session asks its asker to approve (Arugula #1278): it\ndoes nothing itself. The proposal is an ask in their staff room\n(`via` `ask:prp_…`) that mentions them, so it's under Needs you and\npushed to their phone; **Approve** does it as them, through the same\npath their own press would take, and **Deny** drops it. Either way\n`ask.answered` tells the session. Chat never approves it.",
+      "oneOf": [
+        {
+          "description": "An agent session on one of the project's native issues, as\n**Agent on this** starts one: on the box the project's pool picks,\nin `repo` when it's given, told `prompt` (by default, to work on\nthe issue).",
+          "properties": {
+            "action": {
+              "const": "start",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "prompt": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does.",
+          "properties": {
+            "action": {
+              "const": "close",
+              "type": "string"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "sessions"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProposalIssue": {
+      "description": "[`ChatProposal::issue`].",
+      "properties": {
+        "id": {
+          "description": "`iss_…`.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ProposalSession": {
+      "description": "One of [`ChatProposal::sessions`].",
+      "properties": {
+        "id": {
+          "description": "`ses_…`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state now (`working`, `done`, `stopped`, …).",
+          "type": "string"
+        },
+        "title": {
+          "description": "What it works on: its branch's slug, or its issue's title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "state"
       ],
       "type": "object"
     },

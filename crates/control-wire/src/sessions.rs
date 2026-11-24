@@ -30,6 +30,7 @@
 //! | `POST` [`SESSION_MOVE`] [`SessionMove`]: [`SessionView`] | its asker, owners and editors |
 //! | `GET` [`ASK`]: [`ChatAsk`] | whoever reads its room |
 //! | `POST` [`ASK`] [`ChatAskAnswer`]: [`ChatAsk`] | its asker |
+//! | `GET` [`PROJECT_ASKS`]: [`ChatAsks`] | the project's members, their own |
 //! | `POST` [`AGENT_SESSIONS`] [`AgentSessionStart`]: [`AgentSessionStarted`] | a machine's agents, with `sessions.start` |
 //! | `POST` [`AGENT_SESSION_REPLY`] [`AgentSessionReply`]: [`AgentSessionReplied`] | a machine's agents, with `sessions.reply` |
 //! | `POST` [`AGENT_SESSION_STOP`] [`AgentSessionStop`]: [`SessionView`] | a machine's agents, with `sessions.start` or `sessions.reply`, for a session their owner asked |
@@ -80,7 +81,8 @@
 //! thread, also sent to the channel, that mentions them, so it's an unread
 //! mention and a push, until it's answered: `via` `ask:repo` for which
 //! repo ([`ASK`]'s form), `ask:<ses>` for what the session's agent asks
-//! (its card's form). Its buttons answer it where it is.
+//! (its card's form), `ask:prp_…` for what an agent session proposes
+//! ([`Proposal`], Arugula #1278). Its buttons answer it where it is.
 //!
 //! **Try 3** (M264). From a session's card, two siblings of it start: new
 //! sessions under it (`parent_session`), on the same thread, box and repo,
@@ -142,6 +144,9 @@ pub const SESSION_MOVE: &str = "/api/sessions/{ses}/move";
 /// `GET`: an ask's form ([`ChatAsk`], Arugula #214), by its message;
 /// `POST` [`ChatAskAnswer`]: answer it.
 pub const ASK: &str = "/api/chat/rooms/{room}/asks/{seq}";
+/// `GET`: what waits on the reader in a project ([`ChatAsks`]): agents'
+/// proposals to them (Arugula #1278), for Needs you.
+pub const PROJECT_ASKS: &str = "/api/projects/{project}/asks";
 
 /// `POST` [`AgentSessionStart`]: a machine's agent starts a session as its
 /// owner (`sessions.start`, aru-121), signed by the machine.
@@ -205,9 +210,10 @@ pub fn ask_via(of: &str) -> String {
     format!("{ASK_VIA}{of}")
 }
 
-/// What an ask's `via` asks of (`repo`, or a session's id), if it's one.
+/// What an ask's `via` asks of (`repo`, a session's id, or a proposal's),
+/// if it's one.
 pub fn ask_of(via: &str) -> Option<&str> {
-    via.strip_prefix(ASK_VIA).filter(|s| *s == "repo" || s.starts_with("ses_"))
+    via.strip_prefix(ASK_VIA).filter(|s| *s == "repo" || s.starts_with("ses_") || s.starts_with(PROPOSAL_PREFIX))
 }
 
 /// How many days [`SessionStats`] looks back.
@@ -417,6 +423,10 @@ pub struct ChatAsk {
     pub mine: bool,
     /// The session its answer started, once it's answered.
     pub session: Option<String>,
+    /// What an agent session proposes (`ask:prp_…`, Arugula #1278): its
+    /// choices are [`APPROVE`] and [`DENY`]. None for any other ask.
+    #[serde(default)]
+    pub proposal: Option<ChatProposal>,
 }
 
 /// [`ASK`]'s `POST` body: the choice pressed.
@@ -425,6 +435,118 @@ pub struct ChatAsk {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAskAnswer {
     pub choice: String,
+}
+
+/// A proposal's choice that does what it proposes, as the person pressing it.
+pub const APPROVE: &str = "Approve";
+/// A proposal's choice that drops it.
+pub const DENY: &str = "Deny";
+/// What a proposal's id starts with: its ask's `via` is `ask:prp_…`.
+pub const PROPOSAL_PREFIX: &str = "prp_";
+/// The longest [`Proposal`]'s `why`, in characters.
+pub const PROPOSAL_WHY_MAX: usize = 500;
+/// The longest [`Proposal::Start`]'s `prompt`, in characters.
+pub const PROPOSAL_PROMPT_MAX: usize = 4000;
+/// The most sessions one [`Proposal::Close`] names.
+pub const PROPOSAL_CLOSE_MAX: usize = 10;
+/// The most proposals one session keeps open at once.
+pub const PROPOSALS_OPEN_MAX: usize = 5;
+
+/// What an agent session asks its asker to approve (Arugula #1278): it
+/// does nothing itself. The proposal is an ask in their staff room
+/// (`via` `ask:prp_…`) that mentions them, so it's under Needs you and
+/// pushed to their phone; **Approve** does it as them, through the same
+/// path their own press would take, and **Deny** drops it. Either way
+/// `ask.answered` tells the session. Chat never approves it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum Proposal {
+    /// An agent session on one of the project's native issues, as
+    /// **Agent on this** starts one: on the box the project's pool picks,
+    /// in `repo` when it's given, told `prompt` (by default, to work on
+    /// the issue).
+    Start {
+        number: u64,
+        #[serde(default)]
+        prompt: Option<String>,
+        #[serde(default)]
+        repo: Option<String>,
+        #[serde(default)]
+        why: String,
+    },
+    /// Stop these sessions of the project (`ses_…`), as their cards'
+    /// **Stop** does.
+    Close {
+        sessions: Vec<String>,
+        #[serde(default)]
+        why: String,
+    },
+}
+
+/// A proposal as its card draws it ([`ChatAsk::proposal`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatProposal {
+    /// `prp_…`.
+    pub id: String,
+    /// `start` or `close`.
+    pub action: String,
+    /// The session that proposed it, `ses_…`.
+    pub by_session: String,
+    /// `start`: the issue.
+    pub issue: Option<ProposalIssue>,
+    /// `start`: the repo it names, `owner/name`.
+    pub repo: Option<String>,
+    /// `start`: what the new session is told (none: to work on the issue).
+    pub prompt: Option<String>,
+    /// `close`: the sessions, as they are now.
+    pub sessions: Vec<ProposalSession>,
+    /// Why, in the agent's words.
+    pub why: String,
+    /// `open`, `approved`, `denied` or `failed` (approved, and doing it
+    /// didn't work: `outcome` says why).
+    pub state: String,
+    /// Who answered it, by name.
+    pub answered_by_name: Option<String>,
+    /// What answering it did, in a line.
+    pub outcome: Option<String>,
+    /// `start`, approved: the session it started.
+    pub started: Option<String>,
+}
+
+/// [`ChatProposal::issue`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProposalIssue {
+    /// `iss_…`.
+    pub id: String,
+    pub number: u64,
+    pub title: String,
+}
+
+/// One of [`ChatProposal::sessions`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProposalSession {
+    /// `ses_…`.
+    pub id: String,
+    /// What it works on: its branch's slug, or its issue's title.
+    pub title: String,
+    /// Its state now (`working`, `done`, `stopped`, …).
+    pub state: String,
+}
+
+/// [`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest
+/// first. Agents' proposals for now (Arugula #1278).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatAsks {
+    pub asks: Vec<ChatAsk>,
 }
 
 /// One of a Try 3's sessions, as its parent's compare view shows it.
@@ -970,11 +1092,28 @@ mod tests {
         }
     }
 
+    /// Arugula #1278: a proposal names its action, and a session's agent
+    /// may leave out all but what it's about.
+    #[test]
+    fn a_proposal_says_what_it_would_do() {
+        let p: Proposal = serde_json::from_value(serde_json::json!({ "action": "start", "number": 1392 })).unwrap();
+        assert_eq!(p, Proposal::Start { number: 1392, prompt: None, repo: None, why: String::new() });
+        let p: Proposal =
+            serde_json::from_value(serde_json::json!({ "action": "close", "sessions": ["ses_a"], "why": "idle" }))
+                .unwrap();
+        assert_eq!(p, Proposal::Close { sessions: vec!["ses_a".into()], why: "idle".into() });
+        let op = crate::work::SessionIssuesOp::Propose { proposal: p };
+        let v = serde_json::to_value(&op).unwrap();
+        assert_eq!((v["op"].as_str(), v["proposal"]["action"].as_str()), (Some("propose"), Some("close")));
+        assert!(serde_json::from_value::<Proposal>(serde_json::json!({ "action": "spend" })).is_err());
+    }
+
     #[test]
     fn an_ask_message_names_what_it_asks_of() {
         assert_eq!(ask_via("repo"), "ask:repo");
         assert_eq!(ask_of("ask:repo"), Some("repo"));
         assert_eq!(ask_of(&ask_via("ses_ab")), Some("ses_ab"));
+        assert_eq!(ask_of(&ask_via("prp_ab")), Some("prp_ab"));
         for not in ["system", "session:ses_ab", "ask:", "ask:box"] {
             assert_eq!(ask_of(not), None, "{not}");
         }

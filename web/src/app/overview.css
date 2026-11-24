@@ -497,6 +497,14 @@ button.ov-peek:disabled {
   gap: 0;
   padding: 0 var(--space-3) var(--space-3);
 }
+/* What the reader's agents propose (#1278): their chat cards, above the asks. */
+.ov-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
+  overflow-y: auto;
+}
 .ov-asks {
   display: flex;
   flex-direction: column;
