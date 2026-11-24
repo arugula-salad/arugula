@@ -2167,18 +2167,26 @@ if [ -d /etc/skel ]; then cp -R /etc/skel/. "$home"/ 2>/dev/null || true; fi
 /// slot's next session is another asker's ([`take`]).
 pub async fn clean_slot(dir: &Path, l: &AgentSessionLedger) {
     push::clean(dir, l).await;
-    match fresh_home(&l.user, true).await {
+    // Its build dirs go whoever's next (#1410): they're gigabytes, and
+    // `fresh_home` keeps `~/.cache`. sccache and the registry stay. Beside
+    // `fresh_home`, so the slot is freed no later than it was, and bounded:
+    // a drop that hangs is given up on, and the sweep takes what's left.
+    let drop_builds = async {
+        #[cfg(unix)]
+        match tokio::time::timeout(SWEEP_MAX, crate::build_dirs::drop_user(&l.user, false)).await {
+            Ok(Ok(gone)) => {
+                info!(session = l.session, dirs = gone.len(), "hosted: dropped an ended session's build dirs")
+            }
+            Ok(Err(e)) => warn!(session = l.session, error = e, "hosted: can't drop an ended session's build dirs"),
+            Err(_) => warn!(session = l.session, "hosted: dropping an ended session's build dirs ran out of time"),
+        }
+    };
+    let (fresh, ()) = tokio::join!(fresh_home(&l.user, true), drop_builds);
+    match fresh {
         Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
         Err(e) => {
             warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")
         }
-    }
-    // Its build dirs go whoever's next (#1410): they're gigabytes, and
-    // `fresh_home` keeps `~/.cache`. sccache and the registry stay.
-    #[cfg(unix)]
-    match crate::build_dirs::drop_user(&l.user, false).await {
-        Ok(gone) => info!(session = l.session, dirs = gone.len(), "hosted: dropped an ended session's build dirs"),
-        Err(e) => warn!(session = l.session, error = e, "hosted: can't drop an ended session's build dirs"),
     }
 }
 

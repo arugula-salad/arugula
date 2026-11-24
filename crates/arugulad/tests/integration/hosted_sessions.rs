@@ -1363,7 +1363,10 @@ fn a_finish_step_runs_after_each_turn() {
     assert!(pushed.join("repo.git").exists(), "{pushed:?}");
     f.stop(&x);
     let checkout = home.join("work").join(&x);
-    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
+    // The build dirs go beside the rest of the slot's cleaning, not before it.
+    wait(&marks, &f, "x's slot cleaned", || {
+        !checkout.exists() && !claude.exists() && !pushed.exists() && builds.iter().all(|f| !home.join(f).exists())
+    });
     for f in planted.iter().chain(&[".config/locked"]) {
         assert!(!home.join(f).exists(), "{f} went with the session");
     }
