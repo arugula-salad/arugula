@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -259,4 +259,16 @@ test("Needs you groups by owner: yours first, then people by how many asks and t
   assert.deepEqual(groupByOwner([ask(1, "bo")], (a) => a.owner).map((g) => g.name), ["bo"]);
   assert.deepEqual(groupByOwner([ask(1, null)], (a) => a.owner).map((g) => g.name), [null]);
   assert.deepEqual(groupByOwner([], (a) => a.owner), []);
+});
+
+test("Your work on the Overview lists the reader's own machines, on their personal project only (Arugula #1400)", () => {
+  const hosts = [
+    { name: "laptop" },
+    { name: "jos-mac", owner: "jo", ownerId: "acct_b", team: "tm_1" },
+    { name: "team-box", team: "tm_1", teamBox: true },
+    { name: "ws-1", hosted: true },
+    { name: "desk", team: "tm_1" },
+  ];
+  assert.deepEqual(yourWorkMachines(true, hosts), ["laptop", "desk"]);
+  assert.deepEqual(yourWorkMachines(false, hosts), []);
 });

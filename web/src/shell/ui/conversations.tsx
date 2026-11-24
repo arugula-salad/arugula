@@ -16,8 +16,14 @@
 // `YourWork` is the one component: the owner's home on the daemon's page
 // when no session is open (ui/app.tsx), the dialog the pane menu, the
 // palette, the agent dialog and the phone's sheet open (`pickConversation`),
-// and the Overview's (Arugula #1400). On a phone the dialog is a
+// and the Overview's (Arugula #1400, `on`). On a phone the dialog is a
 // full-height sheet.
+//
+// On the Overview it lists the reader's own machines' (never a teammate's),
+// each asked through the page's fleet, not control: none of them is "here",
+// so Continue here and Move here run on its machine and a pane they open
+// shows on its machine's page, as Open in Panes does. One open in a pane
+// already isn't listed: it's in Not on a card.
 //
 // With more than one host (#78), the dialog lists every host's, grouped by
 // host and then repo: each host is asked over the fleet's connection (M25)
@@ -32,6 +38,7 @@ import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
 import type { ContinueConversationRequest, ContinueConversationResponse, OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
 import { getFleet } from "./hosts";
+import type { Fleet } from "../fleet";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
 import type { AgentContext, Estimate } from "../blocks/agent-context";
@@ -191,22 +198,38 @@ function elsewhere(c: Conversation): string {
   return "another terminal";
 }
 
+/** Your work on the Overview (Arugula #1400): the reader's own machines,
+ * by name, asked through `fleet`; `show` opens a pane of one, `toast` says
+ * what went wrong, and `counted` hears how many it lists (null while it
+ * reads), so the page knows whether it's empty. */
+export interface YourWorkOn {
+  fleet: Fleet;
+  hosts: string[];
+  show: (host: string, pane: PaneId) => void;
+  toast: (text: string) => void;
+  counted?: (n: number | null) => void;
+}
+
 /** The machine's conversations as Your work: a page (`done` unset) or the
- * dialog's body (`done` closes it). `everywhere`: every host of a fleet's. */
+ * dialog's body (`done` closes it). `everywhere`: every host of a fleet's.
+ * `on`: the Overview's, with no client of the page's own (`client` unset). */
 export function YourWork({
   client,
   where = {},
   phone = false,
   done,
   everywhere = false,
+  on,
 }: {
-  client: Client;
+  client?: Client;
   where?: ConversationsWhere;
   phone?: boolean;
   done?: () => void;
   everywhere?: boolean;
+  on?: YourWorkOn;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe((fn) => on?.fleet.subscribe(fn) ?? (() => {}));
   const dialog = !!done;
   const [hosts, setHosts] = useState<HostConvs[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -224,24 +247,30 @@ export function YourWork({
   const loads = useRef(0);
   const close = () => done?.();
 
-  // This page's host, and with a fleet the others (#78).
-  const fleet = getFleet();
-  const here = directory.current;
-  const multi = everywhere && !!fleet && fleet.list.length > 1;
+  // This page's host, and with a fleet the others (#78). On the Overview,
+  // none is here: each of its machines is asked through the fleet.
+  const fleet = on?.fleet ?? getFleet();
+  const here = on ? "" : directory.current;
+  const multi = on ? on.hosts.length > 1 : everywhere && !!fleet && fleet.list.length > 1;
+  const toast = (text: string) => (on ? on.toast(text) : client!.toast(text));
+  const show = (host: string, pane: PaneId) => (on ? on.show(host, pane) : fleet!.open(host, pane));
+  // The Overview's machines as the fleet has them: one that connects is asked again.
+  const states = on ? on.hosts.map((h) => `${h}:${fleet!.host(h)?.state ?? ""}`).join(" ") : "";
 
   const ask = (host: string, path: string): Promise<ApiResponse> =>
-    host === here ? client.request(OPS["conversations.list"].method, path) : fleet!.request(host, OPS["conversations.list"].method, path);
+    host === here ? client!.request(OPS["conversations.list"].method, path) : fleet!.request(host, OPS["conversations.list"].method, path);
 
   const load = () => {
     const gen = ++loads.current;
     setError(null);
     const path = `${opPath("conversations.list")}?limit=1000`;
-    const others = multi ? fleet!.list.filter((h) => h.name !== here) : [];
+    const others = on ? on.hosts.flatMap((n) => fleet!.host(n) ?? []) : multi ? fleet!.list.filter((h) => h.name !== here) : [];
     const start: HostConvs[] = [
-      { host: here, state: "reading", list: [] },
+      ...(on ? [] : [{ host: here, state: "reading" as const, list: [] }]),
       ...others.map((h): HostConvs => {
         if (h.state === "asleep") return { host: h.name, state: "asleep", list: [], note: "asleep" };
         if (h.state === "capped") return { host: h.name, state: "away", list: [], note: "not live (too many machines)" };
+        if (on && h.state !== "connected") return { host: h.name, state: "away", list: [], note: h.state };
         return { host: h.name, state: "reading", list: [] };
       }),
     ];
@@ -256,7 +285,7 @@ export function YourWork({
           set({ host: h.host, state: "ok", list: (await res.json<{ conversations: Conversation[] }>()).conversations });
         })
         .catch((e: Error) => {
-          if (!multi && gen === loads.current) setError(e.message);
+          if (!multi && !on && gen === loads.current) setError(e.message);
           const st = fleet?.host(h.host)?.state;
           const why = st === "stale" || st === "offline" ? `${st} · ${e.message}` : e.message;
           set({ host: h.host, state: "away", list: [], note: why });
@@ -269,11 +298,20 @@ export function YourWork({
     const back = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, [here]);
+  }, [here, states]);
   useLayoutEffect(() => {
     if (dialog && !phone) input.current?.focus();
   }, []);
 
+  /** The pane it runs in, if that's one of its host's panes. */
+  const inPane = (c: Conversation, host: string): boolean => {
+    const p = c.live?.pane;
+    if (p === undefined) return false;
+    if (host === here) return !!client!.info(p);
+    return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
+  };
+  /** Open here already: in a pane or an agent block. */
+  const openHere = (c: Conversation, host: string) => c.block !== null || inPane(c, host);
   // Each host's repos by their newest conversation; this host first, and
   // in it the folder we came from.
   const view: HostView[] = useMemo(() => {
@@ -282,6 +320,8 @@ export function YourWork({
     return hosts.map((h) => {
       const home = homeOf(h.list);
       const hits = h.list.filter((c) => {
+        // On the Overview, one open in a pane is in Not on a card instead.
+        if (on && openHere(c, h.host)) return false;
         const hay = `${c.title} ${c.first_prompt ?? ""} ${c.last_prompt ?? ""} ${c.cwd}`.toLowerCase();
         return words.every((w) => hay.includes(w));
       });
@@ -299,12 +339,15 @@ export function YourWork({
       });
       return { h, repos: order.map((f) => ({ host: h.host, cwd: f, home, convs: groups.get(f)! })) };
     });
-  }, [hosts, query, where.cwd, here]);
+  }, [hosts, query, where.cwd, here, on && fleet!.panes]);
   /** A repo's rows as shown: three, or all of them once asked, or while searching. */
   const shown = (r: Repo) => (query || more.has(`${r.host}:${r.cwd}`) ? r.convs : r.convs.slice(0, PER_REPO));
   const convs: Conv[] = view.flatMap((v) => v.repos.flatMap((r) => shown(r).map((c) => ({ c, host: r.host }))));
   const reading = !!hosts && hosts.some((h) => h.state === "reading");
   const total = hosts?.reduce((n, h) => n + h.list.length, 0) ?? 0;
+  const listed = view.reduce((n, v) => n + v.repos.reduce((m, r) => m + r.convs.length, 0), 0);
+  const counted = !hosts || (reading && listed === 0) ? null : listed;
+  useEffect(() => on?.counted?.(counted), [counted]);
 
   useEffect(() => {
     if (sel >= convs.length && convs.length > 0) setSel(convs.length - 1);
@@ -313,21 +356,13 @@ export function YourWork({
     listRef.current?.querySelector(".yw-row.selected")?.scrollIntoView({ block: "nearest" });
   }, [sel]);
 
-  /** The pane it runs in, if that's one of its host's panes. */
-  const inPane = (c: Conversation, host: string): boolean => {
-    const p = c.live?.pane;
-    if (p === undefined) return false;
-    if (host === here) return !!client.info(p);
-    return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
-  };
-  /** Open here already: in a pane or an agent block. */
-  const openHere = (c: Conversation, host: string) => c.block !== null || inPane(c, host);
   /** Running somewhere Arugula doesn't show: another terminal, the desktop app. */
   const runsElsewhere = (c: Conversation, host: string) => !!c.live && !openHere(c, host);
   /** Running at a terminal outside Arugula on this machine: Move here can
-   * stop it there and go on with it here. Never another host's. */
+   * stop it there and go on with it here. Never another host's, but on the
+   * Overview any of the reader's own: it goes on in a pane on that machine. */
   const movable = (c: Conversation, host: string): boolean =>
-    host === here && c.agent !== "codex" && c.live?.entrypoint === "cli" && runsElsewhere(c, host);
+    (host === here || !!on) && c.agent !== "codex" && c.live?.entrypoint === "cli" && runsElsewhere(c, host);
 
   /** Continue here: where it's open already, else `claude --resume` in a
    * terminal pane on its host. `home`: its folder is gone, run it there.
@@ -340,22 +375,26 @@ export function YourWork({
     const there = host !== here && fleet;
     if (openHere(c, host)) {
       const p = c.block ?? c.live!.pane!;
-      if (there) fleet.open(host, p);
-      else client.focusPane(p);
+      if (there) show(host, p);
+      else client!.focusPane(p);
       close();
       return;
     }
     setBusy(true);
     try {
       let v: ContinueConversationResponse | null;
+      if (move) setRefused(null);
       if (there) {
-        const res = await within(fleet.request(host, OPS["conversation.continue"].method, opPath("conversation.continue"), { id: c.id, home } satisfies ContinueConversationRequest), HOST_MS);
+        // Moving waits for it to stop there, which takes as long as it takes.
+        const asked = fleet.request(host, OPS["conversation.continue"].method, opPath("conversation.continue"), { id: c.id, home, ...(move ? { move_here: true } : {}) } satisfies ContinueConversationRequest);
+        const res = await (move ? asked : within(asked, HOST_MS));
         const body = await res.json<Partial<ContinueConversationResponse> & { error?: string }>().catch(() => null);
         v = res.ok && typeof body?.conversation === "string" ? (body as ContinueConversationResponse) : null;
-        if (!v) client.toast(body?.error ?? `couldn't continue it on ${host} (${res.status})`);
+        const why = body?.error ?? `couldn't continue it on ${host} (${res.status})`;
+        if (!v && move && res.status === 409) setRefused({ id: c.id, host, why });
+        else if (!v) toast(why);
       } else {
-        if (move) setRefused(null);
-        v = await client.continueConversation({
+        v = await client!.continueConversation({
           id: c.id,
           home,
           move,
@@ -371,11 +410,11 @@ export function YourWork({
         if (v.folder_gone) setGone({ id: c.id, host, cwd: v.cwd });
         return;
       }
-      if (there) fleet.open(host, v.pane);
+      if (there) show(host, v.pane);
       conversationContinued();
       close();
     } catch (e) {
-      client.toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
+      toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -386,12 +425,12 @@ export function YourWork({
     if (busy) return;
     if (host !== here && fleet) return asBlockThere(c, host, then);
     if (c.block !== null && !then) {
-      client.focusPane(c.block);
+      client!.focusPane(c.block);
       close();
       return;
     }
     setBusy(true);
-    const block = await client.openConversation({ id: c.id, then, split: where.split, session: where.session });
+    const block = await client!.openConversation({ id: c.id, then, split: where.split, session: where.session });
     setBusy(false);
     if (block === null) return;
     conversationContinued();
@@ -403,7 +442,7 @@ export function YourWork({
   const asBlockThere = async (c: Conversation, host: string, then?: "fork") => {
     const f = fleet!;
     if (!then && c.block !== null) {
-      f.open(host, c.block);
+      show(host, c.block);
       close();
       return;
     }
@@ -412,15 +451,15 @@ export function YourWork({
       const res = await within(f.request(host, OPS["conversation.open"].method, opPath("conversation.open"), { id: c.id, then: then ?? null } satisfies OpenConversationRequest), HOST_MS);
       const v = await res.json<Partial<OpenConversationResponse>>().catch(() => null);
       if (!res.ok || typeof v?.block !== "number") {
-        client.toast(v?.error ?? `couldn't open it on ${host} (${res.status})`);
+        toast(v?.error ?? `couldn't open it on ${host} (${res.status})`);
         return;
       }
-      if (v.error) client.toast(v.error);
-      f.open(host, v.block);
+      if (v.error) toast(v.error);
+      show(host, v.block);
       conversationContinued();
       close();
     } catch (e) {
-      client.toast(`couldn't open it on ${host}: ${(e as Error).message}`);
+      toast(`couldn't open it on ${host}: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -456,19 +495,19 @@ export function YourWork({
   };
 
   const title = dialog ? null : "Your work";
-  const sub = `Claude Code and Codex conversations on ${multi ? "your machines" : here || "this machine"}, newest first.`;
+  const sub = `Claude Code and Codex conversations on ${multi ? "your machines" : (on ? on.hosts[0] : here) || "this machine"}, newest first.`;
   let i = -1;
   const list = (
     <div class="yw-list" ref={listRef} role="listbox" aria-label="Your work" tabIndex={dialog ? -1 : 0} onKeyDown={dialog ? undefined : onKey}>
-      {!multi && !hosts?.[0]?.list.length && reading && !error && <EmptyLine role="status">Reading…</EmptyLine>}
-      {!multi && hosts && !reading && !error && total === 0 && (
+      {!multi && !on && !hosts?.[0]?.list.length && reading && !error && <EmptyLine role="status">Reading…</EmptyLine>}
+      {!multi && !on && hosts && !reading && !error && total === 0 && (
         <EmptyState
           where={dialog ? "pane" : "page"}
           title="No conversations yet."
           why={`When you use Claude Code or Codex on ${here || "this machine"}, each conversation shows here by its repo, ready to continue.`}
           action={
             !dialog && (
-              <button class="primary" data-your-work-new disabled={!client.connected} onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+              <button class="primary" data-your-work-new disabled={!client!.connected} onClick={() => client!.intent({ op: "new_session", name: null, from_pane: null })}>
                 New terminal
               </button>
             )
@@ -476,7 +515,7 @@ export function YourWork({
           data-your-work-empty
         />
       )}
-      {!multi && hosts && !reading && total > 0 && convs.length === 0 && (
+      {!multi && hosts && !reading && total > 0 && convs.length === 0 && (!on || query) && (
         <EmptyLine clear={() => setQuery("")}>Nothing matches.</EmptyLine>
       )}
       {view.map(({ h, repos }) => (
@@ -608,8 +647,9 @@ export function YourWork({
     </div>
   );
   return (
-    <div class={dialog ? "your-work in-dialog" : phone ? "your-work page phone" : "your-work page"} data-your-work onKeyDown={dialog ? onKey : undefined}>
-      {dialog ? (
+    <div class={dialog ? "your-work in-dialog" : on ? "your-work on-overview" : phone ? "your-work page phone" : "your-work page"} data-your-work onKeyDown={dialog ? onKey : undefined}>
+      {/* The Overview heads it as it heads Not on a card. */}
+      {on ? null : dialog ? (
         <div class="yw-dialog-head">
           <h2>Your work</h2>
           <span class="yw-sub">{sub}</span>
