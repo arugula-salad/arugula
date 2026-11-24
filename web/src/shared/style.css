@@ -13436,3 +13436,18 @@ button.chat-agent-name:hover {
   background: var(--surface);
   pointer-events: none;
 }
+
+/* The phone offer's QR code (shell/ui/phone-offer): Getting started's, in
+   the middle, with the address under it. */
+.phone-offer .start-qr {
+  display: block;
+  width: 168px;
+  height: 168px;
+  margin: 4px auto 8px;
+}
+.phone-offer-url {
+  margin: 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+}

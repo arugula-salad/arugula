@@ -46,6 +46,7 @@ import { HintEmpty, HintsWatch, HintToast } from "./hints";
 import { NvimWatch } from "../open-in-editor";
 import { NvimBlockColors } from "../nvim-block";
 import { WhatsNewLayer } from "./whats-new";
+import { PhoneOfferLayer } from "./phone-offer";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
@@ -174,6 +175,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       {state && <NvimWatch client={client} />}
       {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
+      <PhoneOfferLayer />
       <WhatsNewLayer client={client} />
     </>
   );
@@ -270,6 +272,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       {state && <NvimWatch client={client} />}
       {state && <NvimBlockColors client={client} />}
       {state && <HintToast client={client} />}
+      <PhoneOfferLayer />
       <WhatsNewLayer client={client} />
       <StatusPill client={client} />
     </div>

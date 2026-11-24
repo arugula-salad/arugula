@@ -3,12 +3,15 @@
 // tab was hidden, or the bell counts one now. Never where push can't work
 // (plain http, a browser without it, notifications blocked, an iPhone's
 // tab before Add to Home Screen) or where it's on already: only "off".
+// Not on a machine with no account either: the phone offer (./phone) is
+// that moment's there.
 
 import type { Client } from "../client";
 import type { Fact } from "./index";
 import { factChanged } from "./facts";
 import { pushNow, subscribePush } from "../ui/notify";
 import { waitingCount } from "../ui/shell/attention-drawer";
+import { controlState, subscribeControlState } from "../ui/control-state";
 
 /** Something went needs-you while the page was hidden. */
 let missed = false;
@@ -18,9 +21,10 @@ export function pushWanted(client: Client): Fact | null {
   if (!watching) {
     watching = true;
     subscribePush(factChanged);
+    subscribeControlState(factChanged);
     document.addEventListener("visibilitychange", factChanged);
   }
-  if (pushNow() !== "off") return null;
+  if (pushNow() !== "off" || controlState()?.state === "not_joined") return null;
   if (document.visibilityState === "hidden") {
     missed ||= !!client.state?.panes.some((p) => p.attention === "needs_input");
     // Said when they're back.

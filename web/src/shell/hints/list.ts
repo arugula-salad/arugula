@@ -19,6 +19,7 @@ import { passkeyWanted } from "./passkeys";
 import { secondPerson } from "./people";
 import { claudeEditsBesideNvim, NVIM_HELP, nvimNotTheEditor, nvimStarted, nvimWithoutPlugin, tipCopy, tipTaken } from "./nvim-facts";
 import { listeningPort } from "./ports";
+import { waitedWhileAway } from "./phone";
 import { secretPane } from "./private";
 import { pushWanted } from "./push";
 import { pushOnControl } from "./push-kinds";
@@ -93,6 +94,16 @@ export const HINTS: Hint[] = [
     fact: secondPerson,
     copy: () => "Click their avatar to follow. Share › Pair mode to type together",
     action: { label: "Follow", command: "people.follow" },
+  },
+  {
+    // A pane waited on you while you were away, with no account here: in
+    // place of push-device's, once a day (./phone).
+    id: "phone-away",
+    place: "toast",
+    fact: waitedWhileAway,
+    copy: (f) => `This waited ${f.args.minutes} min for you. Get this on your phone`,
+    action: { label: "Sign in", command: "phone.sign-in" },
+    repeat: "per-fact",
   },
   {
     // Something wanted you, and this device could have said so.
