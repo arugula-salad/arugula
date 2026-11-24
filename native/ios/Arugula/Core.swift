@@ -60,6 +60,13 @@ struct HostIn {
     var panes: String?
 }
 
+/// A session pinned, as the platform keeps it (`/api/sessions/pins`): its
+/// machine's id and the session's there.
+struct Pin: Codable, Hashable {
+    var machine: String
+    var session: UInt32
+}
+
 /// What `aru_machines` answers: every machine in the phone's order, each
 /// one's sessions that show in the project, and those with none.
 struct Sections: Decodable {
@@ -85,9 +92,28 @@ struct Sections: Decodable {
     var machines: [Section]
     /// The machines with nothing in the project, by name.
     var quiet: [Section]
+    /// The sessions pinned that show in the project, in pin order: out of
+    /// their machines in `machines`.
+    var pinned: [Pin]
 
-    /// From the core, for `hosts` in `shown`; `recent` is the machine used last.
-    static func of(_ hosts: [HostIn], shown: Shown?, recent: String?) -> Sections? {
+    /// A pinned session, with its machine.
+    struct PinnedCard: Identifiable {
+        var machine: Section
+        var card: Card
+        var id: String { "\(machine.id)/\(card.id)" }
+    }
+
+    /// Each pinned session's machine and card, from `order`, which has them all.
+    var pinnedCards: [PinnedCard] {
+        pinned.compactMap { p in
+            guard let m = order.first(where: { $0.id == p.machine }), let c = m.sessions.first(where: { $0.id == p.session }) else { return nil }
+            return PinnedCard(machine: m, card: c)
+        }
+    }
+
+    /// From the core, for `hosts` in `shown`; `recent` is the machine used
+    /// last, and `pins` come out first.
+    static func of(_ hosts: [HostIn], shown: Shown?, recent: String?, pins: [Pin] = []) -> Sections? {
         let hs: [[String: Any]] = hosts.map { h in
             var o: [String: Any] = ["id": h.id, "name": h.name, "online": h.online]
             if let owner = h.owner { o["owner"] = owner }
@@ -97,6 +123,7 @@ struct Sections: Decodable {
         var input: [String: Any] = ["hosts": hs]
         if let shown { input["at"] = ["id": shown.id, "personal": shown.personal] }
         if let recent { input["recent"] = recent }
+        if !pins.isEmpty { input["pins"] = pins.map { ["machine": $0.machine, "session": $0.session] as [String: Any] } }
         guard let data = try? JSONSerialization.data(withJSONObject: input) else { return nil }
         var err: UnsafeMutablePointer<CChar>?
         guard let s = takeString(aru_machines(String(decoding: data, as: UTF8.self), &err)) else {

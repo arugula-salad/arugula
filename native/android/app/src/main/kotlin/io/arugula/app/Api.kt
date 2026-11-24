@@ -254,25 +254,47 @@ data class MachineSection(val id: String, val name: String, val online: Boolean,
     }
 }
 
+/** A session pinned, as the platform keeps it (`/api/sessions/pins`): its machine's id and the session's there. */
+data class Pin(val machine: String, val session: Int) {
+    fun json(): JSONObject = JSONObject().put("machine", machine).put("session", session)
+
+    companion object {
+        fun of(o: JSONObject) = Pin(o.getString("machine"), o.getInt("session"))
+    }
+}
+
+/** A pinned session, with its machine. */
+data class PinnedCard(val machine: MachineSection, val card: SessionCard)
+
 /**
  * Machines as the core lays them out (`aru_machines`): those with sessions
- * in the project in the phone's order, and [quiet], those with none, by name.
+ * in the project in the phone's order, [quiet], those with none, by name,
+ * and [pinned], the sessions pinned, in pin order and out of [machines].
  */
-data class Sections(val machines: List<MachineSection>, val quiet: List<MachineSection>) {
+data class Sections(val machines: List<MachineSection>, val quiet: List<MachineSection>, val pinned: List<PinnedCard> = emptyList()) {
     companion object {
-        fun of(o: JSONObject?) = Sections(o?.list("machines", MachineSection::of).orEmpty(), o?.list("quiet", MachineSection::of).orEmpty())
+        fun of(o: JSONObject?): Sections {
+            // Each pinned session's card from `order`, which has every machine's.
+            val order = o?.list("order", MachineSection::of).orEmpty()
+            val pinned = o?.list("pinned", Pin::of).orEmpty().mapNotNull { p ->
+                val m = order.firstOrNull { it.id == p.machine } ?: return@mapNotNull null
+                m.sessions.firstOrNull { it.id == p.session }?.let { PinnedCard(m, it) }
+            }
+            return Sections(o?.list("machines", MachineSection::of).orEmpty(), o?.list("quiet", MachineSection::of).orEmpty(), pinned)
+        }
     }
 }
 
 /**
  * The core's `aru_machines` for [hosts] (each `{id, name, online, owner,
  * panes}`): every machine in the phone's order, and each one's sessions
- * that show in [shown]. [recent] is the machine used last.
+ * that show in [shown]. [recent] is the machine used last, and [pins] come out first.
  */
-fun sections(hosts: List<JSONObject>, shown: Shown?, recent: String?): JSONObject? = runCatching {
+fun sections(hosts: List<JSONObject>, shown: Shown?, recent: String?, pins: List<Pin> = emptyList()): JSONObject? = runCatching {
     val input = JSONObject().put("hosts", JSONArray(hosts))
     shown?.let { input.put("at", JSONObject().put("id", it.id).put("personal", it.personal)) }
     recent?.let { input.put("recent", it) }
+    if (pins.isNotEmpty()) input.put("pins", JSONArray(pins.map { it.json() }))
     Core.machines(input)
 }.getOrNull()
 

@@ -4,7 +4,9 @@
 // line, and an offline one can't be opened. On a tablet the page sits beside
 // the session's live tab (ListDetailPaneScaffold), and before anything is
 // picked that's where you were; on a phone a session opens a tab at a time,
-// its panes stacked and live. Any pane opens full screen, with the keyboard
+// its panes stacked and live. The sessions you pinned come first, as cards,
+// shared with the web (#1359); a long press pins or unpins one. Any pane
+// opens full screen, with the keyboard
 // and the key bar: a pane's terminal drawn from the core's VT state (`Term`),
 // as the iPhone's MachineViews.swift and TerminalView.swift.
 
@@ -17,6 +19,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +45,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.filled.PushPin as PushPinFilled
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -80,6 +87,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key as HwKey
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -91,9 +99,11 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextRange
@@ -112,6 +122,7 @@ import io.arugula.core.Mods
 import io.arugula.core.Row as TermRow
 import io.arugula.core.Term
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Machines is beside what it opened (a tablet), or a page at a time (a phone). */
@@ -136,13 +147,14 @@ fun MachinesScreen(api: Api, fleet: HomeFleet, home: HomeModel, top: Dest?, deta
         ListDetailPaneScaffoldDefaults.adaptStrategies(),
         ThreePaneScaffoldDestinationItem<Nothing>(if (top == null) ListDetailPaneScaffoldRole.List else ListDetailPaneScaffoldRole.Detail),
     )
+    val pins = remember(api) { SessionPins(api) }
     CompositionLocalProvider(LocalWide provides wide) {
         ListDetailPaneScaffold(
             directive, value,
             listPane = {
                 AnimatedPane(Modifier.preferredWidth(380.dp)) {
                     Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.weight(1f)) { MachinesPage(fleet, top) }
+                        Box(Modifier.weight(1f)) { MachinesPage(fleet, pins, top) }
                         if (wide) VerticalDivider(color = Palette.raised)
                     }
                 }
@@ -156,6 +168,63 @@ fun MachinesScreen(api: Api, fleet: HomeFleet, home: HomeModel, top: Dest?, deta
                 }
             },
         )
+    }
+}
+
+/**
+ * The sessions this account pinned, as the platform keeps them, shared with
+ * the web (its session-pins-store.ts, Arugula #1359): read as Machines
+ * shows, written whole on each change, the last write winning.
+ */
+class SessionPins(private val api: Api) {
+    /** Oldest first. */
+    var pins by mutableStateOf<List<Pin>>(emptyList())
+        private set
+
+    /** Whether the platform keeps pins for this sign-in: null until it said. Until it does, there's no Pin to offer. */
+    var on by mutableStateOf<Boolean?>(null)
+        private set
+
+    /** Edits sent and not yet answered: what's read meanwhile is older. */
+    private var pending = 0
+
+    suspend fun load() {
+        val got = runCatching { api.get(PATH).list("pins", Pin::of) }.getOrNull()
+        if (pending > 0) return
+        // A dropped read isn't an empty list: kept as they were.
+        if (got == null) {
+            if (on == null) on = false
+            return
+        }
+        on = true
+        pins = got
+    }
+
+    fun has(machine: String, session: Int) = Pin(machine, session) in pins
+
+    /** Pinned last, or unpinned: shown at once and kept on the platform. If it refuses, they're read again so the page shows what's kept. */
+    suspend fun toggle(machine: String, session: Int) {
+        if (on != true) return
+        val p = Pin(machine, session)
+        pins = when {
+            p in pins -> pins - p
+            pins.size < MOST -> pins + p
+            else -> return
+        }
+        pending++
+        val kept = runCatching {
+            JSONObject(api.call("PUT", PATH, JSONObject().put("pins", JSONArray(pins.map { it.json() })))).list("pins", Pin::of)
+        }.getOrNull()
+        pending--
+        if (kept == null) return load()
+        if (pending == 0) pins = kept
+    }
+
+    companion object {
+        const val PATH = "/api/sessions/pins"
+
+        /** Pins an account may keep (control-wire's `MAX_PINS`). */
+        const val MOST = 100
     }
 }
 
@@ -189,17 +258,20 @@ private fun prefs(): SharedPreferences = LocalContext.current.getSharedPreferenc
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MachinesPage(fleet: HomeFleet, top: Dest?) {
+private fun MachinesPage(fleet: HomeFleet, pins: SessionPins, top: Dest?) {
     val project = LocalScope.current.current
     val prefs = prefs()
     val coroutines = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     var unfolded by rememberSaveable(project?.id) { mutableStateOf(false) }
     // The directory again, each visit: a machine that came online shows.
-    LaunchedEffect(Unit) { fleet.load() }
+    LaunchedEffect(Unit) {
+        launch { pins.load() }
+        fleet.load()
+    }
     val was = project?.let { prefs.keptPane(it.id) }
     // Read again as any machine's panes move.
-    val page = Sections.of(sections(fleet.directory.map { m -> fleet.find(m.id)?.host() ?: m.host() }, project?.shown, prefs.getString(LAST_MACHINE, null)))
+    val page = Sections.of(sections(fleet.directory.map { m -> fleet.find(m.id)?.host() ?: m.host() }, project?.shown, prefs.getString(LAST_MACHINE, null), pins.pins))
     val open = top as? Dest.Session
 
     Column(Modifier.fillMaxSize()) {
@@ -209,6 +281,7 @@ private fun MachinesPage(fleet: HomeFleet, top: Dest?) {
             {
                 coroutines.launch {
                     refreshing = true
+                    launch { pins.load() }
                     fleet.load()
                     refreshing = false
                 }
@@ -219,7 +292,7 @@ private fun MachinesPage(fleet: HomeFleet, top: Dest?) {
                 !fleet.loaded -> Loading()
                 fleet.directory.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Caps("No machines yet") }
                 else -> LazyColumn(Modifier.fillMaxSize().testTag("machines-list"), contentPadding = PaddingValues(bottom = 16.dp)) {
-                    if (page.machines.isEmpty()) {
+                    if (page.machines.isEmpty() && page.pinned.isEmpty()) {
                         item {
                             Text(
                                 "Nothing runs in ${project?.name ?: "this project"} yet.", Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("machines-none"),
@@ -227,10 +300,17 @@ private fun MachinesPage(fleet: HomeFleet, top: Dest?) {
                             )
                         }
                     }
+                    if (page.pinned.isNotEmpty()) {
+                        item(key = "pinned") { PinnedHead() }
+                        items(page.pinned, key = { "p:${it.machine.id}:${it.card.id}" }) { p ->
+                            val session = fleet.find(p.machine.id) ?: return@items
+                            SessionBlock(session, p.card, open, was, pins, pinnedOn = p.machine.name)
+                        }
+                    }
                     for (m in page.machines) {
                         item(key = "m:${m.id}") { MachineHead(m, fleet) }
                         val session = fleet.find(m.id) ?: continue
-                        items(m.sessions, key = { "s:${m.id}:${it.id}" }) { card -> SessionBlock(session, card, open, was) }
+                        items(m.sessions, key = { "s:${m.id}:${it.id}" }) { card -> SessionBlock(session, card, open, was, pins) }
                     }
                     if (page.quiet.isNotEmpty()) {
                         item(key = "quiet") {
@@ -251,6 +331,18 @@ private fun MachinesPage(fleet: HomeFleet, top: Dest?) {
                 }
             }
         }
+    }
+}
+
+/** Pinned's heading, above the sessions you pinned. */
+@Composable
+private fun PinnedHead() {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp).semantics { heading() }.testTag("machines-pinned"),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Filled.PushPinFilled, null, Modifier.size(16.dp), tint = Palette.accent)
+        Text("Pinned", style = Face.ui(16.sp, FontWeight.SemiBold), color = Palette.fg)
     }
 }
 
@@ -309,12 +401,25 @@ private fun stateTone(state: String) = when (state) {
  * A session's card: its name (which opens it), then its panes as one-line
  * rows, under their tab's name when it has more than one. On a phone a row
  * opens its pane full screen; on a tablet it lights the pane in the live tab
- * beside. [open] is what the tablet shows; [was], where you were.
+ * beside. [open] is what the tablet shows; [was], where you were. With
+ * [pins], a long press pins or unpins it; [pinnedOn] is its machine's name,
+ * in Pinned.
  */
 @Composable
-private fun SessionBlock(m: MachineSession, card: SessionCard, open: Dest.Session?, was: KeptPane?) {
+private fun SessionBlock(m: MachineSession, card: SessionCard, open: Dest.Session?, was: KeptPane?, pins: SessionPins? = null, pinnedOn: String? = null) {
     val nav = LocalNav.current
     val wide = LocalWide.current
+    val haptics = LocalHapticFeedback.current
+    val coroutines = rememberCoroutineScope()
+    var menu by remember { mutableStateOf(false) }
+    val pinned = pins?.has(m.machine.id, card.id) == true
+    val pinLabel = if (pinned) "Unpin session" else "Pin session"
+    val longPress: (() -> Unit)? = if (pins?.on == true) {
+        {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            menu = true
+        }
+    } else null
     val shown = open != null && open.machine == m.machine.id && open.session == card.id
     val shape = RoundedCornerShape(10.dp)
     Column(
@@ -322,13 +427,32 @@ private fun SessionBlock(m: MachineSession, card: SessionCard, open: Dest.Sessio
             .background(Palette.surface).border(1.dp, if (shown) Palette.accent.copy(alpha = 0.6f) else Palette.raised, shape),
     ) {
         Row(
-            Modifier.fillMaxWidth().clickable { nav.show(wide, Dest.Session(m.machine.id, card.id)) }.padding(horizontal = 12.dp, vertical = 10.dp)
+            Modifier.fillMaxWidth()
+                .combinedClickable(onLongClickLabel = pinLabel, onLongClick = longPress) { nav.show(wide, Dest.Session(m.machine.id, card.id)) }
+                .padding(horizontal = 12.dp, vertical = 10.dp)
                 .testTag("session-${card.name}"),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Dot(stateTone(card.state))
             Text(card.name.ifEmpty { "Session" }, Modifier.weight(1f), style = Face.ui(15.sp, FontWeight.SemiBold), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (pinnedOn != null) {
+                Icon(Icons.Filled.PushPinFilled, "Pinned", Modifier.size(14.dp), tint = Palette.dim)
+                Caps("on $pinnedOn")
+            }
             if (card.needsYou > 0) NeedsChip(card.needsYou)
+        }
+        if (pins != null) {
+            DropdownMenu(menu, { menu = false }, containerColor = Palette.surface) {
+                DropdownMenuItem(
+                    text = { Text(pinLabel, style = Face.ui(15.sp)) },
+                    leadingIcon = { Icon(if (pinned) Icons.Filled.PushPinFilled else Icons.Outlined.PushPin, null, tint = Palette.accent) },
+                    onClick = {
+                        menu = false
+                        coroutines.launch { pins.toggle(m.machine.id, card.id) }
+                    },
+                    modifier = Modifier.testTag(if (pinned) "unpin-session" else "pin-session"),
+                )
+            }
         }
         for (t in card.tabs) {
             if (card.tabs.size > 1) {
@@ -337,7 +461,7 @@ private fun SessionBlock(m: MachineSession, card: SessionCard, open: Dest.Sessio
             }
             for (id in t.panes) {
                 val p = m.pane(id) ?: continue
-                PaneLine(m, p, lit = shown && open?.lit == id, was = was != null && was.machine == m.machine.id && was.pane == id) {
+                PaneLine(m, p, lit = shown && open?.lit == id, was = was != null && was.machine == m.machine.id && was.pane == id, longPress, pinLabel) {
                     // An agent block has no terminal: its session shows it, lit.
                     if (wide || p.isAgent) nav.show(wide, Dest.Session(m.machine.id, card.id, t.id, id)) else nav.push(Dest.Terminal(m.machine.id, id, t.id))
                 }
@@ -347,11 +471,12 @@ private fun SessionBlock(m: MachineSession, card: SessionCard, open: Dest.Sessio
     }
 }
 
-/** A pane in one line: what it does, and Needs you when it does. */
+/** A pane in one line: what it does, and Needs you when it does. A long press is its card's. */
 @Composable
-private fun PaneLine(m: MachineSession, p: PaneRow, lit: Boolean, was: Boolean, onClick: () -> Unit) {
+private fun PaneLine(m: MachineSession, p: PaneRow, lit: Boolean, was: Boolean, onLongClick: (() -> Unit)?, longLabel: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(if (lit) Palette.accent.copy(alpha = 0.14f) else Color.Transparent).clickable(onClick = onClick)
+        Modifier.fillMaxWidth().background(if (lit) Palette.accent.copy(alpha = 0.14f) else Color.Transparent)
+            .combinedClickable(onLongClickLabel = longLabel, onLongClick = onLongClick, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp).testTag("pane-${p.id}"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
