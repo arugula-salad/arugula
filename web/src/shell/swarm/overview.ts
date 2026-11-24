@@ -428,3 +428,11 @@ export function statsLine(o: Pick<Overview, "boards" | "loose">, needs: number):
   const working = sessions.filter((s) => s.standing === "working").length;
   return `${cards} ${cards === 1 ? "card" : "cards"} in flight · ${working} ${working === 1 ? "session" : "sessions"} working · ${needs} ${needs === 1 ? "needs" : "need"} you`;
 }
+
+/** Whose conversations Your work lists on a project's Overview (Arugula
+ * #1400): on the reader's personal project, the machines they own, by name;
+ * never a teammate's, a team's own box or a hosted one, and on any other
+ * project none. */
+export function yourWorkMachines(personal: boolean, hosts: { name: string; owner?: string; teamBox?: boolean; hosted?: boolean }[]): string[] {
+  return personal ? hosts.filter((h) => !h.owner && !h.teamBox && !h.hosted).map((h) => h.name) : [];
+}

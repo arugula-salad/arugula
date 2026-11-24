@@ -5284,6 +5284,12 @@ label.edit-in-nvim {
   color: var(--dim);
 }
 
+/* The Overview's (Arugula #1400): the field's width, under its own heading. */
+.your-work.on-overview {
+  max-width: none;
+  margin-top: var(--space-1);
+}
+
 .your-work-dialog {
   display: grid;
   width: min(760px, calc(100vw - 32px));

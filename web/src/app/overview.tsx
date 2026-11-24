@@ -13,7 +13,12 @@
 // project, its cards naming their card; and below it the conversations
 // the field opens: a board's thread, from its row, and a session's peek
 // (./overview-peek.tsx, #1271), from a card's row or a session's on no
-// card. The old home's lists aren't here (#1088): only where there is no
+// card. On the reader's personal project, Your work follows Not on a card
+// (Arugula #1400): the Claude Code and Codex conversations on their own
+// machines, the daemon page's list (../shell/ui/conversations.tsx), each
+// asked through the page's fleet; Continue here opens its pane on its
+// machine's page, as Open in Panes does, and one open in a pane is in Not
+// on a card instead. The old home's lists aren't here (#1088): only where there is no
 // Overview (./machines.tsx). A card with no session opens the board's own
 // drawer over the page (its address names it, so the path and Esc climb
 // back), as its peek's card link does; Open in Panes opens a session on
@@ -48,7 +53,7 @@ import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
-import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
+import { asksYou, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
 import { Asks, paneOwner, useProposals } from "./overview-asks";
 import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
@@ -59,6 +64,8 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
+import { YourWork } from "../shell/ui/conversations";
+import { ownerKey, PERSONAL } from "../platform/owners";
 import { BriefingLine, useBriefing } from "./overview-briefing";
 import { OverviewBoard } from "./overview-board";
 import { CardRow, SessionRow, Word } from "./overview-row";
@@ -547,7 +554,10 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     return t ? () => talkTo(t) : undefined;
   };
 
-  const any = o.boards.length > 0 || o.loose.length > 0;
+  // Your work, on the reader's personal project: their own machines' conversations, never a teammate's.
+  const own = yourWorkMachines(!!p && ownerKey(p) === PERSONAL, fleet.list);
+  const [convs, setConvs] = useState<number | null>(null);
+  const any = o.boards.length > 0 || o.loose.length > 0 || !!convs;
   const projectLevel = (
     <>
       {/* Counted once the boards land: before that it would say 0 in flight (#1380). */}
@@ -557,7 +567,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
       <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
       {views === null && <BoardsSkeleton />}
-      {views !== null && !any && (
+      {views !== null && !any && (own.length === 0 || convs === 0) && (
         <EmptyState
           where="page"
           data-ov-empty
@@ -588,6 +598,15 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
               <SessionRow key={s.key} s={s} fleet={fleet} open={() => openSession(s)} />
             ))}
           </ul>
+        </section>
+      )}
+      {own.length > 0 && (
+        <section class="ov-loose ov-your-work" data-ov-your-work hidden={!convs}>
+          <header class="ov-loose-head">
+            <b>Your work</b>
+            <span class="dim">Claude Code and Codex conversations on {own.length > 1 ? "your machines" : own[0]}, newest first</span>
+          </header>
+          <YourWork phone={phone} on={{ fleet, hosts: own, show: (host, pane) => paneAt({ host, id: pane }), toast: (t) => api.toast(t), counted: setConvs }} />
         </section>
       )}
     </>
