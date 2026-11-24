@@ -406,6 +406,13 @@ enum Command {
     /// daemon kept running after you log out); its code shows here, to approve from
     /// a signed-in device. Without: this machine.
     Join(cmd::join::Args),
+    /// Make a join token: another machine joins with it at once.
+    ///
+    /// Prints the token alone, so `arugulad join --token "$(arugula join-token)"`
+    /// joins a machine with no browser, as in a script or an image's build. It's
+    /// good once, until it runs out (`--json` says when). `--team` makes it for
+    /// a team you own or edit. Needs `arugula login`.
+    JoinToken(cmd::join_token::Args),
     /// Sign this CLI in to Arugula cloud.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
@@ -713,6 +720,7 @@ const GROUPS: &[(&str, &[&str])] = &[
             "hosts",
             "web",
             "join",
+            "join-token",
             "login",
             "logout",
             "grants",
@@ -913,6 +921,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::JoinToken(args) = cli.cmd {
+        return cmd::join_token::run(args, cli.json);
+    }
     if let Command::Machine { cmd } = cli.cmd {
         return cmd::machine::run(cmd, cli.json);
     }
@@ -1047,6 +1058,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Web(_)
         | Command::Bridge { .. }
         | Command::Join(_)
+        | Command::JoinToken(_)
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }

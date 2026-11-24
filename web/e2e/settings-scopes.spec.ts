@@ -3,8 +3,8 @@
 // and the chosen one's controls beside it. The section is the address, so a
 // link opens it; the old addresses (a project's settings, Personal's, a
 // team's Settings tab, `#section`) land in their scope. On a phone, the
-// list, then a section full width with a way back. The Project scope's 17
-// sections are 10 rows in a flat list (Arugula #1105, #1323), and an old section's
+// list, then a section full width with a way back. The Project scope's 18
+// sections are 11 rows in a flat list (Arugula #1105, #1323), and an old section's
 // address lands on the row it's part of. You is four sections (Arugula
 // #1320), each old one's address landing on the one that holds it; what's
 // on control's page until the single origin (aru-141) is a ↗ row to it
@@ -427,7 +427,7 @@ test.describe("a project's settings", () => {
     await expect(row(page, "spend")).toBeVisible();
     // Apps from products, the tenth, shows once a product keeps one here.
     const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));
-    expect(rows).toEqual(["general", "access", "repos", "issues", "ci-alerts", "runs", "agents", "secrets", "spend"]);
+    expect(rows).toEqual(["general", "access", "repos", "issues", "ci-alerts", "runs", "machines", "agents", "secrets", "spend"]);
     await expect(row(page, "repos").locator(".list-row-detail")).toHaveText("acme/site");
     await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("The strongest (Opus) · 1 token");
     await expect(row(page, "secrets").locator(".list-row-detail")).toHaveText("No environments · 1 secret");
@@ -454,6 +454,35 @@ test.describe("a project's settings", () => {
     await expect(section(page, "agents").locator('[data-settings-part="agent-model"]')).toBeVisible();
     await page.goto(`/settings/project/${SITE}/ci-alerts`);
     await expect(section(page, "ci-alerts")).toBeVisible();
+  });
+
+  test("Machines makes a join token for the project's team, or the person's own, and says control's refusal (Arugula #1152)", async ({ page }) => {
+    const sent: unknown[] = [];
+    let refuse = false;
+    await open(page, `/settings/project/${SITE}/machines`, () =>
+      Promise.all([
+        project(page),
+        page.route(/\/api\/join-tokens$/, (r) => {
+          sent.push(r.request().postDataJSON());
+          return refuse ? json(r, { error: "only the team's owners and editors make join tokens" }, 403) : json(r, { token: "ajt_abc", expires: Math.floor(Date.now() / 1000) + 5400 });
+        }),
+      ]),
+    );
+    const machines = section(page, "machines");
+    await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("Join a machine to Acme");
+    await machines.locator("[data-join-token-make]").click();
+    await expect(machines.locator("[data-join-token-line]")).toHaveText("arugulad join --token ajt_abc");
+    await expect(machines.locator("[data-join-token-expires]")).toContainText("(in 1h)");
+    expect(sent).toEqual([{ team: "tm_1" }]);
+    refuse = true;
+    await machines.locator("[data-join-token-make]").click();
+    await expect(machines.locator("[data-join-token-error]")).toHaveText("only the team's owners and editors make join tokens");
+    // A personal project's is the person's own.
+    refuse = false;
+    await page.goto(`/settings/project/${ME}/machines`);
+    await section(page, "machines").locator("[data-join-token-make]").click();
+    await expect(section(page, "machines").locator("[data-join-token-line]")).toHaveText("arugulad join --token ajt_abc");
+    expect(sent.at(-1)).toEqual({});
   });
 
   test("a setting a team default covers says it follows the team or is set here, and Reset clears its own (Arugula #1323)", async ({ page }) => {
