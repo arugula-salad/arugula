@@ -4105,7 +4105,7 @@ fn role_principal(
         TokenRole::Owner if owns => Principal::Owner,
         TokenRole::Owner => Principal::User { id: format!("account:{account}"), name: String::new(), pic: None },
         TokenRole::Editor if hosted => Principal::Owner,
-        TokenRole::Editor | TokenRole::Viewer | TokenRole::Guest => {
+        TokenRole::Editor | TokenRole::Viewer | TokenRole::Guest | TokenRole::Agents | TokenRole::Drives => {
             Principal::User { id: format!("account:{account}"), name: String::new(), pic: None }
         }
     }
@@ -8198,7 +8198,7 @@ pub(crate) mod tests {
         take_team(&mut s, answer(vec![v2.clone(), forged]), 2);
         assert_eq!(s.roster(), Some(&v2));
         let built = |s: &Saved| {
-            let dir = std::env::temp_dir().join(format!("arugula-by-control-{}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("arugula-by-control-subs-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let acl = Arc::new(Acl::open(&dir));
             let b = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false);
