@@ -6,7 +6,8 @@
 #
 # It signs in, goes through the tabs (Home answers the board's question in
 # its row, Boards opens the board, the project's menu its issues), posts in
-# ROOM from Chat, types into a new terminal on MACHINE, and signs out.
+# ROOM from Chat, types into a new terminal on MACHINE, lists Docs and opens
+# one if the project has any, and signs out.
 # Something else allows the sign-in: the ticket is written to HANDOFF/ticket,
 # and the address the Allow was sent to is read from HANDOFF/callback. The
 # cloud repository's testnet `native-android` claim drives it. ARUGULA_BOARD

@@ -79,11 +79,12 @@ class AppModel(private val context: Context) {
     private fun open(stored: String) {
         val c = Control(stored)
         lateinit var api: Api
-        api = Api(c) {
+        api = Api(c, stored) {
             // Only the session in use: an old one's late answer ends nothing.
             scope.launch {
                 if (control === api) {
                     store.forget()
+                    forgetWebCookies()
                     control = null
                     notice = "Your sign-in has ended. Sign in again."
                 }
@@ -140,6 +141,7 @@ class AppModel(private val context: Context) {
     fun signOut() {
         val c = control
         store.forget()
+        forgetWebCookies()
         control = null
         if (c != null) scope.launch { withContext(Dispatchers.IO) { runCatching { c.control.signOut() } } }
     }

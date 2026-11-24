@@ -12,7 +12,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Api(val control: Control, private val signedOut: () -> Unit) {
+/** [stored]: the session as the app keeps it, for a Doc's web view (Docs.kt's [WebSession]). */
+class Api(val control: Control, val stored: String? = null, private val signedOut: () -> Unit) {
     suspend fun call(method: String, path: String, body: JSONObject? = null): String = withContext(Dispatchers.IO) {
         try {
             control.call(method, path, body?.toString())

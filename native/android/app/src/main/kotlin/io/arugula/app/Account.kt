@@ -319,23 +319,3 @@ private fun InboxRow(e: InboxEntry, modifier: Modifier) {
         Caps(e.reason.replace('_', ' '))
     }
 }
-
-/** Docs, the third place (Arugula #1362). The project's Docs, newest first, come with Arugula #1364; until then the place says so. */
-@Composable
-fun DocsScreen() {
-    Column(Modifier.testTag("docs-place")) {
-        TabHeading(AppTab.DOCS.label)
-        Column(
-            Modifier.fillMaxWidth().weight(1f).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(AppTab.DOCS.icon, null, Modifier.size(34.dp), tint = Palette.muted)
-            Caps("The project's Docs come here next")
-            Text(
-                "Arugula #1364 lists them here, newest first. Until then, they're on Arugula's page.",
-                Modifier.width(320.dp), style = Face.ui(14.sp), color = Palette.subtle, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
-        }
-    }
-}
