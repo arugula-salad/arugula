@@ -1,11 +1,12 @@
-// Home (#1255): the project's conversations, sorted by what needs you, as the
-// iPhone's Home.swift and the desktop's Overview read them. Needs you first,
+// The Overview (#1255; Home until Arugula #1362): the project's
+// conversations, sorted by what needs you, as the iPhone's Home.swift and the
+// desktop's Overview read them. Needs you first,
 // merged from every machine's panes, the boards' rows and the hosted
 // sessions, worst first, each answered where it is (Answer.kt); then the New
 // ideas; then one row per open board, with its lane bar, its count, its lead
 // and what's going on in words; then the people, its channels and DMs. A
 // board's row opens the board's thread, whose Board button opens its lanes.
-// New tells a board or starts a New idea (New.kt).
+// New, in every place's heading, tells a board or starts a New idea (New.kt).
 
 package io.arugula.app
 
@@ -359,7 +360,6 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
     val nav = LocalNav.current
     val coroutines = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
-    var making by remember { mutableStateOf(false) }
     var peek by remember { mutableStateOf<Peeked?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     /** What was answered here, by need and ask: folded away. */
@@ -400,9 +400,7 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TabHeading("Arugula", project = true) {
-                AnswerButton("New", Modifier.testTag("home-new"), primary = true) { making = true }
-            }
+            TabHeading(AppTab.OVERVIEW.label)
             model.problem?.let { Text(it, Modifier.padding(horizontal = 16.dp), style = Face.mono(11.sp), color = Palette.danger, maxLines = 2) }
             PullToRefreshBox(
                 refreshing,
@@ -470,9 +468,6 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
     }
 
-    if (making) {
-        NewSheet(api, model, fleet, onDismiss = { making = false }, toast = toast, made = { coroutines.launch { refresh() } })
-    }
     peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = toast) }
 }
 

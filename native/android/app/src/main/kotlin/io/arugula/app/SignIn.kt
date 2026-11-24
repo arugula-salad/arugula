@@ -146,8 +146,8 @@ private fun byHand(model: AppModel, pending: SignIn) {
     }
 }
 
-/** Control's Allow page in a Custom Tab, in the app's colors. */
-private fun openTab(context: Context, link: String) {
+/** A page of control's (its Allow page, the web's Settings) in a Custom Tab, in the app's colors. */
+fun openTab(context: Context, link: String) {
     val colors = CustomTabColorSchemeParams.Builder().setToolbarColor(Palette.void.toArgb()).build()
     CustomTabsIntent.Builder()
         .setDefaultColorSchemeParams(colors)

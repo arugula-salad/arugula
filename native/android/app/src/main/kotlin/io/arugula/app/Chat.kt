@@ -189,7 +189,7 @@ fun ChatRoomsScreen(api: Api, live: LiveChat) {
     val scope = LocalScope.current
     val nav = LocalNav.current
     Column(Modifier.fillMaxSize()) {
-        TabHeading("Chat", project = true)
+        TabHeading("Chat")
         // The stream says when the list's counts move; a slow look again covers a stream that's down.
         Loaded(key = scope.current?.id, every = 60_000, trigger = live.rooms, load = { api.get("/api/chat").list("rooms", ChatRoom::of) }) { all, _ ->
             val rooms = all.filter { it.isConversation && !it.archived && scope.showsRoom(it) }
