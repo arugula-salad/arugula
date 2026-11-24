@@ -157,6 +157,9 @@ class MachineSession(private val api: Api, val machine: Machine) {
     /** This person's role in each session; null when the machine says none (its owner). */
     var roles by mutableStateOf<Map<Int, String>?>(null)
         private set
+
+    /** Its panes as the core gave them, for the core's rule to read again. */
+    private var summary by mutableStateOf<String?>(null)
     var problem by mutableStateOf<String?>(null)
     var connected by mutableStateOf(false)
         private set
@@ -214,6 +217,7 @@ class MachineSession(private val api: Api, val machine: Machine) {
             l.panes?.let { s ->
                 runCatching {
                     val o = JSONObject(s)
+                    summary = s
                     panes = o.list("panes", PaneRow::of)
                     agents = o.list("agents", PaneRow::of)
                     tabs = o.list("tabs") { t ->
@@ -256,6 +260,14 @@ class MachineSession(private val api: Api, val machine: Machine) {
             listOf(c.str("title"), c.str("last_prompt"), c.str("first_prompt")).firstOrNull { it != null && PaneRow.readable(it) }?.let { titles[pane] = it }
         }
         conversations = titles
+    }
+
+    /** Its sessions that show in [shown], as the core's rule keeps them (Arugula #1352), needs you first. */
+    fun cards(shown: Shown?): List<SessionCard> {
+        val m = sections(listOf(machine.host(summary)), shown, null)?.optJSONArray("machines")?.optJSONObject(0) ?: return emptyList()
+        return m.list("sessions") { s ->
+            SessionCard(s.getInt("id"), s.list("tabs") { t -> t.getInt("id") to t.ints("panes") }.toMap(), s.optInt("needs_you"))
+        }
     }
 
     /** This person's role in a pane's session: `owner`, `editor` or `viewer`. */

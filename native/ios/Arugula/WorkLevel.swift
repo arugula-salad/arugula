@@ -238,7 +238,7 @@ struct WorkLevel: View {
                 let line = model.boards.first { $0.id == b.id } ?? b
                 if let lead = line.lead {
                     Button("Ask the lead to start one") {
-                        openAgent(LeadLine(lead, fleet: fleet).key, talkTo: talkTo, project: project.id)
+                        openAgent(LeadLine(lead, fleet: fleet, in: project.shown).key, talkTo: talkTo, project: project.id)
                     }
                     .buttonStyle(AnswerButton(primary: true))
                     .accessibilityIdentifier("work-ask-lead")

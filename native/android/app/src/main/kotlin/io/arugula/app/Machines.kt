@@ -79,16 +79,20 @@ import org.json.JSONObject
 @Composable
 fun MachinesScreen(api: Api, fleet: HomeFleet) {
     val nav = LocalNav.current
+    val prefs = LocalContext.current.getSharedPreferences("arugula", Context.MODE_PRIVATE)
     Column(Modifier.fillMaxSize()) {
         TabHeading("Machines")
-        Loaded(key = "machines", load = { api.get("/api/directory").list("daemons", Machine::of) }) { machines, _ ->
+        Loaded(key = "machines", load = { ordered(api.get("/api/directory").list("daemons", Machine::of), prefs.getString(LAST_MACHINE, null)) }) { machines, _ ->
             if (machines.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Caps("No machines yet") }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(machines, key = { it.id }) { m ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { nav.push(Dest.MachineD(m)) }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("machine-${m.name}"),
+                            Modifier.fillMaxWidth().clickable {
+                                prefs.edit().putString(LAST_MACHINE, m.id).apply()
+                                nav.push(Dest.MachineD(m))
+                            }.padding(horizontal = 16.dp, vertical = 12.dp).testTag("machine-${m.name}"),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Dot(if (m.online) Tone.OK else Tone.MUTED, 8)
@@ -105,6 +109,20 @@ fun MachinesScreen(api: Api, fleet: HomeFleet) {
     }
 }
 
+/** The machine picked last, first of yours. */
+private const val LAST_MACHINE = "last-machine"
+
+/**
+ * In the phone's order, the core's (Arugula #1355): your online machines,
+ * the one you used last first, then teammates', by name, and the offline
+ * ones after.
+ */
+private fun ordered(machines: List<Machine>, recent: String?): List<Machine> {
+    val order = sections(machines.map { it.host() }, null, recent)?.optJSONArray("order").objects()
+    if (order.isEmpty()) return machines
+    return order.mapNotNull { o -> machines.firstOrNull { it.id == o.optString("id") } }
+}
+
 /** The machine's link: home's, when it keeps one, else one for this screen. */
 @Composable
 private fun sessionFor(api: Api, machine: Machine, fleet: HomeFleet): MachineSession {
@@ -114,10 +132,11 @@ private fun sessionFor(api: Api, machine: Machine, fleet: HomeFleet): MachineSes
     return kept ?: own!!
 }
 
-/** A machine's panes as cards, the ones that want you first; one opens its terminal. */
+/** A machine's panes in the current project as cards, the ones that want you first; one opens its terminal. */
 @Composable
 fun MachineScreen(api: Api, machine: Machine, fleet: HomeFleet) {
     val nav = LocalNav.current
+    val shown = LocalScope.current.current?.shown
     val session = sessionFor(api, machine, fleet)
     val coroutines = rememberCoroutineScope()
     var problem by remember { mutableStateOf<String?>(null) }
@@ -141,9 +160,13 @@ fun MachineScreen(api: Api, machine: Machine, fleet: HomeFleet) {
             Loading()
             return@Column
         }
-        val panes = session.panes.sortedWith(compareBy({ it.order }, { -(it.lastMs ?: 0) }))
+        // Only the project's sessions' panes, as the core's rule keeps them (Arugula #1352).
+        val cards = session.cards(shown)
+        val kept = cards.flatMap { it.panes }.toSet()
+        val needs = cards.sumOf { it.needsYou }
+        val panes = session.panes.filter { shown == null || it.id in kept }.sortedWith(compareBy({ it.order }, { -(it.lastMs ?: 0) }))
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Caps("${panes.size} panes") }
+            item { Caps(if (needs > 0) "${panes.size} panes · $needs need you" else "${panes.size} panes", Modifier.testTag("machine-count")) }
             items(panes, key = { it.id }) { p ->
                 val tone = when (p.order) {
                     0 -> Tone.ACCENT

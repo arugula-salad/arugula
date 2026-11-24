@@ -39,6 +39,9 @@ internal object Native {
     @JvmStatic external fun linkRequest(h: Long, method: String, path: String, body: String?): String
     @JvmStatic external fun linkFree(h: Long)
 
+    @JvmStatic external fun shown(atId: String?, atPersonal: Boolean, sessionProject: String?, onIssueProject: String?, yours: Boolean): Boolean
+    @JvmStatic external fun machines(input: String): String
+
     @JvmStatic external fun chatOpen(control: Long, notify: Notify): Long
     @JvmStatic external fun chatNext(h: Long): String?
     @JvmStatic external fun chatFree(h: Long)

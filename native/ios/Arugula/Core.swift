@@ -29,6 +29,75 @@ func takeString(_ p: UnsafeMutablePointer<CChar>?) -> String? {
     return String(cString: p)
 }
 
+/// The project the app shows, as the core's rule reads it (Arugula #1355):
+/// Machines and Home show only its sessions; one placed nowhere is yours, on
+/// your own machine, in your personal project.
+struct Shown: Equatable {
+    var id: String
+    /// The reader's personal project.
+    var personal: Bool
+
+    /// Whether a pane (its session's project and its card's) or a session
+    /// (no card) on a machine that's `yours` or not shows in `shown`; with
+    /// none, every one does.
+    static func shows(_ shown: Shown?, project: String?, card: String? = nil, yours: Bool) -> Bool {
+        aru_shown(shown?.id, shown?.personal == true ? 1 : 0, project, card, yours ? 1 : 0) != 0
+    }
+}
+
+extension Projects.Project {
+    var shown: Shown { Shown(id: id, personal: team == nil) }
+}
+
+/// One machine as the core's `aru_machines` reads it.
+struct HostIn {
+    var id: String
+    var name: String
+    var online: Bool
+    /// Whose it is when it isn't yours.
+    var owner: String?
+    /// Its sessions, as `aru_link_panes` gave them.
+    var panes: String?
+}
+
+/// What `aru_machines` answers: every machine in the phone's order, and
+/// each one's sessions that show in the project.
+struct Sections: Decodable {
+    struct Section: Decodable {
+        var id: String
+        var sessions: [Card]
+    }
+    struct Card: Decodable {
+        struct Tab: Decodable { var id: UInt32; var panes: [UInt32] }
+        var id: UInt32
+        var tabs: [Tab]
+        var panes: Int
+        var needs_you: Int
+    }
+    var order: [Section]
+    var machines: [Section]
+
+    /// From the core, for `hosts` in `shown`; `recent` is the machine used last.
+    static func of(_ hosts: [HostIn], shown: Shown?, recent: String?) -> Sections? {
+        let hs: [[String: Any]] = hosts.map { h in
+            var o: [String: Any] = ["id": h.id, "name": h.name, "online": h.online]
+            if let owner = h.owner { o["owner"] = owner }
+            if let p = h.panes, let v = try? JSONSerialization.jsonObject(with: Data(p.utf8)) { o["panes"] = v }
+            return o
+        }
+        var input: [String: Any] = ["hosts": hs]
+        if let shown { input["at"] = ["id": shown.id, "personal": shown.personal] }
+        if let recent { input["recent"] = recent }
+        guard let data = try? JSONSerialization.data(withJSONObject: input) else { return nil }
+        var err: UnsafeMutablePointer<CChar>?
+        guard let s = takeString(aru_machines(String(decoding: data, as: UTF8.self), &err)) else {
+            if let err { aru_string_free(err) }
+            return nil
+        }
+        return try? JSONDecoder().decode(Sections.self, from: Data(s.utf8))
+    }
+}
+
 extension Notification.Name {
     /// Control said the session has ended: the app asks for a sign-in again.
     static let arugulaSignedOut = Notification.Name("arugulaSignedOut")

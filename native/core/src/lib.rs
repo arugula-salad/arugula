@@ -7,6 +7,8 @@
 //! - [`chat_live`]: chat's live stream, what to fetch again as it happens.
 //! - [`link`]: a Noise channel to a machine through control's relay, opened
 //!   with a machine token, its requests and its panes.
+//! - [`shown`]: which sessions show in the current project, and the
+//!   machines in order, as the web's (#1355).
 //! - [`Pane`]: one pane's terminal.
 //!
 //! Swift reaches it through [`ffi`]'s C functions, and Kotlin through
@@ -22,6 +24,7 @@ pub mod ffi;
 pub mod kotlin;
 pub mod link;
 mod net;
+pub mod shown;
 
 use anyhow::Result;
 use libghostty_vt::{

@@ -173,18 +173,29 @@ final class HomeModel: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
+            guard self.project == project else { return }
             problem = describe(error)
         }
-        if let rooms = try? await r.rooms { self.rooms = rooms }
+        // Everything else is read first and written at once, and only while
+        // the project is still this one (Arugula #1354): a project picked
+        // meanwhile gets nothing of this one, and a cancelled read wipes
+        // nothing.
+        let rooms = try? await r.rooms
         // A hub or an account without hosted sessions has none to wait on.
-        hosted = (try? await s.sessions) ?? []
+        let hosted = (try? await s.sessions) ?? []
         var asks: [String: SessionView] = [:]
         for w in hosted where w.waiting != nil {
             if let v = try? await control.get("/api/sessions/\(w.session)", as: SessionView.self) { asks[w.session] = v }
         }
+        let ideas = ((try? await i.issues) ?? []).filter { $0.title.hasPrefix("Idea: ") }
+        var name = me
+        if name == nil { name = try? await who.me.name }
+        guard self.project == project, !Task.isCancelled else { return }
+        if let rooms { self.rooms = rooms }
+        self.hosted = hosted
         opened = asks
-        ideas = ((try? await i.issues) ?? []).filter { $0.title.hasPrefix("Idea: ") }
-        if me == nil { me = try? await who.me.name }
+        self.ideas = ideas
+        me = name
         loaded = true
         await openThreads(control)
     }
@@ -416,8 +427,10 @@ struct LeadLine {
 
     var name: String { who.map { "\($0)'s \(lead.session)" } ?? lead.session }
 
+    /// `shown` is the board's project: a session of another, of the same
+    /// name, isn't its lead's (Arugula #1353).
     @MainActor
-    init(_ lead: Board.Lead, fleet: HomeFleet) {
+    init(_ lead: Board.Lead, fleet: HomeFleet, in shown: Shown?) {
         self.lead = lead
         let listed = fleet.directory.first { $0.id == lead.machine }
         // A team's own box has no one to name.
@@ -430,8 +443,10 @@ struct LeadLine {
         }
         // The daemon names a lead by its Claude Code conversation's title (an
         // agent block's own title), else as the web does, by its session's.
-        let tabs = Set(m.sessions.filter { $0.name == lead.session }.flatMap(\.tabs))
-        let all = m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } }
+        let yours = m.machine.yours
+        let tabs = Set(m.sessions.filter { $0.name == lead.session && Shown.shows(shown, project: $0.project?.id, yours: yours) }.flatMap(\.tabs))
+        let all = (m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } })
+            .filter { Shown.shows(shown, project: $0.session_project?.id, card: $0.on_issue?.project, yours: yours) }
         let panes = all.filter { p in
             m.conversations[p.id] == lead.session
                 || (p.type == "agent" && p.title?.trimmingCharacters(in: .whitespaces) == lead.session)
@@ -469,14 +484,13 @@ struct HomeState {
 
     @MainActor
     init(project: Projects.Project, fleet: HomeFleet, model: HomeModel) {
-        let personal = project.team == nil
-        // The project's panes: its sessions', its cards', or none's in the personal project.
+        // The project's panes: its sessions', its cards', or, in the personal
+        // project, those placed nowhere on your own machines (the core's rule).
         var panes: [(MachineSession, PaneRow)] = []
         for m in fleet.machines {
-            for p in m.panes + m.agents {
-                let mine = p.session_project?.id == project.id || p.on_issue?.project == project.id
-                    || (personal && p.session_project == nil && p.on_issue?.project == nil)
-                if mine { panes.append((m, p)) }
+            for p in m.panes + m.agents
+            where Shown.shows(project.shown, project: p.session_project?.id, card: p.on_issue?.project, yours: m.machine.yours) {
+                panes.append((m, p))
             }
         }
 
@@ -560,7 +574,7 @@ struct HomeState {
             }
             let p = b.progress
             boards.append(BoardLine(
-                board: b, lead: b.lead.map { LeadLine($0, fleet: fleet) }, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
+                board: b, lead: b.lead.map { LeadLine($0, fleet: fleet, in: project.shown) }, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
                 standing: flight.min() ?? .idle, says: says, still: flight.isEmpty))
         }
         boards.sort { a, b in
@@ -752,7 +766,7 @@ struct PhoneHome: View {
                         BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, askChief: askChief(b, in: p))
                     }
                 case .thread(let b):
-                    BoardThread(control: control, board: b, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
+                    BoardThread(control: control, board: b, shown: scope.current?.shown, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
                 case .work(let key):
                     if let p = scope.current {
                         WorkLevel(control: control, project: p, session: key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
@@ -761,7 +775,7 @@ struct PhoneHome: View {
                     }
                 case .room(let r): ChatRoomView(control: control, room: r, live: live)
                 case .staff(let project):
-                    StaffRoom(control: control, project: project, model: model, fleet: fleet, live: live) { peek = $0 }
+                    StaffRoom(control: control, project: project, shown: scope.current?.shown, model: model, fleet: fleet, live: live) { peek = $0 }
                 case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
                 case .idea(let room, let parent, let issue, let title):
                     IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
@@ -971,7 +985,7 @@ struct PhoneHome: View {
                 Section {
                     let room = model.staffListed(project: project.id)
                     NavigationLink(value: Opened.staff(project: project.id)) {
-                        StaffRow(room: room, lead: room?.lead.map { LeadLine($0, fleet: fleet) }, open: opened == .staff(project: project.id))
+                        StaffRow(room: room, lead: room?.lead.map { LeadLine($0, fleet: fleet, in: project.shown) }, open: opened == .staff(project: project.id))
                     }
                     .voidRow()
                     .accessibilityIdentifier("home-staff")
@@ -1307,6 +1321,8 @@ struct BoardLanes: Hashable { let board: Board }
 struct BoardThread: View {
     let control: Control
     let board: Board
+    /// The board's project, where its lead's session is looked for.
+    let shown: Shown?
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
@@ -1354,7 +1370,7 @@ struct BoardThread: View {
             LaneBar(done: done, review: review, doing: doing, total: max(total, 1))
             Text("\(done) done · \(review) review · \(doing) doing · \(max(0, total - done - review - doing)) next")
                 .font(Face.mono(11)).foregroundStyle(Palette.dim)
-            LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet) }, id: "board-lead", peek: peek)
+            LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet, in: shown) }, id: "board-lead", peek: peek)
             WhoLine(text: "Talking in \(line.title)'s thread: a post goes to the board's thread, where its lead and anyone mentioned read it.")
             if !sessions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -1529,6 +1545,7 @@ struct StaffRow: View {
 struct StaffRoom: View {
     let control: Control
     let project: String
+    let shown: Shown?
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
@@ -1563,7 +1580,7 @@ struct StaffRoom: View {
         // The rooms list is the newer word on who leads it.
         let lead = (model.staffListed(project: project) ?? room)?.lead
         return VStack(alignment: .leading, spacing: 4) {
-            LeadHeading(lead: lead.map { LeadLine($0, fleet: fleet) }, id: "staff-lead", none: "Nobody leads it yet", peek: peek)
+            LeadHeading(lead: lead.map { LeadLine($0, fleet: fleet, in: shown) }, id: "staff-lead", none: "Nobody leads it yet", peek: peek)
             Text(lead == nil
                 ? "Only you and your own agents are here. What you post waits until one of your sessions takes the lead."
                 : "Only you and your own agents are here. What you post reaches the session that leads it.")

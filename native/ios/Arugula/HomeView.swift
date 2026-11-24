@@ -364,9 +364,10 @@ struct BoardThreadRef: Hashable { let board: Board }
 /// A lead's chip that follows its session on the fleet.
 struct LiveLeadChip: View {
     let lead: Board.Lead
+    let shown: Shown?
     @ObservedObject var fleet: HomeFleet
 
-    var body: some View { LeadChip(lead: LeadLine(lead, fleet: fleet)) }
+    var body: some View { LeadChip(lead: LeadLine(lead, fleet: fleet, in: shown)) }
 }
 
 /// A board's thread from Boards, with the sessions on its cards in flight
@@ -382,7 +383,7 @@ struct BoardsThread: View {
 
     var body: some View {
         let sessions = scope.current.map { HomeState(project: $0, fleet: fleet, model: model).sessions[board.id] ?? [] } ?? []
-        BoardThread(control: control, board: board, model: model, fleet: fleet, live: live, sessions: sessions, peek: peek)
+        BoardThread(control: control, board: board, shown: scope.current?.shown, model: model, fleet: fleet, live: live, sessions: sessions, peek: peek)
     }
 }
 
@@ -481,8 +482,8 @@ struct BoardsView: View {
                 .accessibilityIdentifier("board-\(b.title)")
             HStack(spacing: 6) {
                 if let lead = b.lead {
-                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet).opening)) } label: {
-                        LiveLeadChip(lead: lead, fleet: fleet).contentShape(Rectangle())
+                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet, in: scope.current?.shown).opening)) } label: {
+                        LiveLeadChip(lead: lead, shown: scope.current?.shown, fleet: fleet).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("board-lead-\(b.title)")

@@ -121,14 +121,23 @@ class HomeModel(private val api: Api) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (this@HomeModel.project != project) return@coroutineScope
             problem = describe(e)
         }
-        r.await()?.let { rooms = it }
-        hosted = s.await()
-        opened = hosted.filter { it.waiting != null }.mapNotNull { w ->
+        // Everything else is read first and written at once, and only while
+        // the project is still this one (Arugula #1354): a project picked
+        // meanwhile gets nothing of this one.
+        val rooms = r.await()
+        val hosted = s.await()
+        val asks = hosted.filter { it.waiting != null }.mapNotNull { w ->
             runCatching { w.session to SessionView.of(api.get("/api/sessions/${w.session}")) }.getOrNull()
         }.toMap()
-        ideas = i.await().filter { it.title.startsWith("Idea: ") }
+        val ideas = i.await().filter { it.title.startsWith("Idea: ") }
+        if (this@HomeModel.project != project) return@coroutineScope
+        rooms?.let { this@HomeModel.rooms = it }
+        this@HomeModel.hosted = hosted
+        opened = asks
+        this@HomeModel.ideas = ideas
         loaded = true
         // Each board's thread, once, as the web's Overview opens them: a board's change comes as a change on its thread.
         for (b in boards) if (b.id !in threads) runCatching { thread(b) }
@@ -247,13 +256,11 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
     }
 
     private fun build(project: Project, fleet: HomeFleet, model: HomeModel) {
-        val personal = project.team == null
-        // The project's panes: its sessions', its cards', or none's in the personal project.
+        // The project's panes: its sessions', its cards', or, in the personal
+        // project, those placed nowhere on your own machines (the core's rule).
+        val shown = project.shown
         val panes = fleet.machines.flatMap { m ->
-            (m.panes + m.agents).filter { p ->
-                p.sessionProject == project.id || p.onIssueProject == project.id ||
-                    (personal && p.sessionProject == null && p.onIssueProject == null)
-            }.map { m to it }
+            (m.panes + m.agents).filter { p -> shown.shows(p.sessionProject, p.onIssueProject, m.machine.yours) }.map { m to it }
         }
 
         for ((m, p) in panes) if (p.needsYou) {

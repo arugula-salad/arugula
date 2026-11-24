@@ -17,6 +17,23 @@ object Core {
     /** Whether control at [url] still serves this build: throws [CoreError] with `updateApp` when it doesn't. Blocks. */
     fun checkApp(url: String) = Native.checkApp(url)
 
+    /**
+     * Whether a pane shows in the project [atId] ([atPersonal]: the reader's
+     * personal project; null: every pane shows), the web's `inShown`
+     * (Arugula #1355): its session's project is it, or the card it works on
+     * is, or it's placed nowhere on a machine that's [yours], in your
+     * personal project. A session's own: [onIssueProject] null.
+     */
+    fun shown(atId: String?, atPersonal: Boolean, sessionProject: String?, onIssueProject: String?, yours: Boolean): Boolean =
+        Native.shown(atId, atPersonal, sessionProject, onIssueProject, yours)
+
+    /**
+     * The machines as Machines lists them, as `aru_machines` (native/core's
+     * ffi.rs): [input] is `{at, recent, hosts: [{id, name, online, owner,
+     * hosted, panes}], pins}`; the answer `{order, machines, quiet, pinned}`.
+     */
+    fun machines(input: JSONObject): JSONObject = JSONObject(Native.machines(input.toString()))
+
     /** Where control's page sends a sign-in's grant: `arugula://signin?ticket=…&grant=…`. */
     const val CALLBACK_SCHEME = "arugula"
 }

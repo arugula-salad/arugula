@@ -27,9 +27,9 @@ struct BoardLevel: View {
             VStack(alignment: .leading, spacing: 18) {
                 head(line)
                 LeadCard(
-                    lead: line.lead.map { LeadLine($0, fleet: fleet) },
+                    lead: line.lead.map { LeadLine($0, fleet: fleet, in: project.shown) },
                     leads: line.lead.map { l in model.boards.filter { $0.lead?.machine == l.machine && $0.lead?.session == l.session }.count } ?? 0,
-                    talk: line.lead.map { l in { talk(LeadLine(l, fleet: fleet).key) } },
+                    talk: line.lead.map { l in { talk(LeadLine(l, fleet: fleet, in: project.shown).key) } },
                     thread: BoardThreadRef(board: line),
                     askChief: askChief)
                 if let view = model.views[board.id] {
