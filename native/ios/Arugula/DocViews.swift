@@ -305,25 +305,184 @@ private final class WeakHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-/// Docs, the third place (Arugula #1361). The project's Docs, newest first,
-/// come with Arugula #1363; until then the place says so, and a Doc opens
-/// from its link in a thread or on a board.
+/// Docs, the third place (Arugula #1361, #1363): the current project's Docs,
+/// as the web's Docs place lists them (web/src/platform/pages/docs.tsx, the
+/// one Docs list): the latest changed first, in Today, Yesterday, This week
+/// and Earlier, each row its layout's mark, its title and when it was edited.
+/// A team's project has My Docs (what the reader and their agents made) and
+/// Team Docs, the one used last remembered; a personal one is My Docs alone.
+/// A Doc opens in its web view: beside the list on an iPad, pushed on an
+/// iPhone. A link in it to another of the project's Docs opens that one in
+/// its place; a board, on the Overview; an issue, over the list.
 struct DocsPlace: View {
+    let control: Control
+    @EnvironmentObject private var scope: Scope
+    @State private var picked: DocRef?
+    /// A Doc of another project, from a link: over everything.
+    @State private var over: DocRef?
+    @State private var issue: ProjectIssue?
+    @State private var columns = NavigationSplitViewVisibility.all
+    @AppStorage("arugula.docs-tab") private var tab = DocsTab.mine
+    @Environment(\.horizontalSizeClass) private var width
+
+    enum DocsTab: String, CaseIterable {
+        case mine = "My Docs", team = "Team Docs"
+    }
+
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                Image(systemName: AppTab.docs.symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Palette.muted)
-                Caps("The project's Docs come here next")
-                Text("Arugula #1363 lists them, newest first. Until then, a Doc opens from its link in a thread, a board or Chat.")
-                    .font(Face.ui(14)).foregroundStyle(Palette.subtle)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+        NavigationSplitView(columnVisibility: $columns) {
+            Group {
+                if let project = scope.current {
+                    Loaded(load: { try await control.get("/api/projects/\(project.id)/docs", as: ProjectDocList.self) }, every: .seconds(60)) { l in
+                        list(l.docs, in: project)
+                    }
+                    .id(project.id)
+                } else {
+                    ProgressView().tint(Palette.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
-            .padding()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.void)
             .tabHeading(AppTab.docs.rawValue)
+        } detail: {
+            if let picked {
+                DocScreen(ref: picked, close: width == .regular ? { self.picked = nil } : nil, open: follow).id(picked)
+            } else {
+                Empty(text: "Pick a Doc", symbol: AppTab.docs.symbol)
+            }
         }
+        .navigationSplitViewStyle(.balanced)
         .accessibilityIdentifier("docs-place")
+        .fullScreenCover(item: $over) { d in
+            DocScreen(ref: d, close: { over = nil }) { link in
+                if case .doc(let next) = link { over = next } else { link.openOutside() }
+            }
+        }
+        .sheet(item: $issue) { ref in
+            NavigationStack {
+                Loaded(load: { try await control.get(Self.issuePath(ref), as: Issue.self) }) { IssueView(issue: $0) }
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Done") { issue = nil } }
+                    }
+            }
+        }
+        // Another project: nothing of the last one stays open.
+        .onChange(of: scope.current?.id) { _, _ in picked = nil }
+    }
+
+    @ViewBuilder private func list(_ docs: [ProjectDoc], in project: Projects.Project) -> some View {
+        let team = project.team != nil
+        let me = scope.me?.account
+        let shown = team && tab == .mine ? docs.filter { me != nil && $0.author == me } : docs
+        VStack(spacing: 0) {
+            if team && !docs.isEmpty {
+                Picker("Docs", selection: $tab) {
+                    ForEach(DocsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .accessibilityIdentifier("docs-tab")
+            }
+            List(selection: $picked) {
+                ForEach(Self.groups(shown, now: .now), id: \.title) { g in
+                    Section {
+                        ForEach(g.docs) { d in
+                            NavigationLink(value: d.ref) { DocRow(doc: d) }
+                                .voidRow()
+                                .accessibilityIdentifier("doc-row-\(d.id)")
+                        }
+                    } header: {
+                        Caps(g.title)
+                    }
+                }
+            }
+            .voidList()
+            .overlay {
+                if docs.isEmpty {
+                    VStack(spacing: 8) {
+                        Caps("No Docs yet")
+                        Text("Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here.")
+                            .font(Face.ui(14)).foregroundStyle(Palette.subtle)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 320)
+                    }
+                    .padding()
+                    .accessibilityIdentifier("docs-none")
+                } else if shown.isEmpty {
+                    Caps("None of \(project.name)'s Docs is yours or your agents' yet")
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .accessibilityIdentifier("docs-none")
+                }
+            }
+        }
+    }
+
+    /// The web's groups (docs-list.tsx's `ageGroup`), by the day each Doc
+    /// was last changed, the latest first.
+    static func groups(_ docs: [ProjectDoc], now: Date) -> [(title: String, docs: [ProjectDoc])] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        let week = cal.date(byAdding: .day, value: -6, to: today)!
+        var out: [(title: String, docs: [ProjectDoc])] = []
+        for d in docs.sorted(by: { $0.updated_at > $1.updated_at }) {
+            let title = d.updated >= today ? "Today" : d.updated >= yesterday ? "Yesterday" : d.updated >= week ? "This week" : "Earlier"
+            if out.last?.title == title { out[out.count - 1].docs.append(d) } else { out.append((title, [d])) }
+        }
+        return out
+    }
+
+    private static func issuePath(_ ref: ProjectIssue) -> String {
+        ref.number.hasPrefix("iss_") ? "/api/issues/\(ref.number)" : "/api/projects/\(ref.project)/issues/\(ref.number)"
+    }
+
+    /// A link in the open Doc.
+    private func follow(_ link: DocLink) {
+        switch link {
+        case .doc(let d):
+            if d.project == scope.current?.id { picked = d } else { over = d }
+        case .board(let project, let id, _):
+            ZoomCenter.shared.route = ZoomRoute(project: project, zoom: .board(id))
+        case .issue(let project, let id):
+            issue = ProjectIssue(project: project, number: id)
+        case .room:
+            link.openOutside()
+        case .web(let u):
+            if !ZoomCenter.shared.open(u) { UIApplication.shared.open(u) }
+        }
     }
 }
+
+extension ProjectIssue: Identifiable {
+    var id: String { "\(project)/\(number)" }
+}
+
+/// A Doc on the list, as the web's row: its layout's mark (a tabs or a
+/// prototype Doc; a plain one has none), its title, and when it was edited.
+struct DocRow: View {
+    let doc: ProjectDoc
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            if let mark = Self.mark(doc.layout) {
+                Image(systemName: mark.symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.accent)
+                    .accessibilityLabel(mark.label)
+            }
+            Text(doc.title.isEmpty ? "Untitled" : doc.title).font(Face.ui(15, "Medium")).foregroundStyle(Palette.fg).lineLimit(2)
+            Spacer(minLength: 8)
+            Text("edited \(doc.updated, format: .relative(presentation: .named, unitsStyle: .abbreviated))")
+                .font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
+        }
+        .padding(.vertical, 4)
+    }
+
+    static func mark(_ layout: String?) -> (symbol: String, label: String)? {
+        switch layout {
+        case "tabs": ("rectangle.split.3x1", "Tabs Doc")
+        case "prototype": ("play.rectangle", "Prototype Doc")
+        default: nil
+        }
+    }
+}
+

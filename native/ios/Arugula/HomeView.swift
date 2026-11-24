@@ -123,7 +123,7 @@ struct HomeView: View {
         switch t {
         case .overview: PhoneHome(control: control, model: model, fleet: fleet, live: live, handed: $made)
         case .boards: BoardsView(control: control, model: model, fleet: fleet, live: live)
-        case .docs: DocsPlace()
+        case .docs: DocsPlace(control: control)
         case .machines: MachinesView(control: control, fleet: fleet)
         case .chat: ChatRoomsView(control: control, live: live)
         }
@@ -168,7 +168,7 @@ struct HomeView: View {
 }
 
 /// The project the app is in, as the web's current project (Arugula #880):
-/// Overview, Boards, Machines, Chat and its issues show what's in it. Kept on this device; the
+/// Overview, Boards, Docs, Machines, Chat and its issues show what's in it. Kept on this device; the
 /// reader's personal project until they pick another.
 @MainActor
 final class Scope: ObservableObject {

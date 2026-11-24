@@ -84,6 +84,26 @@ struct ProjectIssue: Hashable { var project: String; var number: String }
 
 struct BoardList: Decodable { var boards: [Board] }
 
+/// A project Doc on its project's list (the web's `ProjectDoc`), its times
+/// in milliseconds.
+struct ProjectDoc: Decodable, Identifiable, Hashable {
+    var id: String
+    var project: String
+    var title: String
+    /// The account that made it, a machine's agent's owner's included; "" for
+    /// one an agent session made.
+    var author: String
+    /// `tabs` or `prototype`; absent (or one the app doesn't know) is a plain Doc.
+    var layout: String?
+    var created_at: Int
+    var updated_at: Int
+    var updated: Date { Date(timeIntervalSince1970: Double(updated_at) / 1000) }
+    var ref: DocRef { DocRef(project: project, doc: id, label: title) }
+}
+
+/// `GET /api/projects/:project/docs`: the latest changed first.
+struct ProjectDocList: Decodable { var docs: [ProjectDoc] }
+
 struct ChatRoom: Decodable, Identifiable, Hashable {
     var id: String
     var kind: String
