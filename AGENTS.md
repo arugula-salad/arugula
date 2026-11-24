@@ -344,9 +344,13 @@ dialogs, menus, empty states) and what not to invent.
 - `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
   parallel builds don't share one `target/`, and put it under `~/.cache`
-  (`~/.cache/arugula-<worktree>-target`), not in or beside the worktree:
-  a machine can keep its caches on a disk of their own, and its cleanup
-  knows where to look. A new one builds cold;
+  (`~/.cache/arugula-<worktree>-target`, `<worktree>` the worktree's folder
+  name), not in or beside the worktree: a machine can keep its caches on a
+  disk of their own. If `CARGO_TARGET_DIR` is set already (a hosted session
+  sets it), keep it. Closing the worktree removes its dir, a hosted
+  session's end removes its user's, and the daemon sweeps the rest: a dir
+  that no live worktree owns, untouched for 3 days and with no build
+  running in it. A new one builds cold;
   `just build-cache` sets up caches its worktrees share (Ghostty's Zig
   build, sccache), per machine (docs/development.md, "Caches for
   worktrees").

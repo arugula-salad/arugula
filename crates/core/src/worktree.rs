@@ -60,7 +60,9 @@ printf 'ok %s/%s %s\n' "$top" "$w" "$base"
 /// worktree with a submodule, once all that has been checked. A squash
 /// merge isn't in `origin/BASE`: for a clean, pushed worktree on a
 /// github.com origin, `gh` may say a merged PR from the branch had exactly
-/// HEAD as its head, which counts. Never
+/// HEAD as its head, which counts. Once the worktree is gone, its build dir
+/// (`$HOME/.cache/arugula-NAME-target`, NAME the worktree's folder name) goes
+/// too, unless a build holds it (the daemon's sweep takes it later). Never
 /// touches a remote branch. A base that origin no longer has (deleted when
 /// its PR merged) is replaced by origin's default branch. Says `removed`, `kept WHY` or `err WHY` last.
 pub const CLOSE: &str = r#"repo=$1; w=$2; branch=$3; base=$4
@@ -123,6 +125,25 @@ fi
 out=$(LC_ALL=C git -C "$repo" worktree remove "$w" 2>&1) || {
   case $out in *"containing submodules cannot be moved or removed"*) out=$(git -C "$repo" worktree remove --force "$w" 2>&1) ;; *) false ;; esac
 } || { printf 'kept git worktree remove: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
+# Its build dir (AGENTS.md's name for it), by that exact path: no glob, and
+# not a name that isn't one directory's. A dir a build holds is left for the
+# daemon's sweep, and a failure here never changes the outcome (#1410).
+name=$(basename -- "$w")
+case $name in ''|.|..|*/*) ;; *)
+  t="$HOME/.cache/arugula-$name-target"
+  if [ -d "$t" ] || [ -L "$t" ]; then
+    busy=
+    if [ ! -L "$t" ]; then
+      for f in "$t"/*/.cargo-lock; do
+        [ -e "$f" ] || continue
+        if command -v flock >/dev/null 2>&1; then flock -n "$f" true || busy=1
+        elif command -v perl >/dev/null 2>&1; then perl -MFcntl=:flock -e 'open(F, "<", $ARGV[0]) or exit 1; exit(flock(F, LOCK_EX | LOCK_NB) ? 0 : 1)' "$f" || busy=1
+        else busy=1; fi
+      done
+    fi
+    [ -n "$busy" ] || { chmod -R u+rwX -- "$t" 2>/dev/null; rm -rf -- "$t" 2>/dev/null; } || true
+  fi ;;
+esac
 # Merged (into origin/BASE, or the PR's head is HEAD) above, so -D (-d would judge it against the clone's HEAD).
 if git -C "$repo" show-ref --verify -q "refs/heads/$branch"; then
   out=$(git -C "$repo" branch -q -D "$branch" 2>&1) || { printf 'removed worktree, kept branch: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
@@ -264,6 +285,73 @@ mod tests {
         );
         assert_eq!(unpushed, "kept commits not pushed in submodule open");
         assert!(dir.join("unpushed").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Closing a worktree removes its own build dir (`~/.cache/arugula-NAME-target`,
+    /// #1410) and no other; one a build holds, or a worktree that's kept,
+    /// leaves it; a link in its place is removed, not what it points at.
+    #[test]
+    fn close_removes_the_worktrees_build_dir() {
+        let dir = std::env::temp_dir().join(format!("arugula-close-target-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("home/.cache")).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let sh = |script: &str| {
+            let out = std::process::Command::new("sh").arg("-c").arg(script).current_dir(&dir).output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        };
+        let g = "git -c user.name=t -c user.email=t@t";
+        sh(&format!(
+            "git init -q --bare -b main up.git && git clone -q up.git clone 2>/dev/null && cd clone \
+             && {g} commit -q --allow-empty -m one && git push -q origin main"
+        ));
+        let cache = dir.join("home/.cache");
+        let target = |name: &str| {
+            let t = cache.join(format!("arugula-{name}-target"));
+            std::fs::create_dir_all(t.join("debug")).unwrap();
+            std::fs::write(t.join("debug/.cargo-lock"), "").unwrap();
+            std::fs::write(t.join("debug/big"), "x").unwrap();
+            t
+        };
+        // `then` runs in the new worktree after its commit (merged into main).
+        let close = |name: &str, then: &str| {
+            sh(&format!(
+                "cd clone && git fetch -q && git worktree add -q -b {name} ../{name} origin/main && cd ../{name} \
+                 && {g} commit -q --allow-empty -m w && git push -q origin {name} {name}:main {then}"
+            ));
+            let out = std::process::Command::new("sh")
+                .args(["-c", super::CLOSE, "sh"])
+                .args([dir.join("clone").to_str().unwrap(), dir.join(name).to_str().unwrap(), name, "main"])
+                .env("HOME", dir.join("home"))
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or_default().to_owned()
+        };
+
+        let (mine, other) = (target("a"), target("ab"));
+        assert_eq!(close("a", ""), "removed");
+        assert!(!mine.exists(), "its build dir goes");
+        assert!(other.exists(), "another worktree's stays: an exact name, never a glob");
+
+        let kept = target("b");
+        assert!(close("b", "&& echo x > new").starts_with("kept "));
+        assert!(kept.exists(), "a kept worktree keeps its build dir");
+
+        let held = target("c");
+        let lock = std::fs::File::options().write(true).open(held.join("debug/.cargo-lock")).unwrap();
+        lock.lock().unwrap();
+        assert_eq!(close("c", ""), "removed", "a held build dir doesn't change the outcome");
+        assert!(held.exists(), "a build holds it: the sweep takes it later");
+        drop(lock);
+
+        let away = dir.join("away");
+        std::fs::create_dir_all(&away).unwrap();
+        std::fs::write(away.join("precious"), "x").unwrap();
+        std::os::unix::fs::symlink(&away, cache.join("arugula-d-target")).unwrap();
+        assert_eq!(close("d", ""), "removed");
+        assert!(cache.join("arugula-d-target").symlink_metadata().is_err());
+        assert!(away.join("precious").exists(), "the link goes, not what it points at");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
