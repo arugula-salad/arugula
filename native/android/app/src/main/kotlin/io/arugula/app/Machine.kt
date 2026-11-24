@@ -159,7 +159,8 @@ class MachineSession(private val api: Api, val machine: Machine) {
         private set
 
     /** Its panes as the core gave them, for the core's rule to read again. */
-    private var summary by mutableStateOf<String?>(null)
+    var summary by mutableStateOf<String?>(null)
+        private set
     var problem by mutableStateOf<String?>(null)
     var connected by mutableStateOf(false)
         private set
@@ -194,6 +195,8 @@ class MachineSession(private val api: Api, val machine: Machine) {
             link = opened
             connected = true
             pump()
+            // A new channel: the tab being watched, again.
+            watched?.let { watch(it) }
         } catch (e: Exception) {
             problem = describe(e)
         } finally {
@@ -265,10 +268,40 @@ class MachineSession(private val api: Api, val machine: Machine) {
     /** Its sessions that show in [shown], as the core's rule keeps them (Arugula #1352), needs you first. */
     fun cards(shown: Shown?): List<SessionCard> {
         val m = sections(listOf(machine.host(summary)), shown, null)?.optJSONArray("machines")?.optJSONObject(0) ?: return emptyList()
-        return m.list("sessions") { s ->
-            SessionCard(s.getInt("id"), s.list("tabs") { t -> t.getInt("id") to t.ints("panes") }.toMap(), s.optInt("needs_you"))
-        }
+        return m.list("sessions", SessionCard::of)
     }
+
+    /** A pane or an agent block, by its id. */
+    fun pane(id: Int) = panes.firstOrNull { it.id == id } ?: agents.firstOrNull { it.id == id }
+
+    /** The tab being watched: its panes' bytes go to [terms], at the tab's own size. */
+    private var watched: TabLayout? = null
+
+    /**
+     * Watch [tab] whole, at its own size, so nobody's panes resize: its
+     * terminals' bytes go to the [terms] registered for them. What the last
+     * tab had goes first, and the tab's own panes too, so each comes again
+     * with a fresh snapshot (as the iPhone's MachineSession.watch).
+     */
+    fun watch(tab: TabLayout) {
+        val l = link
+        val gone = ((watched?.terminals ?: emptyList()) + tab.terminals).distinct()
+        watched = tab
+        if (l == null) return
+        if (gone.isNotEmpty()) l.detach(gone.toIntArray())
+        l.watch(tab.id, tab.terminals.toIntArray(), tab.cols, tab.rows)
+        pump()
+    }
+
+    /** Stop watching [tab], if it's still the one watched. */
+    fun unwatch(tab: TabLayout) {
+        if (watched?.id != tab.id) return
+        watched = null
+        link?.detach(tab.terminals.toIntArray())
+    }
+
+    /** Its section's host for the core: the machine, with its panes once the link has them. */
+    fun host() = machine.host(summary)
 
     /** This person's role in a pane's session: `owner`, `editor` or `viewer`. */
     fun role(of: PaneRow): String {
@@ -303,8 +336,19 @@ class HomeFleet(private val api: Api) {
     var machines by mutableStateOf<List<MachineSession>>(emptyList())
         private set
 
+    /** Every machine in the directory, offline ones too: Machines' sections. */
+    var directory by mutableStateOf<List<Machine>>(emptyList())
+        private set
+
+    /** The directory came at least once. */
+    var loaded by mutableStateOf(false)
+        private set
+
     suspend fun load() {
-        val online = runCatching { api.get("/api/directory").list("daemons", Machine::of).filter { it.online } }.getOrNull() ?: return
+        val all = runCatching { api.get("/api/directory").list("daemons", Machine::of) }.getOrNull() ?: return
+        directory = all
+        loaded = true
+        val online = all.filter { it.online }
         val ids = online.map { it.id }.toSet()
         machines.filter { it.machine.id !in ids }.forEach { it.disconnect() }
         val kept = machines.filter { it.machine.id in ids }.toMutableList()

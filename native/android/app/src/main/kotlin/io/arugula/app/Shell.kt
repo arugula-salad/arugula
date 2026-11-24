@@ -1,6 +1,6 @@
 // One navigation: the tabs always on the bar (#1262) — Home, the project's
-// Boards and Chat, the account's Machines (with the project's sessions only,
-// Arugula #1352), and You — each with its own back stack, as the iPhone's
+// Boards and Chat, Machines (the project's sessions on each machine, Arugula
+// #1352, #1358), and You — each with its own back stack, as the iPhone's
 // HomeView.swift. The bar stays on every screen,
 // whatever is open. The project's issues open from its menu and from a
 // board's rows.
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -96,12 +97,18 @@ sealed interface Dest {
     data class MachineD(val machine: Machine) : Dest
 
     data class Terminal(val machine: String, val pane: Int, val tab: Int) : Dest
+
+    /** A machine's session, a tab at a time: [tab] first, else its last; [lit], the pane picked in it. */
+    data class Session(val machine: String, val session: Int, val tab: Int? = null, val lit: Int? = null) : Dest
 }
 
 /** What every screen inside the shell can reach. */
 class Nav(val tab: () -> AppTab, private val stacks: Map<AppTab, SnapshotStateList<Dest>>, val select: (AppTab) -> Unit) {
     fun push(d: Dest) = stacks.getValue(tab()).add(d)
     fun pop() = stacks.getValue(tab()).removeLastOrNull()
+
+    /** Show [d] in place of whatever the tab had open: a tablet's detail, beside its list. */
+    fun replace(d: Dest) = stacks.getValue(tab()).apply { clear(); add(d) }
 
     /** Open [d] on [t]'s stack, over its list, and go there. */
     fun open(t: AppTab, d: Dest) {
@@ -181,7 +188,7 @@ fun Shell(api: Api, model: AppModel) {
     }
     // Another project: nothing of the last one stays open.
     LaunchedEffect(scope.current?.id) {
-        for (t in listOf(AppTab.HOME, AppTab.BOARDS, AppTab.CHAT)) stacks.getValue(t).clear()
+        for (t in listOf(AppTab.HOME, AppTab.BOARDS, AppTab.CHAT, AppTab.MACHINES)) stacks.getValue(t).clear()
     }
     // Back: off the tab's stack, then to Home, then out of the app.
     BackHandler(enabled = stack.isNotEmpty() || tab != AppTab.HOME) {
@@ -222,14 +229,17 @@ fun Shell(api: Api, model: AppModel) {
                         AppTab.HOME -> HomeScreen(api, home, fleet, live)
                         AppTab.BOARDS -> BoardsScreen(api)
                         AppTab.CHAT -> ChatRoomsScreen(api, live)
-                        AppTab.MACHINES -> MachinesScreen(api, fleet)
+                        AppTab.MACHINES -> {}
                         AppTab.YOU -> YouScreen(model)
                     }
                 }
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     // A tablet, as the iPad: the tab's list beside what it
-                    // opened. A terminal takes the whole width.
-                    if (maxWidth >= 840.dp && tab != AppTab.YOU && top !is Dest.Terminal) {
+                    // opened. A terminal takes the whole width. Machines
+                    // lays itself out (ListDetailPaneScaffold).
+                    if (tab == AppTab.MACHINES && top !is Dest.Terminal) {
+                        MachinesScreen(api, fleet, home, top) { Destination(api, it, home, fleet, live) }
+                    } else if (maxWidth >= 840.dp && tab != AppTab.YOU && top !is Dest.Terminal) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.width(380.dp).fillMaxHeight()) { list() }
                             VerticalDivider(color = Palette.raised)
@@ -250,12 +260,12 @@ fun Shell(api: Api, model: AppModel) {
 
 /** What a tablet's detail shows before anything is picked. */
 @Composable
-private fun Pick(tab: AppTab) {
+fun Pick(tab: AppTab) {
     val words = when (tab) {
         AppTab.HOME -> "Pick a conversation"
         AppTab.BOARDS -> "Pick a board"
         AppTab.CHAT -> "Pick a room"
-        else -> "Pick a machine"
+        else -> "Pick a session"
     }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(tab.icon, null, Modifier.size(34.dp), tint = Palette.muted)
@@ -274,6 +284,7 @@ private fun Destination(api: Api, d: Dest, home: HomeModel, fleet: HomeFleet, li
         Dest.Issues -> IssuesScreen(api)
         is Dest.MachineD -> MachineScreen(api, d.machine, fleet)
         is Dest.Terminal -> TerminalScreen(api, d, fleet)
+        is Dest.Session -> SessionScreen(api, d, fleet, home)
     }
 }
 
@@ -330,12 +341,12 @@ fun TabHeading(title: String, project: Boolean = false, trailing: @Composable ()
     }
 }
 
-/** A detail's bar: back, its title, and what goes on the right. */
+/** A detail's bar: back (unless it's what shows before anything is picked), its title, and what goes on the right. */
 @Composable
-fun DetailBar(title: String, trailing: @Composable () -> Unit = {}) {
+fun DetailBar(title: String, back: Boolean = true, trailing: @Composable () -> Unit = {}) {
     val nav = LocalNav.current
-    Row(Modifier.fillMaxWidth().background(Palette.void).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton({ nav.pop() }, Modifier.testTag("back")) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Palette.fg) }
+    Row(Modifier.fillMaxWidth().background(Palette.void).padding(start = if (back) 0.dp else 16.dp, end = 12.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (back) IconButton({ nav.pop() }, Modifier.testTag("back")) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Palette.fg) }
         Text(title, Modifier.weight(1f), style = Face.ui(17.sp, FontWeight.SemiBold), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { trailing() }
     }

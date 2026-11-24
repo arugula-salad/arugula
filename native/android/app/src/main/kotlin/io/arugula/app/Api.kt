@@ -230,9 +230,38 @@ val Project.shown get() = Shown(id, team == null)
 fun Shown?.shows(project: String?, card: String? = null, yours: Boolean) =
     Core.shown(this?.id, this?.personal ?: false, project, card, yours)
 
+/** One of a session's tabs as the core keeps it: its panes' ids, in layout order. */
+data class SessionTab(val id: Int, val name: String?, val panes: List<Int>)
+
 /** One of a machine's sessions the core keeps for a project: its tabs' panes, and how many need you. */
-data class SessionCard(val id: Int, val tabs: Map<Int, List<Int>>, val needsYou: Int) {
-    val panes get() = tabs.values.flatten()
+data class SessionCard(val id: Int, val name: String, val tabs: List<SessionTab>, val needsYou: Int, val state: String) {
+    val panes get() = tabs.flatMap { it.panes }
+
+    companion object {
+        fun of(o: JSONObject) = SessionCard(
+            o.getInt("id"), o.optString("name"), o.list("tabs") { t -> SessionTab(t.getInt("id"), t.str("name"), t.ints("panes")) },
+            o.optInt("needs_you"), o.optString("state"),
+        )
+    }
+}
+
+/** A machine's section on Machines: whose it is, and its sessions in the project, needs you first. */
+data class MachineSection(val id: String, val name: String, val online: Boolean, val cloud: Boolean, val owner: String?, val sessions: List<SessionCard>) {
+    companion object {
+        fun of(o: JSONObject) = MachineSection(
+            o.getString("id"), o.optString("name"), o.optBoolean("online"), o.optBoolean("cloud"), o.str("owner"), o.list("sessions", SessionCard::of),
+        )
+    }
+}
+
+/**
+ * Machines as the core lays them out (`aru_machines`): those with sessions
+ * in the project in the phone's order, and [quiet], those with none, by name.
+ */
+data class Sections(val machines: List<MachineSection>, val quiet: List<MachineSection>) {
+    companion object {
+        fun of(o: JSONObject?) = Sections(o?.list("machines", MachineSection::of).orEmpty(), o?.list("quiet", MachineSection::of).orEmpty())
+    }
 }
 
 /**

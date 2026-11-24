@@ -9,7 +9,9 @@ machine, the terminal) for Kotlin, which it runs on.
   key in `noBackupFilesDir`; a tab bar that's always there, Home · Boards ·
   Chat · Machines · You; Home's Needs you (answered in the row), New ideas,
   boards and people, and New; a board's thread and lanes; chat rooms on the
-  live stream; a machine's panes and a pane's terminal. Its fonts are fetched
+  live stream; Machines as one page of machine › session › pane rows (beside
+  the session's live tab on a tablet), a session a tab at a time, and a
+  pane's terminal. Its fonts are fetched
   into the build at a pinned commit and checked, as the iPhone's are. A debug
   build reads `-Parugula.control=URL` for another control.
 - `core/`: an Android library. Its Kotlin (`io.arugula.core`) calls the core
