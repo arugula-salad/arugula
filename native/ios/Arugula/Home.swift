@@ -592,6 +592,7 @@ struct PhoneHome: View {
     @ObservedObject var live: LiveChat
     @ObservedObject private var push = PushCenter.shared
     @ObservedObject private var zoomCenter = ZoomCenter.shared
+    @ObservedObject private var approvals = Approvals.shared
     @EnvironmentObject private var scope: Scope
     @Environment(\.scenePhase) private var phase
     @State private var opened: Opened?
@@ -933,6 +934,7 @@ struct PhoneHome: View {
 
     private func refresh(soon: Bool = false) async {
         guard let p = scope.current else { return }
+        if !soon { await approvals.load(control) }
         if soon { await model.soon(control, project: p.id) } else { await model.load(control, project: p.id) }
     }
 
@@ -978,7 +980,15 @@ struct PhoneHome: View {
                 }
             }
             Section {
-                if needs.isEmpty {
+                // Deploys waiting on the reader, in any project they own,
+                // first: they open over the app (#604).
+                ForEach(approvals.waiting) { d in
+                    Button { approvals.open = .deploy(d.id) } label: { DeployNeedRow(deploy: d) }
+                        .buttonStyle(.plain)
+                        .voidRow()
+                        .accessibilityIdentifier("need-deploy-\(d.id)")
+                }
+                if needs.isEmpty && approvals.waiting.isEmpty {
                     Text(model.loaded ? "Nothing needs you." : "Looking…")
                         .font(Face.ui(14)).foregroundStyle(Palette.dim)
                         .voidRow()
@@ -986,7 +996,8 @@ struct PhoneHome: View {
                 }
                 ForEach(needs) { n in needRow(n) }
             } header: {
-                Caps(needs.isEmpty ? NEEDS_YOU : "\(NEEDS_YOU) · \(needs.count)")
+                let count = needs.count + approvals.waiting.count
+                Caps(count == 0 ? NEEDS_YOU : "\(NEEDS_YOU) · \(count)")
             }
             if !ideaLines.isEmpty {
                 Section {
@@ -1134,10 +1145,17 @@ struct ProjectMenu: View {
                 }
             }
         }
-        if let showIssues {
-            Section {
+        Section {
+            if let showIssues {
                 Button(action: showIssues) { Label("Issues", systemImage: "smallcircle.filled.circle") }
                     .accessibilityIdentifier("project-issues")
+            }
+            // Its standing grant for runs (#604).
+            if let p = scope.current {
+                Button { Approvals.shared.open = .runs(project: p.id, name: p.name) } label: {
+                    Label("Runs", systemImage: "play.circle")
+                }
+                .accessibilityIdentifier("project-runs")
             }
         }
     }

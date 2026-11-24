@@ -8,14 +8,18 @@ import UIKit
 import UserNotifications
 
 /// What a tapped notification opens, from what it said: a pane on a machine
-/// (an agent's question, a terminal that wants you), a chat room, an issue.
+/// (an agent's question, a terminal that wants you), a chat room, an issue,
+/// a deploy waiting for approval (Arugula #604).
 enum PushRoute: Equatable {
     case pane(machine: String, pane: UInt32)
     case room(String)
     case issue(String)
+    case deploy(String)
 
     init?(said: [String: Any]) {
-        if let machine = said["daemon"] as? String, let pane = said["pane"] as? Int, pane > 0 {
+        if let deploy = said["deploy"] as? String, deploy.hasPrefix("dep_") {
+            self = .deploy(deploy)
+        } else if let machine = said["daemon"] as? String, let pane = said["pane"] as? Int, pane > 0 {
             self = .pane(machine: machine, pane: UInt32(pane))
         } else if let chat = said["chat"] as? [String: Any], let room = chat["room"] as? String {
             self = .room(room)
