@@ -106,6 +106,8 @@ use tracing::{info, warn};
 // What the code here names as `crate::…`: the mux's modules and the daemon's,
 // as it named them when it was the daemon's.
 use arugula_mux::{block, mux, store};
+#[cfg(unix)]
+use arugulad_base::build_dirs;
 use arugulad_base::{agent, control, roots, server, task, work};
 
 use crate::{

@@ -102,6 +102,8 @@ use arugula_mux::store;
 pub mod subcommands;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
+#[cfg(unix)]
+pub mod build_dirs;
 pub mod tailscale;
 pub mod telemetry;
 mod tls;
@@ -235,6 +237,9 @@ fn start_background(app: &std::sync::Arc<server::App>) {
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     crate::task::spawn(upload::keep_sweeping());
+    // #1410: agents' build folders that no worktree or session owns go.
+    #[cfg(unix)]
+    crate::task::spawn(build_dirs::keep_sweeping(app.clone()));
 }
 
 /// A random name for this daemon's state directory, kept in it: the

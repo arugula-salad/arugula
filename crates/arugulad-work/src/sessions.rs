@@ -101,9 +101,10 @@
 //!   fails), what its pushes left and everything in its user's home go
 //!   (its checkout, its agent's config and conversations, dotfiles), and
 //!   its user's files in the temporary directories, so the next session in
-//!   that slot starts with nothing of it. Its build caches stay for the
-//!   slot's next session only when that's the same asker's; another
-//!   asker's session finds an empty home ([`fresh_home`]).
+//!   that slot starts with nothing of it. Its build dirs (cargo's target)
+//!   go with it; sccache and the registry stay for the slot's next session
+//!   only when that's the same asker's; another asker's session finds an
+//!   empty home ([`fresh_home`]).
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -2171,6 +2172,13 @@ pub async fn clean_slot(dir: &Path, l: &AgentSessionLedger) {
         Err(e) => {
             warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")
         }
+    }
+    // Its build dirs go whoever's next (#1410): they're gigabytes, and
+    // `fresh_home` keeps `~/.cache`. sccache and the registry stay.
+    #[cfg(unix)]
+    match crate::build_dirs::drop_user(&l.user, false).await {
+        Ok(gone) => info!(session = l.session, dirs = gone.len(), "hosted: dropped an ended session's build dirs"),
+        Err(e) => warn!(session = l.session, error = e, "hosted: can't drop an ended session's build dirs"),
     }
 }
 
