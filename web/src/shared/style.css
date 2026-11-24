@@ -921,6 +921,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--backdrop);
 }
 
+/* A menu opened from inside a dialog (95) is over it, its sheet's
+   backdrop too. */
+.menu-backdrop.over-dialog {
+  z-index: 96;
+}
+
+.menu.over-dialog {
+  z-index: 97;
+}
+
 .menu.sheet {
   inset: auto 0 0;
   width: auto;
@@ -2875,16 +2885,6 @@ button.agent-image {
   white-space: nowrap;
   font: var(--text-sm) var(--f-mono);
   color: var(--dim);
-}
-
-/* A question (Move here?): it wraps onto lines of its own when narrow,
-   above the buttons, rather than being cut off. */
-.picker-target.ask {
-  flex: 1 1 14em;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  font: var(--text-sm) var(--f-ui);
-  color: var(--fg);
 }
 
 .prompt-backdrop:has(> .picker.phone) {
@@ -5255,19 +5255,6 @@ button.diff-why-run {
   color: var(--teal);
 }
 
-/* ---- Claude Code conversations (M33) */
-
-.picker.conversations {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  width: min(720px, calc(100vw - 32px));
-  height: min(600px, 80vh);
-}
-
-.picker.conversations.phone {
-  width: auto;
-  height: var(--app-height);
-}
-
 /* Edit in nvim (+ Pane's Editor, Getting started): the switch, then its
    words (#1115). */
 label.edit-in-nvim {
@@ -5276,100 +5263,283 @@ label.edit-in-nvim {
   gap: 8px;
 }
 
-.picker.conversations .picker-where .check {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
+/* ---- Your work (Arugula #1396): the conversations, by repo. A page (the
+   owner's home with no session open) or a dialog's body. */
+
+.your-work-home {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.your-work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 960px;
+}
+
+.your-work.page .page-sub {
+  color: var(--dim);
+}
+
+.your-work-dialog {
+  display: grid;
+  width: min(760px, calc(100vw - 32px));
+  height: min(640px, 82vh);
+  padding: var(--space-4);
+  border-radius: var(--panel-radius);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+}
+
+.your-work-dialog.phone {
+  width: auto;
+  height: var(--app-height);
+}
+
+.your-work.in-dialog {
+  max-width: none;
+  min-height: 0;
+}
+
+.yw-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.yw-dialog-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.yw-sub {
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.yw-filter {
+  flex: 1 0 100%;
+}
+
+.yw-close {
   margin-left: auto;
 }
 
-.picker.conversations .picker-where .check + .check {
-  margin-left: 8px;
+.your-work.in-dialog .yw-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.yw-list {
+  outline: 0;
 }
 
 /* #78: a host's heading, with how it answered. */
-.conv-host {
+.yw-host-head {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
-  padding: 10px 8px 2px;
+  padding: var(--space-3) var(--space-2) var(--space-1);
   font-weight: 600;
   border-top: 1px solid var(--line-strong);
 }
 
-.conv-host:first-child {
+.yw-host:first-child .yw-host-head {
   border-top: none;
 }
 
-.conv-host-state {
+.yw-host-state {
   font-weight: normal;
   font-size: var(--text-xs);
   color: var(--dim);
 }
 
-.conv-host.away .conv-host-state,
-.conv-host.asleep .conv-host-state {
+.yw-host-head:is(.away, .asleep) .yw-host-state {
   color: var(--warn);
 }
 
-.conv-folder {
-  padding: 8px 8px 3px;
-  font: var(--text-sm) var(--f-mono);
+.yw-repo {
+  margin: 0 0 var(--space-4);
+}
+
+.yw-repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  margin-bottom: 2px;
+  padding: 0 var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.yw-repo-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.yw-mono {
+  min-width: 0;
+  overflow: hidden;
   color: var(--dim);
+  font: var(--text-xs) var(--f-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yw-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--space-4);
+  padding: 6px var(--space-2);
+  border-radius: var(--btn-radius);
+  cursor: pointer;
+}
+
+.yw-row:hover {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.yw-row.selected {
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
+}
+
+.yw-first,
+.yw-last {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conv-row {
-  padding-left: 16px;
-  font-family: inherit;
+.yw-first {
+  grid-column: 1;
+  font-size: var(--text-md);
 }
 
-.conv-title {
-  flex: 1;
-  min-width: 0;
-}
-
-.conv-source {
-  flex: none;
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  font-size: var(--text-xs);
+.yw-last {
+  grid-column: 1;
   color: var(--dim);
-  border: 1px solid var(--line-strong);
+  font: var(--text-xs)/1.35 var(--f-mono);
 }
 
-.conv-source.desktop {
+.yw-last[data-folder-gone] {
+  color: var(--warn);
+}
+
+/* A question (Move here?) or why it couldn't move: on lines of its own
+   when narrow, rather than cut off. */
+.yw-last.ask {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--fg);
+  font-family: var(--f-ui);
+}
+
+.yw-last[data-move-refused] {
+  color: var(--warn);
+}
+
+.yw-meta {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--dim);
+  font-size: var(--text-xs);
+}
+
+.yw-when,
+.yw-tool {
+  white-space: nowrap;
+}
+
+.yw-live {
   color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  font-weight: 500;
 }
 
-.conv-live {
-  flex: none;
-  font-size: var(--text-xs);
-  color: var(--ok);
+/* The buttons show on the row you're at; its tool and age give way. */
+.yw-acts {
+  display: none;
+  gap: var(--space-1);
+  align-items: center;
 }
 
-/* #453: a conversation's live figures, the slim strip. */
-.conv-context {
-  flex: none;
-  display: inline-flex;
+.yw-row:is(:hover, .selected) .yw-acts {
+  display: flex;
 }
 
-.conv-cost {
-  flex: none;
-  font-size: var(--text-xs);
+.yw-row:is(:hover, .selected) :is(.yw-when, .yw-tool) {
+  display: none;
+}
+
+.yw-more {
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
   color: var(--dim);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  cursor: pointer;
 }
 
-.conv-when {
-  flex: none;
-  width: 4.75em;
-  text-align: right;
-  font-size: var(--text-xs);
-  color: var(--dim);
+.yw-more:hover {
+  color: var(--fg);
+}
+
+.yw-error {
+  margin: var(--space-2);
+}
+
+.yw-move-why code,
+.yw-move-why kbd {
+  font-family: var(--f-mono);
+}
+
+/* Narrow (a phone, a 360px window): the row's facts and buttons go under
+   its prompts, and the live mark wraps rather than squeezing them. */
+@media (max-width: 600px) {
+  .your-work-home {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .yw-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-2);
+  }
+
+  .yw-meta {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+  }
+
+  .yw-live {
+    white-space: normal;
+  }
+
+  .yw-first {
+    font-size: var(--text-lg);
+  }
 }
 
 .agent-import {

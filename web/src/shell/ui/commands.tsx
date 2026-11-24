@@ -15,7 +15,7 @@ import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
-import { pickConversation } from "./conversations";
+import { openYourWork, pickConversation } from "./conversations";
 import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
@@ -128,8 +128,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // A Doc of this machine's, beside it (#703).
     ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
-    // M33: Claude Code conversations from terminals and the desktop app.
-    ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
+    // Your work (Arugula #1396): the conversations, to continue one beside it.
+    ...(owner ? [{ label: "Your work…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
     ...(owner && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { split: id }) } as MenuItem] : []),
     // M36: a pull request beside it (N: in its repository).
@@ -500,10 +500,7 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   /** The team's settings: the app's, where there is one (its invite links
    * and chat are there); else control's Teams. */
   "control.teams": (_client, { team }) => (platformOrigin() && team ? openPlatform(`/settings/team/${encodeURIComponent(String(team))}`) : openPanel("teams")()),
-  "conversations.pick": (client) => {
-    const pane = client.active();
-    pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
-  },
+  "conversations.pick": (client) => openYourWork(client),
 };
 
 /** Where a menu opens under the element `selector` finds (else mid-page). */

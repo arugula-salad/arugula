@@ -9,8 +9,9 @@
 // Then Discovery 3's, one test each, driving the fact and taking the
 // action: a PR link printed, a path pasted or files dragged over a pane,
 // `cd` in a fresh pane, a Doc block, the bell on a device that could be
-// notified, Claude Code conversations here, and (last: it restarts the
-// daemon) panes back after a restart. The second person's and the team's
+// notified, and (last: it restarts the daemon) panes back after a
+// restart. Claude Code's conversations are no hint now: they're the home
+// (your-work.spec.ts). The second person's and the team's
 // are in hints-people.spec.ts and hints-team.spec.ts.
 //
 // Hints keep quiet under a test runner unless a spec asks (hints/index.ts):
@@ -23,7 +24,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, open, paneEl, panes, ready, reset, run, seedConversation, text, type, openSettingsPage, closeSettingsPage } from "./helpers";
+import { closeContexts, menuItem, open, paneEl, panes, ready, reset, run, text, type, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { FakePush } from "./phones";
@@ -33,8 +34,7 @@ test.afterAll(closeContexts);
 let APP = "";
 let PORT = 0;
 let state = "";
-/** Claude Code's directory, the daemon's own: no conversations until one
- * test seeds one. */
+/** Claude Code's directory, the daemon's own: no conversations. */
 let claude = "";
 let daemon: ChildProcess | undefined;
 test.use({ baseURL: async ({}, use) => use(APP) });
@@ -262,19 +262,6 @@ test("the bell on a device that could be notified: Notify this device turns it o
     await expect(page.locator("[data-hint]")).toHaveCount(0);
   } finally {
     push.close();
-  }
-});
-
-test("Claude Code conversations here and none open: the picker", async ({ page }) => {
-  const { cwd } = seedConversation(claude, "heron", "Heron notes");
-  try {
-    await reset(page);
-    await expect(toast(page, "claude-conversations")).toContainText("Pick up a Claude Code conversation here");
-    await toast(page, "claude-conversations").locator("[data-hint-act]").click();
-    await expect(page.getByRole("dialog", { name: "Claude Code conversations" })).toContainText("Heron notes");
-  } finally {
-    rmSync(join(claude, "projects"), { recursive: true, force: true });
-    rmSync(cwd, { recursive: true, force: true });
   }
 });
 

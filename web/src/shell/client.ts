@@ -968,9 +968,18 @@ export class Client {
   /** Continue here: a Claude Code or Codex conversation going on in a
    * terminal pane running `claude --resume` or `codex resume`, in a new tab
    * named after it, or the pane or block that has it already, shown. `home`: its folder is gone, run it
-   * there. The answer (`folder_gone` and no pane: ask about home), or null
-   * (and the error as a toast). */
-  async continueConversation(o: { id: string; home?: boolean; move?: boolean; from?: PaneId; session?: number }): Promise<ContinueConversationResponse | null> {
+   * there. `move`: stop it in the other terminal first (Move here); if it
+   * won't stop (409), `refused` hears why instead of a toast. The answer
+   * (`folder_gone` and no pane: ask about home), or null (and the error as
+   * a toast). */
+  async continueConversation(o: {
+    id: string;
+    home?: boolean;
+    move?: boolean;
+    from?: PaneId;
+    session?: number;
+    refused?: (why: string) => void;
+  }): Promise<ContinueConversationResponse | null> {
     this.lastMadeAt = Date.now();
     try {
       const res = await this.request(OPS["conversation.continue"].method, opPath("conversation.continue"), {
@@ -982,7 +991,9 @@ export class Client {
       } satisfies ContinueConversationRequest);
       const v = await res.json<Partial<ContinueConversationResponse> & { error?: string }>().catch(() => null);
       if (!res.ok || !v || typeof v.conversation !== "string") {
-        this.toast(v?.error ?? `couldn't continue it (${res.status})`);
+        const why = v?.error ?? `couldn't continue it (${res.status})`;
+        if (o.move && res.status === 409 && o.refused) o.refused(why);
+        else this.toast(why);
         return null;
       }
       if (v.pane != null && !v.opened) this.focusPane(v.pane);

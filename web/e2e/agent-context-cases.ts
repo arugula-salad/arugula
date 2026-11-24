@@ -6,7 +6,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
+import { menu, menuItem, paneEl, panes, reset, seedConversation, type Base } from "./helpers";
 
 const claude = process.env.CLAUDE_CONFIG_DIR!;
 const seeded: string[] = [];
@@ -74,12 +74,14 @@ const cases: { name: string; more: (b: Base) => object[]; model: string; pct: nu
 async function open(page: Page, title: string) {
   await reset(page);
   const [term] = await panes(page);
-  await menu(page, paneEl(page, term), "Claude Code conversations…");
-  const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
-  await dialog.locator(".picker-filter").fill(title);
-  // Shown as an agent block, not continued in a terminal (a row's click).
-  await expect(dialog.locator("[data-conversation]", { hasText: title })).toHaveAttribute("aria-selected", "true");
-  await dialog.locator("[data-open-block]").click();
+  await menu(page, paneEl(page, term), "Your work…");
+  const dialog = page.getByRole("dialog", { name: "Your work" });
+  await dialog.locator(".yw-filter").fill(title);
+  // Shown as an agent block (its ⋯), not continued in a terminal.
+  const row = dialog.locator("[data-conversation]").first();
+  await row.click();
+  await row.locator("[data-conv-more]").click();
+  await (await menuItem(page, "Open as agent block")).click();
   await expect(dialog).toBeHidden();
   const block = await page.waitForFunction(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id ?? null);
   return paneEl(page, (await block.jsonValue()) as number);
@@ -197,22 +199,8 @@ export function costTests() {
       await expect(pop).toHaveCount(0);
     });
   }
+  // Your work's rows carry no cost (Arugula #1396): a conversation's
+  // estimate, its subagents' with it, is on its agent block ("a session
+  // with a subagent" above).
 
-  test("the conversations list shows a conversation's estimate once it's read", async ({ page }) => {
-    const title = "Cost in the list";
-    const s = seedConversation(claude, "costlist", title, (b) => [reply(b, "1", OPUS, { input_tokens: 100_000, output_tokens: 0 })]);
-    seeded.push(s.cwd);
-    seedSubagent(s.cwd, s.id);
-    await reset(page);
-    const [term] = await panes(page);
-    const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
-    // The daemon prices it off the listing's path: a later listing has it.
-    await expect(async () => {
-      if (await dialog.isVisible()) await dialog.getByRole("button", { name: "Cancel" }).click();
-      await menu(page, paneEl(page, term), "Claude Code conversations…");
-      await dialog.locator(".picker-filter").fill(title);
-      await expect(dialog.locator("[data-conversation] .conv-cost")).toHaveText("≈ $0.90", { timeout: 1000 });
-    }).toPass({ timeout: 20_000 });
-    await expect(dialog.locator("[data-conversation] .conv-cost")).toHaveAttribute("title", /API list prices\. Not a bill.* With its subagents/);
-  });
 }
