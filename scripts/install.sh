@@ -24,6 +24,7 @@
 # --no-app                  don't install the Mac app
 # ARUGULA_VERSION=vX.Y.Z  a release tag (default: the latest)
 # ARUGULA_NO_START=1      install the service without starting it
+# ARUGULA_NO_OPEN=1       don't open the daemon's page in your browser
 # ARUGULA_DOWNLOAD_URL=…  where the release's files are, instead of GitHub
 #                           (a mirror, or a local build: file:///path/to/dist)
 # ARUGULA_APP=1 (or 0)    the same as --app (or --no-app)
@@ -421,8 +422,20 @@ if [ -n "$ts" ]; then
   dns=$("$ts" status --json 2>/dev/null | awk '/"Self":/ { s = 1 } s && /"DNSName":/ { gsub(/[",]/, "", $2); sub(/\.$/, "", $2); print $2; exit }' || true)
 fi
 
+# The page, through its sign-in link, so it opens on Your work signed in:
+# `arugula web --if-browser` opens it in this machine's browser, or prints
+# nothing (the link holds the local token, so it's never in this output).
+# Not over ssh, where a browser here isn't the one you're at, and not
+# with the Mac app, which shows the page itself.
+opened=""
+if [ -n "$started" ] && [ -n "${up:-}" ] && [ "$app" != 1 ] && [ -z "${SSH_CONNECTION:-}${SSH_TTY:-}${ARUGULA_NO_OPEN:-}" ]; then
+  "$HOME/.local/bin/arugula" web --if-browser 2>/dev/null && opened=1
+fi
+
 say ""
-if [ -n "$started" ]; then
+if [ -n "$opened" ]; then
+  say "  Open      ${bin}arugula web   ($url, signed in: opened just now)"
+elif [ -n "$started" ]; then
   say "  Open      ${bin}arugula web   ($url, with your browser signed in)"
 else
   say "  Open      ${bin}arugula web   ($url signed in, once it's running)"

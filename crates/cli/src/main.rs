@@ -393,7 +393,8 @@ enum Command {
     ///
     /// Programs and browsers on this machine show the daemon's local token; this
     /// opens a sign-in link that gives your browser it (once: it stays signed in).
-    /// `--print` prints the link instead (it holds the token).
+    /// `--print` prints the link instead (it holds the token); `--if-browser`
+    /// opens it only where there's a browser, and otherwise prints nothing.
     Web(cmd::web::Args),
     /// Install the daemon.
     ///
@@ -987,7 +988,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     {
         // The local daemon's own link, over its socket (only ours); with
         // --ssh, the box's, below.
-        return cmd::web::web(&http::Target::Socket(socket(&cli)), args.print);
+        return cmd::web::web(&http::Target::Socket(socket(&cli)), args);
     }
     if let Command::Inbox = cli.cmd {
         return Ok(hook::inbox(http::Target::Socket(socket(&cli))));
@@ -1053,7 +1054,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         }
         // Only with --ssh: the box daemon's link, over the bridge to its
         // socket.
-        Command::Web(args) if matches!(ctx.sock, http::Target::Ssh(_)) => cmd::web::web(&ctx.sock, args.print),
+        Command::Web(args) if matches!(ctx.sock, http::Target::Ssh(_)) => cmd::web::web(&ctx.sock, &args),
         Command::Install(_)
         | Command::Web(_)
         | Command::Bridge { .. }
@@ -1157,6 +1158,16 @@ mod tests {
     fn labs_command(labs: bool) -> clap::Command {
         use arugula_proto::flags::On;
         super::labs_command(if labs { On::all() } else { On::none() })
+    }
+
+    /// What scripts/install.sh runs to open the page signed in: it opens
+    /// or says nothing, so it can't also print the link.
+    #[test]
+    fn web_for_the_installer() {
+        use clap::Parser;
+        let c = super::Cli::try_parse_from(["arugula", "web", "--if-browser"]).unwrap();
+        assert!(matches!(c.cmd, super::Command::Web(ref a) if a.if_browser && !a.print));
+        assert!(super::Cli::try_parse_from(["arugula", "web", "--if-browser", "--print"]).is_err());
     }
 
     #[test]
