@@ -418,7 +418,7 @@ pub fn session_signal(sock: Target) -> i32 {
 mod tests {
     use serde_json::json;
 
-    use super::{driven, files_a_github_issue, post_hook, pre_tool_use};
+    use super::{driven, files_a_github_issue, pre_tool_use};
 
     #[test]
     fn gh_issue_create_is_seen_wherever_it_is_in_the_command() {
@@ -483,7 +483,7 @@ mod tests {
     fn a_daemon_that_never_answers_costs_only_the_limit() {
         use std::{os::unix::net::UnixListener, time::Instant};
 
-        use super::{FLAGS_WAIT, Target};
+        use super::{FLAGS_WAIT, Target, post_hook};
 
         let dir = std::env::temp_dir().join(format!("arugula-hook-hung-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
