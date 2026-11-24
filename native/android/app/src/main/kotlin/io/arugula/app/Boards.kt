@@ -252,10 +252,12 @@ private fun repeats(note: String, title: String?) = !title.isNullOrEmpty() && no
 
 /** A native issue, by its id. */
 @Composable
-fun IssueScreen(api: Api, id: String) {
+fun IssueScreen(api: Api, id: String, project: String? = null) {
+    // A Doc's link may name an issue by its number in its project.
+    val path = if (project != null && !id.startsWith("iss_")) "/api/projects/$project/issues/$id" else "/api/issues/$id"
     Column(Modifier.fillMaxSize()) {
         DetailBar("Issue")
-        Loaded(key = id, load = { Issue.of(api.get("/api/issues/$id")) }) { issue, _ -> IssueBody(issue) }
+        Loaded(key = path, load = { Issue.of(api.get(path)) }) { issue, _ -> IssueBody(issue) }
     }
 }
 

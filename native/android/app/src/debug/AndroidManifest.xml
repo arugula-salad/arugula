@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: a Doc's web view may load a local control over plain
+     http (the emulator's 10.0.2.2, a reversed 127.0.0.1, and localhost's
+     subdomains, where testnet runs prototypes). Release has none of it. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

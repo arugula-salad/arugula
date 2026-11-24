@@ -3,7 +3,9 @@ package io.arugula.app
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -126,9 +128,21 @@ class AppFlowTest {
             until("ANDROID-42 in the terminal", 30_000) { terminalText().contains("ANDROID-42") }
             shot("5-terminal")
 
-            // Docs says what's coming.
+            // Docs (Arugula #1364): the project's Docs, newest first, or a
+            // plain word that it has none yet. One opens in its web view.
             tap("tab-Docs")
             wait("docs-place")
+            val docRow = SemanticsMatcher("a Doc's row") { it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("doc-row-") == true }
+            until("a Doc or the word there are none", 30_000) {
+                listOf(hasTestTag("docs-none"), docRow).any { rule.onAllNodes(it).fetchSemanticsNodes().isNotEmpty() }
+            }
+            shot("6-docs")
+            if (rule.onAllNodes(docRow).fetchSemanticsNodes().isNotEmpty()) {
+                rule.onAllNodes(docRow).onFirst().performClick()
+                wait("doc-web", 15_000)
+                shot("6-doc")
+                tap("back")
+            }
 
             // Your picture: sign out, and the app asks for a sign-in again.
             tap("tab-Overview")

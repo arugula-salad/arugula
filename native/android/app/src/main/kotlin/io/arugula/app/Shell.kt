@@ -104,7 +104,11 @@ sealed interface Dest {
     /** A thread found by its object (a New idea's issue). */
     data class ObjectThread(val target: String, val title: String) : Dest
 
-    data class IssueRef(val id: String) : Dest
+    /** An issue by its id (`iss_…`), or by its number in [project]. */
+    data class IssueRef(val id: String, val project: String? = null) : Dest
+
+    /** A project Doc, in its page's web view; [over], another project's, over everything. */
+    data class Doc(val ref: DocRef, val over: Boolean = false) : Dest
 
     /** The current project's open issues. */
     data object Issues : Dest
@@ -137,7 +141,7 @@ val LocalScope = staticCompositionLocalOf<Scope> { error("no Scope") }
 
 /**
  * The project the app is in, as the web's current project: the Overview,
- * Boards, Machines, Chat and its issues show what's in it. Kept on this device; the reader's
+ * Boards, Docs, Machines, Chat and its issues show what's in it. Kept on this device; the reader's
  * personal project until they pick another.
  */
 class Scope(context: Context) {
@@ -240,17 +244,18 @@ fun Shell(api: Api, model: AppModel) {
                             when (tab) {
                                 AppTab.OVERVIEW -> HomeScreen(api, home, fleet, live)
                                 AppTab.BOARDS -> BoardsScreen(api)
-                                AppTab.DOCS -> DocsScreen()
+                                AppTab.DOCS -> DocsScreen(api, stack.filterIsInstance<Dest.Doc>().lastOrNull()?.ref)
                                 AppTab.MACHINES -> {}
                                 AppTab.CHAT -> ChatRoomsScreen(api, live)
                             }
                         }
                         // A wide tablet, as the iPad: the place's list beside what
-                        // it opened. A terminal takes the whole width. Machines
-                        // lays itself out (ListDetailPaneScaffold).
+                        // it opened. A terminal takes the whole width, and so does
+                        // another project's Doc. Machines lays itself out
+                        // (ListDetailPaneScaffold).
                         if (tab == AppTab.MACHINES && top !is Dest.Terminal) {
                             MachinesScreen(api, fleet, home, top) { Destination(api, it, home, fleet, live) }
-                        } else if (wide && tab != AppTab.DOCS && top !is Dest.Terminal) {
+                        } else if (wide && top !is Dest.Terminal && (top as? Dest.Doc)?.over != true) {
                             Row(Modifier.fillMaxSize()) {
                                 Box(Modifier.width(380.dp).fillMaxHeight()) { list() }
                                 VerticalDivider(color = Palette.raised)
@@ -332,6 +337,7 @@ fun Pick(tab: AppTab) {
         AppTab.OVERVIEW -> "Pick a conversation"
         AppTab.BOARDS -> "Pick a board"
         AppTab.CHAT -> "Pick a room"
+        AppTab.DOCS -> "Pick a Doc"
         else -> "Pick a session"
     }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -347,7 +353,8 @@ private fun Destination(api: Api, d: Dest, home: HomeModel, fleet: HomeFleet, li
         is Dest.Lanes -> BoardScreen(api, d.board)
         is Dest.Room -> ChatRoomScreen(api, d.room, live, title = d.title, thread = d.thread)
         is Dest.ObjectThread -> ObjectThreadScreen(api, d.target, d.title, live)
-        is Dest.IssueRef -> IssueScreen(api, d.id)
+        is Dest.IssueRef -> IssueScreen(api, d.id, d.project)
+        is Dest.Doc -> DocScreen(api, d.ref)
         Dest.Issues -> IssuesScreen(api)
         is Dest.MachineD -> MachineScreen(api, d.machine, fleet)
         is Dest.Terminal -> TerminalScreen(api, d, fleet)
