@@ -1,9 +1,11 @@
-// One navigation: the tabs always on the bar (#1262) — Home, the project's
-// Boards and Chat, Machines (the project's sessions on each machine, Arugula
-// #1352, #1358), and You — each with its own back stack, as the iPhone's
-// HomeView.swift. The bar stays on every screen,
-// whatever is open. The project's issues open from its menu and from a
-// board's rows.
+// One navigation: the web's five places always on the bar (#1262, Arugula
+// #1362) — the Overview, the project's Boards and Docs, Machines (the
+// project's sessions on each machine, Arugula #1352, #1358) and Chat — each
+// with its own back stack, as the iPhone's HomeView.swift. On a tablet the
+// same places are a navigation rail. The bar stays on every screen, whatever
+// is open. Every place is headed by the project's menu, New, the bell and
+// your picture (TabHeading, Account.kt); the project's issues open from its
+// menu and from a board's rows.
 
 package io.arugula.app
 
@@ -29,11 +31,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewWeek
 import androidx.compose.material3.DropdownMenu
@@ -44,7 +48,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -65,14 +75,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
-/** The app's tabs, always on its bar: home first. */
+/**
+ * The app's places, always on its bar, as the web's rail has them (Arugula
+ * #1362): the Overview, Boards and Docs lead, then Machines and Chat. The
+ * Inbox and the account are in every place's heading, not on the bar.
+ */
 enum class AppTab(val label: String, val icon: ImageVector) {
-    HOME("Home", Icons.Outlined.Home),
+    OVERVIEW("Overview", Icons.Outlined.GridView),
     BOARDS("Boards", Icons.Outlined.ViewWeek),
-    CHAT("Chat", Icons.Outlined.ChatBubbleOutline),
+    DOCS("Docs", Icons.Outlined.Description),
     MACHINES("Machines", Icons.Outlined.Terminal),
-    YOU("You", Icons.Outlined.AccountCircle),
+    CHAT("Chat", Icons.Outlined.ChatBubbleOutline),
 }
 
 /** Something a tab opens over its list. */
@@ -121,8 +136,8 @@ val LocalNav = staticCompositionLocalOf<Nav> { error("no Nav") }
 val LocalScope = staticCompositionLocalOf<Scope> { error("no Scope") }
 
 /**
- * The project the app is in, as the web's current project: Home, Boards,
- * Chat and its issues show what's in it. Kept on this device; the reader's
+ * The project the app is in, as the web's current project: the Overview,
+ * Boards, Machines, Chat and its issues show what's in it. Kept on this device; the reader's
  * personal project until they pick another.
  */
 class Scope(context: Context) {
@@ -172,10 +187,16 @@ fun Shell(api: Api, model: AppModel) {
     val live = remember(api) { LiveChat(api) }
     val home = remember(api) { HomeModel(api) }
     val fleet = remember(api) { HomeFleet(api) }
-    var tab by rememberSaveable { mutableStateOf(AppTab.HOME) }
+    var tab by rememberSaveable { mutableStateOf(AppTab.OVERVIEW) }
     val stacks = remember(api) { AppTab.entries.associateWith { mutableStateListOf<Dest>() } }
     val nav = remember(api) { Nav({ tab }, stacks) { tab = it } }
     val stack = stacks.getValue(tab)
+    val coroutines = rememberCoroutineScope()
+    val snack = remember { SnackbarHostState() }
+    /** New, from any place's heading, and the bell's Inbox. */
+    var making by remember { mutableStateOf(false) }
+    var inbox by remember { mutableStateOf(false) }
+    val heading = remember(api) { Heading(api, model, makeNew = { making = true }, showInbox = { inbox = true }) }
 
     LaunchedEffect(api) {
         live.start()
@@ -188,73 +209,119 @@ fun Shell(api: Api, model: AppModel) {
     }
     // Another project: nothing of the last one stays open.
     LaunchedEffect(scope.current?.id) {
-        for (t in listOf(AppTab.HOME, AppTab.BOARDS, AppTab.CHAT, AppTab.MACHINES)) stacks.getValue(t).clear()
+        for (t in AppTab.entries) stacks.getValue(t).clear()
     }
-    // Back: off the tab's stack, then to Home, then out of the app.
-    BackHandler(enabled = stack.isNotEmpty() || tab != AppTab.HOME) {
-        if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) else tab = AppTab.HOME
+    // Back: off the place's stack, then to the Overview, then out of the app.
+    BackHandler(enabled = stack.isNotEmpty() || tab != AppTab.OVERVIEW) {
+        if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) else tab = AppTab.OVERVIEW
     }
+    // The place again: back to its list.
+    val go: (AppTab) -> Unit = { t -> if (tab == t) stacks.getValue(t).clear() else tab = t }
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalNav provides nav, LocalScope provides scope) {
-        Scaffold(
-            containerColor = Palette.void,
-            bottomBar = {
-                NavigationBar(containerColor = Palette.void, tonalElevation = 0.dp) {
-                    for (t in AppTab.entries) {
-                        NavigationBarItem(
-                            selected = tab == t,
-                            onClick = {
-                                // The tab again: back to its list.
-                                if (tab == t) stacks.getValue(t).clear() else tab = t
-                            },
-                            icon = { Icon(t.icon, null) },
-                            label = { Text(t.label, style = Face.ui(12.sp, FontWeight.Medium)) },
-                            modifier = Modifier.testTag("tab-${t.label}"),
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Palette.void,
-                                indicatorColor = Palette.accent,
-                                selectedTextColor = Palette.accent,
-                                unselectedIconColor = Palette.dim,
-                                unselectedTextColor = Palette.dim,
-                            ),
-                        )
+    androidx.compose.runtime.CompositionLocalProvider(LocalNav provides nav, LocalScope provides scope, LocalHeading provides heading) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // A tablet: the same places in a rail down the left, as the iPad's
+            // sidebar; a wide one, a place's list beside what it opened.
+            val rail = maxWidth >= 600.dp
+            val wide = maxWidth >= 840.dp
+            Scaffold(
+                containerColor = Palette.void,
+                snackbarHost = { SnackbarHost(snack) },
+                bottomBar = { if (!rail) PlacesBar(tab, go) },
+            ) { padding ->
+                Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    if (rail) {
+                        PlacesRail(tab, go)
+                        VerticalDivider(color = Palette.raised)
                     }
-                }
-            },
-        ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                val top = stack.lastOrNull()
-                val list: @Composable () -> Unit = {
-                    when (tab) {
-                        AppTab.HOME -> HomeScreen(api, home, fleet, live)
-                        AppTab.BOARDS -> BoardsScreen(api)
-                        AppTab.CHAT -> ChatRoomsScreen(api, live)
-                        AppTab.MACHINES -> {}
-                        AppTab.YOU -> YouScreen(model)
-                    }
-                }
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    // A tablet, as the iPad: the tab's list beside what it
-                    // opened. A terminal takes the whole width. Machines
-                    // lays itself out (ListDetailPaneScaffold).
-                    if (tab == AppTab.MACHINES && top !is Dest.Terminal) {
-                        MachinesScreen(api, fleet, home, top) { Destination(api, it, home, fleet, live) }
-                    } else if (maxWidth >= 840.dp && tab != AppTab.YOU && top !is Dest.Terminal) {
-                        Row(Modifier.fillMaxSize()) {
-                            Box(Modifier.width(380.dp).fillMaxHeight()) { list() }
-                            VerticalDivider(color = Palette.raised)
-                            Box(Modifier.weight(1f).fillMaxHeight()) {
-                                if (top != null) Destination(api, top, home, fleet, live) else Pick(tab)
+                    Box(Modifier.weight(1f).fillMaxHeight().imePadding()) {
+                        val top = stack.lastOrNull()
+                        val list: @Composable () -> Unit = {
+                            when (tab) {
+                                AppTab.OVERVIEW -> HomeScreen(api, home, fleet, live)
+                                AppTab.BOARDS -> BoardsScreen(api)
+                                AppTab.DOCS -> DocsScreen()
+                                AppTab.MACHINES -> {}
+                                AppTab.CHAT -> ChatRoomsScreen(api, live)
                             }
                         }
-                    } else if (top != null) {
-                        Destination(api, top, home, fleet, live)
-                    } else {
-                        list()
+                        // A wide tablet, as the iPad: the place's list beside what
+                        // it opened. A terminal takes the whole width. Machines
+                        // lays itself out (ListDetailPaneScaffold).
+                        if (tab == AppTab.MACHINES && top !is Dest.Terminal) {
+                            MachinesScreen(api, fleet, home, top) { Destination(api, it, home, fleet, live) }
+                        } else if (wide && tab != AppTab.DOCS && top !is Dest.Terminal) {
+                            Row(Modifier.fillMaxSize()) {
+                                Box(Modifier.width(380.dp).fillMaxHeight()) { list() }
+                                VerticalDivider(color = Palette.raised)
+                                Box(Modifier.weight(1f).fillMaxHeight()) {
+                                    if (top != null) Destination(api, top, home, fleet, live) else Pick(tab)
+                                }
+                            }
+                        } else if (top != null) {
+                            Destination(api, top, home, fleet, live)
+                        } else {
+                            list()
+                        }
                     }
                 }
             }
         }
+        // New over whichever place is open; what it makes opens on the Overview, which lists it.
+        if (making) {
+            NewSheet(api, home, fleet, onDismiss = { making = false }, toast = { t -> coroutines.launch { snack.showSnackbar(t) } }, made = {
+                coroutines.launch { scope.current?.let { home.load(it.id) } }
+            })
+        }
+        if (inbox) InboxSheet(heading) { inbox = false }
+    }
+}
+
+/** The places on a phone: the bar along the bottom. */
+@Composable
+private fun PlacesBar(tab: AppTab, go: (AppTab) -> Unit) {
+    NavigationBar(containerColor = Palette.void, tonalElevation = 0.dp) {
+        for (t in AppTab.entries) {
+            NavigationBarItem(
+                selected = tab == t,
+                onClick = { go(t) },
+                icon = { Icon(t.icon, null) },
+                label = { Text(t.label, style = Face.ui(12.sp, FontWeight.Medium)) },
+                modifier = Modifier.testTag("tab-${t.label}"),
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = Palette.void,
+                    indicatorColor = Palette.accent,
+                    selectedTextColor = Palette.accent,
+                    unselectedIconColor = Palette.dim,
+                    unselectedTextColor = Palette.dim,
+                ),
+            )
+        }
+    }
+}
+
+/** The places on a tablet: a rail down the left, centered. */
+@Composable
+private fun PlacesRail(tab: AppTab, go: (AppTab) -> Unit) {
+    NavigationRail(containerColor = Palette.void) {
+        Spacer(Modifier.weight(1f))
+        for (t in AppTab.entries) {
+            NavigationRailItem(
+                selected = tab == t,
+                onClick = { go(t) },
+                icon = { Icon(t.icon, null) },
+                label = { Text(t.label, style = Face.ui(12.sp, FontWeight.Medium)) },
+                modifier = Modifier.testTag("tab-${t.label}"),
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = Palette.void,
+                    indicatorColor = Palette.accent,
+                    selectedTextColor = Palette.accent,
+                    unselectedIconColor = Palette.dim,
+                    unselectedTextColor = Palette.dim,
+                ),
+            )
+        }
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -262,7 +329,7 @@ fun Shell(api: Api, model: AppModel) {
 @Composable
 fun Pick(tab: AppTab) {
     val words = when (tab) {
-        AppTab.HOME -> "Pick a conversation"
+        AppTab.OVERVIEW -> "Pick a conversation"
         AppTab.BOARDS -> "Pick a board"
         AppTab.CHAT -> "Pick a room"
         else -> "Pick a session"
@@ -289,54 +356,57 @@ private fun Destination(api: Api, d: Dest, home: HomeModel, fleet: HomeFleet, li
 }
 
 /**
- * The heading at the top of a tab's list. In a project's tabs it's the
- * current project, as a menu of every project and its issues, with whose it
- * is; Machines and You, the account's, are headed by their name. [trailing]
- * goes on the right (Home's New).
+ * The heading at the top of every place's list, as the web phone's top bar
+ * (Arugula #1362): the current project, as a menu of every project and its
+ * issues, with whose it is; then New, the bell (the Inbox) and your picture
+ * (Settings, Send feedback, Sign out). The place's own name is already on
+ * the bar. The three buttons take 120dp, so the four fit on a 360dp phone; a
+ * long project name truncates, the buttons don't. [title] is what it says
+ * before the projects come.
  */
 @Composable
-fun TabHeading(title: String, project: Boolean = false, trailing: @Composable () -> Unit = {}) {
+fun TabHeading(title: String) {
     val scope = LocalScope.current
     val nav = LocalNav.current
+    val heading = LocalHeading.current
     var open by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(Palette.void).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (project) {
-                Box(Modifier.weight(1f, fill = false)) {
-                    Row(Modifier.clickable { open = true }.testTag("project-switcher"), verticalAlignment = Alignment.CenterVertically) {
-                        Text((scope.current?.name ?: title).uppercase(), style = Face.display(30.sp), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Icon(Icons.Outlined.KeyboardArrowDown, null, tint = Palette.accent)
-                    }
-                    DropdownMenu(open, { open = false }, containerColor = Palette.surface) {
-                        Caps("Projects", Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
-                        for (p in scope.projects) {
-                            DropdownMenuItem(
-                                text = { Text(p.name, style = Face.ui(15.sp)) },
-                                leadingIcon = { if (p.id == scope.current?.id) Icon(Icons.Outlined.Check, null, tint = Palette.accent) else Spacer(Modifier.width(24.dp)) },
-                                onClick = {
-                                    open = false
-                                    scope.pick(p)
-                                },
-                            )
-                        }
-                        HorizontalDivider(color = Palette.raised)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1f)) {
+                Row(Modifier.clickable { open = true }.testTag("project-switcher"), verticalAlignment = Alignment.CenterVertically) {
+                    Text((scope.current?.name ?: title).uppercase(), Modifier.weight(1f, fill = false), style = Face.display(30.sp), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.Outlined.KeyboardArrowDown, null, tint = Palette.accent)
+                }
+                DropdownMenu(open, { open = false }, containerColor = Palette.surface) {
+                    Caps("Projects", Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                    for (p in scope.projects) {
                         DropdownMenuItem(
-                            text = { Text("Issues", style = Face.ui(15.sp)) },
+                            text = { Text(p.name, style = Face.ui(15.sp)) },
+                            leadingIcon = { if (p.id == scope.current?.id) Icon(Icons.Outlined.Check, null, tint = Palette.accent) else Spacer(Modifier.width(24.dp)) },
                             onClick = {
                                 open = false
-                                nav.push(Dest.Issues)
+                                scope.pick(p)
                             },
-                            modifier = Modifier.testTag("project-issues"),
                         )
                     }
+                    HorizontalDivider(color = Palette.raised)
+                    DropdownMenuItem(
+                        text = { Text("Issues", style = Face.ui(15.sp)) },
+                        onClick = {
+                            open = false
+                            nav.push(Dest.Issues)
+                        },
+                        modifier = Modifier.testTag("project-issues"),
+                    )
                 }
-            } else {
-                Text(title.uppercase(), style = Face.display(30.sp), color = Palette.fg)
             }
-            Spacer(Modifier.weight(1f))
-            trailing()
+            if (heading != null) {
+                HeadingButton(Icons.Outlined.Add, "New", Modifier.testTag("heading-new"), primary = true, onClick = heading.makeNew)
+                HeadingButton(Icons.Outlined.NotificationsNone, "Inbox", Modifier.testTag("heading-inbox"), onClick = heading.showInbox)
+                AccountMenu(heading)
+            }
         }
-        if (project) scope.current?.team?.let { Caps("${it.name} · ${it.role}") }
+        scope.current?.team?.let { Caps("${it.name} · ${it.role}") }
         scope.problem?.let { Text(it, style = Face.mono(11.sp), color = Palette.danger, maxLines = 2) }
     }
 }

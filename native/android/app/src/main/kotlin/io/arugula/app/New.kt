@@ -1,12 +1,13 @@
-// New on home (#1257), as the iPhone's New.swift: tell a board, or start a
-// New idea.
+// New, in every place's heading (#1257, Arugula #1362), as the iPhone's
+// New.swift: tell a board, or start a New idea. What it opens, it opens on
+// the Overview.
 //
 // - Tell a board: pick one; its thread opens, and a post there reaches the
 //   session that leads it.
 // - New idea: what you say becomes a native issue, "Idea: …", whose body
 //   holds the agent's instructions and your words. Then `POST
 //   /api/issues/{issue}/agent` starts a hosted session on it; its
-//   conversation is that session's thread, and home lists it under New ideas.
+//   conversation is that session's thread, and the Overview lists it under New ideas.
 //   Where the account has no hosted sessions, the idea runs as an agent block
 //   on a machine you pick, and the conversation is the issue's thread.
 
@@ -78,7 +79,7 @@ fun NewSheet(api: Api, model: HomeModel, fleet: HomeFleet, onDismiss: () -> Unit
     fun opened(room: ChatRoom, parent: Long?, title: String) {
         onDismiss()
         made()
-        nav.push(Dest.Room(room, thread = parent, title = title))
+        nav.open(AppTab.OVERVIEW, Dest.Room(room, thread = parent, title = title))
     }
 
     /** File the idea, then ask Arugula cloud's agent to take it. */
@@ -152,7 +153,7 @@ fun NewSheet(api: Api, model: HomeModel, fleet: HomeFleet, onDismiss: () -> Unit
                     for (b in model.boards.sortedWith(compareBy({ if (it.lead == null) 1 else 0 }, { it.title }))) {
                         Choice(b.title, leadWords(b.lead), "tell-${b.title}") {
                             onDismiss()
-                            nav.push(Dest.BoardThread(b))
+                            nav.open(AppTab.OVERVIEW, Dest.BoardThread(b))
                         }
                     }
                 }

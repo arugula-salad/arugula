@@ -6,9 +6,13 @@ machine, the terminal) for Kotlin, which it runs on.
 - `app/`: the app (#1249), Jetpack Compose on Material 3 in Arugula's look. It
   does what the iPhone app does: signs in through a Custom Tab and the
   `arugula://signin` callback, keeping the session encrypted under a Keystore
-  key in `noBackupFilesDir`; a tab bar that's always there, Home · Boards ·
-  Chat · Machines · You; Home's Needs you (answered in the row), New ideas,
-  boards and people, and New; a board's thread and lanes; chat rooms on the
+  key in `noBackupFilesDir`; the web's five places on a bar that's always
+  there, Overview · Boards · Docs · Machines · Chat (a navigation rail on a
+  tablet, #1362), each headed by the project's menu, New, the bell (the
+  Inbox) and your picture (your name, Settings in the browser, Send feedback,
+  the version and Sign out: `Account.kt`); the Overview's Needs you (answered
+  in the row), New ideas, boards and people; Docs, a word that #1364 lists
+  them; a board's thread and lanes; chat rooms on the
   live stream; Machines as one page of machine › session › pane rows (beside
   the session's live tab on a tablet), a session a tab at a time, and a
   pane's terminal. Its fonts are fetched
@@ -76,9 +80,10 @@ It writes the sign-in's ticket to `HANDOFF/ticket` and waits for the address
 the Allow was sent to in `HANDOFF/callback`, as the iPhone's `test-sim.sh` does.
 
 The app's own UI test (`app/src/androidTest`) taps the same flow through the
-app, as the iPhone's `FlowTests.swift` does: sign in, every tab, the board's
-question answered on Home, a message in chat, a command in a new terminal,
-sign out. Testnet's `native-android` claim runs it, with the same arguments:
+app, as the iPhone's `FlowTests.swift` does: sign in, the five places and
+the heading's bell and picture, the board's question answered on the
+Overview, a message in chat, a command in a new terminal, Docs, and sign out
+from your picture. Testnet's `native-android` claim runs it, with the same arguments:
 
 ```sh
 ARUGULA_BOARD=TITLE ARUGULA_ASK=QUESTION \

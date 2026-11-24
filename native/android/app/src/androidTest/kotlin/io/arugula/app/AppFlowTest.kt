@@ -70,9 +70,14 @@ class AppFlowTest {
             rule.onNode(hasTestTag("signin-callback")).performTextInput(callback.readText().trim())
             tap("signin-finish")
 
-            // Home, with the tab bar under it.
-            wait("home-new", 30_000)
-            for (t in AppTab.entries) wait("tab-${t.label}")
+            // The Overview, with the web's five places on the bar under it
+            // (Arugula #1362), and the bell and your picture in its heading.
+            wait("home-list", 30_000)
+            for (name in listOf("Overview", "Boards", "Docs", "Machines", "Chat")) wait("tab-$name")
+            for (gone in listOf("Home", "You")) check(rule.onAllNodes(hasTestTag("tab-$gone")).fetchSemanticsNodes().isEmpty()) { "$gone is still a tab" }
+            wait("heading-new")
+            wait("heading-inbox")
+            wait("account")
             args.getString("board")?.takeIf { it.isNotEmpty() }?.let { board -> home(board, args.getString("ask")) }
             shot("2-home")
 
@@ -90,7 +95,7 @@ class AppFlowTest {
                 until("the lanes", 15_000) { rule.onAllNodes(hasText("NEXT")).fetchSemanticsNodes().isNotEmpty() }
                 shot("3-board")
                 // The bar is still there.
-                wait("tab-Home")
+                wait("tab-Overview")
             }
 
             // Chat: the room, a message posted from the phone.
@@ -121,14 +126,19 @@ class AppFlowTest {
             until("ANDROID-42 in the terminal", 30_000) { terminalText().contains("ANDROID-42") }
             shot("5-terminal")
 
-            // You: sign out, and the app asks for a sign-in again.
-            tap("tab-You")
+            // Docs says what's coming.
+            tap("tab-Docs")
+            wait("docs-place")
+
+            // Your picture: sign out, and the app asks for a sign-in again.
+            tap("tab-Overview")
+            tap("account")
             tap("sign-out")
             wait("signin-start", 15_000)
         }
     }
 
-    /** Home shows the board, and its row's question under Needs you, answered there. */
+    /** The Overview shows the board, and its row's question under Needs you, answered there. */
     private fun home(board: String, ask: String?) {
         if (!ask.isNullOrEmpty()) {
             until("the board's question on home", 45_000) { rule.onAllNodes(hasText(ask, substring = true)).fetchSemanticsNodes().isNotEmpty() }
@@ -145,7 +155,7 @@ class AppFlowTest {
         until("the lanes", 15_000) { rule.onAllNodes(hasText("NEXT")).fetchSemanticsNodes().isNotEmpty() }
         tap("back")
         tap("back")
-        wait("home-new")
+        wait("home-list")
     }
 
     private fun chat(room: String) {
