@@ -87,7 +87,8 @@ told to talk in the issue's thread.
 waiting on you is first under Needs you (`GET /api/deploys/waiting`), and a
 tapped deploy notification opens it over whatever's open. Its sheet shows
 the project, what's deployed from where, who asked and the plan; the
-project menu's **Runs** shows the project's standing grant for runs. Each
+project menu's **Runs** shows the project's standing grant for runs (and
+nothing to allow on a project with no cloud workspaces). Each
 approval is signed with a passkey of the account's, whose RP is control's
 host, and the app isn't associated with it (no `webcredentials`), so it
 never asks for one itself: **Approve or deny with passkey** (and **Allow
@@ -127,8 +128,7 @@ runner loads.
   planned waits under Needs you: the test opens it and hands over the
   address Approve opens, the claim approves it with the account's passkey
   (as control's dialog would, in the web sheet a test can't drive), and
-  the app reads it approved; then the project's Runs opens its grant's
-  dialog the same way.
+  the app reads it approved; then the project's Runs shows its grant.
   `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
 - **Signing in** is the desktop app's and the CLI's way (#999): the app opens
   control's page in a web sheet (`ASWebAuthenticationSession`), someone signed

@@ -215,8 +215,7 @@ final class FlowTests: XCTestCase {
         // here the app shows that address, the script approves the deploy
         // with the account's passkey as the dialog would, and Done stands in
         // for the sheet coming back. The app reads it again: approved. Then
-        // the project's Runs, from its menu, opens its grant's dialog the
-        // same way.
+        // the project's Runs, from its menu, shows its grant.
         if let deploy = env["ARUGULA_DEPLOY"], !deploy.isEmpty {
             let row = app.buttons["need-deploy-\(deploy)"]
             XCTAssertTrue(row.shows(within: 30), "the waiting deploy isn't under Needs you: \(app.debugDescription)")
@@ -259,10 +258,10 @@ final class FlowTests: XCTestCase {
             let grant = app.staticTexts["runs-grant"]
             XCTAssertTrue(grant.shows(within: 20), "the project's runs didn't open")
             shot(app, "2-runs")
-            app.buttons["runs-change"].tap()
-            XCTAssertTrue(link.shows(within: 10), "Allow runs opened nothing")
-            XCTAssertNotNil(link.label.range(of: #"/#run-grant=prj_[0-9a-f]{32}&app$"#, options: .regularExpression), "Allow runs opens \(link.label)")
-            app.buttons["approve-done"].tap()
+            // Testnet's project has no cloud workspaces: nothing to allow, so
+            // no button to control's dialog (which would say the same).
+            XCTAssertEqual(grant.value as? String, "no")
+            XCTAssertFalse(app.buttons["runs-change"].exists, "Allow runs offered with no cloud workspaces")
             app.buttons["runs-close"].tap()
             XCTAssertTrue(switcher.shows(within: 10), "not back home from the runs")
         }

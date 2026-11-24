@@ -313,7 +313,11 @@ struct RunsSheet: View {
             .accessibilityValue(state)
         Text(v.workspaces == 1 ? "1 cloud workspace" : "\(v.workspaces) cloud workspaces")
             .font(Face.mono(12)).foregroundStyle(Palette.dim)
-        if v.role == "owner" {
+        if v.role == "owner" && v.grant == nil && !v.offer {
+            // Nothing to allow: control's dialog would say so too.
+            Text("Nothing to allow yet: runs start on a project's cloud workspaces, and this one has none.")
+                .font(Face.ui(13)).foregroundStyle(Palette.subtle)
+        } else if v.role == "owner" {
             VStack(alignment: .leading, spacing: 8) {
                 Button {
                     Task { await change() }
