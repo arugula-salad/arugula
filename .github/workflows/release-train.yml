@@ -3,7 +3,8 @@ name: release-train
 # The daemon's release, when something's worth telling people
 # (scripts/release-train). It starts when chant's tick finishes on main, so a
 # commit that turns green is looked at within minutes, and the script keeps an
-# hour between releases (two until 2026-11-16). The cron is only a
+# hour between releases (two until 2026-11-16), waiting out the rest of the
+# hour when a green commit comes inside it. The cron is only a
 # backstop: from Nov 7 to Nov 9 GitHub ran 12 of ~280 of the tick's
 # scheduled runs and 9 of ~17 of this one's, while the tick's workflow_run
 # fired 188 times (Arugula #794). The
@@ -35,8 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     # CI_GREEN_TOKEN is the ci-green environment's, which only main reaches.
     environment: ci-green
-    # The rare jobs twice over: testnet alone can take 30 minutes each time.
-    timeout-minutes: 100
+    # The rest of the gap (up to an hour, Arugula #720), then the rare jobs
+    # twice over: testnet alone can take 30 minutes each time.
+    timeout-minutes: 160
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

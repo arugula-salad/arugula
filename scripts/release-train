@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The daemon's release on a train (release-train.yml, #724, Arugula #794): each time
-# chant's tick finishes on main, at most once every 2 hours, the newest commit CI
+# chant's tick finishes on main, at most once an hour, the newest commit CI
 # passed goes out as a patch, if its pull requests have anything
 # to tell people. Its notes come from them (docs/notes/, scripts/release-notes.mjs).
 # The rare jobs run on it first, and a release needs them, so one that fails holds
@@ -14,14 +14,15 @@
 #   ARUGULA_RELEASE_TRAIN is on (a repository variable)
 #   no release.yml run is going, and no `scripts/release bump` tagged the commit
 #   the last release.yml run (the train's or a hand cut's) started at least
-#   ARUGULA_TRAIN_GAP_MINUTES ago (default 60; the workflow's manual run passes 0)
+#   ARUGULA_TRAIN_GAP_MINUTES ago (default 60; the workflow's manual run passes 0).
+#   Inside the gap it waits out the rest and looks once more.
 #   the commit is newer than the last v* tag, and something in between added a note
 #
 # Minor and major versions stay a person's: `just release minor COMMIT --notes FILE`.
 # GH_TOKEN starts and watches rare-nightly.yml, with `actions: write`. git's own
 # credentials push the tag, which has to set off release.yml, so they aren't the
 # job's token: the workflow checks out with CI_GREEN_TOKEN. ARUGULA_TRAIN_RELEASE
-# is for tests.
+# and ARUGULA_TRAIN_SLEEP are for tests.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -49,8 +50,16 @@ gap=${ARUGULA_TRAIN_GAP_MINUTES:-60}
 if [ -n "${started:-}" ] && [ "$gap" != 0 ]; then
   ago=$(node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 60000))' "$started")
   if [ "$ago" -lt "$gap" ]; then
-    say "the last release started ${ago}m ago: the next waits for ${gap}m"
-    exit 0
+    if [ -n "${ARUGULA_TRAIN_WAITED:-}" ]; then
+      say "the last release started ${ago}m ago: the next waits for ${gap}m"
+      exit 0
+    fi
+    # Wait out the rest of the gap and look once more, rather than leave a
+    # green commit until the next merge: GitHub ran the cron backstop about
+    # twice a day, and one 11-23 release waited 5 h for a merge (Arugula #720).
+    say "the last release started ${ago}m ago: waiting out the gap's last $((gap - ago))m, then looking once more"
+    "${ARUGULA_TRAIN_SLEEP:-sleep}" $(((gap - ago) * 60 + 30))
+    ARUGULA_TRAIN_WAITED=1 exec "$0"
   fi
 fi
 
