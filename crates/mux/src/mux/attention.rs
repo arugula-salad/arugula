@@ -168,6 +168,9 @@ impl Daemon {
         };
         let reason = self.live_reason(pane);
         self.emit(Some(pane), EventKind::Attention { state, reason: reason.clone() });
+        if push && matches!(state, Attention::NeedsInput | Attention::Done) && self.focused(pane) {
+            info!(pane, "not pushed: a screen is on it");
+        }
         if push && matches!(state, Attention::NeedsInput | Attention::Done) && !self.focused(pane) {
             let title = push_title(state, reason.as_ref());
             let body = reason.as_ref().map_or(why, |r| r.headline.as_str()).to_owned();
