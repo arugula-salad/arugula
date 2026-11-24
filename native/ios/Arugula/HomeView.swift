@@ -44,7 +44,7 @@ struct HomeView: View {
             ChatRoomsView(control: control, live: live)
                 .tabItem { Label(AppTab.chat.rawValue, systemImage: AppTab.chat.symbol) }
                 .tag(AppTab.chat)
-            MachinesView(control: control)
+            MachinesView(control: control, fleet: fleet)
                 .tabItem { Label(AppTab.machines.rawValue, systemImage: AppTab.machines.symbol) }
                 .tag(AppTab.machines)
             YouView(control: control)

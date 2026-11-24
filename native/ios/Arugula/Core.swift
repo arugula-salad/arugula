@@ -60,22 +60,31 @@ struct HostIn {
     var panes: String?
 }
 
-/// What `aru_machines` answers: every machine in the phone's order, and
-/// each one's sessions that show in the project.
+/// What `aru_machines` answers: every machine in the phone's order, each
+/// one's sessions that show in the project, and those with none.
 struct Sections: Decodable {
-    struct Section: Decodable {
+    struct Section: Decodable, Identifiable {
         var id: String
+        var name: String
+        var online: Bool
+        /// Whose it is when it isn't yours.
+        var owner: String?
         var sessions: [Card]
     }
-    struct Card: Decodable {
-        struct Tab: Decodable { var id: UInt32; var panes: [UInt32] }
+    struct Card: Decodable, Identifiable {
+        struct Tab: Decodable, Identifiable { var id: UInt32; var name: String?; var panes: [UInt32] }
         var id: UInt32
+        var name: String
         var tabs: [Tab]
         var panes: Int
         var needs_you: Int
+        /// `needs_input`, `working` or `idle`.
+        var state: String
     }
     var order: [Section]
     var machines: [Section]
+    /// The machines with nothing in the project, by name.
+    var quiet: [Section]
 
     /// From the core, for `hosts` in `shown`; `recent` is the machine used last.
     static func of(_ hosts: [HostIn], shown: Shown?, recent: String?) -> Sections? {

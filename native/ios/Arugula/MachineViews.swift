@@ -24,7 +24,7 @@ final class MachineSession: ObservableObject {
     /// (its owner, as the web's fleet reads it).
     @Published var roles: [UInt32: String]?
     /// Its panes as the core gave them, for the core's rule to read again.
-    private var summary: String?
+    private(set) var summary: String?
     private var link: OpaquePointer?
     private var conversationsAt = Date.distantPast
     /// The terminal being driven, full screen, which takes that pane's bytes.
@@ -169,6 +169,16 @@ final class MachineSession: ObservableObject {
         if let t = watchedTab { watch(t) }
     }
 
+    /// Stop watching `tab`, when nothing shows it now. A pane drawn on its
+    /// own, or driven, stays.
+    func unwatch(_ tab: UInt32) {
+        guard let t = watchedTab, t.id == tab else { return }
+        watchedTab = nil
+        guard let l = link else { return }
+        let gone = t.terminals.filter { alone[$0] == nil && screen?.pane != $0 }
+        if !gone.isEmpty { gone.withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, gone.count) } }
+    }
+
     /// Draw `pane` on its own, at its own size, whatever tab it's in, until
     /// `stopAlone`: a fresh snapshot for the view that now draws it.
     func drawAlone(_ pane: UInt32) {
@@ -307,349 +317,462 @@ final class MachineSession: ObservableObject {
     }
 }
 
+// ---- Machines: one page of machines › sessions › pane rows (Arugula #1357)
+
+/// The pane last opened in a project, on this device: Machines lights its
+/// row as "where you were", and an iPad shows its tab live before anything
+/// is picked.
+enum WhereYouWere {
+    struct Pane: Equatable { var machine: String; var pane: UInt32 }
+
+    private static func key(_ project: String?) -> String { "arugula.last-pane.\(project ?? "")" }
+
+    static func of(_ project: String?) -> Pane? {
+        let parts = UserDefaults.standard.string(forKey: key(project))?.split(separator: " ") ?? []
+        guard parts.count == 2, let pane = UInt32(parts[1]) else { return nil }
+        return Pane(machine: String(parts[0]), pane: pane)
+    }
+
+    /// It was opened: and its machine is the one used last.
+    static func note(_ p: Pane, in project: String?) {
+        UserDefaults.standard.set("\(p.machine) \(p.pane)", forKey: key(project))
+        UserDefaults.standard.set(p.machine, forKey: MachinesView.lastKey)
+    }
+}
+
+/// Machines, as the web's page (web/src/app/machines-list.tsx): each machine
+/// in the core's order with its sessions in the project as cards, and each
+/// card's panes as one-line rows. Machines with nothing in the project fold
+/// into one line, and an offline one can't be opened. On an iPhone a
+/// session's name opens the session, a tab at a time with its panes
+/// stacked, and a row opens its pane full screen to type into. On an iPad
+/// the page is the left column with a tab live on the right: before
+/// anything is picked, the one you were last in.
 struct MachinesView: View {
     let control: Control
+    @ObservedObject var fleet: HomeFleet
     @EnvironmentObject private var scope: Scope
     @ObservedObject private var push = PushCenter.shared
-    @State private var picked: Machine?
-    /// A pane to open as its machine connects: a notification's (#1260).
-    @State private var opening: (machine: String, pane: UInt32)?
+    @Environment(\.horizontalSizeClass) private var width
+    /// An iPhone's: the session opened.
+    @State private var path: [SessionRef] = []
+    /// An iPad's: the tab live on the right, and the pane lit in it.
+    @State private var picked: Picked?
+    @State private var terminal: PhoneHome.PaneOpen?
+    /// The machine whose pane is driven, to watch its tab again after.
+    @State private var driven: MachineSession?
+    @State private var last: WhereYouWere.Pane?
+    @State private var problem: String?
+    @State private var loaded = false
+    @State private var quietOpen = false
     @State private var columns = NavigationSplitViewVisibility.all
 
+    struct SessionRef: Hashable { var machine: String; var session: UInt32; var tab: UInt32? }
+    struct Picked: Equatable { var machine: String; var tab: UInt32; var pane: UInt32? }
+
+    private var shown: Shown? { scope.current?.shown }
+
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
-            Loaded(load: { try await control.get("/api/directory", as: Directory.self) }) { d in
-                List(Self.ordered(d.daemons), selection: $picked) { m in
-                    NavigationLink(value: m) {
-                        HStack(spacing: 10) {
-                            Circle().fill(m.online == true ? Palette.ok : Palette.muted).frame(width: 8, height: 8)
-                                .shadow(color: m.online == true ? Palette.ok.opacity(0.8) : .clear, radius: 4)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(m.name).font(Face.ui(16, "SemiBold"))
-                                Caps(m.online == true ? "online" : "offline")
-                            }
+        Group {
+            if width == .regular {
+                NavigationSplitView(columnVisibility: $columns) {
+                    page.navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 460)
+                } detail: {
+                    NavigationStack { right }
+                }
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                NavigationStack(path: $path) {
+                    page.navigationDestination(for: SessionRef.self) { ref in
+                        if let m = reached(ref.machine) {
+                            SessionScreen(session: m, id: ref.session, shown: shown, tab: ref.tab,
+                                          last: last?.machine == ref.machine ? last?.pane : nil) { open(m, $0) }
+                        } else {
+                            Empty(text: "Not reached", symbol: "bolt.horizontal")
                         }
-                        .padding(.vertical, 4)
                     }
-                    .voidRow()
-                    .accessibilityIdentifier("machine-\(m.name)")
-                }
-                .voidList()
-                .overlay { if d.daemons.isEmpty { Caps("No machines yet") } }
-            }
-            .tabHeading("Machines")
-            .background(Palette.void)
-        } detail: {
-            NavigationStack {
-                if let picked {
-                    MachineView(control: control, machine: picked, shown: scope.current?.shown, pane: opening?.machine == picked.id ? opening?.pane : nil)
-                } else {
-                    Empty(text: "Pick a machine", symbol: "terminal")
                 }
             }
-            .id("\(picked?.id ?? "")/\(opening?.pane ?? 0)")
         }
-        .navigationSplitViewStyle(.balanced)
-        // A machine takes the whole width once it's picked (a tab's panes want
-        // it); the sidebar button brings the list back.
-        .onChange(of: picked) { _, now in
-            if let now { UserDefaults.standard.set(now.id, forKey: Self.lastKey) }
-            if now?.id != opening?.machine { opening = nil }
-            if now != nil { withAnimation { columns = .detailOnly } }
+        .fullScreenCover(item: $terminal, onDismiss: {
+            // Let go of the full-screen terminal now, or it would take the
+            // pane's fresh snapshot; then the tab it came from, again.
+            driven?.screen = nil
+            driven?.rewatch()
+            driven = nil
+        }) { t in
+            TerminalScreen(session: t.session, pane: t.pane)
         }
-        // A notification about a pane (#1260): its machine, with the pane open.
+        .task {
+            while !Task.isCancelled {
+                await fleet.load(control)
+                loaded = true
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+        .onChange(of: scope.current?.id, initial: true) { _, now in
+            last = WhereYouWere.of(now)
+            picked = nil
+            path = []
+        }
+        // A notification about a pane that home couldn't place (#1260):
+        // it opens full screen once its machine is reached.
         .onChange(of: push.route, initial: true) { _, route in
             guard case .pane(let machine, let want)? = route else { return }
             push.route = nil
             Task {
-                let d = try? await control.get("/api/directory", as: Directory.self)
-                guard let m = d?.daemons.first(where: { $0.id == machine }) else { return }
-                opening = (machine, want)
-                picked = m
+                for _ in 0..<40 {
+                    if let m = reached(machine), let row = m.panes.first(where: { $0.id == want }) {
+                        drive(m, row)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
             }
         }
+    }
+
+    /// The link to a machine, kept by the fleet.
+    private func reached(_ id: String) -> MachineSession? {
+        fleet.machines.first { $0.machine.id == id }
+    }
+
+    /// The machines as the core lays them out for the project.
+    private var sections: Sections? {
+        let hosts = fleet.directory.map { d in
+            HostIn(id: d.id, name: d.name, online: d.online == true, owner: d.owner, panes: reached(d.id)?.summary)
+        }
+        return Sections.of(hosts, shown: shown, recent: UserDefaults.standard.string(forKey: Self.lastKey))
+    }
+
+    // ---- the page
+
+    private var page: some View {
+        let s = sections
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                if let p = problem {
+                    Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
+                }
+                if fleet.directory.isEmpty {
+                    Caps(loaded ? "No machines yet" : "Looking")
+                } else if let s, s.machines.isEmpty {
+                    Text("Nothing in \(scope.current?.name ?? "this project") is running on a machine.")
+                        .font(Face.ui(14)).foregroundStyle(Palette.dim)
+                }
+                ForEach(s?.machines ?? []) { m in machine(m) }
+                if let q = s?.quiet, !q.isEmpty { fold(q) }
+            }
+            .padding()
+        }
+        .refreshable { await fleet.load(control) }
+        .tabHeading("Machines")
+        .background(Palette.void)
+    }
+
+    private func machine(_ m: Sections.Section) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            head(m)
+            if let link = reached(m.id) {
+                ForEach(m.sessions) { c in
+                    SessionCardView(
+                        session: link, card: c, compact: width != .regular,
+                        last: last?.machine == m.id ? last?.pane : nil,
+                        lit: picked?.machine == m.id ? picked?.pane : nil,
+                        open: { openSession(link, c) },
+                        openPane: { openRow(link, c, $0) })
+                }
+            }
+        }
+    }
+
+    /// A machine's name, whose it is, and New terminal on yours.
+    private func head(_ m: Sections.Section) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(m.online ? Palette.ok : Palette.muted).frame(width: 8, height: 8)
+                .shadow(color: m.online ? Palette.ok.opacity(0.8) : .clear, radius: 4)
+            Text(Self.short(m.name).uppercased()).font(Face.display(20)).foregroundStyle(Palette.fg).lineLimit(1)
+            if let owner = m.owner { Caps(owner) }
+            Spacer(minLength: 4)
+            if m.owner == nil, m.online { newTerminal(m) }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("machine-\(m.name)")
+    }
+
+    private func newTerminal(_ m: Sections.Section) -> some View {
+        let on = reached(m.id)?.connected == true
+        return Button { start(on: m.id) } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(on ? Palette.void : Palette.dim)
+                .frame(width: 30, height: 26)
+                .background(on ? Palette.accent : Palette.raised, in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .disabled(!on)
+        .accessibilityLabel("New terminal on \(Self.short(m.name))")
+        .accessibilityIdentifier("new-terminal-\(m.name)")
+    }
+
+    /// The machines with nothing in the project, as one line that opens to
+    /// them. An offline one is only named.
+    private func fold(_ quiet: [Sections.Section]) -> some View {
+        let n = quiet.count
+        let what = scope.current.map { "no \($0.name) sessions" } ?? "no sessions"
+        return VStack(alignment: .leading, spacing: 10) {
+            Button { withAnimation { quietOpen.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: quietOpen ? "chevron.down" : "chevron.right").font(.system(size: 11, weight: .bold))
+                    Text("\(n) \(n == 1 ? "machine" : "machines") with \(what)").font(Face.ui(13))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Palette.dim)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("machines-quiet")
+            if quietOpen {
+                ForEach(quiet) { m in
+                    HStack(spacing: 8) {
+                        Circle().fill(m.online ? Palette.ok : Palette.muted).frame(width: 7, height: 7)
+                        Text(Self.short(m.name)).font(Face.ui(14, "SemiBold"))
+                            .foregroundStyle(m.online ? Palette.fg : Palette.dim).lineLimit(1)
+                        if let owner = m.owner { Caps(owner) }
+                        Spacer(minLength: 4)
+                        if !m.online {
+                            Caps("offline")
+                        } else if reached(m.id)?.connected != true {
+                            Caps("connecting")
+                        } else if m.owner == nil {
+                            newTerminal(m)
+                        }
+                    }
+                    .padding(.leading, 18)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("machine-\(m.name)")
+                }
+            }
+        }
+    }
+
+    // ---- what a tap opens
+
+    /// A session's name: on an iPhone the session, on an iPad its tab live
+    /// on the right. Its tab: the one you were in, else one that needs you,
+    /// else the first.
+    private func openSession(_ m: MachineSession, _ c: Sections.Card) {
+        let rows = m.panes + m.agents
+        let tab = c.tabs.first { $0.panes.contains { $0 == last?.pane && last?.machine == m.machine.id } }
+            ?? c.tabs.first { $0.panes.contains { p in rows.contains { $0.id == p && $0.needsYou } } }
+            ?? c.tabs.first
+        UserDefaults.standard.set(m.machine.id, forKey: Self.lastKey)
+        if width == .regular {
+            if let tab { picked = Picked(machine: m.machine.id, tab: tab.id, pane: nil) }
+        } else {
+            path.append(SessionRef(machine: m.machine.id, session: c.id, tab: tab?.id))
+        }
+    }
+
+    /// A pane's row: on an iPad its tab on the right, the pane lit; on an
+    /// iPhone the pane full screen (an agent's block, in its session).
+    private func openRow(_ m: MachineSession, _ c: Sections.Card, _ row: PaneRow) {
+        note(m, row)
+        if width == .regular {
+            picked = Picked(machine: m.machine.id, tab: row.tab, pane: row.id)
+        } else if row.isAgent {
+            path.append(SessionRef(machine: m.machine.id, session: c.id, tab: row.tab))
+        } else {
+            drive(m, row)
+        }
+    }
+
+    /// A pane full screen, typed into, with the key bar.
+    private func open(_ m: MachineSession, _ row: PaneRow) {
+        note(m, row)
+        drive(m, row)
+    }
+
+    private func drive(_ m: MachineSession, _ row: PaneRow) {
+        driven = m
+        terminal = PhoneHome.PaneOpen(session: m, pane: row)
+    }
+
+    private func note(_ m: MachineSession, _ row: PaneRow) {
+        let p = WhereYouWere.Pane(machine: m.machine.id, pane: row.id)
+        WhereYouWere.note(p, in: scope.current?.id)
+        last = p
+    }
+
+    /// A new shell on one of your machines, open full screen once it's there.
+    private func start(on machine: String) {
+        guard let m = reached(machine) else { return }
+        problem = nil
+        Task {
+            do {
+                let pane = try await m.newTerminal()
+                for _ in 0..<40 {
+                    if let row = m.panes.first(where: { $0.id == pane }) {
+                        open(m, row)
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                problem = "The new terminal didn't show up on \(Self.short(m.machine.name))."
+            } catch {
+                problem = describe(error)
+            }
+        }
+    }
+
+    // ---- an iPad's right side
+
+    /// The tab picked, else the one you were last in, live; else nothing yet.
+    @ViewBuilder
+    private var right: some View {
+        if let p = picked, let m = reached(p.machine), let t = live(m, tab: p.tab) {
+            LiveTab(session: m, tab: t.0, card: t.1, lit: p.pane, label: nil) { open(m, $0) }
+                .id("\(p.machine)/\(p.tab)")
+        } else if let l = last, let m = reached(l.machine),
+                  let row = (m.panes + m.agents).first(where: { $0.id == l.pane }), let t = live(m, tab: row.tab) {
+            LiveTab(session: m, tab: t.0, card: t.1, lit: l.pane, label: "Where you were") { open(m, $0) }
+                .id("\(l.machine)/\(row.tab)")
+        } else {
+            Empty(text: "Pick a session", symbol: "terminal")
+        }
+    }
+
+    /// A tab of a session the project shows, and its card.
+    private func live(_ m: MachineSession, tab: UInt32) -> (TabLayout, Sections.Card)? {
+        guard let card = m.cards(in: shown).first(where: { $0.tabs.contains { $0.id == tab } }),
+              let layout = m.tabs.first(where: { $0.id == tab }) else { return nil }
+        return (layout, card)
     }
 }
 
 extension MachinesView {
-    /// The machine picked last, first of yours.
+    /// The machine used last, first of yours.
     static let lastKey = "arugula.last-machine"
 
-    /// In the phone's order, the core's (Arugula #1355): your online
-    /// machines, the one you used last first, then teammates', by name, and
-    /// the offline ones after.
-    static func ordered(_ machines: [Machine]) -> [Machine] {
-        let hosts = machines.map { HostIn(id: $0.id, name: $0.name, online: $0.online == true, owner: $0.owner) }
-        let recent = UserDefaults.standard.string(forKey: lastKey)
-        guard let order = Sections.of(hosts, shown: nil, recent: recent)?.order else { return machines }
-        return order.compactMap { s in machines.first { $0.id == s.id } }
+    /// A machine's name as a card shows it: a Mac's `.local` (or a LAN's
+    /// `.lan`, `.home`) adds nothing (the web's shortHost).
+    static func short(_ name: String) -> String {
+        name.replacingOccurrences(of: #"\.(local|lan|home)$"#, with: "", options: [.regularExpression, .caseInsensitive])
     }
 }
 
-struct MachineView: View {
-    /// The project shown: only its sessions are here (Arugula #1352).
-    let shown: Shown?
-    @StateObject private var session: MachineSession
-    @State private var opened: PaneRow?
-    @State private var pendingPane: UInt32?
-    @State private var problem: String?
-    /// The tab shown whole, on an iPad.
-    @State private var tabID: UInt32?
-    /// The pane cards instead of the tab, on an iPad.
-    @State private var cards = false
-    @Environment(\.scenePhase) private var phase
-    @Environment(\.horizontalSizeClass) private var width
+/// A session's card: a dot in its state's tone, its name (which opens it),
+/// its tabs and panes counted, and each pane as one line, under its tab's
+/// name when there's more than one. Three tabs show, and any that needs you
+/// or holds where you were; the rest wait behind "+N more".
+struct SessionCardView: View {
+    let session: MachineSession
+    let card: Sections.Card
+    /// An iPhone's: no kind or branch on a row.
+    let compact: Bool
+    /// The pane you were last in, on this machine.
+    let last: UInt32?
+    /// The pane lit on an iPad's right side.
+    let lit: UInt32?
+    let open: () -> Void
+    let openPane: (PaneRow) -> Void
+    @State private var all = false
 
-    init(control: Control, machine: Machine, shown: Shown?, pane: UInt32? = nil) {
-        self.shown = shown
-        _session = StateObject(wrappedValue: MachineSession(control: control, machine: machine))
-        _pendingPane = State(initialValue: pane)
-    }
-
-    var body: some View {
-        Group {
-            if width == .regular && !cards {
-                tabView
-            } else {
-                cardView
-            }
-        }
-        .background(Palette.void)
-        .overlay {
-            if !session.connected && session.problem == nil {
-                ProgressView { Caps("Connecting") }.tint(Palette.accent)
-            }
-        }
-        .detailTitle(session.machine.name)
-        .toolbar {
-            if width == .regular {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Picker("Show", selection: $cards) {
-                        Image(systemName: "rectangle.split.2x2").tag(false)
-                        Image(systemName: "square.grid.2x2").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("machine-show")
-                }
-            }
-        }
-        .task { await session.connect() }
-        .onChange(of: session.panes) { _, _ in openPending() }
-        .onChange(of: phase) { _, now in
-            if now == .active { Task { await session.connect() } }
-        }
-        .onChange(of: opened) { _, now in
-            // Driving a pane: its tab is the one to come back to. Back from
-            // it: watch that tab again, at the tab's size.
-            if let now {
-                tabID = now.tab
-            } else {
-                // The full-screen terminal goes after this: let go of it now,
-                // or it would take the pane's fresh snapshot.
-                session.screen = nil
-                session.rewatch()
-            }
-        }
-        .onDisappear { if opened == nil { session.disconnect() } }
-        .fullScreenCover(item: $opened) { pane in
-            TerminalScreen(session: session, pane: pane)
-        }
-    }
-
-    private var newTerminal: some View {
-        Button {
-            Task {
-                do {
-                    pendingPane = try await session.newTerminal()
-                    openPending()
-                } catch {
-                    problem = describe(error)
-                }
-            }
-        } label: {
-            Label("New terminal", systemImage: "plus")
-                .font(Face.mono(13, "Bold"))
-                .foregroundStyle(session.connected ? Palette.void : Palette.dim)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(session.connected ? Palette.accent : Palette.raised, in: RoundedRectangle(cornerRadius: 8))
-        }
-        .disabled(!session.connected)
-        .accessibilityIdentifier("new-terminal")
-    }
-
-    /// The pane cards: every terminal, the ones that want you first.
-    private var cardView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if let p = session.problem ?? problem {
-                    Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
-                }
-                newTerminal
-                let cards = session.cards(in: shown)
-                let kept = Set(cards.flatMap { $0.tabs.flatMap(\.panes) })
-                let panes = shown == nil ? session.panes : session.panes.filter { kept.contains($0.id) }
-                if session.connected {
-                    let needs = cards.reduce(0) { $0 + $1.needs_you }
-                    Caps(needs > 0 ? "\(panes.count) panes · \(needs) need you" : "\(panes.count) panes")
-                        .accessibilityIdentifier("machine-count")
-                }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                    ForEach(panes.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }) { pane in
-                        Button { opened = pane } label: {
-                            PaneCard(pane: pane, machine: session.machine.name, conversation: session.conversations[pane.id])
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding()
-        }
-    }
-
-    /// The machine's sessions as a rail (each with its tabs, and each tab with
-    /// its panes and what they're doing), beside the tab picked, drawn whole
-    /// and live, every pane where the machine puts it. Tap a pane to drive it
-    /// full screen.
-    private var tabView: some View {
-        HStack(spacing: 0) {
-            SessionRail(session: session, cards: session.cards(in: shown), all: shown == nil, shown: shownTab?.id) { tabID = $0 }
-                .frame(width: 300)
-            Rectangle().fill(Palette.raised).frame(width: 1)
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    if let t = shownTab {
-                        Text(session.name(of: t)).font(Face.ui(17, "SemiBold")).lineLimit(1)
-                    }
-                    Spacer()
-                    newTerminal
-                }
-                if let p = session.problem ?? problem {
-                    Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
-                }
-                if let t = shownTab {
-                    TabCanvas(session: session, tab: t, conversations: session.conversations) { opened = $0 }
-                } else if session.connected {
-                    Empty(text: "No tabs", symbol: "rectangle.split.2x2")
-                }
-            }
-            .padding()
-        }
-    }
-
-    /// The tab picked, else the one whose pane most wants you, else the
-    /// first: of the project's sessions' tabs only.
-    private var shownTab: TabLayout? {
-        let kept = Set(session.cards(in: shown).flatMap { $0.tabs.map(\.id) })
-        let tabs = shown == nil ? session.tabs : session.tabs.filter { kept.contains($0.id) }
-        if let id = tabID, let t = tabs.first(where: { $0.id == id }) { return t }
-        let urgent = session.panes.filter { p in tabs.contains { $0.id == p.tab } }
-            .min { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }
-        return tabs.first { $0.id == urgent?.tab } ?? tabs.first
-    }
-
-    /// The new pane's row, once the machine's state has it.
-    private func openPending() {
-        guard let want = pendingPane, let row = session.panes.first(where: { $0.id == want }) else { return }
-        pendingPane = nil
-        opened = row
-    }
-}
-
-/// A machine's sessions, in order, each with its tabs: a tab by its name, a
-/// dot in the tone of its most urgent pane, and its panes, each with what
-/// it's doing and what it's called (its conversation, for an agent).
-struct SessionRail: View {
-    @ObservedObject var session: MachineSession
-    /// The sessions the project shows, as the core keeps them.
-    let cards: [Sections.Card]
-    /// No project is picked: every session, and tabs no session lists.
-    let all: Bool
-    let shown: UInt32?
-    let pick: (UInt32) -> Void
+    private static let tabs = 3
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                ForEach(groups, id: \.0) { _, name, project, tabs in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(name.uppercased()).font(Face.display(18)).foregroundStyle(Palette.fg).lineLimit(1)
-                            if let project { Caps(project) }
-                        }
-                        ForEach(tabs) { t in tabRow(t) }
-                    }
+        let tone: Tone = card.state == "needs_input" ? .accent : card.state == "working" ? .info : .muted
+        let few = card.tabs.enumerated()
+            .filter { i, t in i < Self.tabs || t.panes.contains { $0 == last || row($0)?.needsYou == true } }
+            .map(\.element)
+        let more = card.tabs.count - few.count
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: open) {
+                HStack(spacing: 8) {
+                    Circle().fill(tone.color).frame(width: 8, height: 8)
+                        .shadow(color: card.state == "needs_input" ? tone.color : .clear, radius: 4)
+                    Text(card.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.dim)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("session-\(card.name)")
+            Text(meta).font(Face.mono(11)).foregroundStyle(Palette.dim)
+            ForEach(all ? card.tabs : few) { t in
+                if card.tabs.count > 1 {
+                    Caps(name(of: t)).padding(.top, 6)
+                }
+                ForEach(t.panes, id: \.self) { id in
+                    if let r = row(id) { line(r) }
                 }
             }
-            .padding(12)
+            if more > 0 || all {
+                Button(all ? "Show fewer" : "+\(more) more \(more == 1 ? "tab" : "tabs")") { withAnimation { all.toggle() } }
+                    .font(Face.mono(11, "Bold"))
+                    .foregroundStyle(Palette.accent)
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+            }
         }
-        .background(Palette.surface.opacity(0.5))
+        .card(tone, glow: card.state == "needs_input")
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("session-card-\(card.id)")
     }
 
-    /// The project's sessions with their tabs, in the machine's order; and
-    /// with no project picked, any tab no session lists, last.
-    private var groups: [(UInt32, String, String?, [TabLayout])] {
-        let byID = Dictionary(session.tabs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let kept = Dictionary(cards.map { ($0.id, Set($0.tabs.map(\.id))) }, uniquingKeysWith: { a, _ in a })
-        var out = session.sessions.compactMap { s -> (UInt32, String, String?, [TabLayout])? in
-            guard let tabs = kept[s.id] else { return nil }
-            return (s.id, s.name, s.project?.name, s.tabs.filter { tabs.contains($0) }.compactMap { byID[$0] })
-        }
-        let listed = Set(session.sessions.flatMap(\.tabs))
-        let rest = session.tabs.filter { !listed.contains($0.id) }
-        if all, !rest.isEmpty { out.append((UInt32.max, "Other tabs", nil, rest)) }
-        return out.filter { !$0.3.isEmpty }
+    private var meta: String {
+        let t = card.tabs.count
+        return "\(t) \(t == 1 ? "tab" : "tabs") · \(card.panes) \(card.panes == 1 ? "pane" : "panes")"
     }
 
-    private func tabRow(_ t: TabLayout) -> some View {
-        let panes = session.panes(in: t)
-        let urgent = panes.first?.order ?? 3
-        let tone: Tone = urgent == 0 ? .accent : urgent == 1 ? .info : urgent == 2 ? .ok : .muted
-        let on = t.id == shown
-        return Button { pick(t.id) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Circle().fill(tone.color).frame(width: 7, height: 7)
-                        .shadow(color: urgent == 0 ? tone.color : .clear, radius: 4)
-                    Text(session.name(of: t)).font(Face.ui(14, "SemiBold")).foregroundStyle(on ? Palette.fg : Palette.subtle).lineLimit(1)
-                    Spacer(minLength: 0)
-                    Text(verbatim: "\(t.cells.count)").font(Face.mono(10)).foregroundStyle(Palette.dim)
+    private func row(_ id: UInt32) -> PaneRow? {
+        session.panes.first { $0.id == id } ?? session.agents.first { $0.id == id }
+    }
+
+    private func name(of t: Sections.Card.Tab) -> String {
+        if let n = t.name, !n.trimmingCharacters(in: .whitespaces).isEmpty { return n }
+        if let layout = session.tabs.first(where: { $0.id == t.id }) { return session.name(of: layout) }
+        return "Tab \((card.tabs.firstIndex { $0.id == t.id } ?? 0) + 1)"
+    }
+
+    /// A pane on one line: what it does, where you were, and Needs you; on
+    /// an iPad its program and branch too.
+    private func line(_ r: PaneRow) -> some View {
+        let facts = [r.program, r.branch.map { "⎇ \($0)" }].compactMap { $0 }.joined(separator: " · ")
+        return Button { openPane(r) } label: {
+            HStack(spacing: 8) {
+                Circle().fill(PaneLook.tone(r).color).frame(width: 6, height: 6)
+                Text(session.conversations[r.id] ?? r.name).font(Face.ui(14)).foregroundStyle(Palette.fg).lineLimit(1)
+                if r.id == last {
+                    Text("where you were").font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1).layoutPriority(-1)
                 }
-                if panes.count > 1 || urgent <= 1 {
-                    ForEach(panes) { p in
-                        HStack(spacing: 6) {
-                            Text(word(p)).font(Face.mono(9, "Bold")).tracking(0.5).foregroundStyle(toneOf(p).color)
-                                .frame(width: 58, alignment: .leading)
-                            Text(session.conversations[p.id] ?? p.name).font(Face.ui(12)).foregroundStyle(Palette.dim).lineLimit(1)
-                        }
-                        .padding(.leading, 14)
-                    }
+                Spacer(minLength: 4)
+                if r.needsYou { NeedsChip() }
+                if !compact, !facts.isEmpty {
+                    Text(facts).font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: 130, alignment: .trailing)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .background(on ? Palette.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Palette.accent.opacity(0.6) : .clear, lineWidth: 1))
+            .background(
+                r.id == lit ? Palette.accent.opacity(0.16) : r.id == last ? Palette.raised.opacity(0.7) : .clear,
+                in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("tab-\(t.id)")
+        .padding(.horizontal, -8)
+        .accessibilityIdentifier("pane-\(r.id)")
     }
+}
 
-    private func word(_ p: PaneRow) -> String {
-        guard p.running else { return "STOPPED" }
-        switch p.attention {
-        case "needs_input": return p.reason?.kind == "failed" ? "FAILED" : "WANTS YOU"
-        case "working": return "WORKING"
-        case "done": return "DONE"
-        default: return "IDLE"
-        }
-    }
-
-    private func toneOf(_ p: PaneRow) -> Tone {
+/// How a pane looks for what it's doing.
+enum PaneLook {
+    static func tone(_ p: PaneRow) -> Tone {
         guard p.running else { return .muted }
+        if p.needsYou { return p.failed ? .danger : .accent }
         switch p.attention {
-        case "needs_input": return p.reason?.kind == "failed" ? .danger : .accent
         case "working": return .info
         case "done": return .ok
         default: return .muted
@@ -657,14 +780,204 @@ struct SessionRail: View {
     }
 }
 
+/// The Needs you chip, as the web's.
+struct NeedsChip: View {
+    var body: some View {
+        Text(NEEDS_YOU.uppercased())
+            .font(Face.mono(9, "Bold"))
+            .tracking(0.6)
+            .foregroundStyle(Palette.accent)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.6), lineWidth: 1))
+    }
+}
+
+/// An iPhone's view of one session, a tab at a time: its tabs as chips (a
+/// dot on one that needs you), and the tab's panes stacked, each live at
+/// its own size, scaled to the width. Tap a pane to drive it full screen,
+/// with the keyboard and the key bar. An agent's block shows what it says,
+/// with a box that types to it.
+struct SessionScreen: View {
+    @ObservedObject var session: MachineSession
+    let id: UInt32
+    let shown: Shown?
+    let last: UInt32?
+    let drive: (PaneRow) -> Void
+    @State private var tab: UInt32?
+
+    init(session: MachineSession, id: UInt32, shown: Shown?, tab: UInt32?, last: UInt32?, drive: @escaping (PaneRow) -> Void) {
+        self.session = session
+        self.id = id
+        self.shown = shown
+        self.last = last
+        self.drive = drive
+        _tab = State(initialValue: tab)
+    }
+
+    var body: some View {
+        let card = session.cards(in: shown).first { $0.id == id }
+        let tabs = card?.tabs ?? []
+        let on = tabs.first { $0.id == tab } ?? tabs.first
+        let layout = on.flatMap { t in session.tabs.first { $0.id == t.id } }
+        VStack(alignment: .leading, spacing: 0) {
+            if tabs.count > 1 { chips(tabs, on: on?.id) }
+            if let on, let layout {
+                GeometryReader { g in
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(on.panes, id: \.self) { p in
+                                if let row = session.panes.first(where: { $0.id == p }) ?? session.agents.first(where: { $0.id == p }) {
+                                    StackedPane(session: session, row: row, tab: layout, last: p == last, width: g.size.width - 20, drive: drive)
+                                }
+                            }
+                        }
+                        .padding(10)
+                    }
+                }
+                .onAppear { session.watch(layout) }
+                .onChange(of: layout) { _, now in session.watch(now) }
+                .onDisappear { session.unwatch(layout.id) }
+            } else if session.connected {
+                Empty(text: "This session has no panes now", symbol: "rectangle.split.2x2")
+            } else {
+                ProgressView { Caps("Connecting") }.tint(Palette.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Palette.void)
+        .navigationTitle(card?.name ?? "Session")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("session-screen")
+    }
+
+    private func chips(_ tabs: [Sections.Card.Tab], on: UInt32?) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(tabs) { t in
+                    let picked = t.id == on
+                    let needs = t.panes.contains { p in (session.panes + session.agents).contains { $0.id == p && $0.needsYou } }
+                    Button { tab = t.id } label: {
+                        HStack(spacing: 5) {
+                            if needs { Circle().fill(picked ? Palette.void : Palette.accent).frame(width: 6, height: 6) }
+                            Text(name(of: t, in: tabs)).font(Face.mono(12, "Bold")).lineLimit(1)
+                        }
+                        .foregroundStyle(picked ? Palette.void : Palette.fg)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .background(picked ? Palette.accent : Palette.surface, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("session-tab-\(t.id)")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func name(of t: Sections.Card.Tab, in tabs: [Sections.Card.Tab]) -> String {
+        if let n = t.name, !n.trimmingCharacters(in: .whitespaces).isEmpty { return n }
+        if let layout = session.tabs.first(where: { $0.id == t.id }) { return session.name(of: layout) }
+        return "Tab \((tabs.firstIndex { $0.id == t.id } ?? 0) + 1)"
+    }
+}
+
+/// One pane of a session's tab, stacked: what it is and how it stands over
+/// it, and the pane, live, scaled to `width`. Its tab's watch feeds it.
+struct StackedPane: View {
+    @ObservedObject var session: MachineSession
+    let row: PaneRow
+    let tab: TabLayout
+    let last: Bool
+    let width: CGFloat
+    let drive: (PaneRow) -> Void
+
+    var body: some View {
+        let cell = tab.cells.first { $0.pane == row.id }
+        let terminal = !row.isAgent && (cell?.kind ?? "terminal") == "terminal"
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Circle().fill(PaneLook.tone(row).color).frame(width: 7, height: 7)
+                Text(session.conversations[row.id] ?? row.name).font(Face.ui(14, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                if last {
+                    Text("where you were").font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1).layoutPriority(-1)
+                }
+                Spacer(minLength: 4)
+                if row.needsYou { NeedsChip() }
+                if terminal {
+                    Image(systemName: "keyboard").font(.system(size: 12)).foregroundStyle(Palette.dim)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Palette.surface)
+            if terminal, let cell {
+                let ten = TerminalUIView.cell(size: 10)
+                let size = (max(3, min(12, 10 * width / (CGFloat(cell.cols) * ten.width))) * 2).rounded(.down) / 2
+                let c = TerminalUIView.cell(size: size)
+                WatchTerminal(session: session, tab: tab.id, pane: row.id, cols: cell.cols, rows: cell.rows, size: size)
+                    .id("\(row.id)-\(cell.cols)x\(cell.rows)@\(size)")
+                    .frame(width: CGFloat(cell.cols) * c.width, height: CGFloat(cell.rows) * c.height)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background(Color.black)
+                    .clipped()
+                    // A new size makes a new terminal: it needs the pane's snapshot.
+                    .onChange(of: size) { _, _ in session.rewatch() }
+            } else {
+                BlockSlot(session: session, pane: row).frame(height: 260)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(PaneLook.tone(row).color.opacity(row.needsYou ? 0.9 : 0.4), lineWidth: row.needsYou ? 2 : 1))
+        .contentShape(Rectangle())
+        .onTapGesture { if terminal { drive(row) } }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(terminal ? .isButton : [])
+        .accessibilityIdentifier("stacked-\(row.id)")
+    }
+}
+
+/// An iPad's right side: a session's tab drawn whole and live, its name over
+/// it ("Where you were" before anything is picked). Tap a pane to drive it.
+struct LiveTab: View {
+    @ObservedObject var session: MachineSession
+    let tab: TabLayout
+    let card: Sections.Card
+    let lit: UInt32?
+    let label: String?
+    let drive: (PaneRow) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                if let label { Caps(label) }
+                if card.tabs.count > 1 {
+                    Text(session.name(of: tab)).font(Face.ui(17, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                }
+                Spacer()
+                Text(MachinesView.short(session.machine.name)).font(Face.mono(12)).foregroundStyle(Palette.dim)
+            }
+            TabCanvas(session: session, tab: tab, conversations: session.conversations, lit: lit, focus: drive)
+        }
+        .padding()
+        .background(Palette.void)
+        .detailTitle(card.name)
+        .onDisappear { session.unwatch(tab.id) }
+        .accessibilityIdentifier("live-tab")
+    }
+}
+
 /// A tab drawn whole and live: every pane at its rectangle in the tab's grid,
 /// at the tab's own size, in a font small enough for the tab to fit. Nothing
 /// here resizes anyone's panes. A pane's edge takes the tone of what it's
-/// doing; tap one to drive it.
+/// doing, or the accent for the one `lit`; tap one to drive it.
 struct TabCanvas: View {
     @ObservedObject var session: MachineSession
     let tab: TabLayout
     let conversations: [UInt32: String]
+    var lit: UInt32?
     let focus: (PaneRow) -> Void
 
     var body: some View {
@@ -696,10 +1009,11 @@ struct TabCanvas: View {
     private func paneView(_ c: TabLayout.Cell, size: CGFloat) -> some View {
         let row = session.panes.first { $0.id == c.pane }
         if let row, (c.kind ?? "terminal") == "terminal" {
-            let tone: Tone = row.order == 0 ? .accent : row.order == 1 ? .info : .muted
+            let tone: Tone = c.pane == lit || row.order == 0 ? .accent : row.order == 1 ? .info : .muted
+            let strong = c.pane == lit || row.order == 0
             WatchTerminal(session: session, tab: tab.id, pane: c.pane, cols: c.cols, rows: c.rows, size: size)
                 .id("\(c.pane)-\(c.cols)x\(c.rows)@\(size)")
-                .overlay(Rectangle().strokeBorder(tone.color.opacity(row.order <= 1 ? 0.9 : 0.35), lineWidth: row.order == 0 ? 2 : 1))
+                .overlay(Rectangle().strokeBorder(tone.color.opacity(row.order <= 1 || strong ? 0.9 : 0.35), lineWidth: strong ? 2 : 1))
                 .overlay(alignment: .topTrailing) {
                     Text(conversations[c.pane] ?? row.name)
                         .font(Face.mono(10, "Medium"))
@@ -742,67 +1056,5 @@ struct WatchTerminal: UIViewRepresentable {
 
     static func dismantleUIView(_ v: TerminalUIView, coordinator: ()) {
         MainActor.assumeIsolated { v.session.unregister(v) }
-    }
-}
-
-/// A pane as the swarm's rail shows one: whether it wants you, in that state's
-/// tone, what it's called (an agent's conversation), why it wants you, and its
-/// identity in mono ("%62 · claude · arugula ⎇ main"). Panes that want you or
-/// are working glow.
-struct PaneCard: View {
-    let pane: PaneRow
-    let machine: String
-    /// The title of the Claude Code conversation running in it, if any.
-    var conversation: String?
-
-    private var state: (String, Tone) {
-        if !pane.running { return ("Stopped", .muted) }
-        switch pane.attention {
-        case "needs_input": return (pane.reason?.kind == "failed" ? "Failed" : "Wants you", pane.reason?.kind == "failed" ? .danger : .accent)
-        case "working": return ("Working", .info)
-        case "done": return ("Done", .ok)
-        default: return ("Idle", .muted)
-        }
-    }
-
-    var body: some View {
-        let (word, tone) = state
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(word.uppercased()).font(Face.mono(10, "Bold")).tracking(0.8).foregroundStyle(tone.color)
-                Spacer(minLength: 0)
-                if let ms = pane.last_ms, ms > 0 {
-                    Text(Self.ago(ms)).font(Face.mono(10)).foregroundStyle(Palette.dim)
-                }
-            }
-            Text(conversation ?? pane.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
-            if let r = pane.reason, !r.headline.isEmpty {
-                Text(r.headline).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(2)
-            }
-            Text(meta).font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1).truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
-        .card(tone, glow: pane.attention == "needs_input")
-    }
-
-    private var meta: String {
-        var bits = ["%\(pane.id)"]
-        if let p = pane.program { bits.append(p) }
-        if let project = pane.project {
-            bits.append(pane.branch.map { "\(project.name) ⎇ \($0)" } ?? project.name)
-        } else if let cwd = pane.cwd {
-            bits.append(cwd.split(separator: "/").last.map(String.init) ?? cwd)
-        }
-        return bits.joined(separator: " · ")
-    }
-
-    static func ago(_ ms: Int) -> String {
-        let s = max(0, Int(Date().timeIntervalSince1970) - ms / 1000)
-        switch s {
-        case ..<60: return "now"
-        case ..<3600: return "\(s / 60)m"
-        case ..<86400: return "\(s / 3600)h"
-        default: return "\(s / 86400)d"
-        }
     }
 }
