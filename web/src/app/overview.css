@@ -508,14 +508,13 @@ button.ov-peek:disabled {
 .ov-asks {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 .ov-asks-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   margin: 0;
-  padding: var(--space-3) 0 0;
+  padding: var(--space-3) 0 var(--space-1);
   font: 600 var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
@@ -526,16 +525,32 @@ button.ov-peek:disabled {
   --c: var(--s-ask);
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  border-radius: var(--card-radius);
+  /* The gap between rows belongs to the rows (#1427): half of it, a
+   * transparent border above and below each, so the pointer is over a row
+   * all the way down the list and an open one doesn't close on the way
+   * to the next. The visible outline is the inset ring; the padding is
+   * the 1px it takes. */
+  border-block: var(--space-1) solid transparent;
+  border-radius: var(--card-radius) / calc(var(--card-radius) + var(--space-1));
+  padding: 1px;
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
+}
+/* The first row's upper half-gap is the heading's (padding below it), the
+ * last's lower one the list's: not the page's. */
+.ov-ask:first-child {
+  margin-top: calc(-1 * var(--space-1));
+}
+.ov-ask:last-child {
+  margin-bottom: calc(-1 * var(--space-1));
 }
 .ov-ask::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
+  left: 1px;
+  top: 7px;
+  bottom: 7px;
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--c);

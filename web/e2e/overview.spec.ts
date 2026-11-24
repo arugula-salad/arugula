@@ -636,6 +636,48 @@ test.describe("on a computer", () => {
     await expect(allow).toHaveCount(0);
   });
 
+  test("the gap between Needs you's rows belongs to them: the pointer is over a row all the way down, and an open row stays open (Arugula #1427)", async ({ page }) => {
+    await overview(page);
+    await asking(page, [
+      { host: "one", person: ME, ask: "ls one" },
+      { host: "two", person: ME, ask: "ls two" },
+      { host: "three", person: ME, ask: "ls three" },
+    ]);
+    const rows = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
+    await expect(rows).toHaveCount(3);
+    // Where a row shows: its box less a transparent border (the half-gap that is its hit area).
+    const shown = (i: number) =>
+      rows.nth(i).evaluate((e) => {
+        const r = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        const clear = (c: string) => c === "rgba(0, 0, 0, 0)" || c === "transparent";
+        const top = clear(cs.borderTopColor) ? parseFloat(cs.borderTopWidth) : 0;
+        const bottom = clear(cs.borderBottomColor) ? parseFloat(cs.borderBottomWidth) : 0;
+        return { x: r.x + r.width / 2, top: r.top + top, bottom: r.bottom - bottom, boxTop: r.top, boxBottom: r.bottom };
+      });
+    // Hover the first: it opens (and the rows below it move down), so measure after.
+    const first = await shown(0);
+    await page.mouse.move(first.x, (first.top + first.bottom) / 2);
+    await expect(rows.nth(0).locator(".ov-ask-row")).toHaveAttribute("aria-expanded", "true");
+    const [a, b] = [await shown(0), await shown(1)];
+    // The visible spacing is the 8px it was.
+    expect(b.top - a.bottom).toBe(8);
+    // Every pixel from the first's box to the second's is over some row.
+    const overRow = await page.evaluate(
+      ({ x, from, to }) => {
+        const out: number[] = [];
+        for (let y = Math.ceil(from); y < to; y++) if (!document.elementFromPoint(x, y)?.closest("[data-ov-ask]")) out.push(y);
+        return out;
+      },
+      { x: a.x, from: a.boxBottom, to: b.boxTop + 1 },
+    );
+    expect(overRow).toEqual([]);
+    // Just below its visible bottom, in the gap, it stays open.
+    await page.mouse.move(a.x, a.bottom + 1);
+    await page.waitForTimeout(150);
+    await expect(rows.nth(0).locator(".ov-ask-row")).toHaveAttribute("aria-expanded", "true");
+  });
+
   test("a teammate's ask you only watch says an editor answers it, and has no action", async ({ page }) => {
     await overview(page);
     await asking(page, [{ host: "sam-box", person: SAM, ask: "ls sam", watch: true }]);
