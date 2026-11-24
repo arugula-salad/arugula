@@ -1,7 +1,8 @@
-// The account, in every place's heading (Arugula #1362, the iPhone's #1361),
-// now that You has left the tab bar: your picture opens your name, Settings,
-// Send feedback, the app's version and Sign out, as the web's avatar menu;
-// the bell beside it opens the Inbox. Settings is the web's page: control
+// The account, in every place's heading on a phone and at the rail's foot on
+// a tablet (Arugula #1362, #1366), now that You has left the tab bar: your
+// picture opens your name, Settings, Send feedback, the app's version and
+// Sign out, as the web's avatar menu; the bell beside it opens the Inbox
+// (Inbox.kt, Arugula #1365). Settings is the web's page: control
 // doesn't take this app's session on it, so it opens in a Custom Tab, at the
 // platform control's `/control.json` names. Send feedback goes to control's
 // `POST /api/feedback` as the person signed in; while control refuses the app
@@ -22,8 +23,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -60,7 +59,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.arugula.core.CoreError
@@ -71,7 +69,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** What every place's heading does with its buttons: New, the bell, and the account's. Unset, the heading has the project's menu alone. */
-class Heading(val api: Api, val model: AppModel, val makeNew: () -> Unit, val showInbox: () -> Unit)
+class Heading(val api: Api, val model: AppModel, val makeNew: () -> Unit, val showInbox: () -> Unit) {
+    /** The Inbox and the bell's count, the heading's and the rail's alike (Arugula #1365). */
+    val inbox = InboxModel(api)
+}
 
 val LocalHeading = staticCompositionLocalOf<Heading?> { null }
 
@@ -97,9 +98,9 @@ fun HeadingButton(icon: ImageVector, label: String, modifier: Modifier = Modifie
     }
 }
 
-/** Your picture: your initials in your tone (as chat shows people), opening the account's menu. */
+/** Your picture: your initials in your tone (as chat shows people), opening the account's menu. [tag]: `account` in a heading, `rail-account` on the rail. */
 @Composable
-fun AccountMenu(heading: Heading) {
+fun AccountMenu(heading: Heading, tag: String = "account") {
     val scope = LocalScope.current
     val context = LocalContext.current
     val coroutines = rememberCoroutineScope()
@@ -108,7 +109,7 @@ fun AccountMenu(heading: Heading) {
     var problem by remember { mutableStateOf<String?>(null) }
     val me = scope.me
     Box {
-        Box(Modifier.size(36.dp).clip(CircleShape).clickable { open = true }.testTag("account").semantics { contentDescription = "You: ${me?.name ?: "your account"}" }) {
+        Box(Modifier.size(36.dp).clip(CircleShape).clickable { open = true }.testTag(tag).semantics { contentDescription = "You: ${me?.name ?: "your account"}" }) {
             Avatar(me?.name?.ifEmpty { null } ?: me?.login ?: "?", 36)
         }
         DropdownMenu(open, { open = false }, containerColor = Palette.surface) {
@@ -239,83 +240,3 @@ fun FeedbackSheet(heading: Heading, onDismiss: () -> Unit) {
     }
 }
 
-/** One entry of the Inbox, as `/api/inbox` lists it. */
-data class InboxEntry(
-    val item: String, val reason: String, val repo: String, val number: Int, val state: String, val title: String,
-    val url: String, val updatedAt: Long, val seenAt: Long?,
-) {
-    companion object {
-        fun of(o: JSONObject) = InboxEntry(
-            o.getString("item"), o.optString("reason"), o.optString("repo"), o.optInt("number"), o.optString("state"),
-            o.optString("title"), o.optString("url"), o.optLong("updated_at"), o.long("seen_at"),
-        )
-    }
-}
-
-/**
- * What's waiting for you, as the web's Inbox lists it: PRs, issues and runs
- * in the current project, newest first; one opens on its page. Its count on
- * the bell, and a push landing here, are Arugula #1365.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun InboxSheet(heading: Heading, onDismiss: () -> Unit) {
-    val scope = LocalScope.current
-    val context = LocalContext.current
-    val coroutines = rememberCoroutineScope()
-    var entries by remember { mutableStateOf<List<InboxEntry>?>(null) }
-    var problem by remember { mutableStateOf<String?>(null) }
-    val project = scope.current?.id
-    androidx.compose.runtime.LaunchedEffect(project) {
-        try {
-            val path = project?.let { "/api/inbox?project=$it" } ?: "/api/inbox"
-            entries = heading.api.get(path).list("entries", InboxEntry::of).sortedByDescending { it.updatedAt }
-            problem = null
-        } catch (e: Exception) {
-            problem = describe(e)
-        }
-    }
-
-    /** GitHub's items by their address; a native issue's or a run's is a path on the platform page. */
-    fun open(e: InboxEntry) = coroutines.launch {
-        if (Regex("^[a-z][a-z0-9+.-]*:", RegexOption.IGNORE_CASE).containsMatchIn(e.url)) {
-            openTab(context, e.url)
-        } else {
-            platformOrigin(heading.model.url)?.let { openTab(context, it + "/" + e.url.trimStart('/')) }
-        }
-    }
-
-    ModalBottomSheet(onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Palette.bg) {
-        Column(Modifier.padding(bottom = 24.dp).testTag("inbox")) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Inbox", Modifier.weight(1f), style = Face.display(26.sp), color = Palette.fg)
-                TextLink("Done", onDismiss)
-            }
-            val list = entries
-            when {
-                problem != null -> Text(problem!!, Modifier.padding(16.dp), style = Face.mono(12.sp), color = Palette.danger)
-                list == null -> Caps("Looking…", Modifier.padding(16.dp))
-                list.isEmpty() -> Caps("Nothing waiting for you", Modifier.padding(16.dp))
-                else -> LazyColumn {
-                    items(list, key = { "${it.item}:${it.reason}" }) { e ->
-                        InboxRow(e, Modifier.clickable { open(e) })
-                        HorizontalDivider(color = Palette.raised)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InboxRow(e: InboxEntry, modifier: Modifier) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Box(Modifier.size(7.dp).clip(CircleShape).background(if (e.seenAt == null) Palette.accent else Palette.void))
-            Text(if (e.number > 0) "${e.repo} #${e.number}" else e.repo, Modifier.weight(1f), style = Face.mono(11.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            StateChip(e.state)
-        }
-        Text(e.title, style = Face.ui(15.sp, if (e.seenAt == null) FontWeight.SemiBold else FontWeight.Normal), color = Palette.fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Caps(e.reason.replace('_', ' '))
-    }
-}

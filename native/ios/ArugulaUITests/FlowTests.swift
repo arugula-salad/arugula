@@ -221,8 +221,22 @@ final class FlowTests: XCTestCase {
         for gone in ["Home", "You", "Issues"] {
             XCTAssertFalse(tab(app, gone).exists, "\(gone) is still a tab")
         }
-        XCTAssertTrue(app.buttons["heading-inbox"].firstMatch.shows(within: 10), "no bell in the heading")
-        XCTAssertTrue(app.buttons["account"].firstMatch.shows(within: 10), "no picture in the heading")
+        // On an iPad they're at the sidebar's foot instead (Arugula #1366).
+        let bell = app.buttons[iPad ? "sidebar-inbox" : "heading-inbox"].firstMatch
+        XCTAssertTrue(bell.shows(within: 10), "no bell in the \(iPad ? "sidebar" : "heading")")
+        XCTAssertTrue(app.buttons["account"].firstMatch.shows(within: 10), "no picture in the \(iPad ? "sidebar" : "heading")")
+        if iPad { XCTAssertFalse(app.buttons["heading-inbox"].exists, "the bell is in the heading beside the sidebar too") }
+
+        // The bell opens the Inbox (Arugula #1365): what wants you, counted, or
+        // a word that nothing does.
+        bell.tap()
+        let stats = app.descendants(matching: .any)["inbox-stats"].firstMatch
+        let nothing = app.descendants(matching: .any)["inbox-empty"].firstMatch
+        let deadlineInbox = Date().addingTimeInterval(30)
+        while !stats.exists && !nothing.exists && Date() < deadlineInbox { sleep(1) }
+        shot(app, "2-inbox")
+        XCTAssertTrue(stats.exists, "the Inbox didn't load: \(app.debugDescription)")
+        app.buttons["inbox-done"].tap()
 
         // Docs (Arugula #1363): the project's Docs, newest first, or a plain
         // word that it has none yet.

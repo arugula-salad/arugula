@@ -59,6 +59,13 @@ class AppModel(private val context: Context) {
     var pending by mutableStateOf<SignIn?>(null)
         private set
 
+    /**
+     * A link into the app (`arugula://inbox`, `arugula://inbox/<item>`,
+     * `arugula://chat`, …, Arugula #1365) the shell hasn't followed yet: kept
+     * here through a sign-in.
+     */
+    var link by mutableStateOf<String?>(null)
+
     /** Where the session is, else where a sign-in would go. */
     var url = defaultUrl
         private set

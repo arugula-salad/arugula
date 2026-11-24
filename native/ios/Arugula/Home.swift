@@ -41,7 +41,8 @@ enum Opened: Hashable {
 /// has them (Arugula #1361): Overview, Boards and Docs lead, then Machines
 /// and Chat. Issues aren't a place: a board's rows open theirs, and the
 /// project's menu opens the list. The Inbox and the account are in every
-/// place's heading (TabHeading), not on the bar.
+/// place's heading (TabHeading), or at the foot of an iPad's sidebar, not
+/// on the bar.
 enum AppTab: String, CaseIterable, Identifiable {
     case overview = "Overview", boards = "Boards", docs = "Docs", machines = "Machines", chat = "Chat"
     var id: String { rawValue }
@@ -72,6 +73,10 @@ private struct ShowInboxKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
+private struct SidebarFootKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// Select the Overview.
     var goOverview: (() -> Void)? {
@@ -96,6 +101,13 @@ extension EnvironmentValues {
     var showInbox: (() -> Void)? {
         get { self[ShowInboxKey.self] }
         set { self[ShowInboxKey.self] = newValue }
+    }
+
+    /// The bell and your picture are at the foot of an iPad's sidebar
+    /// (Arugula #1366), so a place's heading leaves them out.
+    var sidebarFoot: Bool {
+        get { self[SidebarFootKey.self] }
+        set { self[SidebarFootKey.self] = newValue }
     }
 }
 
