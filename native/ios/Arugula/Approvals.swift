@@ -119,7 +119,8 @@ struct PasskeySheet {
         guard let base = control.url, var c = URLComponents(string: base) else { return nil }
         c.path = "/"
         c.query = nil
-        c.fragment = "\(hash)&app"
+        // The fragment without its `#`, which URLComponents would escape.
+        c.fragment = "\(hash.hasPrefix("#") ? String(hash.dropFirst()) : hash)&app"
         return c.url
     }
 
