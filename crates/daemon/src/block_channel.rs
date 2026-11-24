@@ -112,6 +112,8 @@ fn role_name(r: TokenRole) -> &'static str {
         TokenRole::Editor => "editor",
         TokenRole::Viewer => "viewer",
         TokenRole::Guest => "guest",
+        TokenRole::Agents => "agents",
+        TokenRole::Drives => "drives",
     }
 }
 

@@ -1,14 +1,18 @@
 //! This daemon as a client of another machine (#399): the account's own
 //! machines, its teams', and its teammates' that offer agents, reached
-//! through control's relay and signed with this daemon's own key, as the
-//! CLI reaches them with its own (`crates/cli/src/control.rs`).
+//! through control's relay.
 //!
-//! - **Which machines** come from control's directory. A machine of another
-//!   account is trusted only when its certificate chains to the root a
-//!   checked roster names for that account (a teammate's), never to one
-//!   control alone vouches for.
+//! - **Which machines** come from control's directory.
+//! - **How it's let in** (Arugula #1002, aru-141): with a machine token
+//!   control makes for this daemon and that machine, `agents` or `drives`.
+//!   Where control makes none (one from before them) or the machine
+//!   refuses it (a daemon from before them), with this daemon's device
+//!   key, as before: only to a machine whose certificate chains to this
+//!   account's root, or to the root a checked roster names for its account
+//!   (a teammate's), never to one control alone vouches for.
 //! - **What it may do there** is the other machine's to decide: a daemon is
-//!   let in for `/api/a2a/` only, as its account (`e2e.rs`).
+//!   let in for `/api/a2a/` only, as its account (`e2e.rs`), or drives a
+//!   hosted machine of its project.
 //! - **One standing channel per machine** (#856): every request to it goes
 //!   down the same relay socket, numbered (`Msg::Request { id }`), and the
 //!   answers come back by number. It closes when it's been idle a while,
@@ -23,8 +27,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use arugula_control_wire::machine_token::{MachineTokenResponse, TokenHello, machine_token_path};
 use arugula_e2e::{
-    Cert, Kind, Revocation, Trust,
+    Cert, DeviceKeys, Kind, Revocation, Trust,
     channel::{Channel, Initiator, Msg, Refusal, RequestHead, ResponseHead, prologue},
 };
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
@@ -51,7 +56,17 @@ pub struct Machine {
     pub owner: String,
     pub team: Option<String>,
     pub online: bool,
-    cert: Cert,
+    /// Its certificate, where this daemon checked it itself: what a channel
+    /// opened with the device key needs. `None`: control's word alone, so
+    /// only a machine token opens one.
+    cert: Option<Cert>,
+    /// Its Noise key, from `cert` or else control's directory.
+    noise: [u8; 32],
+}
+
+/// A Noise key in hex, as control's directory and certificates spell it.
+fn noise_of(hex_key: &str) -> Option<[u8; 32]> {
+    hex::decode(hex_key).ok()?.try_into().ok()
 }
 
 #[derive(Deserialize)]
@@ -78,18 +93,31 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
                 // What it's heard can't be read: none this time, rather than
                 // forgetting.
                 let Some(held) = held.as_deref_mut() else { continue };
+                let machine = |account: String, cert: Option<Cert>, noise| Machine {
+                    id: id.to_owned(),
+                    name: d["name"].as_str().unwrap_or(id).to_owned(),
+                    account,
+                    owner: String::new(),
+                    team: d["team"].as_str().map(str::to_owned),
+                    online: d["online"].as_bool().unwrap_or(false),
+                    cert,
+                    noise,
+                };
                 match accept_hosted(&e, id, &d["hosted"], held) {
                     // M184: its project's machine, accepted for that project only.
-                    Ok((project, cert)) => out.push(Machine {
-                        id: id.to_owned(),
-                        name: d["name"].as_str().unwrap_or(id).to_owned(),
-                        account: project,
-                        owner: String::new(),
-                        team: d["team"].as_str().map(str::to_owned),
-                        online: d["online"].as_bool().unwrap_or(false),
-                        cert,
-                    }),
-                    Err(why) => tracing::debug!(machine = id, %why, "not trusting a hosted machine"),
+                    Ok((project, cert)) => match noise_of(&cert.noise) {
+                        Some(noise) => out.push(machine(project, Some(cert), noise)),
+                        None => tracing::debug!(machine = id, "a hosted machine's key isn't one"),
+                    },
+                    // Control's word (Arugula #1002): reached with a token,
+                    // which control makes only for the project's people.
+                    Err(why) => match arugula_e2e::hosted::read_cert(&d["hosted"]["cert"]) {
+                        Ok(c) if c.device == id => match noise_of(&c.noise) {
+                            Some(noise) => out.push(machine(c.project.clone(), None, noise)),
+                            None => tracing::debug!(machine = id, "a hosted machine's key isn't one"),
+                        },
+                        _ => tracing::debug!(machine = id, %why, "not trusting a hosted machine"),
+                    },
                 }
                 continue;
             }
@@ -97,15 +125,23 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
             let cert = if account == own {
                 e.trusted.get(id).cloned()
             } else {
-                let Some(root) = e.known_root(&account) else { continue };
-                let Ok(chain) = serde_json::from_value::<Chain>(d["chain"].clone()) else { continue };
-                // Control's word for the root counts only where a roster agrees.
-                if chain.trust.as_ref().is_none_or(|t| t.account != account || t.root != root) {
-                    continue;
-                }
-                Trust { account: account.clone(), root }.evaluate(&chain.certs, &chain.revocations).get(id).cloned()
+                e.known_root(&account).and_then(|root| {
+                    let chain = serde_json::from_value::<Chain>(d["chain"].clone()).ok()?;
+                    // Control's word for the root counts only where a roster agrees.
+                    if chain.trust.as_ref().is_none_or(|t| t.account != account || t.root != root) {
+                        return None;
+                    }
+                    Trust { account: account.clone(), root }.evaluate(&chain.certs, &chain.revocations).get(id).cloned()
+                })
             };
-            let Some(cert) = cert.filter(|c| c.kind == Kind::Daemon) else { continue };
+            let cert = cert.filter(|c| c.kind == Kind::Daemon);
+            // A machine joined on control's word, or reached from one
+            // (aru-141): its key from the directory, for a token's channel.
+            let noise = match &cert {
+                Some(c) => noise_of(&c.noise),
+                None => d["noise"].as_str().and_then(noise_of),
+            };
+            let Some(noise) = noise else { continue };
             out.push(Machine {
                 id: id.to_owned(),
                 name: d["name"].as_str().unwrap_or(id).to_owned(),
@@ -114,6 +150,7 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
                 online: d["online"].as_bool().unwrap_or(false),
                 account,
                 cert,
+                noise,
             });
         }
     });
@@ -392,7 +429,7 @@ static CHANNELS: LazyLock<Mutex<HashMap<Pair, Slot>>> = LazyLock::new(Default::d
 /// whether it's new.
 async fn channel(control: &Control, m: &Machine) -> anyhow::Result<(Arc<Conn>, bool)> {
     let me = control.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
-    let key = (me.saved.cert.device.clone(), m.id.clone(), m.cert.noise.clone());
+    let key = (me.saved.cert.device.clone(), m.id.clone(), hex::encode(m.noise));
     let slot = CHANNELS.lock().unwrap().entry(key).or_default().clone();
     let mut slot = slot.lock().await;
     if let Some(c) = slot.as_ref().filter(|c| c.alive.load(Ordering::SeqCst)) {
@@ -403,7 +440,26 @@ async fn channel(control: &Control, m: &Machine) -> anyhow::Result<(Arc<Conn>, b
     Ok((c, true))
 }
 
+/// A channel to `m`: with a machine token from control (Arugula #1002), else
+/// with this daemon's device key where `m`'s certificate was checked here.
 async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
+    let by_token = async {
+        let t: MachineTokenResponse = control.post_signed(&machine_token_path(&m.id), &serde_json::json!({})).await?;
+        open_with(control, m, Some(t.token)).await
+    };
+    match by_token.await {
+        Ok(c) => Ok(c),
+        Err(why) if m.cert.is_some() => {
+            tracing::debug!(machine = m.name, %why, "no token's channel: opening one with the device key");
+            open_with(control, m, None).await
+        }
+        Err(why) => Err(why),
+    }
+}
+
+/// [`open`], with `token` in message 1 and a key made for this channel, or
+/// with none and this daemon's device key.
+async fn open_with(control: &Control, m: &Machine, token: Option<String>) -> anyhow::Result<Arc<Conn>> {
     let e = control.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
     let relay = format!("/api/relay/c/{}", m.id);
     let base = e.saved.url.trim_end_matches('/');
@@ -417,7 +473,13 @@ async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
     // Noise IK, this daemon the initiator.
-    let (init, m1) = Initiator::start(&e.keys, &m.cert.noise_key(), &prologue(&m.cert.device))?;
+    let (init, m1) = match token {
+        Some(t) => {
+            let hello = TokenHello { machine_token: t }.encode();
+            Initiator::start_with(&DeviceKeys::generate(), &m.noise, &prologue(&m.id), &hello)?
+        }
+        None => Initiator::start(&e.keys, &m.noise, &prologue(&m.id))?,
+    };
     ws.send(Message::Binary(m1.into())).await?;
     let m2 = tokio::time::timeout(TIMEOUT, async {
         loop {
