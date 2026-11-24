@@ -9,12 +9,14 @@ import UserNotifications
 
 /// What a tapped notification opens, from what it said: a pane on a machine
 /// (an agent's question, a terminal that wants you), a chat room, an issue,
-/// a deploy waiting for approval (Arugula #604).
+/// a deploy waiting for approval (Arugula #604), or an Inbox item that isn't
+/// an issue or a thread (a PR, a run: Arugula #1365), which opens the Inbox at it.
 enum PushRoute: Equatable {
     case pane(machine: String, pane: UInt32)
     case room(String)
     case issue(String)
     case deploy(String)
+    case inbox(String)
 
     init?(said: [String: Any]) {
         if let deploy = said["deploy"] as? String, deploy.hasPrefix("dep_") {
@@ -28,6 +30,8 @@ enum PushRoute: Equatable {
                 self = .issue(item)
             } else if let room = inbox["room"] as? String {
                 self = .room(room)
+            } else if let item = inbox["item"] as? String {
+                self = .inbox(item)
             } else {
                 return nil
             }
@@ -46,6 +50,9 @@ final class PushCenter: ObservableObject {
     @Published var route: PushRoute?
     private var control: Control?
     private var token: String?
+    /// An Inbox item a tap opened before the app had control: marked seen
+    /// once it does.
+    private var unmarked: String?
     private static let subscribed = "arugula.push-endpoint"
 
     /// APNs' host for this build: a development build's device token is
@@ -66,6 +73,10 @@ final class PushCenter: ObservableObject {
     /// token (`registered`), which is subscribed with control.
     func start(_ control: Control) {
         self.control = control
+        if let item = unmarked {
+            unmarked = nil
+            markSeen(item)
+        }
         Task {
             let center = UNUserNotificationCenter.current()
             guard (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) == true else { return }
@@ -114,6 +125,22 @@ final class PushCenter: ObservableObject {
         guard let text = info["said"] as? String,
               let said = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { return }
         route = PushRoute(said: said)
+        // A push about an Inbox item (Arugula #1365): it's seen once tapped,
+        // as opening it in the Inbox marks it.
+        if let item = (said["inbox"] as? [String: Any])?["item"] as? String { markSeen(item) }
+    }
+
+    /// Mark all of an item's Inbox entries seen, and count again.
+    private func markSeen(_ item: String) {
+        guard let control else {
+            unmarked = item
+            return
+        }
+        Task {
+            let id = item.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? item
+            _ = try? await control.call("POST", "/api/inbox/\(id)", body: ["seen": true])
+            await InboxModel.shared.load(control, project: InboxModel.shared.project)
+        }
     }
 
     private struct Me: Decodable { var account: String }

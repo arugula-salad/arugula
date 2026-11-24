@@ -73,13 +73,19 @@ class AppFlowTest {
             tap("signin-finish")
 
             // The Overview, with the web's five places on the bar under it
-            // (Arugula #1362), and the bell and your picture in its heading.
+            // (Arugula #1362), and the bell and your picture in its heading,
+            // or at the rail's foot on a tablet (Arugula #1366).
             wait("home-list", 30_000)
             for (name in listOf("Overview", "Boards", "Docs", "Machines", "Chat")) wait("tab-$name")
             for (gone in listOf("Home", "You")) check(rule.onAllNodes(hasTestTag("tab-$gone")).fetchSemanticsNodes().isEmpty()) { "$gone is still a tab" }
             wait("heading-new")
-            wait("heading-inbox")
-            wait("account")
+            val rail = rule.onAllNodes(hasTestTag("rail-inbox")).fetchSemanticsNodes().isNotEmpty()
+            val bell = if (rail) "rail-inbox" else "heading-inbox"
+            val account = if (rail) "rail-account" else "account"
+            wait(bell)
+            wait(account)
+            if (rail) check(rule.onAllNodes(hasTestTag("heading-inbox")).fetchSemanticsNodes().isEmpty()) { "the bell is in the heading beside the rail" }
+            inbox(bell)
             args.getString("board")?.takeIf { it.isNotEmpty() }?.let { board -> home(board, args.getString("ask")) }
             shot("2-home")
 
@@ -146,10 +152,27 @@ class AppFlowTest {
 
             // Your picture: sign out, and the app asks for a sign-in again.
             tap("tab-Overview")
-            tap("account")
+            tap(account)
             tap("sign-out")
             wait("signin-start", 15_000)
         }
+    }
+
+    /** The bell opens the Inbox (Arugula #1365): its groups, or that nothing wants you; then Done. */
+    private fun inbox(bell: String) {
+        tap(bell)
+        wait("inbox")
+        until("the Inbox's groups or its empty state", 20_000) {
+            rule.onAllNodes(hasTestTag("inbox-empty")).fetchSemanticsNodes().isNotEmpty() ||
+                rule.onAllNodes(hasTestTagPrefix("inbox-group-")).fetchSemanticsNodes().isNotEmpty()
+        }
+        shot("2-inbox")
+        tap("inbox-done")
+        until("the Inbox closed", 10_000) { rule.onAllNodes(hasTestTag("inbox")).fetchSemanticsNodes().isEmpty() }
+    }
+
+    private fun hasTestTagPrefix(prefix: String) = SemanticsMatcher("test tag starts with $prefix") { n ->
+        n.config.getOrElse(SemanticsProperties.TestTag) { "" }.startsWith(prefix)
     }
 
     /** The Overview shows the board, and its row's question under Needs you, answered there. */

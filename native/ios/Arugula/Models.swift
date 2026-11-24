@@ -124,6 +124,12 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
     var staff: Bool?
     /// The session that leads a staff room: the reader's posts there reach it.
     var lead: Board.Lead?
+    /// An object's thread's object (an issue's `iss_`, a run's `run_`), and
+    /// how it's followed, for the Inbox's New in threads (Arugula #1365).
+    var target: String?
+    var level: String?
+    var wants: Int?
+    var muted: Bool?
     struct Person: Decodable { var name: String }
     static func == (a: ChatRoom, b: ChatRoom) -> Bool { a.id == b.id }
 

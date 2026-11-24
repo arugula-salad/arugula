@@ -1,9 +1,10 @@
 // One navigation: the web's five places, always on the bar (Arugula #1262,
 // #1361): Overview (Home.swift) first, then the project's boards and Docs,
 // the machines and chat, whichever process behind control answers them. On
-// an iPad the bar folds out into a sidebar. Every place is headed by the
-// project's menu, New, the bell and your picture (TabHeading); the project's
-// issues open from its menu and from a board's rows. Each place is a list
+// an iPad the bar folds out into a sidebar, with the bell and your picture at
+// its foot (Arugula #1366). Every place is headed by the project's menu and
+// New, and on an iPhone the bell and your picture too (TabHeading); the
+// project's issues open from its menu and from a board's rows. Each place is a list
 // beside what's picked in it on an iPad, and one screen at a time on an
 // iPhone.
 
@@ -24,6 +25,9 @@ struct HomeView: View {
     @StateObject private var model = HomeModel()
     @StateObject private var fleet = HomeFleet()
     @StateObject private var live: LiveChat
+    @Environment(\.scenePhase) private var phase
+    /// Whether an iPad's sidebar is out, which holds the bell and your picture.
+    @State private var sidebar = false
     @State private var tab = AppTab.overview
     /// The project's issues, from its menu.
     @State private var issues = false
@@ -31,6 +35,8 @@ struct HomeView: View {
     @State private var making = false
     @State private var made: Opened?
     @State private var inbox = false
+    /// The Inbox item a push opened, which the Inbox scrolls to.
+    @State private var focus: String?
     @State private var said: String?
 
     init(control: Control) {
@@ -52,6 +58,11 @@ struct HomeView: View {
             case .deploy(let id):
                 push.route = nil
                 approvals.open = .deploy(id)
+            // Anything else in the Inbox (a PR, a run): the Inbox, at it.
+            case .inbox(let item):
+                push.route = nil
+                focus = item
+                inbox = true
             case nil: break
             }
         }
@@ -84,8 +95,8 @@ struct HomeView: View {
             }
             .environmentObject(scope)
         }
-        .sheet(isPresented: $inbox) {
-            InboxSheet(control: control) { inbox = false }.environmentObject(scope)
+        .sheet(isPresented: $inbox, onDismiss: { focus = nil }) {
+            InboxSheet(control: control, live: live, focus: focus) { inbox = false }.environmentObject(scope)
         }
         .overlay(alignment: .bottom) {
             if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
@@ -96,20 +107,49 @@ struct HomeView: View {
         .environment(\.showIssues, { issues = true })
         .environment(\.makeNew, { making = true })
         .environment(\.showInbox, { inbox = true })
+        .environment(\.sidebarFoot, sidebar)
         .task { await scope.load(control) }
-        .task { await approvals.load(control) }
+        // The bell's count (Arugula #1365): the current project's, again
+        // every minute, and when the app comes back.
+        .task(id: scope.current?.id) {
+            guard let p = scope.current?.id else { return }
+            while !Task.isCancelled {
+                await InboxModel.shared.load(control, project: p)
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
+        .onChange(of: phase) { _, now in
+            if now == .active, let p = scope.current?.id { Task { await InboxModel.shared.load(control, project: p) } }
+        }
     }
 
     /// The five places: the tab bar on an iPhone, and on an iPad (iOS 18
-    /// and later) a sidebar that folds into the bar in portrait.
+    /// and later) a sidebar that folds into the bar in portrait. The
+    /// sidebar's foot holds the bell and your picture (Arugula #1366); with
+    /// it folded, as in portrait, they're back in the place's heading.
     @ViewBuilder private var places: some View {
         if #available(iOS 18.0, *) {
             TabView(selection: $tab) {
                 ForEach(AppTab.allCases) { t in
-                    Tab(t.rawValue, systemImage: t.symbol, value: t) { place(t) }
+                    Tab(t.rawValue, systemImage: t.symbol, value: t) {
+                        place(t).background(SidebarProbe { sidebar = $0 })
+                    }
                 }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .tabViewSidebarBottomBar {
+                if sidebar {
+                    HStack(spacing: 12) {
+                        InboxBell { inbox = true }
+                            .accessibilityIdentifier("sidebar-inbox")
+                        Text("Inbox").font(Face.ui(15, "Medium")).foregroundStyle(Palette.fg)
+                        Spacer(minLength: 8)
+                        AccountMenu()
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                }
+            }
         } else {
             TabView(selection: $tab) {
                 ForEach(AppTab.allCases) { t in
@@ -167,6 +207,53 @@ struct HomeView: View {
     }
 }
 
+/// Whether the places' sidebar is out (iOS 18 and later): SwiftUI doesn't
+/// say, so its tab bar controller is asked whenever the place is laid out
+/// again, as it is when the sidebar folds or unfolds.
+struct SidebarProbe: UIViewRepresentable {
+    let shown: (Bool) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe(shown: shown) }
+    func updateUIView(_ view: Probe, context: Context) { view.shown = shown }
+
+    final class Probe: UIView {
+        var shown: (Bool) -> Void
+        private var last: Bool?
+
+        init(shown: @escaping (Bool) -> Void) {
+            self.shown = shown
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            check()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            check()
+        }
+
+        private func check() {
+            guard window != nil else { return }
+            var r: UIResponder? = self
+            while let next = r?.next, !(next is UIViewController) { r = next }
+            var out = false
+            if #available(iOS 18.0, *), let bar = (r?.next as? UIViewController)?.tabBarController {
+                out = bar.mode != .tabBar && !bar.sidebar.isHidden && traitCollection.horizontalSizeClass == .regular
+            }
+            guard out != last else { return }
+            last = out
+            // Not while laying out: SwiftUI's state changes after.
+            DispatchQueue.main.async { [shown] in shown(out) }
+        }
+    }
+}
+
 /// The project the app is in, as the web's current project (Arugula #880):
 /// Overview, Boards, Docs, Machines, Chat and its issues show what's in it. Kept on this device; the
 /// reader's personal project until they pick another.
@@ -207,8 +294,9 @@ final class Scope: ObservableObject {
 
 /// The heading at the top of every place's list, as the web phone's top bar
 /// (Arugula #1361): the current project, as a pull-down menu of every
-/// project and its issues, with whose it is; then New, the bell (the Inbox)
-/// and your picture (Settings, Send feedback, Sign out). There's no separate
+/// project and its issues, with whose it is; then New, the bell (the Inbox,
+/// with its count) and your picture (Settings, Send feedback, Sign out),
+/// which an iPad's sidebar holds at its foot instead. There's no separate
 /// bar for something that's seldom changed, and the place's own name is
 /// already on the tab bar. The three buttons take 120pt, so the four fit on
 /// a 390pt phone; a long project name truncates, the buttons don't. A
@@ -219,6 +307,7 @@ struct TabHeading: ViewModifier {
     @EnvironmentObject private var scope: Scope
     @Environment(\.makeNew) private var makeNew
     @Environment(\.showInbox) private var showInbox
+    @Environment(\.sidebarFoot) private var sidebarFoot
 
     func body(content: Content) -> some View {
         content
@@ -242,11 +331,12 @@ struct TabHeading: ViewModifier {
                             HeadingButton(symbol: "plus", label: "New", primary: true, action: makeNew)
                                 .accessibilityIdentifier("heading-new")
                         }
-                        if buttons, let showInbox {
-                            HeadingButton(symbol: "bell", label: "Inbox", action: showInbox)
+                        // Beside an iPad's sidebar they're at its foot (Arugula #1366).
+                        if buttons, !sidebarFoot, let showInbox {
+                            InboxBell(action: showInbox)
                                 .accessibilityIdentifier("heading-inbox")
                         }
-                        if buttons { AccountMenu() }
+                        if buttons, !sidebarFoot { AccountMenu() }
                     }
                     if let team = scope.current?.team {
                         Caps("\(team.name) · \(team.role)")
