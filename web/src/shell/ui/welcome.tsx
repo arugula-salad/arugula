@@ -1,10 +1,14 @@
 // Getting started (#110): what isn't on the first screen, one step at a
-// time: welcome, the phone (Tailscale), the cloud (Arugula control),
-// agents, and Things to try (buttons that each do one thing here, each
-// marked done once used). Opens by itself once per account on control's
-// page, once per browser on a daemon's own (the seen store, shared/seen.ts),
-// then from Settings (the rail) and the phone's sheet, and says
-// so when it closes.
+// time: welcome, the cloud (Arugula control), agents, and Things to try
+// (buttons that each do one thing here, each marked done once used). It
+// doesn't open by itself (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b):
+// a first visit opens on the person's own work, and each step is offered at
+// its moment instead (the hints, ../hints). It's in the command palette's
+// Help, Settings (the rail) and the phone's sheet.
+//
+// The phone over Tailscale left it for Settings (This machine's Tailscale…,
+// the machine menu's too): the same step, as a dialog of its own
+// (`openTailscale`). An account and the relay are the phone's way in now.
 //
 // The steps that used to be commands to copy are buttons: the daemon runs
 // them for its owner (`/api/setup`, crates/daemon/src/setup.rs) and says
@@ -29,7 +33,7 @@ import { opPath } from "../ops";
 import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
 import { useEffect, useState } from "preact/hooks";
-import { Modal, dialogUp, subscribeDialogs } from "../../shared/ui/modal";
+import { Modal } from "../../shared/ui/modal";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
@@ -55,10 +59,6 @@ import { CheckIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton }
 const DOCS = "https://docs.arugula.io";
 /** Arugula cloud, unless the daemon was started with `--control` (#207). */
 const CONTROL = "https://control.arugula.io";
-/** In the seen store: it opened by itself once. */
-const SEEN = "getting-started";
-/** Where a browser remembered that before the seen store. */
-const OLD_KEY = "arugula.getting-started";
 
 /** What `/api/host` says about this daemon (the parts for this panel). */
 type HostSays = Pick<HostInfo, "name" | "tailnet_url" | "tailnet_seen" | "control" | "team" | "features"> & {
@@ -136,7 +136,6 @@ interface Outcome {
 
 const STEPS = [
   { id: "welcome", label: "Welcome" },
-  { id: "phone", label: "Phone" },
   { id: "cloud", label: "Cloud" },
   { id: "agents", label: "Agents" },
   { id: "try", label: "Things to try" },
@@ -144,9 +143,11 @@ const STEPS = [
 type StepId = (typeof STEPS)[number]["id"];
 
 /** Older names for steps, from callers that open it at one. */
-export type Section = StepId | "control" | "ready";
+export type Section = StepId | "control" | "ready" | "phone";
 
 let shown: { client: Client | null; section?: Section } | null = null;
+/** The Tailscale dialog is open. */
+let tailscale = false;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 let lastClient: Client | null = null;
@@ -154,57 +155,22 @@ let lastClient: Client | null = null;
 let closedOnce = false;
 
 export function openGettingStarted(section?: Section, client?: Client) {
+  // Its old Phone step (the desktop app's menu, a link): Tailscale's dialog.
+  if (section === "phone") return openTailscale();
   countView("getting-started");
   shown = { client: client ?? lastClient, section };
   changed();
 }
 
-/** It opened by itself before: in the seen store (true until it has
- * loaded), or in this browser's old key. */
-function greeted(): boolean {
-  if (seen(SEEN)) return true;
-  try {
-    return localStorage.getItem(OLD_KEY) !== null;
-  } catch {
-    // No storage (a private window, blocked): this browser's seen store
-    // forgets, so don't greet every time; the account's remembers.
-    return !currentAccount();
-  }
+/** Settings' Tailscale: put this machine on the tailnet, for a phone. */
+export function openTailscale() {
+  tailscale = true;
+  changed();
 }
 
-/** Getting started opened by itself on this page load. */
-let greetedNow = false;
-
-/** Getting started opens by itself on this load (or did): What's new
- * stays shut then, so a first visit gets one panel, not two. */
-export const greetingDue = (client: Client) => greetedNow || (!client.state?.roles && !greeted());
-
-/** Open it the first time: once per account on control's page, once per
- * browser on a daemon's own. Not for a guest, and not under automation
- * (tests expect a clean first screen; welcome.spec.ts turns it back on). */
-export function useFirstRun(client: Client) {
+/** The machine the page shows, for a caller that opens it without one. */
+export function gettingStartedFor(client: Client) {
   lastClient = client;
-  const ready = !!client.state && client.state.sessions.length > 0;
-  // The seen store loads after the page does.
-  const [loaded, setLoaded] = useState(seenReady());
-  useEffect(() => subscribeSeen(() => setLoaded(seenReady())), []);
-  // Arugula #280: not while a dialog is up, such as the one a link opened
-  // control's page for (the app's sign-in, a machine's join): it waits
-  // until that's answered. It used to open under it, so the person
-  // answered the link's dialog and found another behind it. On control's
-  // page the link's dialog is up before the greeting can be: both wait
-  // for the account, and the greeting also for the account's prefs.
-  // Asked as it's about to open, and again whenever a dialog opens or
-  // closes (an answer kept from when the dialog opened could be stale: it
-  // isn't always in the page yet as it opens).
-  const [dialogs, setDialogs] = useState(0);
-  useEffect(() => subscribeDialogs(() => setDialogs((n) => n + 1)), []);
-  useEffect(() => {
-    if (!ready || !loaded || dialogUp() || client.state?.roles || navigator.webdriver || greeted()) return;
-    markSeen(SEEN);
-    greetedNow = true;
-    openGettingStarted(undefined, client);
-  }, [client, ready, loaded, dialogs]);
 }
 
 export function GettingStartedLayer() {
@@ -214,13 +180,21 @@ export function GettingStartedLayer() {
     listeners.add(fn);
     return () => void listeners.delete(fn);
   }, []);
+  if (tailscale)
+    return (
+      <TailscaleDialog
+        close={() => {
+          tailscale = false;
+          changed();
+        }}
+      />
+    );
   if (shown)
     return (
       <GettingStarted
         client={shown.client}
         section={shown.section}
         close={() => {
-          if (seenReady()) markSeen(SEEN);
           shown = null;
           closedOnce = true;
           changed();
@@ -322,7 +296,6 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
 
   const done: Record<StepId, boolean> = {
     welcome: true,
-    phone: !!(setup?.tailscale.serving || host?.tailnet_seen),
     cloud: !!(setup?.control.joined || (host?.control && host.control_state?.state !== "dropped")),
     agents: claudeReady(agents),
     try: false,
@@ -379,7 +352,6 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
           Step {step + 1} / {STEPS.length} · {STEPS[step].label}
         </div>
         {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
-        {id === "phone" && <Phone name={name} setup={setup} host={host} manual={manual} refresh={refresh} />}
         {id === "cloud" && (
           <Cloud
             name={name}
@@ -497,7 +469,7 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           <UseClaude setup={setup} refresh={refresh} />
         </div>
       )}
-      <p class="start-dim">Next: your phone, the cloud and agents. Each takes a click, and you can skip any of them.</p>
+      <p class="start-dim">Next: the cloud and agents. Each takes a click, and you can skip any of them.</p>
     </section>
   );
 }
@@ -587,7 +559,7 @@ function Phone({ name, setup, host, manual, refresh }: { name: string; setup: Se
           <Said outcome={outcome} />
           {ts?.state === "missing" && (
             <p class="start-dim" data-start-no-tailscale>
-              No Tailscale? The next step, the cloud, reaches this machine from your phone too.
+              No Tailscale? Arugula cloud reaches this machine from your phone too: Getting started connects it.
             </p>
           )}
         </>
@@ -606,6 +578,36 @@ function Phone({ name, setup, host, manual, refresh }: { name: string; setup: Se
         </div>
       )}
     </section>
+  );
+}
+
+/** The Phone step, out of Getting started: Settings' way onto the tailnet.
+ * What the daemon says of Tailscale can take seconds (`status` when it's
+ * stopped), so it asks once, as it opens. */
+function TailscaleDialog({ close }: { close: () => void }) {
+  const [setup, setSetup] = useState<Setup | null>(null);
+  const [host, setHost] = useState<HostSays | null>(null);
+  const [manual, setManual] = useState(false);
+  const refresh = async () => {
+    try {
+      const r = await fetch(opPath("setup.get"));
+      if (!r.ok) throw new Error(String(r.status));
+      setSetup((await r.json()) as Setup);
+    } catch {
+      setManual(true);
+    }
+  };
+  useEffect(() => {
+    void refresh();
+    fetch(opPath("host.get"))
+      .then((r) => (r.ok ? (r.json() as Promise<HostSays>) : null))
+      .then(setHost)
+      .catch(() => {});
+  }, []);
+  return (
+    <Modal close={close} label="Tailscale" class="start-tailscale" root={{ "data-tailscale": "" }} buttons={<button class="primary" onClick={close}>Done</button>}>
+      <Phone name={host?.name ?? (directory.current || "this machine")} setup={setup} host={host} manual={manual} refresh={refresh} />
+    </Modal>
   );
 }
 
@@ -1065,7 +1067,6 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
     },
   ];
   const rows: [StepId, string, string][] = [
-    ["phone", "On your phone", "Not yet: Tailscale"],
     ["cloud", "In Arugula cloud", "Not yet: connect"],
     ["agents", "Claude Code works with Arugula", "Not yet: set up Claude Code"],
   ];

@@ -36,6 +36,7 @@ import { Time } from "../../shared/ui/time";
 import { CLAUDE_COST_NOTE, COST_NOTE, ContextStrip, costLabel, usd, type AgentContext, type Estimate } from "../blocks/agent-context";
 import { Chip } from "../../shared/ui/state-chip";
 import { Modal } from "../../shared/ui/modal";
+import { conversationContinued } from "./machine-telemetry";
 
 export interface Conversation {
   id: string;
@@ -295,6 +296,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
         return;
       }
       if (there) fleet.open(host, v.pane);
+      conversationContinued();
       close();
     } catch (e) {
       client.toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
@@ -320,7 +322,9 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     setBusy(true);
     const block = await client.openConversation({ id: c.id, then, split: where.split, session: where.session });
     setBusy(false);
-    if (block !== null) close();
+    if (block === null) return;
+    conversationContinued();
+    close();
   };
 
   // Another host's: opened there (its first session, a tab of its own),
@@ -342,6 +346,7 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       }
       if (v.error) client.toast(v.error);
       f.open(host, v.block);
+      conversationContinued();
       close();
     } catch (e) {
       client.toast(`couldn't open it on ${host}: ${(e as Error).message}`);

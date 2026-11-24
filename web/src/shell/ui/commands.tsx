@@ -20,7 +20,8 @@ import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
-import { openGettingStarted } from "./welcome";
+import { openGettingStarted, openTailscale } from "./welcome";
+import { turnOnHooks } from "./agents-setup";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
@@ -491,6 +492,7 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
   "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
   "push.enable": (client) => notifyThisDevice(client),
+  "hooks.turn-on": (client) => void turnOnHooks(client),
   /** The phone offer's Sign in (hints/phone): join, then a QR code. */
   "phone.sign-in": () => void signInForPhone(),
   /** Follow someone in the session (their client). */
@@ -523,6 +525,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Out of Getting started: the phone's way in without an account, on
+    // the daemon's own page (where its setup can be asked).
+    ...(client.e2e ? [] : [{ label: "Tailscale…", hint: "Reach this machine from your phone over your tailnet", run: () => openTailscale() }]),
     // Arugula #500: its name on control, on control's page, where the shown
     // machine has an id; control refuses anyone but its owner (or its team's).
     ...renameItems(client),

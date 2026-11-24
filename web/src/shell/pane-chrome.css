@@ -169,6 +169,10 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
   left: 50%;
   bottom: 40px;
   transform: translateX(-50%);
+  /* As wide as its words, up to the window's: not half of it, which is
+     where `left: 50%` would stop it. */
+  width: max-content;
+  max-width: calc(100vw - 16px);
   padding: 6px 6px 6px 12px;
   box-shadow: var(--shadow-lg);
   /* Its own width, not half the window's: a long one wraps at a phone's

@@ -1,32 +1,21 @@
-// #335: Claude Code (or Codex) is on this machine, and its ACP adapter
-// isn't installed or is older than the daemon's pin, so agent panes won't
-// start (or run an old one). Said once, as a line under the top bar, with
-// Set it up…, which opens Getting started's Agents step (its one click,
-// "Use Claude Code with Arugula"). Only the owner's own daemon is asked
-// (`/api/setup?part=agents`), once per page; each adapter's pin is said
-// once per browser, so a release that moves the pin says it again.
-// The same line says when Claude Code's hooks are only partly installed
-// (#906: an older install, say), once per browser for each set of what's
-// missing.
+// Claude Code's hooks are only partly installed (#906: an older install,
+// say): said once, as a line under the top bar, once per browser for each
+// set of what's missing, with Set it up…, which opens Getting started's
+// Agents step. Only the owner's own daemon is asked (`/api/setup?part=agents`),
+// once per page. Agent panes' adapters aren't said here any more: Continue
+// here runs a conversation in a terminal, which needs none
+// (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b), and
+// Getting started's Agents step still says each adapter's state.
 //
-// And a terminal's: Claude Code waits in it for you, and none of Arugula's
-// hooks has spoken from it (`PaneInfo.unhooked`, the daemon's word), so its
-// questions stay on its screen. A one-line chip on the pane says they could
-// be cards, with Set up: the same one click (`POST
-// /api/setup/agents/claude`, which installs the hooks too). A one-off for
-// now, kept apart so it can move into the hints when they come. The bell's
-// empty drawer offers the same Set up (`setUpClaude`). Or the plugin
-// shows Claude Code's plugin's two `/plugin` lines under it, the other way
-// to the hooks (Discovery 10).
+// And the hooks alone (`turnOnHooks`, `POST /api/setup/hooks`): the hint
+// `claude-hooks` (../hints/hooks) on a terminal where Claude Code waits at
+// a permission prompt. The bell's empty drawer offers Getting started's
+// one click (`setUpClaude`).
 
 import { opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import type { PaneId } from "../../shared/proto";
-import { adapterReady, type Adapter } from "./adapter";
 import { openGettingStarted, withCode, type HooksPartial } from "./welcome";
-import { ClaudePlugin } from "./claude-plugin";
-import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 const SAID_KEY = "arugula.agents-nudge";
 
@@ -43,7 +32,6 @@ interface AgentsSetup {
     /** #906: only some of them are there. */
     hooks_partial?: HooksPartial;
   };
-  adapters?: Adapter[];
 }
 
 function said(): string[] {
@@ -62,8 +50,6 @@ function remember(keys: string[]) {
   }
 }
 
-const keyOf = (a: Adapter) => `${a.kind}@${a.pinned}`;
-
 /** #906: hooks only partly installed, said once per browser for each
  * set of what's missing (a release that adds a hook says it again). Not
  * when a policy blocks them: installing the rest wouldn't help. */
@@ -73,75 +59,37 @@ function partialKey(s: AgentsSetup | null): string | null {
   return `hooks:${[...p.missing, ...p.outdated].join(",")}${p.rules ? "+rules" : ""}`;
 }
 
-/** The adapters worth a word: their agent is here, and they aren't. */
-export function nudged(s: AgentsSetup | null): Adapter[] {
-  return (s?.adapters ?? []).filter((a) => a.found && !adapterReady(a));
-}
-
-function line(a: Adapter, tools: boolean, hooks: boolean): string {
-  const mcp =
-    a.kind !== "claude"
-      ? ""
-      : !tools
-        ? `, and Arugula's MCP server lets it start its helpers as panes${hooks ? "" : " (its hooks put its questions on cards)"}`
-        : !hooks
-          ? ", and its hooks put its questions on cards"
-          : "";
-  if (a.state === "installed") return `${a.label}'s adapter here is ${a.version}, older than this Arugula's (${a.pinned})${mcp}.`;
-  if (a.state === "no_node") return `${a.label} is on this machine, but agent panes can't run it: ${a.why ?? `its adapter needs Node ${a.node_major}+`}.`;
-  return `${a.label} is on this machine, but agent panes need its adapter${mcp}.`;
-}
-
 export function AgentsNudge({ client }: { client: Client }) {
   const mine = !client.e2e && !client.state?.roles && !navigator.webdriver;
-  const [setup, setSetup] = useState<AgentsSetup | null>(null);
-  const [shown, setShown] = useState<Adapter[]>([]);
   const [partial, setPartial] = useState<string | null>(null);
   useEffect(() => {
     if (!mine) return;
-    fetch(`${opPath("setup.get")}?part=agents`)
-      .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
-      .then((s) => {
-        const before = said();
-        const fresh = nudged(s).filter((a) => !before.includes(keyOf(a)));
+    void agentsSetup().then((s) => {
         const hooks = partialKey(s);
-        const freshHooks = hooks && !before.includes(hooks) ? hooks : null;
-        if (!fresh.length && !freshHooks) return;
+        if (!hooks || said().includes(hooks)) return;
         // Once: shown on this page until acted on, not on the next.
-        remember([...fresh.map(keyOf), ...(freshHooks ? [freshHooks] : [])]);
-        setSetup(s);
-        setShown(fresh);
-        setPartial(freshHooks && (s?.claude.hooks_partial?.says ?? null));
-      })
-      .catch(() => {});
+        remember([hooks]);
+        setPartial(s?.claude.hooks_partial?.says ?? null);
+      });
   }, [mine]);
-  if ((!shown.length && !partial) || !setup) return null;
-  const tools = setup.claude.tools;
-  const hooks = setup.claude.hooks !== false;
-  const hide = () => {
-    setShown([]);
-    setPartial(null);
-  };
+  if (!partial) return null;
   return (
-    <div class="agents-nudge" role="status" data-agents-nudge={[...shown.map((a) => a.kind), ...(partial ? ["hooks"] : [])].join(" ")}>
+    <div class="agents-nudge" role="status" data-agents-nudge="hooks">
       <p>
-        {shown.map((a) => (
-          <span key={a.kind}>{line(a, tools, hooks)} </span>
-        ))}
-        {partial && <span data-agents-nudge-hooks>{withCode(partial)}</span>}
+        <span data-agents-nudge-hooks>{withCode(partial)}</span>
       </p>
       <div class="agents-nudge-actions">
         <button
           class="primary"
           data-agents-nudge-setup
           onClick={() => {
-            hide();
+            setPartial(null);
             openGettingStarted("agents", client);
           }}
         >
           Set it up…
         </button>
-        <button onClick={hide} data-agents-nudge-hide>
+        <button onClick={() => setPartial(null)} data-agents-nudge-hide>
           Not now
         </button>
       </div>
@@ -149,16 +97,23 @@ export function AgentsNudge({ client }: { client: Client }) {
   );
 }
 
+/** What the daemon says of its agents' setup (`/api/setup?part=agents`):
+ * asked once per page, by the nudge and the hooks offer alike. */
+let setupHere: Promise<AgentsSetup | null> | null = null;
+
+function agentsSetup(): Promise<AgentsSetup | null> {
+  setupHere ??= fetch(`${opPath("setup.get")}?part=agents`)
+    .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
+    .catch(() => null);
+  return setupHere;
+}
+
 /** Whether Claude Code's settings have Arugula's hooks, as the daemon last
- * said (`/api/setup?part=agents`): asked once per page, when a chip would
- * show. */
+ * said (or since a click here added them). */
 let hooksHere: Promise<boolean> | null = null;
 
 export function hooksInstalled(): Promise<boolean> {
-  hooksHere ??= fetch(`${opPath("setup.get")}?part=agents`)
-    .then((r) => (r.ok ? (r.json() as Promise<AgentsSetup>) : null))
-    .then((s) => s?.claude.hooks !== false)
-    .catch(() => true);
+  hooksHere ??= agentsSetup().then((s) => s?.claude.hooks !== false);
   return hooksHere;
 }
 
@@ -174,68 +129,12 @@ export async function setUpClaude(): Promise<{ ok: boolean; said: string }> {
   return { ok: o.ok, said: o.ok ? (hooks ?? "Set up.") : (o.error ?? "Setting it up didn't work.") };
 }
 
-/** Panes whose chip was put away, for this page. */
-const putAway = new Set<PaneId>();
-
-/** The chip on a terminal where Claude Code waits for you and no hook has
- * spoken from it: only the owner's own daemon can set it up, and only
- * while its settings lack the hooks (a Claude started before them needs a
- * restart, which Set up can't do). */
-export function HooksOffer({ client, id }: { client: Client; id: PaneId }) {
-  const info = client.info(id);
-  const mine = !client.e2e && !client.state?.roles;
-  const wants = mine && !!info?.unhooked && info.attention === "needs_input" && !putAway.has(id);
-  const [missing, setMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
-  const [plugin, setPlugin] = useState(false);
-  useEffect(() => {
-    if (!wants) return;
-    let live = true;
-    void hooksInstalled().then((has) => live && setMissing(!has));
-    return () => {
-      live = false;
-    };
-  }, [wants]);
-  if (!wants || (!missing && !said)) return null;
-  const setUp = async () => {
-    setBusy(true);
-    const o = await setUpClaude();
-    setBusy(false);
-    if (o.ok) setMissing(false);
-    setSaid({ ok: o.ok, text: o.ok ? `${o.said} Start Claude again here to use them.` : o.said });
-  };
-  return (
-    <div class="hooks-offer" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
-      <span>{said ? said.text : "Its questions could be cards here and on your phone."}</span>
-      {!said && (
-        <button class="primary" disabled={busy} onClick={() => void setUp()} data-hooks-chip-setup>
-          {busy ? "Setting up…" : "Set up"}
-        </button>
-      )}
-      {!said && (
-        <button class="link" aria-expanded={plugin} onClick={() => setPlugin(!plugin)} data-hooks-chip-plugin>
-          Or the plugin
-        </button>
-      )}
-      {said && !said.ok && (
-        <button class="link" onClick={() => openGettingStarted("agents", client)}>
-          Getting started…
-        </button>
-      )}
-      <IconButton
-        label="Hide"
-        class="link"
-        onClick={() => {
-          putAway.add(id);
-          setSaid(null);
-          setMissing(false);
-        }}
-        data-hooks-chip-hide
-      >
-        <CloseIcon size="sm" />
-      </IconButton>
-      {plugin && !said && <ClaudePlugin lead="Claude Code's plugin brings the hooks and Arugula's tools. In Claude Code, then start it again here:" />}
-    </div>
-  );
+/** The hooks offer's one click (`POST /api/setup/hooks`: `arugula hooks
+ * install`, nothing else), said in a toast that names the file it changed. */
+export async function turnOnHooks(client: Client) {
+  const o = await fetch(opPath("setup.hooks"), { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })
+    .then((r) => r.json() as Promise<{ ok: boolean; error?: string; fix?: string; done?: string[] }>)
+    .catch((e: unknown) => ({ ok: false, error: String(e), fix: undefined, done: [] }));
+  if (o.ok) hooksHere = Promise.resolve(true);
+  client.toast(o.ok ? (o.done ?? []).join(" ") || "Claude Code has Arugula's hooks." : `Couldn't turn them on: ${o.error ?? "it didn't say why"}${o.fix ? `. Run ${o.fix}` : ""}`);
 }

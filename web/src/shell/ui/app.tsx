@@ -34,7 +34,7 @@ import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
-import { GettingStartedLayer, useFirstRun } from "./welcome";
+import { GettingStartedLayer, gettingStartedFor } from "./welcome";
 import { machineSettingsItems, machineShown, remoteInputItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
@@ -101,7 +101,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   useHoverToSwitchTabs(client);
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
-  useFirstRun(client);
+  gettingStartedFor(client);
   useTabTitle(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.

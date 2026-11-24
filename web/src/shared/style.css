@@ -1017,8 +1017,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   top: calc(var(--bar-h) + 8px);
   right: 8px;
   z-index: 60;
+  /* A long one (what a click changed, naming a file) wraps inside the
+     window, a phone's 360px too, never wider than it. */
+  max-width: min(420px, calc(100vw - 16px));
+  overflow-wrap: anywhere;
   padding: 4px 10px;
-  border-radius: var(--chip-radius);
+  border-radius: min(var(--chip-radius), 12px);
   background: var(--raised);
   font-size: var(--text-sm);
   pointer-events: none;
@@ -1032,7 +1036,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* M182: a hosted machine's box waking, asleep, or why it didn't wake:
    its buttons take clicks. */
 #status.wake {
-  max-width: min(420px, calc(100vw - 16px));
   pointer-events: auto;
 }
 
@@ -9517,35 +9520,7 @@ button.thread-quote:hover {
   align-items: stretch;
 }
 
-/* A terminal Claude whose hooks aren't heard: its questions could be cards. */
-.hooks-offer {
-  position: absolute;
-  z-index: 6;
-  top: 8px;
-  left: 8px;
-  max-width: calc(100% - 16px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border-radius: var(--chip-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-  font-size: var(--text-sm);
-}
-
-.hooks-offer button {
-  flex-shrink: 0;
-  padding: 3px 10px;
-}
-
-.hooks-offer button.link {
-  background: none;
-  color: var(--dim);
-  padding: 3px 6px;
-}
-
-/* Claude Code's plugin, where the hooks are offered: a line each. */
+/* Claude Code's plugin, where the hooks are offered (Getting started's Agents step): a line each. */
 .claude-plugin {
   display: grid;
   gap: 6px;
@@ -9554,24 +9529,6 @@ button.thread-quote:hover {
 
 .claude-plugin p {
   margin: 0;
-}
-
-/* Or the plugin: its lines under the chip's, the whole width. */
-.hooks-offer:has(.claude-plugin) {
-  flex-wrap: wrap;
-  padding-bottom: 8px;
-}
-
-.hooks-offer .claude-plugin {
-  flex-basis: 100%;
-  display: grid;
-  gap: 4px;
-  padding-right: 8px;
-}
-
-.hooks-offer .claude-plugin p {
-  margin: 0;
-  color: var(--dim);
 }
 
 /* #551: someone else's machine, new in the list. */

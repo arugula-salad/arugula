@@ -16,7 +16,6 @@ import type { Client, FlagName } from "../client";
 import { pref, seenReady, setPref, subscribeSeen } from "../../shared/seen";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { greetingDue } from "./welcome";
 import { advances, notesUrl, PREF, unshown, upTo, usable, type Need, type WhatsNewItem, type WhatsNewRelease } from "../../shared/whats-new";
 import { platformOrigin, openPlatform } from "../platform-links";
 import { COMMANDS } from "./commands";
@@ -92,8 +91,8 @@ export function WhatsNewLayer({ client }: { client: Client }) {
     // Seen when shown, as hints are: moved on first, so a second tab or
     // device doesn't open it too.
     setPref(PREF, BUILT);
-    // A first visit gets Getting started (its Things to try) instead.
-    if (greetingDue(client)) return;
+    // A first visit: everything is new, and the first screen is their work.
+    if (!last) return;
     void forThem(client, unshown(RELEASES, BUILT, last)).then((releases) => {
       if (!releases.length) return;
       open = { client, releases };

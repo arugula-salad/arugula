@@ -7182,6 +7182,7 @@ export const OPS = {
   "setup.claude": { method: "POST", path: "/api/setup/claude" },
   "setup.control": { method: "POST", path: "/api/setup/control" },
   "setup.get": { method: "GET", path: "/api/setup" },
+  "setup.hooks": { method: "POST", path: "/api/setup/hooks" },
   "setup.tailscale": { method: "POST", path: "/api/setup/tailscale" },
   "share.mint": { method: "POST", path: "/api/shares" },
   "share.revoke": { method: "DELETE", path: "/api/shares/{id}" },

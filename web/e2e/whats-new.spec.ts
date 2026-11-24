@@ -18,7 +18,7 @@ const built = readFileSync(resolve("../Cargo.toml"), "utf8").match(/^\[workspace
 const shown = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}")["whats-new"] ?? null);
 
 /** As after an update from an old version, in a browser that was here
- * before (Getting started greeted it then): it opens by itself only for a
+ * before: it opens by itself only for a
  * browser that isn't automation's. */
 async function updatedFrom(page: Page, version: string) {
   await page.addInitScript((v) => {
@@ -49,13 +49,13 @@ test("after an update: the panel opens once, with the new headlines", async ({ p
   await expect(panel(page)).toHaveCount(0);
 });
 
-test("a first visit gets Getting started, not What's new too", async ({ page }) => {
+test("a first visit gets neither What's new nor Getting started", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "webdriver", { get: () => false }));
   await reset(page);
-  await expect(page.getByRole("dialog", { name: "Getting started" })).toBeVisible();
   // Moved on all the same: the next update's panel starts from this build.
   await expect.poll(() => shown(page)).not.toBeNull();
   await expect(panel(page)).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
 });
 
 test("the command palette's What's new; Try it opens the thing and closes it", async ({ page }) => {
