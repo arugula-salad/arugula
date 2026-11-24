@@ -94,6 +94,8 @@
     {"method":"GET","path":"/api/join/{code}","auth":"poll_token","clients":["daemon","cli","native"]},
     {"method":"POST","path":"/api/machines/{id}/token","auth":"session","clients":["page","cli","native"]},
     {"method":"GET","path":"/api/me","auth":"session","clients":["page","cli","native"]},
+    {"method":"GET","path":"/api/me/prefs","auth":"session","clients":["page","native"]},
+    {"method":"POST","path":"/api/me/prefs","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/people","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/projects","auth":"session","clients":["page","cli","native"]},
     {"method":"POST","path":"/api/projects","auth":"session","clients":["page","cli","native"]},
