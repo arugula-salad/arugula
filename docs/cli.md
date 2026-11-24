@@ -23,8 +23,8 @@ ssh), paste the address it lands on into the CLI. `--browser` says the same
 and is kept for scripts. `arugula logout` ends the session.
 
 The session is a CLI's, not a browser's (#1018): any agent on this machine
-can read its file, so control lets it do what the CLI does (machines and
-machine tokens, projects, issues, grants, runs) and refuses it what only a
+can read its file, so control lets it do what the CLI does (machines,
+machine and join tokens, projects, issues, grants, runs) and refuses it what only a
 browser's page does: allowing a sign-in, passkeys, approving devices, joins
 and deploys, standing run grants, and changing a team's members. Allow
 screens say which one asks, the CLI or the desktop app. A control too old to
@@ -46,6 +46,22 @@ can approve it. `--host NAME` then asks control for a machine token first
 for that channel alone; it uses the device key only when control gives none
 (a control without an issuer key) or the machine's daemon is older than
 tokens.
+
+## Join tokens
+
+`arugula join-token` makes a join token (aru-141, Arugula #1152) and prints
+it alone, so a script or an image's build joins a machine with no browser:
+
+```sh
+arugulad join --token "$(arugula join-token)"
+```
+
+The machine joins at once, on control's word. A token is good once, until it
+runs out; `--json` prints `{"token", "expires"}` (seconds since the epoch).
+`--team ID` makes it for a team you own or edit, and the machine joins the
+team; a viewer gets control's refusal. It needs `arugula login`. A project's
+settings make the same under Machines: for the project's team, or for you on
+a personal project.
 
 ## Who reached a machine
 

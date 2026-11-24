@@ -32,6 +32,7 @@ pub mod invite;
 pub mod issue;
 pub mod issue_native;
 pub mod join;
+pub mod join_token;
 pub mod keys;
 pub mod log;
 pub mod login;
