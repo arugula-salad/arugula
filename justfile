@@ -859,6 +859,7 @@ test-scripts:
     scripts/tests/pr-crates.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
+    scripts/tests/flaky-quarantine.sh
     scripts/tests/ci-velocity.sh
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh
