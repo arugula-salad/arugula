@@ -22,6 +22,13 @@ export function shareUrl(n: { pane: number; daemon?: string }): string {
   return (n.daemon ? `/#pane=${n.daemon}.${n.pane}` : `/#pane=${n.pane}`) + "&share";
 }
 
+/** A finished turn's buttons (Arugula #1432, #1426): Open, which a tap
+ * does too, and Dismiss. */
+export const turnActions = [
+  { action: "open", title: "Open" },
+  { action: "dismiss", title: "Dismiss" },
+];
+
 /** #237: a push for a pane that wants you, with room left for another
  * button (browsers show two), gets Share first: sharing it with someone is
  * the natural next tap. Approvals, answers and gates keep their two. */
