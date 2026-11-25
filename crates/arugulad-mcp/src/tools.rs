@@ -62,8 +62,8 @@ impl<'a> Deref for ToolCall<'_, 'a> {
 const TAIL_LINES: usize = 40;
 
 /// Permission modes that approve everything (Claude Code's, codex-acp's):
-/// start_agent won't start an agent in one (#163).
-const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
+/// start_agent won't start an agent in one (#163), here or for a board.
+use arugulad_base::ladder::SKIPS_CHECKS;
 
 /// A chief of staff's block's title (Arugula #1338), unless the caller
 /// names another: its session's name, which leads the staff room. The
@@ -442,10 +442,15 @@ pub struct StartAgentArgs {
     /// that led before is moved here (another machine's is told to stand
     /// down, a hosted one is stopped, this machine's is closed). It runs
     /// here: not on an issue, in a worktree or beside another machine's
-    /// pane. With Labs agent delegation, any other
-    /// name runs as that recipe, a Claude Code subagent by its name
-    /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
-    /// host: its prompt, model, tools, skills and MCP servers.
+    /// pane. `board-lead` starts the lead of the board its prompt names:
+    /// it starts an agent block per ready row, talks to them in their
+    /// issues' threads and merges their work. A Claude Code or Codex agent
+    /// on an issue is told first that it leads the issue's thread
+    /// (`issue-agent`, named or not).
+    /// With Labs agent delegation, any other name runs as that recipe, a
+    /// Claude Code subagent by its name (`.claude/agents/NAME.md` in cwd's
+    /// project, or the user's), on this host: its prompt, model, tools,
+    /// skills and MCP servers.
     #[serde(default)]
     pub recipe: Option<String>,
     /// A model to switch to (`haiku`, ...).
@@ -496,8 +501,10 @@ pub struct StartAgentArgs {
     /// runs Claude Code (with recipe, wearing it), in a new worktree of that
     /// machine's clone of cwd's repo (or your pane's), and control checks
     /// the board's grant first (its machines, how many agents at once, not
-    /// lapsed or revoked) and that the machine is online. Only prompt,
-    /// recipe, issue, cwd, session and to apply.
+    /// lapsed or revoked) and that the machine is online. It opens in a tab
+    /// of its own there. A lead runs board-lead's instructions first, an
+    /// issue agent issue-agent's. Only prompt, recipe, issue, cwd, session,
+    /// to, permission_mode, allow and user_settings apply.
     #[serde(default)]
     pub board: Option<String>,
     /// With board: another of your machines to start it on, by name or id.
@@ -988,7 +995,8 @@ const UNLISTED: [(&str, &str, &str); 3] = [
 /// tool: throwaway VMs and sandboxes. A caller who gives one is refused
 /// where the flag is off (a new machine: #347), except `machine`, which
 /// names one already made. `start_agent`'s `recipe` is listed for
-/// chief-of-staff (Arugula #1338); any other is refused without its flag.
+/// Arugula's own (chief-of-staff, Arugula #1338; board-lead, Arugula
+/// #1440); any other is refused without its flag.
 const UNLISTED_ARGS: [(&str, &[&str], &str); 2] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::SANDBOX_PROVIDERS),
     ("start_agent", &["vm"], flags::SANDBOX_PROVIDERS),
@@ -3425,13 +3433,24 @@ impl ToolCall<'_, '_> {
             Some(b) => self.readable(b).await?.info.host,
             None => None,
         };
-        let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty() && !chief);
+        // Arugula's own recipes are read as the first prompt, not worn
+        // (Arugula #1440): a board's lead, or an issue agent, which every
+        // start on an issue is.
+        let lead = a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::BOARD_LEAD);
+        if a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::ISSUE_AGENT) && a.issue.is_none() {
+            return Err("recipe issue-agent is an agent on an issue: give issue".into());
+        }
+        if lead && a.issue.is_some() {
+            return Err("a board's lead works the whole board: no issue (its prompt names the board)".into());
+        }
+        let recipe =
+            a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty() && !crate::mcp::registry::own_recipe(n));
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
         if a.chat {
             return self.start_chat(a, beside, host).await;
         }
         if recipe.is_some() && !flags::on(self.app.control.state_dir()).has(flags::AGENT_DELEGATION) {
-            return Err("agent recipes are in Labs: `arugulad flags agent-delegation on` turns them on here (recipe chief-of-staff needs no flag)".into());
+            return Err("agent recipes are in Labs: `arugulad flags agent-delegation on` turns them on here (Arugula's own, chief-of-staff and board-lead, need no flag)".into());
         }
         if (chief || recipe.is_some()) && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
@@ -3496,6 +3515,14 @@ impl ToolCall<'_, '_> {
             a.prompt = crate::mcp::registry::chief_of_staff_prompt(&prompt)?;
             a.title = Some(title);
             project = Some(p.id.clone());
+        }
+        // Any ACP agent server may have none of Arugula's tools, which
+        // these name.
+        let tooled = !matches!(a.agent, AgentKind::Acp);
+        if let (Some(i), true) = (&issue, tooled) {
+            a.prompt = crate::mcp::registry::issue_agent_prompt(i, None, &a.prompt);
+        } else if lead {
+            a.prompt = crate::mcp::registry::board_lead_prompt(None, &a.prompt)?;
         }
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
@@ -3772,9 +3799,6 @@ impl ToolCall<'_, '_> {
             (a.command.is_some(), "command"),
             (a.model.is_some(), "model"),
             (a.title.is_some(), "title"),
-            (!a.allow.is_empty(), "allow"),
-            (a.permission_mode.is_some(), "permission_mode"),
-            (a.user_settings, "user_settings"),
             (a.beside.is_some(), "beside"),
             (a.vm, "vm"),
             (a.chat, "chat"),
@@ -3785,7 +3809,7 @@ impl ToolCall<'_, '_> {
         let given: Vec<&str> = others.iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect();
         if !given.is_empty() {
             return Err(format!(
-                "a start for a board takes prompt, recipe, issue, cwd, session and to, not {}",
+                "a start for a board takes prompt, recipe, issue, cwd, session, to, permission_mode, allow and user_settings, not {}",
                 given.join(", ")
             ));
         }
@@ -3813,6 +3837,9 @@ impl ToolCall<'_, '_> {
             prompt: a.prompt,
             session: blank(a.session),
             by_session,
+            permission_mode: blank(a.permission_mode),
+            allow: a.allow,
+            user_settings: a.user_settings,
         };
         let started = arugulad_base::ladder::start(self.app, ask).await?;
         done(

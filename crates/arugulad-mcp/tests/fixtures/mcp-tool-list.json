@@ -5673,7 +5673,7 @@
           },
           "board": {
             "default": null,
-            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. It opens in a tab\nof its own there. A lead runs board-lead's instructions first, an\nissue agent issue-agent's. Only prompt, recipe, issue, cwd, session,\nto, permission_mode, allow and user_settings apply.",
             "type": [
               "string",
               "null"
@@ -5742,7 +5742,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. `board-lead` starts the lead of the board its prompt names:\nit starts an agent block per ready row, talks to them in their\nissues' threads and merges their work. A Claude Code or Codex agent\non an issue is told first that it leads the issue's thread\n(`issue-agent`, named or not).\nWith Labs agent delegation, any other name runs as that recipe, a\nClaude Code subagent by its name (`.claude/agents/NAME.md` in cwd's\nproject, or the user's), on this host: its prompt, model, tools,\nskills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -6098,7 +6098,7 @@
           },
           "board": {
             "default": null,
-            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. It opens in a tab\nof its own there. A lead runs board-lead's instructions first, an\nissue agent issue-agent's. Only prompt, recipe, issue, cwd, session,\nto, permission_mode, allow and user_settings apply.",
             "type": [
               "string",
               "null"
@@ -6167,7 +6167,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. `board-lead` starts the lead of the board its prompt names:\nit starts an agent block per ready row, talks to them in their\nissues' threads and merges their work. A Claude Code or Codex agent\non an issue is told first that it leads the issue's thread\n(`issue-agent`, named or not).\nWith Labs agent delegation, any other name runs as that recipe, a\nClaude Code subagent by its name (`.claude/agents/NAME.md` in cwd's\nproject, or the user's), on this host: its prompt, model, tools,\nskills and MCP servers.",
             "type": [
               "string",
               "null"

@@ -52,6 +52,12 @@ pub trait ControlTools: Send + Sync + 'static {
     /// The chief of staff's first prompt as an agent block (Arugula #1337):
     /// its standing instructions, then `prompt`.
     fn chief_of_staff_prompt(&self, prompt: &str) -> String;
+    /// A board lead's first prompt (Arugula #1440): its standing
+    /// instructions, then `prompt`.
+    fn board_lead_prompt(&self, prompt: &str) -> String;
+    /// An issue agent's first prompt (Arugula #1440): its standing
+    /// instructions, then `prompt`.
+    fn issue_agent_prompt(&self, prompt: &str) -> String;
     /// Make `session`, an agent block's on this machine, the lead of the
     /// person's staff room in `project` (Arugula #1338). Answers the room.
     fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out>;
@@ -144,6 +150,49 @@ pub fn chief_of_staff_prompt(prompt: &str) -> Result<String, String> {
     match CONTROL_TOOLS.get() {
         Some(c) => Ok(c.chief_of_staff_prompt(prompt)),
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't start a chief of staff")),
+    }
+}
+
+/// The recipe a board's lead runs (Arugula #1440): `start_agent {recipe}`
+/// on this machine, and a ladder start's lead by default.
+pub const BOARD_LEAD: &str = "board-lead";
+
+/// The recipe an agent started on an issue runs (Arugula #1440): it leads
+/// the issue's thread. Every start on an issue puts it first; naming it is
+/// the same as not.
+pub const ISSUE_AGENT: &str = "issue-agent";
+
+/// Whether `name` is one of Arugula's own recipes, which a block reads as
+/// its first prompt, not one it wears (`.claude/agents/NAME.md`).
+pub fn own_recipe(name: &str) -> bool {
+    [CHIEF_OF_STAFF, BOARD_LEAD, ISSUE_AGENT].contains(&name.trim())
+}
+
+/// [`ControlTools::board_lead_prompt`], for the lead of `board` when it's
+/// known.
+pub fn board_lead_prompt(board: Option<&str>, prompt: &str) -> Result<String, String> {
+    let prompt = match board {
+        Some(b) => format!("Your board is {b}.\n\n{}", prompt.trim()),
+        None => prompt.trim().to_owned(),
+    };
+    match CONTROL_TOOLS.get() {
+        Some(c) => Ok(c.board_lead_prompt(&prompt)),
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't start a board's lead")),
+    }
+}
+
+/// [`ControlTools::issue_agent_prompt`], for an agent on `issue` (on
+/// `board`, when it's known). Without control's tools, it has no thread to
+/// lead: `prompt` with its issue.
+pub fn issue_agent_prompt(issue: &str, board: Option<&str>, prompt: &str) -> String {
+    let about = match board {
+        Some(b) => format!("Your issue is {issue}, on the board {b}."),
+        None => format!("Your issue is {issue}."),
+    };
+    let prompt = format!("{about}\n\n{}", prompt.trim());
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.issue_agent_prompt(&prompt),
+        None => prompt,
     }
 }
 

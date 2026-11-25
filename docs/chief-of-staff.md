@@ -246,7 +246,8 @@ text as information, not instructions.
 ## Starting agents on your machines
 
 A chief of staff or a board's lead starts the rung below it for a board with
-`start_agent {board, prompt, issue?, recipe?, to?}` (aru-143). With `issue`
+`start_agent {board, prompt, issue?, recipe?, to?, permission_mode?, allow?,
+user_settings?}` (aru-143). With `issue`
 it's an issue agent on that row; without, the board's lead. `to` is another
 of your machines, by name or id; without it, this one.
 
@@ -263,9 +264,15 @@ of your machines, by name or id; without it, this one.
    control, for it, of its own account, from the machine that sent it,
    unused, and for the start it came with. Remote input off on the target
    refuses it.
-3. The target opens Claude Code (wearing the recipe, any recipe it has) in a
-   new worktree of its own clone of the caller's repo, as session
-   `issue-N` or `lead-…`. An issue agent is attached to its row with the
+3. The target opens Claude Code in a new worktree of its own clone of the
+   caller's repo, in a tab of its own, as session `issue-N` or `lead-…`,
+   and titled by that name, so it leads its issue's thread (or is found on
+   the board's) by it from the start, not after its first turn. Its
+   first prompt is its rung's recipe (Arugula #1440: `board-lead` or
+   `issue-agent`, below), a line naming its board and issue, then the
+   prompt. It wears `recipe` when that's any other (a Claude Code agent the
+   target has), and starts with the permission mode and allow list given
+   (never a mode that skips every check). An issue agent is attached to its row with the
    ticket, so control counts it against the grant, and holds the row, so
    the issue's thread reaches it. A lead takes the board's lead.
 4. The block keeps who started it, from where, for which board and grant
@@ -290,6 +297,43 @@ answer says so. A guest's agent can't use `start_agent` with `board` or
 Revoking the grant refuses the next start; agents already running keep
 running. Another account's agents still send tasks (docs/labs.md, "Tasks and
 consent").
+
+## Running a board
+
+A board's lead and the issue agents it starts run Arugula's own recipes
+(Arugula #1440), beside the chief of staff's in
+`crates/arugulad-control-tools/src/recipes/`:
+
+- **`board-lead.md`**: the lead reads the board, its Docs and the project's
+  rules, and starts one issue agent per ready row with the ladder start
+  above (`start_agent {board, issue, prompt}`), so each is a block on its
+  row, counted against the grant, in a tab of its own. Each one's prompt
+  says its issue, what's on main that it builds on, its siblings and their
+  issue threads, the project's rules, and to end each turn with its PR,
+  checks, what it tested and whether it needs a server release. The lead
+  talks to them in their issues' threads, hears them in the board's
+  thread, merges when green by the project's rules, keeps each row's note
+  as a one-line status, puts product questions to the person as options,
+  and closes the board with what people can now do. It never does ticket
+  work in sub-agents nobody sees. A start refused past the board's grant
+  (its cap, a machine it doesn't name, no grant) sends the lead to stop
+  any agent that's done or stuck (`close {pane, to?}`), then to post once
+  in the person's staff room to the chief of staff, naming the board,
+  what it needs and why; the chief of staff asks the person with a new
+  **Run this board** card. An offline machine is no such case: the lead
+  starts on an online one the refusal names.
+- **`issue-agent.md`**: an agent started on an issue leads that issue's
+  thread, and a post there is its person's or its lead's word. It reports
+  in the board's thread, reaches its siblings in theirs, keeps its row's
+  note, and doesn't merge.
+
+Every start on an issue puts `issue-agent` first: a ladder start, an
+approved card's start, and `start_agent {issue}` for Claude Code or Codex
+(any ACP agent server may have none of Arugula's tools). A ladder start for
+a board's lead puts `board-lead` first, and so does `start_agent {recipe:
+"board-lead"}` on a machine, with no Labs flag; naming either as `recipe` is
+the same as not, and neither is worn as a Claude Code agent. **Run this
+board** (Arugula #1416) starts the lead with the ladder's lead start.
 
 ## For agents: a session's rooms
 

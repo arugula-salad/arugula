@@ -169,6 +169,18 @@ pub struct LadderStart {
     pub session: Option<String>,
     #[serde(default)]
     pub by: StartedBy,
+    /// The permission mode its session starts in (Claude Code's `auto`,
+    /// say), as `start_agent` takes it: never one that skips every check.
+    /// None: Claude Code's default, a card for each command it asks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
+    /// Tools it may use without asking (`Read`, `Bash`, ...).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allow: Vec<String>,
+    /// The person's own Claude Code settings on the target (its allow and
+    /// deny lists, default mode, CLAUDE.md), without their hooks.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub user_settings: bool,
 }
 
 /// The target's answer to a [`LadderStart`].
