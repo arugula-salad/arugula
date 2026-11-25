@@ -300,7 +300,13 @@ A board's lead and the issue agents it starts run Arugula's own recipes
   thread, merges when green by the project's rules, keeps each row's note
   as a one-line status, puts product questions to the person as options,
   and closes the board with what people can now do. It never does ticket
-  work in sub-agents nobody sees.
+  work in sub-agents nobody sees. A start refused past the board's grant
+  (its cap, a machine it doesn't name, no grant) sends the lead to stop
+  any agent that's done or stuck (`close {pane, to?}`), then to post once
+  in the person's staff room to the chief of staff, naming the board,
+  what it needs and why; the chief of staff asks the person with a new
+  **Run this board** card. An offline machine is no such case: the lead
+  starts on an online one the refusal names.
 - **`issue-agent.md`**: an agent started on an issue leads that issue's
   thread, and a post there is its person's or its lead's word. It reports
   in the board's thread, reaches its siblings in theirs, keeps its row's
