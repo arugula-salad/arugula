@@ -17,7 +17,7 @@
 
 import { createContext, type JSX } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { SessionView } from "../shared/proto";
+import type { BoardLead, SessionView } from "../shared/proto";
 import { pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
 import { call, saidOf } from "../shared/chat/session-card";
@@ -25,7 +25,7 @@ import { useSubscribe } from "../shared/ui/hooks";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { kindOf, shortHost } from "../shell/swarm/model";
-import type { OvCard, OvSession } from "../shell/swarm/overview";
+import type { OvCard, OvLead, OvSession } from "../shell/swarm/overview";
 import { Word } from "./overview-row";
 
 /** How often an open peek reads its lines again. */
@@ -38,6 +38,8 @@ const LINES = 20;
 /** What the Overview gives its peeks. */
 export interface PeekPlace {
   fleet: Fleet;
+  /** A session that leads something (a staff room, #1342) as the Overview reads a board's lead. */
+  lead(l: Pick<BoardLead, "machine" | "machine_name" | "session">): OvLead;
   /** The session a peek is on, and its card, while it's in the project. */
   find(key: string): { s: OvSession; card: OvCard | null } | undefined;
   /** It on its machine's page, or a cloud workspace's on its own. */
