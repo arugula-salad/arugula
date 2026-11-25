@@ -171,3 +171,9 @@
     padding: var(--space-2);
   }
 }
+
+/* The machine the address names (Arugula #1349), as a selected card's edge;
+   a session's card it names is the card's own selected look. */
+.machines-machine[data-machines-picked] {
+  box-shadow: var(--selected-edge);
+}

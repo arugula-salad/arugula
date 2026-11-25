@@ -52,16 +52,15 @@ import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
 import { StatusFooter, StatusPill } from "./shell/status-footer";
 import { Rail } from "./shell/rail";
-import { noteLastTab, SessionSidebar } from "./shell/session-sidebar";
+import { noteLastTab, SessionSidebar, showSession } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
 import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
-import { SessionOverview, useOverview } from "./shell/overview";
 import { TabArea } from "./panes/tab-area";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
-import { currentPlace } from "./places";
+import { currentPlace, landOldOverview } from "./places";
 import { shellTitle } from "./titles";
 
 /** Whose frame the workspace is drawn in (Arugula #989): its own, with the
@@ -124,8 +123,17 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       }),
     [client, ws],
   );
-  // M111: `#overview` lies over the tabs and panes (not on a phone).
-  const overview = useOverview();
+  // An old `#overview` link lands on the Machines page at this machine
+  // (Arugula #1349), once the page knows which machine it shows.
+  useSubscribe((fn) => directory.subscribe(fn));
+  const known = !!directory.current || !!client.state;
+  useEffect(() => {
+    if (!known) return;
+    const land = () => landOldOverview(client, (s) => showSession(client, s));
+    land();
+    window.addEventListener("hashchange", land);
+    return () => window.removeEventListener("hashchange", land);
+  }, [client, known]);
   useLayoutEffect(() => {
     if (!ws) return;
     // The swarm, agents and Docs pages sit beside its rail (style.css).
@@ -135,10 +143,8 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
 
   const state = client.state;
   const tab = client.tabView();
-  // Chat is on the platform page (M153, M155).
-  const overviewOpen = ws && !!overview && !!state;
   const main = (
-    <main class="main" inert={overviewOpen}>
+    <main class="main">
       {/* Its own guard (Arugula #615): the panes failing leaves the pages and the rail. */}
       <PageGuard at={`${client.session}:${client.tab}`}>
         {!state ? (
@@ -214,10 +220,9 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
               <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
-              {tab && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
+              {tab && <PaneToolbar client={client} tab={tab} />}
               {main}
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
-              {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
             {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
             {state && <DocsPageLayer client={client} inWorkspace />}

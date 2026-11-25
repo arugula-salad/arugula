@@ -20,10 +20,10 @@ import { Modal } from "../../shared/ui/modal";
 import { countView } from "../../shared/telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
+import { hasChat, machinesAt, openChat, openChatView, openMachinesAt } from "./places";
 import { showSession } from "./shell/session-sidebar";
 import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon, DocsIcon, AgentsIcon } from "../../shared/ui/icons";
-import { paneName } from "./shell/overview";
+import { paneName } from "./pane-name";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
@@ -38,6 +38,7 @@ import { currentAccount } from "./app-bar";
 import { needsYou } from "../../shared/needs-you";
 import { ago } from "../../shared/time";
 import { getFleet } from "./hosts";
+import { directory } from "../hosts";
 import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
 import { Chip } from "../../shared/ui/state-chip";
 
@@ -342,21 +343,20 @@ function places(client: Client, phone: boolean): Command[] {
     if (swarmRoute()) closeSwarm();
     if (agentsRoute()) closeAgentsPage();
     if (docsRoute()) closeDocsPage();
-    closeOverview();
   };
   const out: Command[] = [];
   const go = (key: string, label: string, run: () => void, detail?: string) => out.push({ key: `Places/${key}`, group: "Places", place: true, label, detail, run });
   if (at !== "panes") go("panes", "Go to Panes", toPanes);
   // Arugula #1396: the owner's conversations, the home with no session open.
   if (!client.state?.roles) go("your-work", "Your work", () => openYourWork(client), "your Claude Code and Codex conversations");
-  // M111, on a computer: this machine's sessions at a glance, and what
-  // waits on you on every machine.
+  // This machine's sessions at a glance: the Machines page, at it (Arugula #1349).
+  if (machinesAt(client)) go("machines", `Go to ${directory.current || "this machine"} on Machines`, () => openMachinesAt(client), "its sessions, tabs and panes");
+  // M111, on a computer: what waits on you on every machine.
   if (!phone) {
-    if (!overviewRoute()) go("overview", "Go to the session overview", () => openOverview());
     go("attention", "Go to Needs you", () => openAttention(), "what waits on you, on every machine");
     // M113: a way out of a terminal (which keeps Tab) to the chrome, from
     // the keyboard; Tab and the arrows go on from there.
-    if (at === "panes" && !overviewRoute()) {
+    if (at === "panes") {
       const focus = (key: string, label: string, sel: string, before?: () => void) =>
         go(key, label, () => {
           before?.();
@@ -565,7 +565,6 @@ function Palette({ client, phone, mode, initial, close }: { client: Client; phon
       if (agentsRoute()) closeAgentsPage();
       if (docsRoute()) closeDocsPage();
     }
-    if (c.group !== "Places" && overviewRoute()) closeOverview();
     // Keys back to the pane first; a prompt the command opens takes them.
     const active = client.active();
     if (!phone && active !== undefined) client.viewOf(active)?.focus();

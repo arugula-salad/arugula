@@ -100,7 +100,7 @@ export function ContextHeader({
   const sidebar = useSidebar();
   const at = usePlace(client);
   // The session's own parts (where you are in it, Share) are the panes'.
-  const panes = at === "panes" || at === "overview";
+  const panes = at === "panes";
   const state = client.state!;
   // The shown project's only (Arugula #1347): none when it has none here.
   const shown = client.shownSessions();

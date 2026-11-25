@@ -6,7 +6,7 @@ import { render } from "preact";
 import { paneIds, tabLabel, type Client } from "../client";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import type { PaneId, TabId } from "../../shared/proto";
-import { paneName } from "./shell/overview";
+import { paneName } from "./pane-name";
 
 /** Draw `ask` over the page, in a host of its own that goes with it. One dialog at a time. */
 function confirm(ask: (done: () => void) => preact.ComponentChildren) {

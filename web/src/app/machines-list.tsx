@@ -5,10 +5,13 @@
 // This computer leads, then online before offline, yours before
 // teammates'; machines with nothing of the project fold into one line at
 // the bottom. The sessions you pinned come first (#1261), and the pane you
-// had open last stays lit. Only the project's sessions (#1164).
+// had open last stays lit. Only the project's sessions (#1164). The
+// address can name a machine (`show`) and a session's card on it (`card`):
+// the page scrolls there and marks it (Arugula #1349), as the shell's
+// palette, its mark and its session crumb open it.
 
 import "./machines-list.css";
-import { useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { parseMachines, type MachineAt } from "../shared/machine-paths";
 import { needsYou, NEEDS_YOU } from "../shared/needs-you";
 import { EmptyState } from "../shared/ui/block-states";
@@ -83,7 +86,7 @@ const TABS = 3;
 
 type To = (at: MachineAt) => string;
 
-export function MachinesList({ project, fleet, agents, session }: { project: string; fleet: Fleet; agents: boolean; session: AppSession | null }) {
+export function MachinesList({ project, fleet, agents, show, card, session }: { project: string; fleet: Fleet; agents: boolean; show?: string; card?: number; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
@@ -109,8 +112,24 @@ export function MachinesList({ project, fleet, agents, session }: { project: str
   if (machines.some(idOf)) sessionPins.want();
   const { pinned, machines: below } = pinnedCards(machines, sessionPins.on ? sessionPins.pins : [], idOf);
   const cards = machines.flatMap((m) => m.sessions);
+  // The machine the address names, by its id or its name, and its session's card.
+  const named = show ? [...machines, ...quiet].find((m) => m.id === show || m.name === show || idOf(m) === show) : undefined;
+  const at = named && card !== undefined && named.sessions.some((s) => s.id === card) ? card : undefined;
+  const picked = (m: MachineSection) => !!named && m.name === named.name;
+  const root = useRef<HTMLElement>(null);
+  const scrolled = useRef<string | null>(null);
+  // Scrolled to it once it's drawn, once for each address.
+  useLayoutEffect(() => {
+    const key = named ? `${named.name}/${at ?? ""}` : null;
+    if (!key || scrolled.current === key) return;
+    const el = root.current?.querySelector<HTMLElement>("[data-machines-picked]");
+    if (!el) return;
+    scrolled.current = key;
+    el.scrollIntoView({ block: at === undefined ? "start" : "center" });
+    el.querySelector<HTMLElement>("[data-machines-session-link], [data-machines-machine-link]")?.focus({ preventScroll: true });
+  });
   return (
-    <section class="platform-section sw-page machines-page" data-machines-list>
+    <section class="platform-section sw-page machines-page" data-machines-list ref={root}>
       <PageHeader
         title="Machines"
         stats={
@@ -164,6 +183,7 @@ export function MachinesList({ project, fleet, agents, session }: { project: str
                     to={to}
                     last={last}
                     phone={phone}
+                    picked={picked(m) && s.id === at}
                     pinned={() => void sessionPins.edit((pins) => unpin(pins, pin.machine, pin.session))}
                     data-machines-pinned-session={`${pin.machine}/${pin.session}`}
                   />
@@ -172,9 +192,9 @@ export function MachinesList({ project, fleet, agents, session }: { project: str
             </section>
           )}
           {below.map((m) => (
-            <Machine key={m.name} m={m} count={machines.find((x) => x.name === m.name)!.sessions.length} to={to} last={last} phone={phone} />
+            <Machine key={m.name} m={m} count={machines.find((x) => x.name === m.name)!.sessions.length} to={to} last={last} phone={phone} picked={picked(m)} card={picked(m) ? at : undefined} />
           ))}
-          {quiet.length > 0 && <Quiet quiet={quiet} to={to} name={name} />}
+          {quiet.length > 0 && <Quiet quiet={quiet} to={to} name={name} picked={quiet.find(picked)?.name} />}
         </>
       )}
     </section>
@@ -209,15 +229,17 @@ function Head({ m, to, count }: { m: MachineSection; to: To; count?: number }) {
   );
 }
 
-function Machine({ m, count, to, last, phone }: { m: MachineSection; count: number; to: To; last: Last; phone: boolean }) {
+/** `picked`: the machine the address names, marked unless it names one of
+ * its sessions' cards (`card`), which is. */
+function Machine({ m, count, to, last, phone, picked, card }: { m: MachineSection; count: number; to: To; last: Last; phone: boolean; picked: boolean; card?: number }) {
   return (
-    <section class="machines-machine" data-machines-group={m.id ?? m.name} aria-label={shortHost(m.name)}>
+    <section class="machines-machine" data-machines-group={m.id ?? m.name} data-machines-picked={(picked && card === undefined) || undefined} aria-label={shortHost(m.name)}>
       <header class="machines-head">
         <Head m={m} to={to} count={count} />
       </header>
       <ul class="machines-sessions">
         {m.sessions.map((s) => (
-          <Session key={s.id} m={m} s={s} to={to} last={last} phone={phone} />
+          <Session key={s.id} m={m} s={s} to={to} last={last} phone={phone} picked={s.id === card} />
         ))}
       </ul>
     </section>
@@ -229,7 +251,7 @@ function Machine({ m, count, to, last, phone }: { m: MachineSection; count: numb
  * Its first few tabs, and any with a pane that needs you or the one you had
  * open last; "+N more" opens the rest in place. A pinned one says so, and
  * unpins (`pinned`), and names its machine. */
-function Session({ m, s, to, last, phone, pinned, ...data }: { m: MachineSection; s: SessionCard; to: To; last: Last; phone: boolean; pinned?: () => void; [k: `data-${string}`]: unknown }) {
+function Session({ m, s, to, last, phone, picked, pinned, ...data }: { m: MachineSection; s: SessionCard; to: To; last: Last; phone: boolean; picked?: boolean; pinned?: () => void; [k: `data-${string}`]: unknown }) {
   const [all, setAll] = useState(false);
   const open = to(machineAt(m, sessionPane(m, s, last)));
   const tabs = s.tabs.length;
@@ -237,7 +259,7 @@ function Session({ m, s, to, last, phone, pinned, ...data }: { m: MachineSection
   const more = tabs - few.length;
   return (
     <li class="machines-session-item">
-      <Card as="article" class="machines-session" data-machines-session={s.id} data-attention={s.state} {...data}>
+      <Card as="article" class="machines-session" selected={picked} data-machines-session={s.id} data-machines-picked={picked || undefined} data-attention={s.state} {...data}>
         <header class="machines-session-head">
           <span class={`ws-dot ${s.state}`} aria-hidden="true" />
           <a class="machines-session-name" href={open} title={`Open ${s.name} at its last tab`} data-machines-session-link onClick={(e) => follow(e, open)}>
@@ -291,17 +313,18 @@ function Row({ p, to, last, phone }: { p: FleetPane; to: string; last: boolean; 
   );
 }
 
-/** The machines with no session in the project: one line, which opens to a list. */
-function Quiet({ quiet, to, name }: { quiet: MachineSection[]; to: To; name: string }) {
+/** The machines with no session in the project: one line, which opens to a
+ * list, open with the one the address names (`picked`). */
+function Quiet({ quiet, to, name, picked }: { quiet: MachineSection[]; to: To; name: string; picked?: string }) {
   const n = quiet.length;
   return (
-    <details class="machines-quiet" data-machines-quiet>
+    <details class="machines-quiet" open={!!picked || undefined} data-machines-quiet>
       <summary class="dim">
         {n} {n === 1 ? "machine" : "machines"} with no {name} sessions
       </summary>
       <ul class="machines-quiet-list">
         {quiet.map((m) => (
-          <li key={m.name} class="machines-head" data-machines-group={m.id ?? m.name}>
+          <li key={m.name} class="machines-head" data-machines-group={m.id ?? m.name} data-machines-picked={m.name === picked || undefined}>
             <Head m={m} to={to} />
           </li>
         ))}

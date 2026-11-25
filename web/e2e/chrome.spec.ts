@@ -147,7 +147,7 @@ test.describe("on a computer", () => {
     // The app's places (Arugula #1345). A machine on its own has no platform
     // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
     // Machines or Runs in its bar (its Docs are its bar's, Arugula #418).
-    expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["sessions-overview", "machines", "settings"]);
+    expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["mark", "machines", "settings"]);
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);
 

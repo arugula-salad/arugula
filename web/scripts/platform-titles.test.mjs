@@ -61,6 +61,5 @@ test("control's tabs say the session and the machine, or the place", () => {
   assert.equal(shellTitle("panes", "geek", null), "geek · Arugula");
   assert.equal(shellTitle("panes", null, null), "Arugula");
   assert.equal(shellTitle("swarm", "geek", "api"), "Swarm · Arugula");
-  assert.equal(shellTitle("overview", "geek", "api"), "Sessions · geek · Arugula");
   assert.equal(shellTitle("agents", "geek", "api"), "Agents · geek · Arugula");
 });

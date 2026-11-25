@@ -16,7 +16,7 @@ import { platformHref } from "../../platform-links";
 import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
-import { closePlace, currentPlace, openOverview } from "../places";
+import { closePlace, currentPlace, machinesAt, openMachinesAt } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
 import { BranchIcon, Caret, MoreIcon, PanesIcon, PinIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";
@@ -456,9 +456,9 @@ function Resizer({ width }: { width: number }) {
 }
 
 /** The session breadcrumb in the header: the name opens this session's
- * overview (M111), and the caret (or a right click) its menu, which
- * switches sessions and holds the session's commands. Renaming happens in
- * the sidebar's row. */
+ * card on the Machines page (Arugula #1349; its menu where there's none),
+ * and the caret (or a right click) its menu, which switches sessions and
+ * holds the session's commands. Renaming happens in the sidebar's row. */
 export function SessionButton({
   client,
   session,
@@ -494,10 +494,10 @@ export function SessionButton({
     <span class="ws-crumb-group">
       <button
         class="session-button ws-crumb"
-        title={`${session.name}: this session's overview, its tabs, panes and what needs you`}
+        title={machinesAt(client, session.id) ? `${session.name} on Machines: its tabs, panes and what needs you` : `${session.name}: switch sessions`}
         aria-label={`Session: ${session.name}`}
-        data-crumb-overview
-        onClick={() => openOverview(session.id)}
+        data-crumb-session
+        onClick={(e) => openMachinesAt(client, session.id) || sessionMenu(e)}
         onContextMenu={sessionMenu}
       >
         <span class="ws-crumb-name">{session.name}</span>
