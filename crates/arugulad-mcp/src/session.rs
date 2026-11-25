@@ -449,7 +449,7 @@ pub(crate) fn tools() -> Vec<Tool> {
         .with_annotations(read_thread),
         Tool::new(
             POST_THREAD,
-            "Post in a room read_session_thread reads (staff, or a room of this project), as the asker's agent, labelled with this session: parent replies in a thread. It reaches whom an agent's post there reaches: the asker, in their staff room; a board's lead, on its board's thread; a person named by @login. Returns its seq.",
+            "Post in a room read_session_thread reads (staff, or a room of this project), as the asker's agent, labelled with this session: parent replies in a thread. It reaches whom an agent's post there reaches: the asker, in their staff room; a board's lead, on its board's thread; an issue's lead, on its issue's thread; a person named by @login. Returns its seq.",
             schema_for_type::<PostThreadArgs>(),
         )
         .with_title("Post in a room")

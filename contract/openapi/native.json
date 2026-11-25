@@ -9652,7 +9652,7 @@
                 "type": "null"
               }
             ],
-            "description": "The session that leads a staff room: the person's posts there are\ndelivered to it, as a board thread's are to the board's lead (#414)."
+            "description": "The session that leads a staff room, or an issue's thread (Arugula\n#1439): the posts there are delivered to it, never its own, as a\nboard thread's are to the board's lead (#414)."
           },
           "level": {
             "$ref": "#/components/schemas/NotifyLevel",
@@ -9892,7 +9892,7 @@
         "type": "object"
       },
       "ChatRoomLead": {
-        "description": "The session leading a staff room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
+        "description": "The session leading a room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
         "properties": {
           "machine": {
             "type": "string"

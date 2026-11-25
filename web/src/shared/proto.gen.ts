@@ -1813,8 +1813,9 @@ topic_writable: boolean,
  */
 staff: boolean, 
 /**
- * The session that leads a staff room: the person's posts there are
- * delivered to it, as a board thread's are to the board's lead (#414).
+ * The session that leads a staff room, or an issue's thread (Arugula
+ * #1439): the posts there are delivered to it, never its own, as a
+ * board thread's are to the board's lead (#414).
  */
 lead?: ChatRoomLead, };
 
@@ -1869,7 +1870,7 @@ can_manage: boolean,
 agents: Array<ChatRoomAgent>, };
 
 /**
- * The session leading a staff room ([`ChatRoom::lead`]): its machine, the
+ * The session leading a room ([`ChatRoom::lead`]): its machine, the
  * machine's name ("" for one that's gone) and the session's name there.
  */
 export type ChatRoomLead = { machine: string, machine_name: string, session: string, };

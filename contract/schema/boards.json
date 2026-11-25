@@ -211,6 +211,13 @@
         "issue": {
           "type": "string"
         },
+        "lead": {
+          "description": "The started block's own name (Arugula #1439): it leads the issue's\nthread from now, so a post there is told to it, as a board's thread's\nis to the board's lead. Absent: the thread's lead stays as it was.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "machine": {
           "type": "string"
         },

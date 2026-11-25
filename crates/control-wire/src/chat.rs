@@ -162,14 +162,15 @@ pub struct ChatRoom {
     /// DMs reach read it.
     #[serde(default)]
     pub staff: bool,
-    /// The session that leads a staff room: the person's posts there are
-    /// delivered to it, as a board thread's are to the board's lead (#414).
+    /// The session that leads a staff room, or an issue's thread (Arugula
+    /// #1439): the posts there are delivered to it, never its own, as a
+    /// board thread's are to the board's lead (#414).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead: Option<ChatRoomLead>,
 }
 
-/// The session leading a staff room ([`ChatRoom::lead`]): its machine, the
+/// The session leading a room ([`ChatRoom::lead`]): its machine, the
 /// machine's name ("" for one that's gone) and the session's name there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1711,15 +1712,16 @@ pub fn agent_staff_room(project: &str) -> String {
     format!("/api/daemon/chat/projects/{project}/staff")
 }
 
-/// A staff room's lead (`POST` a [`LeadRoom`], `threads.read`): the calling
-/// session takes it, or it's released. Answered an [`AgentRoom`].
+/// A staff room's or an issue's thread's lead (Arugula #1439; `POST` a
+/// [`LeadRoom`], `threads.read`): the calling session takes it, or it's
+/// released. Answered an [`AgentRoom`].
 pub fn agent_room_lead(room: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/lead")
 }
 
 /// `POST` to [`agent_room_lead`]: the calling session (`session`, its name
-/// on its machine) leads the staff room, or with `release` nobody does (the
-/// lead's own machine's agents only, as a board's).
+/// on its machine) leads the room, or with `release` nobody does (the lead's
+/// own machine's agents only, as a board's).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct LeadRoom {
@@ -1800,9 +1802,10 @@ pub struct AgentRoom {
     pub topic: String,
     #[serde(default)]
     pub description: String,
-    /// The owner's staff room (Arugula #1275), and the session leading it.
+    /// The owner's staff room (Arugula #1275).
     #[serde(default)]
     pub staff: bool,
+    /// The session leading a staff room or an issue's thread (Arugula #1439).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lead: Option<ChatRoomLead>,
 }

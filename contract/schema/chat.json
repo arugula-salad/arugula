@@ -193,7 +193,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "The session leading a staff room or an issue's thread (Arugula #1439)."
         },
         "name": {
           "description": "A channel's name (without `#`), or an object thread's (`issue #12`).",
@@ -227,7 +228,7 @@
         },
         "staff": {
           "default": false,
-          "description": "The owner's staff room (Arugula #1275), and the session leading it.",
+          "description": "The owner's staff room (Arugula #1275).",
           "type": "boolean"
         },
         "target": {
@@ -2048,7 +2049,7 @@
               "type": "null"
             }
           ],
-          "description": "The session that leads a staff room: the person's posts there are\ndelivered to it, as a board thread's are to the board's lead (#414)."
+          "description": "The session that leads a staff room, or an issue's thread (Arugula\n#1439): the posts there are delivered to it, never its own, as a\nboard thread's are to the board's lead (#414)."
         },
         "level": {
           "$ref": "#/$defs/NotifyLevel",
@@ -2288,7 +2289,7 @@
       "type": "object"
     },
     "ChatRoomLead": {
-      "description": "The session leading a staff room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
+      "description": "The session leading a room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
       "properties": {
         "machine": {
           "type": "string"
@@ -2955,7 +2956,7 @@
       ]
     },
     "LeadRoom": {
-      "description": "`POST` to [`agent_room_lead`]: the calling session (`session`, its name\non its machine) leads the staff room, or with `release` nobody does (the\nlead's own machine's agents only, as a board's).",
+      "description": "`POST` to [`agent_room_lead`]: the calling session (`session`, its name\non its machine) leads the room, or with `release` nobody does (the lead's\nown machine's agents only, as a board's).",
       "properties": {
         "release": {
           "default": false,
