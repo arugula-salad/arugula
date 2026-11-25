@@ -317,6 +317,32 @@ fn watch_create(a: WatchArgs) -> Result<SessionWatchOp, String> {
     Ok(SessionWatchOp::Create { targets, expires_in_ms, event, matches, note })
 }
 
+/// What `watch` asks control for, from its arguments: every kind but
+/// types, which is the session's own to answer.
+fn watch_op(a: WatchArgs) -> Result<SessionWatchOp, String> {
+    let kind = a.kind.clone().unwrap_or_default();
+    Ok(match kind.trim() {
+        "" | "create" => watch_create(a)?,
+        "list" => SessionWatchOp::List,
+        "cancel" => {
+            let id = a.id.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(str::to_owned);
+            if id.is_none() && !a.all {
+                return Err("cancel needs an id (wch_…), or all".into());
+            }
+            SessionWatchOp::Cancel { id, all: a.all }
+        }
+        "events" => {
+            let types = match &a.types {
+                None => vec![],
+                Some(Ids::One(t)) => read_types([t.as_str()])?,
+                Some(Ids::Many(ts)) => read_types(ts.iter().map(String::as_str))?,
+            };
+            SessionWatchOp::Events { after: a.after, types, limit: a.limit.map(|l| l.clamp(1, READ_LIMIT_MAX)) }
+        }
+        k => return Err(format!("watch kind {k}: create, list, cancel, types or events")),
+    })
+}
+
 /// What `watch create` waits for besides an event, from its arguments.
 fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
     let until = until_word_parse(a.until.as_deref())?;
@@ -467,37 +493,17 @@ struct Server {
 struct Caller(String);
 
 impl Server {
-    /// `watch`: make, list or cancel this session's watches, or list the
-    /// event types.
+    /// `watch`: make, list or cancel this session's watches, list the
+    /// event types, or read the project's event log.
     async fn watch(&self, session: &str, args: Value) -> Out {
         let a: WatchArgs = parse(args)?;
-        let kind = a.kind.clone().unwrap_or_default();
-        let op = match kind.trim() {
-            "" | "create" => watch_create(a)?,
-            "list" => SessionWatchOp::List,
-            "cancel" => {
-                let id = a.id.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(str::to_owned);
-                if id.is_none() && !a.all {
-                    return Err("cancel needs an id (wch_…), or all".into());
-                }
-                SessionWatchOp::Cancel { id, all: a.all }
-            }
-            // A hosted session's box has joined: every cloud type is
-            // watchable, and no machine's own.
-            "types" => {
-                let text = event_types(Watcher::HostedSession, true);
-                return done(text.clone(), json!({ "types": text }));
-            }
-            "events" => {
-                let types = match &a.types {
-                    None => vec![],
-                    Some(Ids::One(t)) => read_types([t.as_str()])?,
-                    Some(Ids::Many(ts)) => read_types(ts.iter().map(String::as_str))?,
-                };
-                SessionWatchOp::Events { after: a.after, types, limit: a.limit.map(|l| l.clamp(1, READ_LIMIT_MAX)) }
-            }
-            k => return Err(format!("watch kind {k}: create, list, cancel, types or events")),
-        };
+        // A hosted session's box has joined: every cloud type is
+        // watchable, and no machine's own.
+        if a.kind.as_deref().map(str::trim) == Some("types") {
+            let text = event_types(Watcher::HostedSession, true);
+            return done(text.clone(), json!({ "types": text }));
+        }
+        let op = watch_op(a)?;
         let ask = SessionWatchAsk { session: session.to_owned(), op };
         let got: SessionWatchGiven = self
             .app
@@ -1175,5 +1181,66 @@ mod tests {
         assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match goes with an event");
         assert!(err(json!({ "event": "issue.closed", "match": { "project": "prj_2" } })).starts_with("match project"));
         assert!(err(json!({})).ends_with("room or event"));
+    }
+
+    /// The schema says everything `watch` takes (Arugula #1285): the
+    /// machine's tool's fields, but agent_session for its session (a
+    /// session's own is the caller) and no project (a session's is its
+    /// own).
+    #[test]
+    fn the_watch_schema_says_every_field_it_takes() {
+        let t = tools().into_iter().find(|t| t.name == WATCH).unwrap();
+        let schema = serde_json::to_value(&t.input_schema).unwrap();
+        let props = schema["properties"].as_object().unwrap();
+        let mut names: Vec<&str> = props.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            [
+                "after",
+                "agent_session",
+                "all",
+                "event",
+                "expires",
+                "from",
+                "id",
+                "kind",
+                "limit",
+                "match",
+                "note",
+                "parent",
+                "pr",
+                "room",
+                "run",
+                "types",
+                "until"
+            ]
+        );
+        assert_eq!(props["match"]["type"], json!(["object", "null"]), "{:?}", props["match"]);
+        assert_eq!(props["limit"]["type"], json!(["integer", "null"]), "{:?}", props["limit"]);
+        assert!(props["kind"]["description"].as_str().unwrap().contains("events"));
+    }
+
+    /// `watch events` asks control for at most limit (Arugula #1285), held
+    /// to 1..=200, and for its default when none is given.
+    #[test]
+    fn watch_events_asks_for_its_limit() {
+        let ask = |v: Value| {
+            let op = watch_op(serde_json::from_value(v).unwrap()).unwrap();
+            serde_json::to_value(SessionWatchAsk { session: "ses_1".into(), op }).unwrap()
+        };
+        assert_eq!(
+            ask(json!({ "kind": "events", "after": 0, "limit": 1 })),
+            json!({ "session": "ses_1", "op": "events", "after": 0, "limit": 1 })
+        );
+        assert_eq!(
+            ask(json!({ "kind": "events", "after": 41, "types": "issue.closed", "limit": 500 })),
+            json!({ "session": "ses_1", "op": "events", "after": 41, "types": ["issue.closed"], "limit": 200 })
+        );
+        assert_eq!(ask(json!({ "kind": "events", "limit": 0 }))["limit"], 1);
+        assert_eq!(ask(json!({ "kind": "events" })), json!({ "session": "ses_1", "op": "events", "after": 0 }));
+        let err = |v| watch_op(serde_json::from_value(v).unwrap()).err().unwrap();
+        assert_eq!(err(json!({ "kind": "nap" })), "watch kind nap: create, list, cancel, types or events");
+        assert_eq!(err(json!({ "kind": "cancel" })), "cancel needs an id (wch_…), or all");
     }
 }
