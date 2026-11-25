@@ -108,6 +108,15 @@ pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("rec
 /// tools an agent block has, where [`RECIPES`]' names a hosted session's.
 pub(crate) const CHIEF_OF_STAFF_ON_A_MACHINE: &str = include_str!("recipes/chief-of-staff.md");
 
+/// A board lead's standing instructions as an agent block (Arugula #1440):
+/// it starts an issue agent per ready row, talks to them in their issues'
+/// threads and merges their work.
+pub(crate) const BOARD_LEAD_ON_A_MACHINE: &str = include_str!("recipes/board-lead.md");
+
+/// What an agent started on an issue is told first (Arugula #1440): it
+/// leads the issue's thread, and whose word a post there is.
+pub(crate) const ISSUE_AGENT_ON_A_MACHINE: &str = include_str!("recipes/issue-agent.md");
+
 /// A recipe's first prompt: its standing instructions, then what the
 /// person asked, if anything.
 pub(crate) fn recipe_prompt(text: &str, prompt: Option<&str>) -> String {

@@ -406,8 +406,20 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
 
     let s = bridge(&a).await;
 
-    // An issue agent on bravo, for #7.
-    let r = call(&s, json!({ "prompt": "Fix #7", "board": BOARD, "issue": "#7", "to": "bravo", "cwd": clone_a })).await;
+    // Never every check off for another agent, here or there.
+    let wild = json!({ "prompt": "Fix #7", "board": BOARD, "issue": "#7", "to": "bravo", "permission_mode": "bypassPermissions" });
+    let r = call(&s, wild).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("skips every check"), "{}", text(&r));
+
+    // An issue agent on bravo, for #7, with settings that don't ask a card
+    // for each command.
+    let r = call(
+        &s,
+        json!({ "prompt": "Fix #7", "board": BOARD, "issue": "#7", "to": "bravo", "cwd": clone_a,
+                "permission_mode": "auto", "allow": ["Read", "Bash"] }),
+    )
+    .await;
     assert_ne!(r.is_error, Some(true), "{}", text(&r));
     let started = r.structured_content.clone().unwrap();
     assert_eq!(started["id"], b_id.as_str(), "{started}");
@@ -436,14 +448,21 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     assert_eq!(attached[0]["issue"], "#7");
 
     // Bravo keeps who started it on the block, and in its log.
-    let kept = || -> Value {
+    let config = |block: u64| -> Value {
         let saved: Value =
             serde_json::from_str(&std::fs::read_to_string(b.state.join("layout.json")).unwrap_or_default())
                 .unwrap_or_default();
-        saved["panes"][block.to_string()]["config"]["work"]["ladder"].clone()
+        saved["panes"][block.to_string()]["config"].clone()
     };
+    let kept = || config(block)["work"]["ladder"].clone();
     b.wait_for("the start kept with the block", || kept()["ticket"] == issued[0]["jti"]);
     let kept = kept();
+    // Its settings as the lead gave them; its recipe (Arugula #1440) is in
+    // its prompt (`whole_tests`), not worn.
+    let issue_config = config(block);
+    assert_eq!(issue_config["permission_mode"], "auto");
+    assert_eq!(issue_config["allow"], json!([{ "tool": "Read" }, { "tool": "Bash" }]));
+    assert!(issue_config.get("recipe").is_none(), "{issue_config}");
     assert_eq!((kept["by_machine"].as_str(), kept["by_id"].as_str()), (Some("alpha"), Some(a_id.as_str())), "{kept}");
     assert_eq!(
         (kept["board"].as_str(), kept["rung"].as_str(), kept["grant"].as_str()),

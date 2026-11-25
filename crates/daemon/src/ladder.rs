@@ -54,7 +54,16 @@ pub struct Ask {
     pub session: Option<String>,
     /// The calling session's name.
     pub by_session: Option<String>,
+    /// Its session's permission mode, tools it may use without asking, and
+    /// whether it takes the person's own Claude Code settings there.
+    pub permission_mode: Option<String>,
+    pub allow: Vec<String>,
+    pub user_settings: bool,
 }
+
+/// Permission modes that skip every check: an agent never hands one to
+/// another; only the person starts an agent like that.
+pub const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
 
 /// Start an agent for a board, here or on another machine of this account,
 /// under the board's grant: what the target answered, or why not, in words
@@ -64,6 +73,9 @@ pub async fn start(app: &Arc<App>, ask: Ask) -> Result<LadderStarted, String> {
     let rung = ask.rung.unwrap_or(if ask.issue.is_some() { Rung::Issue } else { Rung::Lead });
     if rung == Rung::Issue && ask.issue.is_none() {
         return Err("an issue agent needs its issue".into());
+    }
+    if let Some(m) = ask.permission_mode.as_deref().map(str::trim).filter(|m| SKIPS_CHECKS.contains(m)) {
+        return Err(format!("permission_mode {m} skips every check: only the user starts an agent like that"));
     }
     let here = e.keys.id();
     let target = match ask.machine.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
@@ -89,6 +101,9 @@ pub async fn start(app: &Arc<App>, ask: Ask) -> Result<LadderStarted, String> {
         prompt: ask.prompt,
         session: ask.session,
         by: arugula_control_wire::ladder::StartedBy { machine: String::new(), session: ask.by_session },
+        permission_mode: ask.permission_mode,
+        allow: ask.allow,
+        user_settings: ask.user_settings,
     };
     let Some(m) = target else {
         let claims = app.control.check_start_ticket(&start.ticket).await.map_err(|why| format!("the ticket: {why}"))?;
@@ -185,6 +200,12 @@ pub async fn start_here(
     if s.prompt.trim().is_empty() {
         return Err((StatusCode::BAD_REQUEST, "give the agent a prompt".into()));
     }
+    if let Some(m) = blank(&s.permission_mode).filter(|m| SKIPS_CHECKS.contains(&m.as_str())) {
+        return Err(forbid(&format!(
+            "permission_mode {m} skips every check: only the person starts an agent like that"
+        )));
+    }
+    let worn = worn_recipe(claims.rung, blank(&s.recipe)).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
     let issue = blank(&s.issue);
     let session = blank(&s.session).unwrap_or_else(|| default_session(s.rung, issue.as_deref(), &s.board));
     if let Some(i) = &issue
@@ -224,12 +245,28 @@ pub async fn start_here(
     if let Some(i) = &issue {
         work["issue"] = json!(i);
     }
-    let mut config = json!({ "agent": "claude", "prompt": s.prompt, "cwd": cwd, "work": work });
+    // Arugula #1440: the rung's own recipe first, so a lead runs its board
+    // and an issue agent knows it leads its issue's thread.
+    let prompt = match &issue {
+        Some(i) => crate::mcp::registry::issue_agent_prompt(i, Some(&claims.board), &s.prompt),
+        None => crate::mcp::registry::board_lead_prompt(Some(&claims.board), &s.prompt)
+            .map_err(|why| (StatusCode::SERVICE_UNAVAILABLE, why))?,
+    };
+    let mut config = json!({ "agent": "claude", "prompt": prompt, "cwd": cwd, "work": work });
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);
     }
-    if let Some(r) = blank(&s.recipe) {
+    if let Some(r) = &worn {
         config["recipe"] = json!(r);
+    }
+    if let Some(m) = blank(&s.permission_mode) {
+        config["permission_mode"] = json!(m);
+    }
+    if !s.allow.is_empty() {
+        config["allow"] = s.allow.iter().map(|t| json!({ "tool": t })).collect();
+    }
+    if s.user_settings {
+        config["user_settings"] = json!(true);
     }
     let req = arugula_proto::api::OpenRequest {
         kind: arugula_proto::BlockType::Agent,
@@ -296,6 +333,23 @@ pub async fn start_here(
     );
     tracing::info!(from = from_name, board = claims.board, rung = claims.rung.as_str(), block, "ladder start");
     Ok(LadderStarted { machine: app.hosts.name().to_owned(), id: e.keys.id(), block, session, cwd, said })
+}
+
+/// The recipe a start's block wears (`.claude/agents/NAME.md` there), from
+/// the one it names: none for its rung's own recipe, which its prompt holds
+/// already (Arugula #1440), and another rung's or the chief of staff's is
+/// refused.
+fn worn_recipe(rung: Rung, named: Option<String>) -> Result<Option<String>, String> {
+    use crate::mcp::registry::{BOARD_LEAD, ISSUE_AGENT, own_recipe};
+    let own = match rung {
+        Rung::Lead => BOARD_LEAD,
+        Rung::Issue => ISSUE_AGENT,
+    };
+    match named {
+        Some(r) if r == own => Ok(None),
+        Some(r) if own_recipe(&r) => Err(format!("recipe {r} isn't a {} start's: it runs {own}", rung.as_str())),
+        other => Ok(other),
+    }
 }
 
 /// A session's name for a start that gave none: its rung and its issue, or
@@ -369,6 +423,16 @@ mod tests {
         assert!(!remote_is("https://github.com/acme/widgets-two", "acme/widgets"));
         assert!(!remote_is("https://github.com/notacme/widgets", "acme/widgets"));
         assert!(!remote_is("widgets", "acme/widgets"));
+    }
+
+    #[test]
+    fn a_start_wears_only_a_recipe_of_its_own() {
+        assert_eq!(worn_recipe(Rung::Lead, None), Ok(None));
+        assert_eq!(worn_recipe(Rung::Lead, Some("board-lead".into())), Ok(None));
+        assert_eq!(worn_recipe(Rung::Issue, Some("issue-agent".into())), Ok(None));
+        assert_eq!(worn_recipe(Rung::Issue, Some("arugula-hand".into())), Ok(Some("arugula-hand".into())));
+        assert!(worn_recipe(Rung::Issue, Some("board-lead".into())).unwrap_err().contains("runs issue-agent"));
+        assert!(worn_recipe(Rung::Lead, Some("chief-of-staff".into())).is_err());
     }
 
     #[test]

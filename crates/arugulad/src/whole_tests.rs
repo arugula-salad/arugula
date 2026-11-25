@@ -105,3 +105,66 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
         assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
     }
 }
+
+/// A board's lead (Arugula #1440), rendered as its first prompt, names only
+/// tools and kinds an agent block has, and the ones it runs a board with:
+/// it starts visible issue agents with `start_agent`, never sub-agents.
+#[test]
+fn the_board_lead_names_an_agent_blocks_tools() {
+    register();
+    let text = arugulad_control_tools::board_lead_on_a_machine(Some("Your board is brd_1."));
+    assert!(text.ends_with("\n\nYour board is brd_1."), "{text}");
+    let named = tools::a_recipe_names_only_a_blocks_tools(&text);
+    let works = [
+        "board_read",
+        "board_write",
+        "start_agent",
+        "post_thread",
+        "read_thread",
+        "forge_read",
+        "wait",
+        "close",
+        "read_output",
+        "doc",
+        "list",
+        "run",
+    ];
+    for tool in works {
+        assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
+    }
+}
+
+/// What an agent started on an issue is told first (Arugula #1440): it
+/// leads the issue's thread, whose posts are its person's or its lead's
+/// word. It names only tools and kinds an agent block has.
+#[test]
+fn the_issue_agent_names_an_agent_blocks_tools() {
+    register();
+    let text = arugulad_control_tools::issue_agent_on_a_machine(Some("Your issue is #7.\n\nFix it"));
+    assert!(text.ends_with("Your issue is #7.\n\nFix it"), "{text}");
+    assert!(text.contains("You lead that issue's thread"), "{text}");
+    let named = tools::a_recipe_names_only_a_blocks_tools(&text);
+    for tool in ["forge_read", "post_thread", "board_write"] {
+        assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
+    }
+}
+
+/// What a start puts first (Arugula #1440): an agent on an issue is told
+/// its issue and board, then the issue agent's instructions; a board's
+/// lead, its board, then the lead's. The ladder's starts and `start_agent`
+/// use these.
+#[test]
+fn a_start_puts_its_rungs_recipe_first() {
+    use arugulad_base::mcp::registry;
+    register();
+    let p = registry::issue_agent_prompt("#7", Some("brd_1"), " Fix #7 ");
+    assert!(p.starts_with("You are the agent on one issue"), "{p}");
+    assert!(p.ends_with("\n\nYour issue is #7, on the board brd_1.\n\nFix #7"), "{p}");
+    let p = registry::issue_agent_prompt("#7", None, "Fix #7");
+    assert!(p.ends_with("\n\nYour issue is #7.\n\nFix #7"), "{p}");
+    let p = registry::board_lead_prompt(Some("brd_1"), "Lead it").unwrap();
+    assert!(p.starts_with("You are the lead of one board"), "{p}");
+    assert!(p.ends_with("\n\nYour board is brd_1.\n\nLead it"), "{p}");
+    assert!(registry::own_recipe("board-lead") && registry::own_recipe(" issue-agent"));
+    assert!(!registry::own_recipe("arugula-hand"));
+}

@@ -108,7 +108,8 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     let cwd = worktree.as_ref().map_or(dir, |w| w.path.clone());
     let mut config = json!({
         "agent": "claude",
-        "prompt": prompt_of(issue.number, &issue.title, a.prompt.as_deref()),
+        // Arugula #1440: told first that it leads the issue's thread.
+        "prompt": crate::mcp::registry::issue_agent_prompt(&item, None, &prompt_of(issue.number, &issue.title, a.prompt.as_deref())),
         "cwd": cwd,
         "title": format!("#{} {}", issue.number, issue.title),
         "work": { "issue": item, "project": a.project },

@@ -228,6 +228,8 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     assert_eq!(git(Path::new(cwd), &["branch", "--show-current"]), "feat/12-fix-the-login");
     d.wait(block, "idle");
     assert!(prompts(&d, block).contains("Work on #12, Fix the login."), "{}", prompts(&d, block));
+    // Arugula #1440: told first that it leads #12's thread.
+    assert!(prompts(&d, block).contains("You lead that issue's thread"), "{}", prompts(&d, block));
 
     // The card's answer reaches the chief of staff: its watch fires.
     let session = watch["session"].as_str().unwrap();

@@ -4461,6 +4461,39 @@ async fn starting_a_chief_of_staff_where_one_leads_moves_it() {
     s.cancel().await.unwrap();
 }
 
+/// `start_agent` `recipe` board-lead (Arugula #1440) starts a board's lead
+/// with no Labs flag: its standing instructions, then its prompt, as its
+/// first prompt, and nothing worn. A Claude Code agent on an issue is told
+/// first that it leads the issue's thread. A lead on an issue, or
+/// issue-agent with no issue, is refused before a pane opens.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn start_agent_starts_a_board_lead_and_tells_an_issue_agent_its_thread() {
+    let d = Daemon::child_env(&[], &[]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let fake = format!("python3 {}", agentd::fake());
+    let panes = || d.get("/api/panes").as_array().unwrap().len();
+    let before = panes();
+    let on_issue = json!({ "agent": "claude", "recipe": "board-lead", "issue": "#12", "prompt": "Run it" });
+    assert!(refused(&s, "start_agent", on_issue).await.contains("whole board"));
+    let no_issue = json!({ "agent": "claude", "recipe": "issue-agent", "prompt": "Fix it" });
+    assert!(refused(&s, "start_agent", no_issue).await.contains("give issue"));
+    assert_eq!(panes(), before, "no pane opened");
+
+    let lead = json!({ "agent": "claude", "command": fake, "recipe": "board-lead", "prompt": "Run brd_1" });
+    let block = call(&s, "start_agent", lead).await["block"].as_u64().unwrap();
+    let prompt = first_prompt(&d, block);
+    assert!(prompt.starts_with("You are the lead of one board") && prompt.ends_with("\n\nRun brd_1"), "{prompt}");
+    assert!(d.state(block)["recipe"].is_null(), "no Claude Code subagent worn");
+
+    let agent = json!({ "agent": "claude", "command": fake, "issue": "#12", "prompt": "Fix it" });
+    let block = call(&s, "start_agent", agent).await["block"].as_u64().unwrap();
+    let prompt = first_prompt(&d, block);
+    assert!(prompt.starts_with("You are the agent on one issue"), "{prompt}");
+    assert!(prompt.ends_with("\n\nYour issue is #12.\n\nFix it"), "{prompt}");
+    s.cancel().await.unwrap();
+}
+
 /// A fake control's platform with two projects whose boards this machine
 /// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
 /// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no

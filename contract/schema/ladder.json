@@ -3,6 +3,13 @@
     "LadderStart": {
       "description": "`POST` [`START_PATH`]: start an agent here under a ticket. The board, the\nrung, the issue and the recipe must be the ticket's.",
       "properties": {
+        "allow": {
+          "description": "Tools it may use without asking (`Read`, `Bash`, ...).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "board": {
           "type": "string"
         },
@@ -13,6 +20,13 @@
           }
         },
         "issue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_mode": {
+          "description": "The permission mode its session starts in (Claude Code's `auto`,\nsay), as `start_agent` takes it: never one that skips every check.\nNone: Claude Code's default, a card for each command it asks.",
           "type": [
             "string",
             "null"
@@ -47,6 +61,10 @@
         },
         "ticket": {
           "type": "string"
+        },
+        "user_settings": {
+          "description": "The person's own Claude Code settings on the target (its allow and\ndeny lists, default mode, CLAUDE.md), without their hooks.",
+          "type": "boolean"
         }
       },
       "required": [
