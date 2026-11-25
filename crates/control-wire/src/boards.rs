@@ -1907,6 +1907,12 @@ pub struct AttachBlock {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead: Option<String>,
+    /// The start ticket's `jti`, for a block a ladder start opened
+    /// (aru-143): control counts it against the board's grant until it
+    /// closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub ticket: Option<String>,
 }
 
 /// [`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it

@@ -552,10 +552,24 @@
         "response: a JSON object built in place"
       ]
     },
+    "POST /api/feedback": {
+      "handler": "crates/control/src/feedback.rs#submit",
+      "untyped": [
+        "request: FeedbackSubmit, read from the body (at most 32 KiB; the app's login sends as its account, under the account's limits, Arugula #1420)",
+        "response: FeedbackAck; refused with FeedbackRefused"
+      ]
+    },
     "GET /api/flags": {
       "handler": "crates/control/src/labs_flags.rs#list",
       "untyped": [
         "response: a JSON object built in place"
+      ]
+    },
+    "POST /api/handoff": {
+      "handler": "crates/control/src/handoff.rs#ask",
+      "untyped": [
+        "request: an empty object",
+        "response: {code, expires_in}: a one-time code for the app's web view, a minute old at most (Arugula #1420)"
       ]
     },
     "GET /api/inbox": {
@@ -858,6 +872,13 @@
       "untyped": [
         "request: Redeem",
         "response: 204, the session in Set-Cookie"
+      ]
+    },
+    "POST /auth/handoff": {
+      "handler": "crates/control/src/handoff.rs#redeem",
+      "untyped": [
+        "request: a form (application/x-www-form-urlencoded), code and to (a path), posted by the app's web view, never in an address",
+        "response: 303 to that path on the platform page, a web session (an app window's) in Set-Cookie"
       ]
     },
     "POST /auth/logout": {

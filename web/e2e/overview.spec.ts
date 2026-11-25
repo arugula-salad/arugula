@@ -334,6 +334,36 @@ const INFRA = { id: "team:infra", name: "infra", kind: "team" as const };
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
+  test("the right column is a third of the page, and a divider resizes it, by drag and by key, and is remembered (Arugula #1444)", async ({ page }) => {
+    await overview(page);
+    const panel = page.locator("[data-ov-panel]");
+    const split = page.locator("[data-ov-split]");
+    await expect(split).toHaveAttribute("aria-orientation", "vertical");
+    // The sidebar and page padding take some of the window: compare with the Overview's own width.
+    const ovShare = async () => (await panel.evaluate((e) => e.getBoundingClientRect().width)) / (await page.locator("[data-overview]").evaluate((e) => e.getBoundingClientRect().width));
+    expect(Math.abs((await ovShare()) - 1 / 3)).toBeLessThan(0.02);
+    const before = await ovShare();
+    const box = (await split.boundingBox())!;
+    const y = box.y + 40;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 120, y, { steps: 5 });
+    await page.mouse.up();
+    const dragged = await ovShare();
+    expect(dragged).toBeGreaterThan(before + 0.05);
+    // It survives a reload.
+    await page.reload();
+    await expect(panel).toBeVisible();
+    expect(Math.abs((await ovShare()) - dragged)).toBeLessThan(0.01);
+    // The keyboard moves it: Right narrows the column.
+    await split.focus();
+    await page.keyboard.press("ArrowRight");
+    expect(await ovShare()).toBeLessThan(dragged - 0.01);
+    // A double-click goes back to a third.
+    await split.dblclick();
+    await expect.poll(async () => Math.abs((await ovShare()) - 1 / 3)).toBeLessThan(0.02);
+  });
+
   test("a board's group title and count are apart, and a GitHub pointer is short and on one line", async ({ page }) => {
     await overview(page);
     await expectSpaced(page);
@@ -1657,6 +1687,17 @@ test.describe("on a computer", () => {
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
     await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "working");
+    // Working has the yellow (warn); quiet is the muted grey (#1445).
+    const colour = (v: string) => page.evaluate((name) => { const e = document.createElement("i"); e.style.color = `var(${name})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; }, v);
+    const warn = await colour("--warn");
+    const working = tile(page, "row_c").locator("[data-ov-card-state]");
+    await expect(working).toHaveText("working");
+    await expect(working).toHaveCSS("color", warn);
+    // Its session in the preview, on no card: shows its standing word the same way.
+    const quiet = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" }).locator(".ov-word");
+    await expect(quiet).toHaveText("quiet");
+    await expect(quiet).not.toHaveCSS("color", warn);
+    await expect(quiet).toHaveCSS("color", await colour("--muted"));
     // Its peek: its box is paused, so its last answer (with chat off, its history), and Stop on the platform.
     await page.route("**/api/sessions/hs_e2e", (r) =>
       r.fulfill({ json: { card: { session: "hs_e2e", project: P, room: "room_hs", parent: 1, state: "working", branch: "arugula/13-tidy-docs", machine: null, block: null, parked: false }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: "working", at: 1, signed: true, text: "Tidied the docs index; pushed." }] } }),
@@ -1698,6 +1739,7 @@ test.describe("on a phone", () => {
 
   test("the Overview is one list, with Needs you on top", async ({ page }, info) => {
     await overview(page);
+    await expect(page.locator("[data-ov-split]")).toHaveCount(0);
     const ov = page.locator("[data-overview]");
     await expect(ov).toHaveClass(/phone/);
     const first = await ov.locator("> *").first().evaluate((e) => [...e.attributes].map((a) => a.name));

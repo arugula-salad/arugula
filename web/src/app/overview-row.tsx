@@ -21,8 +21,8 @@ const LINE_EVERY_MS = 6000;
 /** How long the pointer rests on a row before its preview opens, so passing over rows opens none. */
 const HOVER_MS = 250;
 
-/** The colour of a row's word: what waits on you, what failed, what waits on someone else, what's quiet; the rest plain. */
-const TONE: Partial<Record<Standing, Tone>> = { needs: "accent", asks: "accent", failed: "danger", checks_failing: "danger", waits: "info", quiet: "warn" };
+/** The colour of a row's word: what waits on you, what failed, what waits on someone else, what's working; the rest, quiet too, plain. */
+const TONE: Partial<Record<Standing, Tone>> = { needs: "accent", asks: "accent", failed: "danger", checks_failing: "danger", waits: "info", working: "warn" };
 
 type Data = { [data: `data-${string}`]: unknown };
 

@@ -2085,6 +2085,19 @@ impl Control {
         Ok(claims)
     }
 
+    /// A start ticket (aru-143): its claims, once it's checked against the
+    /// keys control publishes, as a machine token is, and taken.
+    pub async fn check_start_ticket(
+        &self,
+        token: &str,
+    ) -> Result<arugula_control_wire::ladder::StartClaims, crate::machine_token::Refused> {
+        let (e, keys, now) = self.token_keys(token).await?;
+        let claims =
+            crate::machine_token::verify_start(token, &keys, |iss| self.takes_issuer(&e, iss), &e.keys.id(), now)?;
+        self.tokens.take_start(&claims, now)?;
+        Ok(claims)
+    }
+
     /// A block grant (#1001), checked as a machine token is but not taken:
     /// a frame opens each of its channels with the same one, bound to its
     /// key (`machine_token::verify_block`). Whether it opens the block is

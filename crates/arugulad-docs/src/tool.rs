@@ -156,7 +156,7 @@ pub static DOC: &[Kind] = &[
     kind_of::<DocsList, Docs>(),
     Kind {
         name: "open",
-        description: "Open a Doc from list in a block beside your pane. A Doc already open is that block.",
+        description: "Open a Doc from list in a block you can fill, beside your pane. Lists its sections.",
         schema: schema_for_type::<DocOpenArgs>,
         flag: None,
     },
@@ -473,12 +473,16 @@ async fn doc_list(call: &Call<'_>, args: Value) -> Out {
 /// `doc open`: a Doc from the library in a block beside the caller's
 /// pane, or the block that has it. The caller drives a block it made;
 /// one the user (or another agent) had open stays theirs unless nobody
-/// started it, which the caller then does.
+/// started it, which the caller then does. A Doc whose blocks the caller
+/// can't drive (another agent's, another tab's) gets a block of its own,
+/// so the next `doc fill` is never refused (Arugula #1446).
 async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
     confine(call.on_machine().await?, host.is_some())?;
+    let fit = fit_blocks(call).await;
+    let fit = fit.as_deref();
     let (block, made) = if a.doc.starts_with("pdc_") {
-        open_team(call, &a.doc, beside, host).await?
+        open_team(call, &a.doc, fit, beside, host).await?
     } else {
         // A Doc moved to a team opens as the team's, as the owner.
         let state = call.app().control.state_dir();
@@ -486,24 +490,71 @@ async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
             call.owners_own("a team's Doc").await?;
         }
         let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
-        crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?
+        crate::doc_ops::open_doc(call.app(), None, fit, req).await.map_err(crate::ops::OpError::sentence)?
     };
-    let unclaimed = match call.app().mux.api(Api::Panes).await {
-        Some(panes) => panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none()),
-        None => false,
-    };
+    let panes = call.panes().await;
+    let unclaimed = panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none());
     if made || unclaimed {
         call.started(block).await;
     }
     let b = call.app().mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
     let state = b.state();
-    let sections: Vec<&str> =
-        state["entries"].as_array().into_iter().flatten().filter_map(|e| e["id"].as_str()).collect();
+    let outline: Vec<Value> = state["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|e| {
+            if e["body"].is_null() {
+                json!({ "id": e["id"], "heading": e["heading"], "pending": true, "intent": e["intent"] })
+            } else {
+                json!({ "id": e["id"], "heading": e["heading"], "pending": false })
+            }
+        })
+        .collect();
+    let ids: Vec<&Value> = outline.iter().map(|s| &s["id"]).collect();
+    // The Doc's other blocks, which this caller doesn't drive.
+    let doc = b.config()["doc"].as_str().unwrap_or(&a.doc).to_owned();
+    let others: Vec<_> = crate::doc_ops::open_blocks_all(call.app())
+        .await
+        .remove(&doc)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|o| *o != block)
+        .collect();
     let what = if made { "Opened" } else { "It was already open:" };
+    let mut summary =
+        format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, outline.len());
+    if let Some(m) = others.first() {
+        summary += &format!("; it's also open in %{m}, which another agent drives");
+    }
+    for s in &outline {
+        let line = match s["pending"].as_bool() {
+            Some(true) => format!("pending, meant to hold: {}", s["intent"].as_str().unwrap_or_default()),
+            _ => "filled".to_owned(),
+        };
+        summary += &format!(
+            "\n{} {:?}: {line}",
+            s["id"].as_str().unwrap_or_default(),
+            s["heading"].as_str().unwrap_or_default()
+        );
+    }
     done(
-        format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, sections.len()),
-        json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": sections }),
+        summary,
+        json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": ids, "outline": outline, "also_open": others }),
     )
+}
+
+/// The Doc blocks this caller may use, its own first and then ones nobody
+/// started in its tab; `None` for a caller that isn't confined (any will do).
+async fn fit_blocks(call: &Call<'_>) -> Option<Vec<arugula_core::PaneId>> {
+    let me = call.me()?;
+    let panes = call.panes().await;
+    let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
+    let docs = || panes.iter().filter(|p| p.info.kind == BlockType::Doc && Some(p.tab) == tab);
+    let started = |p: &arugula_proto::api::PaneSummary| p.info.started_by.as_ref().map(|s| s.block);
+    let mine = docs().filter(|p| started(p) == Some(Some(me)));
+    let free = docs().filter(|p| started(p).is_none());
+    Some(mine.chain(free).map(|p| p.info.id).collect())
 }
 
 /// A team Doc (`pdc_…`) in a block, or the block that has it: the Doc is in
@@ -511,11 +562,12 @@ async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
 async fn open_team(
     call: &Call<'_>,
     doc: &str,
+    fit: Option<&[arugula_core::PaneId]>,
     beside: Option<arugula_core::PaneId>,
     host: Option<u32>,
 ) -> Result<(arugula_core::PaneId, bool), String> {
-    if let Some(block) = crate::doc_ops::open_blocks(call.app()).await.get(doc) {
-        return Ok((*block, false));
+    if let Some(block) = crate::doc_ops::reusable(crate::doc_ops::open_blocks_all(call.app()).await.get(doc), fit) {
+        return Ok((block, false));
     }
     call.owners_own("a team's Doc").await?;
     let chosen = call.chosen_project(None).await?;

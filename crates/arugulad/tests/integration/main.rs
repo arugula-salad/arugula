@@ -92,6 +92,8 @@ mod ide;
 mod invite;
 #[cfg(unix)]
 mod join_tokens;
+#[cfg(unix)]
+mod ladder_starts;
 mod local_auth;
 mod local_watches;
 #[cfg(unix)]

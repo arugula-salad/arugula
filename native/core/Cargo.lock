@@ -124,6 +124,7 @@ dependencies = [
  "arugula-e2e",
  "arugula-proto",
  "aws-lc-rs",
+ "base64",
  "getrandom 0.4.3",
  "hex",
  "jni",

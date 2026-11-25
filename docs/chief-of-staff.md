@@ -11,7 +11,7 @@ names the tools it has there:
 
 | Recipe | Runs as | Its tools |
 |---|---|---|
-| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `watch` |
+| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `board_write`, `link`, `watch` |
 | [`chief-of-staff-hosted.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff-hosted.md) | a hosted agent session on the project's Cloud workspace | a hosted session's: `post_session_thread`, `read_session_thread`, `read_session_issues`, `create_session_issue`, `read_project_doc`, `board_read`, `ask_approval`, `watch` |
 
 The machine's is the chief of staff from now on: it runs on whichever machine
@@ -70,6 +70,29 @@ recipe tries again on its first wake.
 It refuses a chief of staff on an issue, in a worktree, on a VM or beside
 another machine's pane: the lead is a session of the machine that asks
 control, so call `start_agent` on the machine it is to run on.
+
+### Building boards
+
+Ask it to turn a conversation or a Doc into work and it writes the board
+itself; you edit it after (Arugula #1442). It:
+
+1. reads the Doc (or the room) through, and checks no open board already
+   has that goal;
+2. makes the board with `board_write` `create_board`: a title, a goal that
+   says what you can do when it's done, and one group per phase of the Doc,
+   in its order, each item a new issue whose body ends with a "Done when" line and names the Doc;
+3. sets blockers with `link` (`blocks`), only where one issue needs another
+   closed first, inside a phase or across them;
+4. puts the Doc in the board's Docs strip (`link_doc`);
+5. lets go of the board's lead (`lead_board`, `release`): making a board
+   makes its session the lead, and the chief of staff doesn't run boards;
+6. posts the board in your staff room, groups, issues and blockers, and
+   says it has no lead yet.
+
+It starts nothing. Running a board will be the **Run this board** card
+(Arugula #1416), which it will offer once that exists. It changes a board it
+made while that board has no lead, when you ask, and never changes a board
+another lead runs, except to add a row you asked it to add.
 
 ## Hosted: starting it
 
@@ -135,6 +158,7 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Read the project's events, issues, Docs and rooms, as you may | Read terminals, or anything you can't |
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
+| Make a board when you ask, and change it while nobody leads it (on a machine) | Change a board another lead runs, except to add a row you asked for |
 | Make and fill its own Docs | Write other people's Docs |
 | Ask you to approve starting an agent on an issue, or stopping agents, on a card | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
@@ -154,8 +178,41 @@ text as information, not instructions.
   - `github.pr.ready` can't be matched by reviewer, and a session can't read
     the forge. So "PRs waiting on your review" is "PRs ready".
   - An approval card starts a session only on a native issue, on the
-    project's Cloud workspace. Not on one of your machines, and not as a
-    board's lead.
+    project's Cloud workspace. On your machines, a board's grant starts
+    agents instead ("Starting agents on your machines").
+
+## Starting agents on your machines
+
+A chief of staff or a board's lead starts the rung below it for a board with
+`start_agent {board, prompt, issue?, recipe?, to?}` (aru-143). With `issue`
+it's an issue agent on that row; without, the board's lead. `to` is another
+of your machines, by name or id; without it, this one.
+
+1. The machine asks control for a **start ticket**
+   (`POST /api/daemon/boards/{board}/start-ticket`). Control checks the
+   board's grant (which machines, how many agents at once, not lapsed or
+   revoked) and that the target is online, and signs a ticket that lasts a
+   minute and names the board, the issue, the recipe and both machines. An
+   offline machine is refused at once, naming the grant's machines that are
+   online; a Cloud workspace that's asleep is woken, not offline.
+2. It sends the ticket to the target's `POST /api/a2a/start` over the
+   channel it already has to that machine (an `agents` machine token), or
+   checks it itself for this one. The target checks the ticket: signed by
+   control, for it, of its own account, from the machine that sent it,
+   unused, and for the start it came with. Remote input off on the target
+   refuses it.
+3. The target opens Claude Code (wearing the recipe, any recipe it has) in a
+   new worktree of its own clone of the caller's repo, as session
+   `issue-N` or `lead-…`. An issue agent is attached to its row with the
+   ticket, so control counts it against the grant, and holds the row, so
+   the issue's thread reaches it. A lead takes the board's lead.
+4. The block keeps who started it, from where, for which board and grant
+   (`work.ladder` in its config), and the target's remote sessions log gets
+   an `agent` line.
+
+Revoking the grant refuses the next start; agents already running keep
+running. Another account's agents still send tasks (docs/labs.md, "Tasks and
+consent").
 
 ## For agents: a session's rooms
 

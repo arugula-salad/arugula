@@ -24,6 +24,7 @@ internal object Native {
     @JvmStatic external fun controlOpen(stored: String): Long
     @JvmStatic external fun controlSignOut(h: Long)
     @JvmStatic external fun controlCall(h: Long, method: String, path: String, body: String?): String
+    @JvmStatic external fun controlBytes(h: Long, path: String): String
     @JvmStatic external fun controlFree(h: Long)
 
     @JvmStatic external fun linkOpen(control: Long, machine: String, notify: Notify): Long

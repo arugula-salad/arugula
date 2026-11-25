@@ -229,6 +229,22 @@ final class Control: @unchecked Sendable {
         try JSONDecoder().decode(T.self, from: try await call("GET", path))
     }
 
+    /// A GET whose reply isn't JSON (a picture): its bytes.
+    func bytes(_ path: String) async throws -> Data {
+        do {
+            return try await Task.detached(priority: .userInitiated) { [self] in
+                var err: UnsafeMutablePointer<CChar>?
+                guard let s = takeString(aru_control_bytes(ptr, path, &err)), let data = Data(base64Encoded: s) else {
+                    throw err.map(CoreError.init(taking:)) ?? CoreError("no answer")
+                }
+                return data
+            }.value
+        } catch let e as CoreError where e.reason == "signed_out" {
+            NotificationCenter.default.post(name: .arugulaSignedOut, object: self)
+            throw e
+        }
+    }
+
     /// End the session at control, as far as it can be reached.
     func signOut() async {
         await Task.detached(priority: .userInitiated) { [self] in aru_control_sign_out(ptr) }.value

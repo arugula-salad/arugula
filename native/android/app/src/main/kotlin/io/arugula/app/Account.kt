@@ -2,11 +2,11 @@
 // a tablet (Arugula #1362, #1366), now that You has left the tab bar: your
 // picture opens your name, Settings, Send feedback, the app's version and
 // Sign out, as the web's avatar menu; the bell beside it opens the Inbox
-// (Inbox.kt, Arugula #1365). Settings is the web's page: control
-// doesn't take this app's session on it, so it opens in a Custom Tab, at the
-// platform control's `/control.json` names. Send feedback goes to control's
-// `POST /api/feedback` as the person signed in; while control refuses the app
-// there (`page_only`), the sheet says so and offers the web's page instead.
+// (Inbox.kt, Arugula #1365). Settings is the web's page, in a web view here:
+// control hands the app's sign-in to it (`POST /api/handoff`, Arugula #1420)
+// for a web session of its own, which leaving it ends. Send feedback goes to
+// control's `POST /api/feedback` as the person signed in. Your picture is
+// control's (`/api/chat/avatar/{account}`), as the web shows it.
 // The iPhone's Account.swift.
 
 package io.arugula.app
@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -44,24 +45,38 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.arugula.core.CoreError
+import android.annotation.SuppressLint
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.webkit.CookieManager
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,19 +113,24 @@ fun HeadingButton(icon: ImageVector, label: String, modifier: Modifier = Modifie
     }
 }
 
-/** Your picture: your initials in your tone (as chat shows people), opening the account's menu. [tag]: `account` in a heading, `rail-account` on the rail. */
+/** Your picture (your initials in your tone until it comes, as chat shows people), opening the account's menu. [tag]: `account` in a heading, `rail-account` on the rail. */
 @Composable
 fun AccountMenu(heading: Heading, tag: String = "account") {
     val scope = LocalScope.current
-    val context = LocalContext.current
-    val coroutines = rememberCoroutineScope()
+    val nav = LocalNav.current
     var open by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf(false) }
-    var problem by remember { mutableStateOf<String?>(null) }
     val me = scope.me
+    val picture by produceState<ImageBitmap?>(null, me?.account) {
+        val account = me?.account ?: return@produceState
+        value = withContext(Dispatchers.IO) {
+            runCatching { heading.api.control.bytes("/api/chat/avatar/$account") }.getOrNull()
+                ?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
+        }
+    }
     Box {
         Box(Modifier.size(36.dp).clip(CircleShape).clickable { open = true }.testTag(tag).semantics { contentDescription = "You: ${me?.name ?: "your account"}" }) {
-            Avatar(me?.name?.ifEmpty { null } ?: me?.login ?: "?", 36)
+            Avatar(me?.name?.ifEmpty { null } ?: me?.login ?: "?", 36, picture = picture)
         }
         DropdownMenu(open, { open = false }, containerColor = Palette.surface) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -123,10 +143,7 @@ fun AccountMenu(heading: Heading, tag: String = "account") {
                 leadingIcon = { Icon(Icons.Outlined.Settings, null, tint = Palette.subtle) },
                 onClick = {
                     open = false
-                    coroutines.launch {
-                        val p = platformOrigin(heading.model.url)
-                        if (p == null) problem = "Settings didn't open: control didn't say where its page is." else openTab(context, "$p/settings")
-                    }
+                    nav.push(Dest.Settings)
                 },
                 modifier = Modifier.testTag("account-settings"),
             )
@@ -152,14 +169,6 @@ fun AccountMenu(heading: Heading, tag: String = "account") {
             )
         }
     }
-    problem?.let {
-        androidx.compose.material3.AlertDialog(
-            { problem = null },
-            confirmButton = { TextLink("OK") { problem = null } },
-            text = { Text(it, style = Face.ui(14.sp)) },
-            containerColor = Palette.bg,
-        )
-    }
     if (feedback) FeedbackSheet(heading) { feedback = false }
 }
 
@@ -167,7 +176,6 @@ fun AccountMenu(heading: Heading, tag: String = "account") {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedbackSheet(heading: Heading, onDismiss: () -> Unit) {
-    val context = LocalContext.current
     val coroutines = rememberCoroutineScope()
     var kind by remember { mutableStateOf("bug") }
     var title by remember { mutableStateOf("") }
@@ -175,8 +183,6 @@ fun FeedbackSheet(heading: Heading, onDismiss: () -> Unit) {
     var contact by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    /** Control won't take it from the app: send it from the web's page. */
-    var pageOnly by remember { mutableStateOf(false) }
     var sent by remember { mutableStateOf<String?>(null) }
     val kinds = listOf("bug" to "Something's broken", "missing" to "Something's missing", "idea" to "An idea", "praise" to "Praise", "other" to "Other")
 
@@ -187,13 +193,6 @@ fun FeedbackSheet(heading: Heading, onDismiss: () -> Unit) {
         try {
             sent = heading.api.post("/api/feedback", body).str("shown")?.takeIf { it.isNotEmpty() } ?: "feedback"
             problem = null
-        } catch (e: CoreError) {
-            if (e.reason == "page_only") {
-                pageOnly = true
-                problem = "Control doesn't take feedback from the app yet."
-            } else {
-                problem = describe(e)
-            }
         } catch (e: Exception) {
             problem = describe(e)
         }
@@ -229,14 +228,122 @@ fun FeedbackSheet(heading: Heading, onDismiss: () -> Unit) {
                 Text("Sent as $s. Thank you.", style = Face.ui(14.sp), color = Palette.ok)
             } else {
                 problem?.let { Text(it, style = Face.mono(12.sp), color = Palette.danger) }
-                if (pageOnly) {
-                    AnswerButton("Send it from Arugula's page") {
-                        coroutines.launch { platformOrigin(heading.model.url)?.let { openTab(context, it) } }
-                    }
-                }
                 AnswerButton(if (busy) "Sending…" else "Send", Modifier.testTag("feedback-send"), primary = true, enabled = !busy && title.isNotBlank()) { send() }
             }
         }
     }
 }
 
+
+/** Where Settings starts: the app's sign-in as kept, the hand-over's code and where the page may go in the web view. */
+private class SettingsStart(val session: WebSession, val stored: String, val code: String, val hosts: Set<String>)
+
+/**
+ * Settings, the web's page, in a web view (Arugula #1420): the app asks
+ * control for a one-time code with its session, and the web view posts it,
+ * in the request's body, for a web session of its own and the page. Pages
+ * off control's and the platform's hosts open in the browser. Leaving it
+ * ends that web session.
+ */
+@Composable
+fun SettingsScreen(api: Api) {
+    val context = LocalContext.current
+    var start by remember { mutableStateOf<SettingsStart?>(null) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    val session = remember(api) { WebSession.of(api.stored) }
+    LaunchedEffect(api) {
+        val s = session
+        val stored = api.stored
+        if (s == null || stored == null) return@LaunchedEffect run { problem = "This app isn't signed in." }
+        try {
+            val platform = platformOrigin(s.url.toString())?.let { Uri.parse(it).host }
+            val code = api.post("/api/handoff").str("code") ?: return@LaunchedEffect run { problem = "Control didn't hand the sign-in over." }
+            start = SettingsStart(s, stored, code, setOfNotNull(s.url.host, platform))
+        } catch (e: Exception) {
+            loading = false
+            problem = describe(e)
+        }
+    }
+    Column(Modifier.fillMaxSize().testTag("settings")) {
+        DetailBar("Settings")
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            start?.let { st ->
+                SettingsWebView(
+                    st,
+                    finished = { loading = false },
+                    failed = { e ->
+                        loading = false
+                        problem = e
+                    },
+                    outside = { browse(context, it) },
+                )
+            }
+            if (loading && problem == null) Loading()
+            problem?.let { Problem(it) }
+        }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun SettingsWebView(start: SettingsStart, finished: () -> Unit, failed: (String) -> Unit, outside: (String) -> Unit) {
+    val onFinished by rememberUpdatedState(finished)
+    val onFailed by rememberUpdatedState(failed)
+    val onOutside by rememberUpdatedState(outside)
+    val base = start.session.url.toString().trimEnd('/')
+    AndroidView(
+        factory = { ctx ->
+            WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+            WebView(ctx).apply {
+                setBackgroundColor(Palette.void.toArgb())
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val to = request.url
+                        if (!request.isForMainFrame || to.scheme in listOf("about", "blob", "data")) return false
+                        if (to.host in start.hosts) return false
+                        onOutside(to.toString())
+                        return true
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String?) = onFinished()
+
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                        if (request.isForMainFrame) onFailed(error.description?.toString() ?: "Settings didn't load.")
+                    }
+                }
+                val cookies = CookieManager.getInstance()
+                cookies.setAcceptCookie(true)
+                cookies.setAcceptThirdPartyCookies(this, false)
+                // The code is hex: nothing in it to escape.
+                postUrl("$base/auth/handoff", "code=${start.code}&to=%2Fsettings".toByteArray())
+            }
+        },
+        onRelease = { view ->
+            view.stopLoading()
+            view.destroy()
+            endWebSession(base, start)
+        },
+        modifier = Modifier.fillMaxSize().testTag("settings-web"),
+    )
+}
+
+/** Settings is left: the web view's own session ends at control, as signing out there would, and its cookie goes. */
+private fun endWebSession(base: String, start: SettingsStart) {
+    val session = start.session
+    val cookies = CookieManager.getInstance()
+    val name = session.cookie.substringBefore('=')
+    val web = cookies.getCookie(base)?.split(';')?.map { it.trim() }?.firstOrNull { it.startsWith("$name=") } ?: return
+    if (web == session.cookie) return
+    val secure = if (session.url.scheme == "https") "; Secure" else ""
+    cookies.setCookie(base, "$name=; Path=/; Max-Age=0$secure")
+    cookies.flush()
+    val stored = runCatching { JSONObject(start.stored).put("cookie", web) }.getOrNull() ?: return
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        runCatching { io.arugula.core.Control(stored.toString()).use { it.signOut() } }
+    }
+}

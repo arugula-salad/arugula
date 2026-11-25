@@ -113,6 +113,9 @@ class Control(stored: String) : AutoCloseable {
 
     fun post(path: String, body: String) = call("POST", path, body)
 
+    /** A GET whose reply isn't JSON (a picture): its bytes. Throws [CoreError]. */
+    fun bytes(path: String): ByteArray = java.util.Base64.getDecoder().decode(Native.controlBytes(h, path))
+
     /** End the session at control. Forget it either way. */
     fun signOut() = Native.controlSignOut(h)
 

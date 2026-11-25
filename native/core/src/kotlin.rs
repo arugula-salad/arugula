@@ -292,6 +292,21 @@ pub extern "system" fn Java_io_arugula_core_Native_controlCall<'l>(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_controlBytes<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    h: jlong,
+    path: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let path = c(&text(env, &path)?);
+        let mut err = ptr::null_mut();
+        let got = unsafe { ffi::aru_control_bytes(h as *const Control, path.as_ptr(), &mut err) };
+        answer(env, got, err)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_io_arugula_core_Native_controlFree<'l>(_: EnvUnowned<'l>, _: JClass<'l>, h: jlong) {
     unsafe { ffi::aru_control_free(h as *mut Control) }
 }

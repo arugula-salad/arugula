@@ -56,6 +56,7 @@ use arugula_mux::keys;
 pub mod lab_flags;
 // What the base asks of Labs (crates/arugulad-labs), which registers it.
 pub mod lab_hooks;
+pub mod ladder;
 mod listening;
 pub mod local_watches;
 mod localauth;
