@@ -265,7 +265,9 @@ of your machines, by name or id; without it, this one.
    unused, and for the start it came with. Remote input off on the target
    refuses it.
 3. The target opens Claude Code in a new worktree of its own clone of the
-   caller's repo, in a tab of its own, as session `issue-N` or `lead-…`. Its
+   caller's repo, in a tab of its own, as session `issue-N` or `lead-…`,
+   and titled by that name, so it leads its issue's thread (or is found on
+   the board's) by it from the start, not after its first turn. Its
    first prompt is its rung's recipe (Arugula #1440: `board-lead` or
    `issue-agent`, below), a line naming its board and issue, then the
    prompt. It wears `recipe` when that's any other (a Claude Code agent the

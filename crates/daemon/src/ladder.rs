@@ -252,7 +252,10 @@ pub async fn start_here(
         None => crate::mcp::registry::board_lead_prompt(Some(&claims.board), &s.prompt)
             .map_err(|why| (StatusCode::SERVICE_UNAVAILABLE, why))?,
     };
-    let mut config = json!({ "agent": "claude", "prompt": prompt, "cwd": cwd, "work": work });
+    // Titled by its session's name, it leads its issue's thread (or is found
+    // on the board's) by that name from the start, not after its first turn
+    // names it (Arugula #1440).
+    let mut config = json!({ "agent": "claude", "prompt": prompt, "cwd": cwd, "work": work, "title": session });
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);
     }

@@ -463,6 +463,9 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     assert_eq!(issue_config["permission_mode"], "auto");
     assert_eq!(issue_config["allow"], json!([{ "tool": "Read" }, { "tool": "Bash" }]));
     assert!(issue_config.get("recipe").is_none(), "{issue_config}");
+    // Named from the start, so it leads #7's thread by that name now.
+    assert_eq!(issue_config["title"], "issue-7");
+    assert_eq!(attached[0]["lead"], "issue-7", "{attached:?}");
     assert_eq!((kept["by_machine"].as_str(), kept["by_id"].as_str()), (Some("alpha"), Some(a_id.as_str())), "{kept}");
     assert_eq!(
         (kept["board"].as_str(), kept["rung"].as_str(), kept["grant"].as_str()),
