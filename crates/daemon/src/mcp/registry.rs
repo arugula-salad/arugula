@@ -49,6 +49,12 @@ pub trait ControlTools: Send + Sync + 'static {
         matches: Option<serde_json::Map<String, Value>>,
         limit: Duration,
     ) -> BoxFuture<'a, Out>;
+    /// The chief of staff's first prompt as an agent block (Arugula #1337):
+    /// its standing instructions, then `prompt`.
+    fn chief_of_staff_prompt(&self, prompt: &str) -> String;
+    /// Make `session`, an agent block's on this machine, the lead of the
+    /// person's staff room in `project` (Arugula #1338). Answers the room.
+    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out>;
 }
 
 static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
@@ -112,6 +118,26 @@ pub async fn wait_event(
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_event(call, event, matches, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on an event")),
+    }
+}
+
+/// The recipe `start_agent` starts a chief of staff with (Arugula #1338),
+/// as `session_start` takes it for a hosted one.
+pub const CHIEF_OF_STAFF: &str = "chief-of-staff";
+
+/// [`ControlTools::chief_of_staff_prompt`].
+pub fn chief_of_staff_prompt(prompt: &str) -> Result<String, String> {
+    match CONTROL_TOOLS.get() {
+        Some(c) => Ok(c.chief_of_staff_prompt(prompt)),
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't start a chief of staff")),
+    }
+}
+
+/// [`ControlTools::lead_staff`].
+pub async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.lead_staff(app, project, session).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't lead a staff room")),
     }
 }
 

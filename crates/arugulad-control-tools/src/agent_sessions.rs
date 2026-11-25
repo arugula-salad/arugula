@@ -119,7 +119,7 @@ pub(crate) fn recipe_prompt(text: &str, prompt: Option<&str>) -> String {
 
 /// The chief of staff (Arugula #1276): it starts in the person's staff room,
 /// which it leads.
-pub(crate) const CHIEF_OF_STAFF: &str = "chief-of-staff";
+pub(crate) const CHIEF_OF_STAFF: &str = crate::mcp::registry::CHIEF_OF_STAFF;
 
 /// What `room` names for the person's staff room in the project, as
 /// read_thread and post_thread take it.

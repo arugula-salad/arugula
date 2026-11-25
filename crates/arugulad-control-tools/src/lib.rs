@@ -152,6 +152,14 @@ impl ControlTools for Reach {
     ) -> BoxFuture<'a, Out> {
         Box::pin(watches::wait_event(call, event, matches, limit))
     }
+
+    fn chief_of_staff_prompt(&self, prompt: &str) -> String {
+        chief_of_staff_on_a_machine(Some(prompt))
+    }
+
+    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out> {
+        Box::pin(threads::lead_staff(app, project, session))
+    }
 }
 
 // ---------------------------------------------------------------- calls

@@ -228,10 +228,25 @@ pub struct StartedAgent {
     pub block: PaneId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub issue: Option<StartedOn>,
+    /// A chief of staff (`recipe` chief-of-staff): whether it leads the
+    /// staff room.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chief_of_staff: Option<StartedChief>,
     /// The MCP servers it was started with and the grants this machine
     /// holds for its project (Arugula #836).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp: Option<StartedMcp>,
+}
+
+/// A chief of staff just started (Arugula #1338): its project, the name of
+/// its session, and whether that session leads the person's staff room in
+/// the project, said.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StartedChief {
+    pub project: String,
+    pub session: String,
+    pub lead: bool,
+    pub said: String,
 }
 
 /// What a started agent can reach: its MCP servers by name, whether
@@ -518,7 +533,7 @@ mod tests {
             json!({ "pane": 7, "tab": "its tab", "chat": "c1", "position": null }),
         );
         shaped(BlockOnly { block: 9 }, json!({ "block": 9 }));
-        shaped(StartedAgent { block: 9, issue: None, mcp: None }, json!({ "block": 9 }));
+        shaped(StartedAgent { block: 9, issue: None, chief_of_staff: None, mcp: None }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         shaped(

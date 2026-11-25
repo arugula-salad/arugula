@@ -65,6 +65,10 @@ const TAIL_LINES: usize = 40;
 /// start_agent won't start an agent in one (#163).
 const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
 
+/// A chief of staff's block's title (Arugula #1338), unless the caller
+/// names another: its session's name, which leads the staff room.
+const CHIEF_TITLE: &str = "Chief of staff";
+
 /// What `open_forge` asks the forge block's `open_config` for (a `Value` it
 /// keeps, being the block's persisted config): a PR or issue by reference,
 /// or a new issue. Only what is set goes in.
@@ -386,7 +390,13 @@ pub struct StartAgentArgs {
     /// For acp: the agent server's command line.
     #[serde(default)]
     pub command: Option<String>,
-    /// For claude: run as this recipe, a Claude Code subagent by its name
+    /// For claude: `chief-of-staff` starts your person's chief of staff in
+    /// the project on this machine: an agent block titled "Chief of staff"
+    /// that leads their staff room there (their posts in it are its
+    /// prompts), with its standing instructions as its first prompt and
+    /// prompt after them (it may be empty). Not on an issue, a worktree, a
+    /// VM or another machine's pane. With Labs agent delegation, any other
+    /// name runs as that recipe, a Claude Code subagent by its name
     /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
     /// host: its prompt, model, tools, skills and MCP servers.
     #[serde(default)]
@@ -914,13 +924,13 @@ const UNLISTED: [(&str, &str, &str); 3] = [
 ];
 
 /// Arguments of listed tools that aren't listed without their flag, by
-/// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
-/// is refused where the flag is off (a new machine, a recipe: #347), except
-/// `machine`, which names one already made.
-const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
+/// tool: throwaway VMs and sandboxes. A caller who gives one is refused
+/// where the flag is off (a new machine: #347), except `machine`, which
+/// names one already made. `start_agent`'s `recipe` is listed for
+/// chief-of-staff (Arugula #1338); any other is refused without its flag.
+const UNLISTED_ARGS: [(&str, &[&str], &str); 2] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::SANDBOX_PROVIDERS),
     ("start_agent", &["vm"], flags::SANDBOX_PROVIDERS),
-    ("start_agent", &["recipe"], flags::AGENT_DELEGATION),
 ];
 
 /// The kinds daemon-side Managoat had (#942, `fountain_*` before the
@@ -3331,7 +3341,8 @@ impl ToolCall<'_, '_> {
     }
 
     async fn start_agent(&self, mut a: StartAgentArgs) -> Out {
-        if a.prompt.trim().is_empty() {
+        let chief = a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::CHIEF_OF_STAFF);
+        if a.prompt.trim().is_empty() && !chief {
             return Err("give the agent a prompt".into());
         }
         let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
@@ -3347,13 +3358,24 @@ impl ToolCall<'_, '_> {
             Some(b) => self.readable(b).await?.info.host,
             None => None,
         };
-        let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty() && !chief);
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
         if a.chat {
             return self.start_chat(a, beside, host).await;
         }
-        if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
+        if recipe.is_some() && !flags::on(self.app.control.state_dir()).has(flags::AGENT_DELEGATION) {
+            return Err("agent recipes are in Labs: `arugulad flags agent-delegation on` turns them on here (recipe chief-of-staff needs no flag)".into());
+        }
+        if (chief || recipe.is_some()) && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
+        }
+        // Arugula #1338: the staff room's lead is a session of the machine
+        // that asks control, so the chief of staff runs here.
+        if chief && (a.vm || host.is_some()) {
+            return Err("a chief of staff runs on the machine that starts it: call start_agent there, with no vm and beside none of another machine's panes".into());
+        }
+        if chief && (a.issue.is_some() || a.worktree.is_some()) {
+            return Err("a chief of staff works the whole project: no issue or worktree".into());
         }
         let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
             Some(i) => {
@@ -3378,7 +3400,7 @@ impl ToolCall<'_, '_> {
             AgentKind::Acp => "acp",
         };
         // #430: the project the row is in is the issue's, not the caller's.
-        let (issue, project, inferred) = self.issue_of_start(&a, issue).await?;
+        let (issue, mut project, inferred) = self.issue_of_start(&a, issue).await?;
         a.issue = issue.clone();
         let owned = match &a.worktree {
             Some(w) => Some(self.make_worktree(&a, w, host.is_some()).await?),
@@ -3388,6 +3410,17 @@ impl ToolCall<'_, '_> {
             (None, None) => None,
             _ => project.clone().or(self.current_project(None).await.ok()),
         };
+        // Its staff room is the project's: the block's current project is
+        // that one whatever chose it, control's default included.
+        let staff = match chief {
+            true => Some(self.chosen_project(a.project.as_deref()).await?),
+            false => None,
+        };
+        if let Some(p) = &staff {
+            a.prompt = crate::mcp::registry::chief_of_staff_prompt(&a.prompt)?;
+            a.title = Some(a.title.take().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| CHIEF_TITLE.into()));
+            project = Some(p.id.clone());
+        }
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
             config["cwd"] = json!(o.path);
@@ -3493,12 +3526,49 @@ impl ToolCall<'_, '_> {
         if let Some(on) = &on {
             tail.push_str(&format!(". {}", on.said));
         }
+        let chief_of_staff = match &staff {
+            Some(p) => Some(self.lead_staff(block, p, a.title.as_deref().unwrap_or(CHIEF_TITLE)).await),
+            None => None,
+        };
+        if let Some(c) = &chief_of_staff {
+            tail.push_str(&format!(". {}", c.said));
+        }
         done(
             format!(
                 "Started an agent in %{block}{tail}; wait on it (until needs_input or idle): the answer has its last message and the work it left; read_output for its transcript"
             ),
-            results::StartedAgent { block, issue: on, mcp: Some(self.started_mcp(block).await) },
+            results::StartedAgent { block, issue: on, chief_of_staff, mcp: Some(self.started_mcp(block).await) },
         )
+    }
+
+    /// `start_agent` `recipe` chief-of-staff (Arugula #1338): the block just
+    /// started leads the person's staff room in the project, by its session's
+    /// name (its title). Here, not on its first turn: its first wake then
+    /// finds itself the lead, and a person's post in staff reaches it from
+    /// the start. If control refuses, the block stays, and its recipe takes
+    /// the lead on its first wake, which says why if it can't.
+    async fn lead_staff(
+        &self,
+        block: arugula_proto::PaneId,
+        project: &crate::mcp::issues::Chosen,
+        title: &str,
+    ) -> results::StartedChief {
+        let session =
+            arugulad_base::agent_mentions::session_name(self.app, block).await.unwrap_or_else(|| title.into());
+        let (lead, said) = match crate::mcp::registry::lead_staff(self.app, &project.id, &session).await {
+            Ok(_) => (
+                true,
+                format!("It leads your person's staff room in {}: their posts there are its prompts", project.name),
+            ),
+            Err(e) => (
+                false,
+                format!(
+                    "It doesn't lead your person's staff room in {} ({e}): it tries again on its first turn",
+                    project.name
+                ),
+            ),
+        };
+        results::StartedChief { project: project.id.clone(), session, lead, said }
     }
 
     /// What the agent just started can reach (Arugula #836): its MCP servers
@@ -3740,7 +3810,12 @@ impl ToolCall<'_, '_> {
         let block = self.open(req).await?;
         done(
             format!("Started a chat in %{block}; wait on it (until idle), then read_output for its answer"),
-            results::StartedAgent { block, issue: None, mcp: Some(self.started_mcp(block).await) },
+            results::StartedAgent {
+                block,
+                issue: None,
+                chief_of_staff: None,
+                mcp: Some(self.started_mcp(block).await),
+            },
         )
     }
 
