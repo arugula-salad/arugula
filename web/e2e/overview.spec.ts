@@ -844,7 +844,8 @@ test.describe("on a computer", () => {
       c.rooms = c.rooms.map((r) => (r.id === "dm_cos" ? { ...r, lead: { machine: "m_suite", machine_name: host, session: "scratch" } } : r));
       c.emit();
     }, host);
-    await expect(head).toHaveText(`Chief of staff · idle on ${host} (wakes on its own)`);
+    await expect(head).toHaveText(`Chief of staff · idle on ${host}`);
+    await expect(head.locator("[title]")).toHaveAttribute("title", "wakes on its own");
     // No session leads it: none.
     await page.evaluate(() => {
       const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
