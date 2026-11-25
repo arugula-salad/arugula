@@ -5653,7 +5653,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff\"\nthat leads their staff room there (their posts in it are its\nprompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). Not on an issue, a worktree, a\nVM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -5719,6 +5719,30 @@
       "name": "start_agent",
       "outputSchema": {
         "$defs": {
+          "MovedFrom": {
+            "description": "The chief of staff a new one took over from (Arugula #1340): its\nmachine's name (empty for a hosted session or this machine), its session,\nand `how` it stood down: `told` (a block on another machine, to hand over\nits place in the log in staff), `not_told`, `stopped` (a hosted session),\n`not_stopped`, or `here` (this machine's: its block is closed, and its\nnotes file is the new one's); said.",
+            "properties": {
+              "how": {
+                "type": "string"
+              },
+              "machine_name": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "machine_name",
+              "session",
+              "how",
+              "said"
+            ],
+            "type": "object"
+          },
           "StartedBoard": {
             "properties": {
               "board": {
@@ -5741,8 +5765,27 @@
           "StartedChief": {
             "description": "A chief of staff just started (Arugula #1338): its project, the name of\nits session, and whether that session leads the person's staff room in\nthe project, said.",
             "properties": {
+              "closed": {
+                "description": "Agent blocks on this machine closed first (Arugula #1340): the one\nthat led, and any other going by this one's name.",
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
               "lead": {
                 "type": "boolean"
+              },
+              "moved_from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/MovedFrom"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The session that led the staff room before (Arugula #1340), and what\nbecame of it."
               },
               "project": {
                 "type": "string"
@@ -6035,7 +6078,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff\"\nthat leads their staff room there (their posts in it are its\nprompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). Not on an issue, a worktree, a\nVM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -6096,6 +6139,30 @@
       "name": "start_agent",
       "outputSchema": {
         "$defs": {
+          "MovedFrom": {
+            "description": "The chief of staff a new one took over from (Arugula #1340): its\nmachine's name (empty for a hosted session or this machine), its session,\nand `how` it stood down: `told` (a block on another machine, to hand over\nits place in the log in staff), `not_told`, `stopped` (a hosted session),\n`not_stopped`, or `here` (this machine's: its block is closed, and its\nnotes file is the new one's); said.",
+            "properties": {
+              "how": {
+                "type": "string"
+              },
+              "machine_name": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "machine_name",
+              "session",
+              "how",
+              "said"
+            ],
+            "type": "object"
+          },
           "StartedBoard": {
             "properties": {
               "board": {
@@ -6118,8 +6185,27 @@
           "StartedChief": {
             "description": "A chief of staff just started (Arugula #1338): its project, the name of\nits session, and whether that session leads the person's staff room in\nthe project, said.",
             "properties": {
+              "closed": {
+                "description": "Agent blocks on this machine closed first (Arugula #1340): the one\nthat led, and any other going by this one's name.",
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
               "lead": {
                 "type": "boolean"
+              },
+              "moved_from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/MovedFrom"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The session that led the staff room before (Arugula #1340), and what\nbecame of it."
               },
               "project": {
                 "type": "string"

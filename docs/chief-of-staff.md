@@ -76,8 +76,9 @@ project, and `prompt` for anything to tell it after its instructions (it may
 be empty). It needs no Labs flag, and runs the same on a Cloud workspace's
 daemon as on any machine. That call:
 
-1. starts a Claude Code agent block titled "Chief of staff" (or the `title`
-   you give), in the project: its `staff` is that project's staff room;
+1. starts a Claude Code agent block titled "Chief of staff · <project's
+   name>" (or the `title` you give), in the project: its `staff` is that
+   project's staff room;
 2. sends it the machine's recipe, then your `prompt`, as its first prompt;
 3. makes it your staff room's lead there, by its session's name (an agent
    block's session is named by its title), as its own `post_thread`
@@ -93,6 +94,36 @@ recipe tries again on its first wake.
 It refuses a chief of staff on an issue, in a worktree, on a VM or beside
 another machine's pane: the lead is a session of the machine that asks
 control, so call `start_agent` on the machine it is to run on.
+
+The project's name is in the title because a staff room's posts reach its
+lead by its session's name, and an agent block's session is named by its
+title (Arugula #1340): a machine with a chief of staff for two projects needs
+two names. Two projects with the same name would still share one; give one
+a `title`.
+
+### Moving it
+
+There's one chief of staff per person per project, and it stays on the
+machine it was started on until it's moved (Arugula #1340). Starting one
+where another already leads your staff room moves it: `start_agent` reads the
+room's lead first, and then:
+
+| The lead was | What happens to it | Where the new one's cursor comes from |
+|---|---|---|
+| a block on another machine | Before taking the lead, `start_agent` posts in staff that it moves, naming it. The old one still leads then, so control tells it. It posts `Standing down … cursor N, briefed M` in staff, cancels its watches, deletes its notes file and closes its own block | that post. If it isn't there yet, the new one starts from the log's head, says so, and reads the events in between when the post reaches it (it leads staff now, so it does). If it never comes, the briefings say events before then weren't read |
+| a hosted session (`ses_…`) | stopped with `session_stop`, its reason saying where it moved. If that's refused (no `sessions.reply` or `sessions.start` grant), the answer says to stop it from its card | nowhere: its notes stayed on its Cloud workspace. The new one starts from the log's head and says so |
+| a block on this machine | closed before the new block opens, as is any agent block here going by the new one's name | its notes file, which is the same file |
+
+The first prompt says which, after the standing instructions, so the new one
+knows where to look. The answer's `chief_of_staff.moved_from` says who led
+before and `how` it stood down (`told`, `not_told`, `stopped`,
+`not_stopped` or `here`), and `closed` lists the blocks closed here.
+
+On each wake the chief of staff also checks it still leads (`read_thread`
+`staff`): one whose machine was offline when it was told stands down at its
+next wake instead. The lead control keeps is the one that counts, so
+there's never more than one lead; only the handover of the cursor waits on
+the old one.
 
 ### Building boards
 
