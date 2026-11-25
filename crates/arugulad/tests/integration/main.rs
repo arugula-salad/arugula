@@ -14,6 +14,8 @@ mod agent_screens;
 mod agents;
 mod agents_real;
 mod api;
+#[cfg(unix)]
+mod approval_cards;
 #[cfg(feature = "labs")]
 mod apps;
 #[cfg(unix)]

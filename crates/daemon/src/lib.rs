@@ -10,6 +10,7 @@ mod acl {
 mod acl_api;
 pub mod agent;
 pub mod agent_mentions;
+pub mod approvals;
 use arugula_mux::agentenv;
 pub mod api;
 pub mod args;

@@ -199,7 +199,7 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
 /// The agents' op (Arugula #394) every daemon of this build knows.
-pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask"];
+pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask", "agents.approved"];
 
 /// The projects' op (Arugula #992) every daemon of this build knows.
 pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
@@ -348,6 +348,16 @@ pub enum DaemonOp {
     /// `failed` when it can't be. An older daemon answers `unknown`.
     #[serde(rename = "sessions.set_project")]
     SessionProject(SessionProjectAsk),
+    /// A person approved their agent's card (Arugula #1417): the chief of
+    /// staff on this machine asked to start an agent on an issue, or to
+    /// stop some of this machine's agent blocks, and they pressed
+    /// **Approve**. The daemon does it now, as its owner: the person's own
+    /// act, through the hub, as `sessions.set_card` is. It answers
+    /// `approved` with what it did, `failed` with why not. An older daemon
+    /// answers `unknown`, and the card says the machine's Arugula is too
+    /// old.
+    #[serde(rename = "agents.approved")]
+    AskApproved(AskApproved),
 }
 
 impl DaemonOp {
@@ -366,6 +376,7 @@ impl DaemonOp {
             DaemonOp::DocsList(_) => "docs.list",
             DaemonOp::SessionCard(_) => "sessions.set_card",
             DaemonOp::SessionProject(_) => "sessions.set_project",
+            DaemonOp::AskApproved(_) => "agents.approved",
         }
     }
 }
@@ -459,6 +470,32 @@ pub struct SessionCardAsk {
     /// `None`: the session goes back to the card its branch gives, or to
     /// none, and a branch may give it one again.
     pub card: Option<String>,
+}
+
+/// `agents.approved`'s ask (Arugula #1417): the card's proposal, as the
+/// person approved it. The machine is the one whose agent asked: a start on
+/// another machine is #1415's start ticket's, not this op's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AskApproved {
+    /// The card, `prp_…`.
+    pub ask: String,
+    /// Its project, `prj_…`: a start's issue is in it.
+    pub project: String,
+    /// `start` or `close`.
+    pub action: String,
+    /// The agent that asked: its session's name and its block.
+    pub session: String,
+    pub pane: u32,
+    /// `start`: the issue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<crate::sessions::ProposalIssue>,
+    /// `start`: what the new agent is told (none: to work on the issue).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// `close`: the agent blocks to close, by pane.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<u32>,
 }
 
 /// `sessions.set_project`'s ask (Arugula #1166).
@@ -731,6 +768,13 @@ pub enum OpAnswer {
     /// A `docs.list`'s answer (Arugula #1023): the library's Docs, last
     /// updated first.
     Docs { docs: Vec<MachineDocRow> },
+    /// An `agents.approved`'s answer (Arugula #1417): what it did, in a
+    /// line for the card, and for a start the agent block it opened.
+    Approved {
+        said: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block: Option<u32>,
+    },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.
@@ -760,6 +804,37 @@ mod tests {
             json!({ "t": "op.done", "id": "1", "answer": { "answer": "docs",
                 "docs": [{ "id": "0123456789abcdef", "title": "Plan", "project": null }] } })
         );
+        assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+    }
+
+    /// `agents.approved` and its answer on the relay (Arugula #1417).
+    #[test]
+    fn an_approved_card_on_the_wire() {
+        let issue = crate::sessions::ProposalIssue { id: "iss_1".into(), number: 12, title: "Fix it".into() };
+        let ask = OpAsk::new(
+            "1".into(),
+            DaemonOp::AskApproved(AskApproved {
+                ask: "prp_1".into(),
+                project: "prj_1".into(),
+                action: "start".into(),
+                session: "Chief of staff".into(),
+                pane: 3,
+                issue: Some(issue),
+                ..Default::default()
+            }),
+        );
+        let v = serde_json::to_value(&ask).unwrap();
+        assert_eq!(
+            v,
+            json!({ "t": "op", "id": "1", "op": { "op": "agents.approved", "ask": "prp_1", "project": "prj_1",
+                "action": "start", "session": "Chief of staff", "pane": 3,
+                "issue": { "id": "iss_1", "number": 12, "title": "Fix it" } } })
+        );
+        assert_eq!(serde_json::from_value::<OpAsk>(v).unwrap(), ask);
+        assert!(Ops::ours().ops.contains(&ask.op.name().to_owned()));
+        let done = OpDone::new("1".into(), OpAnswer::Approved { said: "started %7".into(), block: Some(7) });
+        let v = serde_json::to_value(&done).unwrap();
+        assert_eq!(v["answer"], json!({ "answer": "approved", "said": "started %7", "block": 7 }));
         assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
     }
 

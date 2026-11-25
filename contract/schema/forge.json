@@ -174,6 +174,67 @@
       "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
       "type": "object"
     },
+    "AskApproved": {
+      "description": "`agents.approved`'s ask (Arugula #1417): the card's proposal, as the\nperson approved it. The machine is the one whose agent asked: a start on\nanother machine is #1415's start ticket's, not this op's.",
+      "properties": {
+        "action": {
+          "description": "`start` or `close`.",
+          "type": "string"
+        },
+        "ask": {
+          "description": "The card, `prp_…`.",
+          "type": "string"
+        },
+        "blocks": {
+          "description": "`close`: the agent blocks to close, by pane.",
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalIssue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`start`: the issue."
+        },
+        "pane": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "project": {
+          "description": "Its project, `prj_…`: a start's issue is in it.",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "`start`: what the new agent is told (none: to work on the issue).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The agent that asked: its session's name and its block.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ask",
+        "project",
+        "action",
+        "session",
+        "pane"
+      ],
+      "type": "object"
+    },
     "Assertion": {
       "additionalProperties": false,
       "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
@@ -447,6 +508,20 @@
           "properties": {
             "op": {
               "const": "sessions.set_project",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AskApproved",
+          "description": "A person approved their agent's card (Arugula #1417): the chief of\nstaff on this machine asked to start an agent on an issue, or to\nstop some of this machine's agent blocks, and they pressed\n**Approve**. The daemon does it now, as its owner: the person's own\nact, through the hub, as `sessions.set_card` is. It answers\n`approved` with what it did, `failed` with why not. An older daemon\nanswers `unknown`, and the card says the machine's Arugula is too\nold.",
+          "properties": {
+            "op": {
+              "const": "agents.approved",
               "type": "string"
             }
           },
@@ -1086,6 +1161,31 @@
           "type": "object"
         },
         {
+          "description": "An `agents.approved`'s answer (Arugula #1417): what it did, in a\nline for the card, and for a start the agent block it opened.",
+          "properties": {
+            "answer": {
+              "const": "approved",
+              "type": "string"
+            },
+            "block": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "said": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "answer",
+            "said"
+          ],
+          "type": "object"
+        },
+        {
           "description": "It doesn't know the op (a daemon from before it).",
           "properties": {
             "answer": {
@@ -1291,6 +1391,29 @@
         "delegation",
         "caps",
         "made"
+      ],
+      "type": "object"
+    },
+    "ProposalIssue": {
+      "description": "[`ChatProposal::issue`].",
+      "properties": {
+        "id": {
+          "description": "`iss_…`.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title"
       ],
       "type": "object"
     },

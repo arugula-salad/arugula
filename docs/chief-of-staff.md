@@ -36,9 +36,10 @@ one turn, and it differs from the hosted one in three ways:
   whose actor is an agent on its machine with its session name in
   `data.agent_session`, or whose `data.machine` and `data.pane` are its own
   block's (its own `session.needs_input` and `session.idle`).
-- **No approval cards yet.** A machine has no `ask_approval` (Arugula
-  #1417). Asked to get an agent on an issue or to close sessions, it tells
-  you where to press **Agent on this** or **Stop**, and does neither itself.
+- **Its approval cards act on its machine** (Arugula #1417). Its
+  `ask_approval` asks to start an agent block on an issue, or to close
+  agent blocks, on the machine it runs on; Approve does it there (see
+  "Approval cards" below).
 
 It never watches `session.idle` for the project, as the hosted one never
 watches `session.settled`: its own turns end too.
@@ -135,7 +136,7 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
 | Make and fill its own Docs | Write other people's Docs |
-| Ask you to approve starting a session on an issue, or stopping sessions, on a card (hosted only, for now) | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
+| Ask you to approve starting an agent on an issue, or stopping agents, on a card | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
 
 It acts with your rights, in this project only. Events carry ids and states,
@@ -208,3 +209,41 @@ It asks you on a card:
    and, for a start, the session it `started`. The chief of staff watches it
    for each card, so your answer wakes it. The card's message gets a line
    saying who answered and what happened.
+
+### On a machine
+
+The chief of staff on one of your machines asks the same way (Arugula
+#1417), with the machine's own `ask_approval`, called from its agent block:
+
+1. `action` `start` with `issue` (and `prompt`), or `action` `close` with
+   `blocks`: agent blocks on its machine, by pane. The daemon checks each
+   block is an agent block there and not the chief of staff's own, then
+   `POST /api/daemon/projects/{project}/proposals` (`MachinePropose`: the
+   proposal, its session's name and pane, and the blocks as the card shows
+   them), signed as the machine. Control checks it as the chief of staff's
+   posts in your staff room are checked (`threads.post`).
+2. The card is the same: the platform's ask message in your staff room
+   (`via` `ask:prp_…`), under Needs you, on your phone, yours alone to
+   answer, once. It says which machine.
+3. **Approve** sends that machine `agents.approved` (`AskApproved`) over its
+   connection to control, and the daemon does it as you
+   (`crates/daemon/src/approvals.rs`):
+   - **start:** one agent block on the issue, as `start_agent {issue,
+     worktree}` would make it: Claude Code with your own settings, in a new
+     worktree of the repo the chief of staff works in (on `feat/N-…`), in a
+     tab called `issue-N`, attached to the issue's row. A row another agent
+     holds refuses it.
+   - **close:** each block, as its `close` does: a worktree goes only if
+     nothing would be lost.
+
+   It answers `approved` with what it did, in a line for the card, or
+   `failed` with why. Remote input off on the machine refuses both. A
+   machine that's offline, or too old to know the op, fails the card.
+4. `ask.answered` is the same event, with the agent's session name as
+   `session`, the `machine`, and for a start the block it `started`
+   (`%N`). The chief of staff watches it per card.
+
+A start on another of your machines isn't a card's yet: it's a ladder
+start, with control's start ticket (aru-143, #1415). The op names no
+machine but the one whose agent asked, so that's where a later card would
+hand off.

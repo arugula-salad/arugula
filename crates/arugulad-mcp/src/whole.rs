@@ -87,7 +87,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
 
 pub fn annotations_are_honest() {
     let all = list(Scope::Full, fl(false), true);
-    assert_eq!(all.len(), 44 - no_forge());
+    assert_eq!(all.len(), 45 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -203,9 +203,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 45);
-    assert_eq!(defs(fl(false)).len(), 44 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 45 - no_forge());
+    assert_eq!(every.len(), 46);
+    assert_eq!(defs(fl(false)).len(), 45 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 46 - no_forge());
     assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 
