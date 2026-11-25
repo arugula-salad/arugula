@@ -82,6 +82,9 @@ mod hint_facts;
 mod hooks_in_front;
 #[cfg(unix)]
 mod hosted_sessions;
+// A chief of staff on a Cloud workspace sets its watches (Arugula #1448).
+#[cfg(unix)]
+mod hosted_watches;
 #[cfg(unix)]
 mod hosted_work;
 mod hosts;
