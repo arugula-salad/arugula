@@ -34,6 +34,10 @@
 // The talk panel's tabs stay as you zoom: each level brings its own to
 // the front, the chief of staff's at Project, the lead's at Board, the
 // card's agent's at Work. A Needs you card zooms to the work that asks.
+// Each agent's tab knows its rung on the agent ladder (#1441): a board's
+// lead is "lead of" its boards, under the chief of staff; an agent on an
+// issue's card is "on #N for" its board, under the board's lead, and its
+// tab is its issue's thread over its peek.
 
 import "./overview.css";
 import type { ComponentChildren } from "preact";
@@ -460,6 +464,21 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
+    project: p?.name ?? "this project",
+    rung: (s, c) => {
+      // A board's lead, by its tab: under the reader's chief of staff, who writes to it in its boards' threads.
+      const led = o.boards.filter((b) => b.lead && talkKey(b.lead.peek) === talkKey(s));
+      if (led.length) {
+        const cos = staffRoom?.lead;
+        return { line: `lead of ${led.map((b) => b.title).join(", ")}`, parent: cos ? { machine: cos.machine, session: cos.session, who: "the chief of staff" } : null, rooms: led.map((b) => b.id) };
+      }
+      // An agent on an issue's card: under its board's lead, who writes to it in the issue's thread.
+      if (!c || c.row.pointer.kind !== "issue" || !(s.hosted || s.panes.some((x) => x.agent))) return null;
+      const b = o.boards.find((x) => x.id === c.board);
+      const label = pointerLabel(c.row.pointer, c.row.live) || "its issue";
+      const l = b?.lead;
+      return { line: `on ${label} for ${b?.title ?? "its board"}`, parent: l ? { machine: l.machine, session: l.session, who: `its lead, ${l.session}` } : null, rooms: [c.row.pointer.id], issue: { id: c.row.pointer.id, label } };
+    },
   };
 
   // A peek tab saved under its tile's key (`host#N`) takes the hub's id for its session once the page knows it (#1390).

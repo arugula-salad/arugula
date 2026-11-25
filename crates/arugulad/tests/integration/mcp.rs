@@ -1215,6 +1215,9 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     assert_ne!(split, mine);
     let tab = |p: u64| d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == p).unwrap()["tab"].clone();
     assert_eq!(tab(split), tab(mine), "{r}");
+    // It records the terminal that started it, for the Overview to name (Arugula #1441), and no block that may drive it.
+    let info = d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == split).cloned().unwrap();
+    assert_eq!((info["started_by"]["from"].as_u64(), info["started_by"].get("block")), (Some(mine), None), "{info}");
     let l = call(&s, "list", json!({})).await;
     let you: Vec<u64> = l["panes"]
         .as_array()

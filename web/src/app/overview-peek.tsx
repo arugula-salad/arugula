@@ -14,18 +14,28 @@
 // through its box's daemon while the box runs, else it shows the last
 // answer it posted in its thread (or its history, with chat off); its box
 // writes in that thread and Stop is the platform's.
+//
+// An issue agent's tab (Arugula #1441), opened from its chip on a Board
+// level ticket or as a Work level's first tab, is its issue's thread (a
+// post there prompts the agent that leads it, #1439) above its peek; its
+// peek then has no box of its own. Every agent's who-line with a rung (a
+// board's lead, an issue agent) is its head (./agent-head.tsx): where it
+// runs, whether it's awake, its rung, who started it and its parent's
+// latest word to it.
 
 import { createContext, type JSX } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLead, SessionView } from "../shared/proto";
+import type { BoardLead, ChatRoom, SessionView } from "../shared/proto";
 import { pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
+import { RoomBody } from "../shared/chat/room";
 import { call, saidOf } from "../shared/chat/session-card";
 import { useSubscribe } from "../shared/ui/hooks";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { kindOf, shortHost } from "../shell/swarm/model";
-import type { OvCard, OvLead, OvSession } from "../shell/swarm/overview";
+import { leadAwake, type OvCard, type OvLead, type OvSession } from "../shell/swarm/overview";
+import { AgentHead, objectRoom, starterOf, useParentWord } from "./agent-head";
 import { Word } from "./overview-row";
 
 /** How often an open peek reads its lines again. */
@@ -47,7 +57,26 @@ export interface PeekPlace {
   openCard(c: OvCard): void;
   /** The board's thread in a tab, while chat is on. */
   askLead?(board: string): void;
+  /** The project's name, for the chief of staff's rung (#1441). */
+  project?: string;
+  /** A session's rung on the agent ladder (#1441), where it has one: a board's lead, or an issue agent. */
+  rung?(s: OvSession, card: OvCard | null): PeekRung | null;
 }
+
+/** Where a session is on the agent ladder (#1441), for its tab. */
+export interface PeekRung {
+  /** "lead of Launch", "on #12 for Launch". */
+  line: string;
+  /** The session above it (its machine's id and its name there), and what to call it. */
+  parent: { machine: string; session: string; who: string } | null;
+  /** What the threads its parent writes to it in are on: its issue, or its boards. */
+  rooms: string[];
+  /** An issue agent's issue (`iss_…`) and how it's named (`#12`): its thread is the tab's top. */
+  issue?: { id: string; label: string };
+}
+
+/** Whether a lead (a room's, a board's) is this session: the same tab, or its pane is one of the session's. */
+export const isSession = (l: OvLead, s: OvSession) => talkKey(l.peek) === talkKey(s) || (!!l.peek.lead && s.panes.some((p) => p.key === l.peek.lead!.key));
 
 export const PeekContext = createContext<PeekPlace | null>(null);
 
@@ -67,12 +96,58 @@ export const talkKey = (s: OvSession) => s.hub ?? peekKey(s);
  * `hosted:ses_…`, and is its `ses_…`. */
 export const talkKeyOf = (id: string) => /^(?:machine:[^:|]+|hosted):(ses_[^:|]+)$/.exec(id)?.[1] ?? id;
 
-/** A tab's body: the session, found again on each draw. */
-export function PeekTab({ id }: { id: string }) {
+/** A tab's body: the session, found again on each draw; an issue agent's, its issue's thread above it (#1441). */
+export function PeekTab({ id, phone }: { id: string; phone: boolean }) {
   const place = useContext(PeekContext);
+  useSubscribe((fn) => chat.subscribe(fn));
   const at = place?.find(id);
   if (!place || !at) return <p class="dim ov-talk-note" data-ov-peek-gone>This session isn't in the project now.</p>;
+  const issue = chat.on ? place.rung?.(at.s, at.card)?.issue : undefined;
+  if (issue) return <AgentTab key={issue.id} place={place} s={at.s} card={at.card} issue={issue} phone={phone} />;
   return <Peek place={place} s={at.s} card={at.card} />;
+}
+
+/** An issue agent's tab (#1441): its issue's thread, where a post prompts
+ * the agent leading it, over its peek. When the thread's lead is another
+ * session, or none, it says so, and the peek keeps its own box. */
+function AgentTab({ place, s, card, issue, phone }: { place: PeekPlace; s: OvSession; card: OvCard | null; issue: { id: string; label: string }; phone: boolean }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const [opened, setOpened] = useState<ChatRoom | null>(objectRoom(issue.id) ?? null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    chat.openObject(issue.id).then(
+      (r) => live && setOpened(r),
+      (e: Error) => live && setError(e.message),
+    );
+    return () => void (live = false);
+  }, [issue.id]);
+  // Chat's own copy, which a change of its lead reaches.
+  const room = (opened && chat.rooms.find((r) => r.id === opened.id)) ?? opened;
+  const lead = room?.lead ? place.lead(room.lead) : null;
+  const hears = !!lead && isSession(lead, s);
+  const why = hears
+    ? `A post here prompts ${s.name}, which leads ${issue.label}'s thread. Everyone in the project reads it.`
+    : room?.lead
+      ? `${room.lead.session} leads ${issue.label}'s thread, so a post here goes to it, not to ${s.name}: write to ${s.name} under its lines.`
+      : `No session leads ${issue.label}'s thread, so a post here waits for someone to read it: write to ${s.name} under its lines.`;
+  return (
+    <div class="ov-agent-tab" data-ov-agent-tab={issue.id} data-ov-agent-hears={hears ? "" : undefined}>
+      {!room ? (
+        <p class="dim ov-talk-note">{error ? `The thread didn't load: ${error}` : "Loading its thread…"}</p>
+      ) : (
+        <div class="chat-thread ov-talk-room" data-ov-issue-thread={room.id}>
+          {!hears && (
+            <p class="dim ov-agent-note" data-ov-agent-note>
+              {why}
+            </p>
+          )}
+          <RoomBody key={room.id} room={room} phone={phone} embedded name={issue.label} empty={{ title: `Nothing said on ${issue.label} yet.`, why }} />
+        </div>
+      )}
+      <Peek place={place} s={s} card={card} reply={!hears} />
+    </div>
+  );
 }
 
 /** The who-line over a peek (#1290): the session, where it runs, and
@@ -84,6 +159,8 @@ export function PeekWho({ id, title }: { id: string; title: string }) {
   const at = place?.find(id);
   if (!place || !at) return null;
   const { s } = at;
+  const rung = place.rung?.(s, at.card);
+  if (rung) return <RungWho place={place} s={s} rung={rung} title={title} />;
   const ov = s.panes.find((p) => p.agent) ?? s.lead;
   const pane = ov && place.fleet.panes.find((p) => p.key === ov.key);
   const who = (
@@ -99,6 +176,13 @@ export function PeekWho({ id, title }: { id: string; title: string }) {
   const mine = ownFar(place.fleet, s);
   if (mine) return <>Can't reach {who}: {mine.why}</>;
   return <>Watching {who}: it takes nothing from you here{at.card && place.askLead ? "; to ask it something, use its board's thread." : "."}</>;
+}
+
+/** An agent with a rung (#1441): its head, its rung and who started it, and its parent's latest word to it. */
+function RungWho({ place, s, rung, title }: { place: PeekPlace; s: OvSession; rung: PeekRung; title: string }) {
+  const word = useParentWord(rung.parent, rung.rooms);
+  const at = leadAwake({ machineName: s.where, standing: s.standing }, place.fleet.host(s.where));
+  return <AgentHead role={title} at={at} rung={{ line: rung.line, started: starterOf(place.fleet, s), word: word && rung.parent && { who: rung.parent.who, m: word } }} />;
 }
 
 /** A session this page can't read that runs on one of your own machines: why,
@@ -130,7 +214,8 @@ export function yours(fleet: Fleet, p: FleetPane): boolean {
   return false;
 }
 
-function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard | null }) {
+/** A session's peek; `reply` false leaves out its box (an issue agent's tab, whose thread prompts it). */
+function Peek({ place, s, card, reply = true }: { place: PeekPlace; s: OvSession; card: OvCard | null; reply?: boolean }) {
   const { fleet } = place;
   useSubscribe((fn) => fleet.subscribe(fn));
   // The pane it's written to and read from: its agent where it has one, else the one it opens.
@@ -215,12 +300,12 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
         </div>
       </div>
     );
-  if (pane) return <MachinePeek s={s} fleet={fleet} pane={pane} head={head} tail={tailEl} panes={panes} />;
-  return <HostedPeek s={s} v={hosted} head={head} tail={tailEl} panes={panes} />;
+  if (pane) return <MachinePeek s={s} fleet={fleet} pane={pane} head={head} tail={tailEl} panes={panes} reply={reply} />;
+  return <HostedPeek s={s} v={hosted} head={head} tail={tailEl} panes={panes} reply={reply} />;
 }
 
 /** A session on a machine the page reaches: write to it, Silence/Allow it, Stop it. */
-function MachinePeek({ s, fleet, pane, head, tail, panes }: { s: OvSession; fleet: Fleet; pane: FleetPane; head: JSX.Element; tail: JSX.Element; panes: JSX.Element }) {
+function MachinePeek({ s, fleet, pane, head, tail, panes, reply }: { s: OvSession; fleet: Fleet; pane: FleetPane; head: JSX.Element; tail: JSX.Element; panes: JSX.Element; reply: boolean }) {
   const block = pane.info.type === "agent";
   const agent = kindOf(pane) === "agent";
   const up = fleet.host(pane.host)?.state === "connected" && !pane.stale;
@@ -265,13 +350,13 @@ function MachinePeek({ s, fleet, pane, head, tail, panes }: { s: OvSession; flee
           {said}
         </p>
       )}
-      <Reply placeholder={!up ? `${pane.host} isn't reachable now` : block || agent ? "Reply: it reads it at its next tool call" : `Type a command for the shell on ${shortHost(pane.host)}`} disabled={!up} send={send} />
+      {reply && <Reply placeholder={!up ? `${pane.host} isn't reachable now` : block || agent ? "Reply: it reads it at its next tool call" : `Type a command for the shell on ${shortHost(pane.host)}`} disabled={!up} send={send} />}
     </div>
   );
 }
 
 /** A session in a cloud workspace: write in its thread, Stop it on the platform. */
-function HostedPeek({ s, v, head, tail, panes }: { s: OvSession; v: SessionView | null; head: JSX.Element; tail: JSX.Element; panes: JSX.Element }) {
+function HostedPeek({ s, v, head, tail, panes, reply }: { s: OvSession; v: SessionView | null; head: JSX.Element; tail: JSX.Element; panes: JSX.Element; reply: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [said, setSaid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -316,7 +401,7 @@ function HostedPeek({ s, v, head, tail, panes }: { s: OvSession; v: SessionView 
           {said}
         </p>
       )}
-      {v && (may && chat.on ? <Reply placeholder="Reply in its thread" send={send} /> : <p class="dim ov-peek-why">{may ? "Its thread comes with chat, which is off for you." : "You're watching this session: an editor of the project answers it."}</p>)}
+      {v && (may && chat.on ? reply && <Reply placeholder="Reply in its thread" send={send} /> : <p class="dim ov-peek-why">{may ? "Its thread comes with chat, which is off for you." : "You're watching this session: an editor of the project answers it."}</p>)}
     </div>
   );
 }
