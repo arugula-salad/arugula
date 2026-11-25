@@ -23,6 +23,8 @@ anyhow = "1"
 arugula-e2e = { path = "../../crates/e2e" }
 arugula-control-wire = { path = "../../crates/control-wire" }
 arugula-proto = { path = "../../crates/proto" }
+# A reply that isn't JSON (a picture) crosses to the apps as text.
+base64 = "0.23.1"
 getrandom = "0.4.3"
 hex = "0.4"
 # The same major as rustls-platform-verifier's, which takes Android's

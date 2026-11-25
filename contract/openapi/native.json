@@ -4018,6 +4018,44 @@
         ]
       }
     },
+    "/api/feedback": {
+      "post": {
+        "operationId": "POST_api_feedback",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: FeedbackSubmit, read from the body (at most 32 KiB; the app's login sends as its account, under the account's limits, Arugula #1420)",
+          "response: FeedbackAck; refused with FeedbackRefused"
+        ]
+      }
+    },
     "/api/flags": {
       "get": {
         "operationId": "GET_api_flags",
@@ -4050,6 +4088,41 @@
         },
         "x-arugula-untyped": [
           "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/handoff": {
+      "post": {
+        "operationId": "POST_api_handoff",
+        "x-arugula-clients": [
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: an empty object",
+          "response: {code, expires_in}: a one-time code for the app's web view, a minute old at most (Arugula #1420)"
         ]
       }
     },
@@ -6890,6 +6963,41 @@
         "x-arugula-untyped": [
           "request: Redeem",
           "response: 204, the session in Set-Cookie"
+        ]
+      }
+    },
+    "/auth/handoff": {
+      "post": {
+        "operationId": "POST_auth_handoff",
+        "x-arugula-clients": [
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: a form (application/x-www-form-urlencoded), code and to (a path), posted by the app's web view, never in an address",
+          "response: 303 to that path on the platform page, a web session (an app window's) in Set-Cookie"
         ]
       }
     },

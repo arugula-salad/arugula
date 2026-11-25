@@ -123,6 +123,9 @@ sealed interface Dest {
     /** The current project's open issues. */
     data object Issues : Dest
 
+    /** The web's Settings, in a web view the app's sign-in is handed to (Arugula #1420). */
+    data object Settings : Dest
+
     data class MachineD(val machine: Machine) : Dest
 
     data class Terminal(val machine: String, val pane: Int, val tab: Int) : Dest
@@ -426,6 +429,7 @@ private fun Destination(api: Api, d: Dest, home: HomeModel, fleet: HomeFleet, li
         is Dest.IssueRef -> IssueScreen(api, d.id, d.project)
         is Dest.Doc -> DocScreen(api, d.ref)
         Dest.Issues -> IssuesScreen(api)
+        Dest.Settings -> SettingsScreen(api)
         is Dest.MachineD -> MachineScreen(api, d.machine, fleet)
         is Dest.Terminal -> TerminalScreen(api, d, fleet)
         is Dest.Session -> SessionScreen(api, d, fleet, home)

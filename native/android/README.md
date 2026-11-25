@@ -9,7 +9,7 @@ machine, the terminal) for Kotlin, which it runs on.
   key in `noBackupFilesDir`; the web's five places on a bar that's always
   there, Overview · Boards · Docs · Machines · Chat (a navigation rail on a
   tablet, #1362), each headed by the project's menu, New, the bell (the
-  Inbox) and your picture (your name, Settings in the browser, Send feedback,
+  Inbox) and your picture (your name, Settings in a web view, Send feedback,
   the version and Sign out: `Account.kt`); the Overview's Needs you (answered
   in the row), New ideas, boards and people; Docs, a word that #1364 lists
   them; a board's thread and lanes; chat rooms on the

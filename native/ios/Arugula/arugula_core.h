@@ -53,6 +53,8 @@ void aru_signin_free(AruSignIn *s);
 
 AruControl *aru_control_open(const char *stored, char **err);
 char *aru_control_call(const AruControl *c, const char *method, const char *path, const char *body, char **err);
+// A GET whose reply isn't JSON (a picture): its bytes, as base64.
+char *aru_control_bytes(const AruControl *c, const char *path, char **err);
 void aru_control_sign_out(const AruControl *c);
 void aru_control_free(AruControl *c);
 

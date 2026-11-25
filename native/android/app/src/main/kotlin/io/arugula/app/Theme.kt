@@ -230,9 +230,9 @@ fun AnswerButton(text: String, modifier: Modifier = Modifier, primary: Boolean =
     }
 }
 
-/** Someone's square: their initials on a color their name picks, the same every time. */
+/** Someone's square: their initials on a color their name picks, the same every time, or their [picture] when there is one. */
 @Composable
-fun Avatar(name: String, size: Int = 36, agent: Boolean = false) {
+fun Avatar(name: String, size: Int = 36, agent: Boolean = false, picture: androidx.compose.ui.graphics.ImageBitmap? = null) {
     val tones = listOf(Palette.accent, Palette.info, Palette.ok, Palette.peach, Palette.teal, Palette.pink, Palette.warn, Palette.merged)
     val words = name.split(' ', '-', '_', '.').filter { it.isNotEmpty() }
     val initials = words.take(2).map { it.first().uppercaseChar() }.joinToString("")
@@ -240,7 +240,11 @@ fun Avatar(name: String, size: Int = 36, agent: Boolean = false) {
     for (c in name) hash = hash * 33u + c.code.toUInt()
     Box(Modifier.size(size.dp)) {
         Box(Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.22).dp)).background(tones[(hash % tones.size.toUInt()).toInt()]), contentAlignment = Alignment.Center) {
-            Text(initials.ifEmpty { "?" }, style = Face.display((size * 0.5).sp, FontWeight.Black), color = Palette.void)
+            if (picture != null) {
+                androidx.compose.foundation.Image(picture, null, Modifier.size(size.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else {
+                Text(initials.ifEmpty { "?" }, style = Face.display((size * 0.5).sp, FontWeight.Black), color = Palette.void)
+            }
         }
         if (agent) {
             Box(Modifier.align(Alignment.BottomEnd).size((size * 0.38).dp).clip(RoundedCornerShape(4.dp)).background(Palette.bg), contentAlignment = Alignment.Center) {
