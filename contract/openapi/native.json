@@ -4541,6 +4541,74 @@
         ]
       }
     },
+    "/api/me/prefs": {
+      "get": {
+        "operationId": "GET_api_me_prefs",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: the account's prefs, a JSON object of strings"
+        ]
+      },
+      "post": {
+        "operationId": "POST_api_me_prefs",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request and response: a JSON object of the account's prefs, a key's null removing it"
+        ]
+      }
+    },
     "/api/people": {
       "get": {
         "operationId": "GET_api_people",
