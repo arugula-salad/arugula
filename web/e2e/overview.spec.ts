@@ -235,8 +235,12 @@ async function issueRoom(page: Page, lead: { machine: string; machine_name: stri
     const room = { id: "room_i12", kind: "object", team: null, name: "#12", machine: null, machine_name: null, target: "iss_12", project: null, with: null, others: [], private: false, last: 2, read: 2, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, lead };
     const msg = (seq: number, name: string, text: string, agent: unknown = null) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent, reactions: [], files: [], pinned: false, also: false });
     const said = [msg(1, "Jo", "The installer fails on Fedora."), msg(2, "Me", "Start with the Linux installer; leave macOS for now.", { machine: lead.machine, machine_name: lead.machine_name, session: "scratch" })];
-    (window as unknown as { saidOn12: typeof said }).saidOn12 = said;
-    const now = () => ({ ...room, last: said.length, read: said.length });
+    const w = window as unknown as { saidOn12: typeof said; leadOn12: unknown; roomOn12: () => unknown };
+    w.saidOn12 = said;
+    // The room as the server has it now: its lead is `leadOn12`, which a test may change, so a read that lands after the change agrees with it.
+    w.leadOn12 = lead;
+    const now = () => ({ ...room, lead: w.leadOn12, last: said.length, read: said.length });
+    w.roomOn12 = now;
     const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     const before = window.fetch;
     window.fetch = async (input, init) => {
@@ -1145,9 +1149,12 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-ov-level-work="row_b"] [data-ov-work-pane]').first()).toHaveAttribute("data-ov-work-kind", "block");
 
     // A thread another session leads says so, and the peek keeps its box.
+    // The server's room too, so the tab's own read of it (it opened again at the Work level) agrees whenever it lands; and chat's copy, which the tab reads first, whether or not that read has put it there yet.
     await page.evaluate(() => {
-      const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
-      c.rooms = c.rooms.map((r) => (r.id === "room_i12" ? { ...r, lead: { machine: "m_other", machine_name: "elsewhere", session: "someone" } } : r));
+      const w = window as unknown as { __chat: { rooms: { id: string }[]; emit(): void }; leadOn12: unknown; roomOn12: () => { id: string } };
+      w.leadOn12 = { machine: "m_other", machine_name: "elsewhere", session: "someone" };
+      const c = w.__chat;
+      c.rooms = [...c.rooms.filter((r) => r.id !== "room_i12"), w.roomOn12()];
       c.emit();
     });
     await expect(panel.locator("[data-ov-agent-tab]")).not.toHaveAttribute("data-ov-agent-hears", "");
