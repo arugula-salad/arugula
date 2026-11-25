@@ -182,12 +182,13 @@ claim_titlebar() {
   wait_for 30 laid_out "$w" ||
     bad titlebar "the page didn't lay out at ${WIDTH}x$HEIGHT (its minimize button at ${BX:-?},${BY:-?})"
   # Drag the header's empty middle (.bar-fill) right and down: between
-  # the crumbs (the machine, the session, the tab: one nav since #1443) and Commands, where the
-  # page has them. Not a fixed point: the session's name is two random
-  # words, and the longest ("wandering thistle") put its menu button on
-  # the one this used, 420 (#295).
+  # the last of the header's left part (the machine's views, else its
+  # crumbs: machine, session, tab, one nav since #1443) and Commands,
+  # where the page has them. Not a fixed point: the session's name is two
+  # random words, and the longest ("wandering thistle") put its menu
+  # button on the one this used, 420 (#295).
   local left mid
-  if box "This machine" && left=$((BX + BW)) && box Commands; then
+  if { box "Machines' views" || box "This machine"; } && left=$((BX + BW)) && box Commands; then
     mid=$(((left + BX) / 2 - X))
   else
     bad titlebar "no crumbs or Commands in the header"
