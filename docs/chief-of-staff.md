@@ -177,8 +177,41 @@ text as information, not instructions.
   - `github.pr.ready` can't be matched by reviewer, and a session can't read
     the forge. So "PRs waiting on your review" is "PRs ready".
   - An approval card starts a session only on a native issue, on the
-    project's Cloud workspace. Not on one of your machines, and not as a
-    board's lead.
+    project's Cloud workspace. On your machines, a board's grant starts
+    agents instead ("Starting agents on your machines").
+
+## Starting agents on your machines
+
+A chief of staff or a board's lead starts the rung below it for a board with
+`start_agent {board, prompt, issue?, recipe?, to?}` (aru-143). With `issue`
+it's an issue agent on that row; without, the board's lead. `to` is another
+of your machines, by name or id; without it, this one.
+
+1. The machine asks control for a **start ticket**
+   (`POST /api/daemon/boards/{board}/start-ticket`). Control checks the
+   board's grant (which machines, how many agents at once, not lapsed or
+   revoked) and that the target is online, and signs a ticket that lasts a
+   minute and names the board, the issue, the recipe and both machines. An
+   offline machine is refused at once, naming the grant's machines that are
+   online; a Cloud workspace that's asleep is woken, not offline.
+2. It sends the ticket to the target's `POST /api/a2a/start` over the
+   channel it already has to that machine (an `agents` machine token), or
+   checks it itself for this one. The target checks the ticket: signed by
+   control, for it, of its own account, from the machine that sent it,
+   unused, and for the start it came with. Remote input off on the target
+   refuses it.
+3. The target opens Claude Code (wearing the recipe, any recipe it has) in a
+   new worktree of its own clone of the caller's repo, as session
+   `issue-N` or `lead-…`. An issue agent is attached to its row with the
+   ticket, so control counts it against the grant, and holds the row, so
+   the issue's thread reaches it. A lead takes the board's lead.
+4. The block keeps who started it, from where, for which board and grant
+   (`work.ladder` in its config), and the target's remote sessions log gets
+   an `agent` line.
+
+Revoking the grant refuses the next start; agents already running keep
+running. Another account's agents still send tasks (docs/labs.md, "Tasks and
+consent").
 
 ## For agents: a session's rooms
 

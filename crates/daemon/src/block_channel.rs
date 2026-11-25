@@ -97,7 +97,7 @@ impl By {
 fn token_refused(why: crate::machine_token::Refused) -> Refused {
     use crate::machine_token::Refused as T;
     match why {
-        T::Malformed | T::NotMachine | T::NotBlock => Refused::Malformed,
+        T::Malformed | T::NotMachine | T::NotBlock | T::NotStart => Refused::Malformed,
         T::Signature => Refused::Signature,
         T::Audience => Refused::OtherDaemon,
         T::Expired => Refused::Expired,

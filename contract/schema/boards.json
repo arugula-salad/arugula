@@ -234,6 +234,13 @@
         "take": {
           "description": "Take a row that another machine's block holds, folding that block\nunder `earlier`; without it the attach is refused, 409 `claimed`.",
           "type": "boolean"
+        },
+        "ticket": {
+          "description": "The start ticket's `jti`, for a block a ladder start opened\n(aru-143): control counts it against the board's grant until it\ncloses.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

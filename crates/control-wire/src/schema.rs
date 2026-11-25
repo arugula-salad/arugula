@@ -86,6 +86,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "join" => [
             join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam, join::JoinTokenRequest, join::JoinTokenMade, join::TokenJoinRequest, join::Joined, join::JoinedTeam,
         ],
+        "ladder" => [
+            ladder::Rung, ladder::StartTicketAsk, ladder::StartTicket, ladder::StartClaims, ladder::StartedBy, ladder::LadderStart, ladder::LadderStarted,
+        ],
         "lib" => [
             ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, ControlNative, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,
         ],

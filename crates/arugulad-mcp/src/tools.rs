@@ -444,6 +444,20 @@ pub struct StartAgentArgs {
     /// The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.
     #[serde(default)]
     pub project: Option<String>,
+    /// A board it works for, under the board's grant (aru-143): with issue,
+    /// an issue agent on that issue's row; without, the board's lead. It
+    /// runs Claude Code (with recipe, wearing it), in a new worktree of that
+    /// machine's clone of cwd's repo (or your pane's), and control checks
+    /// the board's grant first (its machines, how many agents at once, not
+    /// lapsed or revoked) and that the machine is online. Only prompt,
+    /// recipe, issue, cwd, session and to apply.
+    #[serde(default)]
+    pub board: Option<String>,
+    /// With board: another of your machines to start it on, by name or id.
+    /// Default: this one. One that's offline is refused, naming the grant's
+    /// machines that are online.
+    #[serde(default)]
+    pub to: Option<String>,
     /// With issue: take the row over when another machine's agent works it, or another session holds it (the one that last started an agent on it, until the issue closes or it lets go with board_write release_row). Without it, the start is refused, naming who holds it; with it, that agent is folded under "earlier agents", this session holds the row, and the session that held it is told.
     #[serde(default)]
     pub take: bool,
@@ -3345,6 +3359,12 @@ impl ToolCall<'_, '_> {
         if a.prompt.trim().is_empty() && !chief {
             return Err("give the agent a prompt".into());
         }
+        if a.board.as_deref().is_some_and(|b| !b.trim().is_empty()) {
+            return self.start_for_board(a).await;
+        }
+        if a.to.is_some() {
+            return Err("to is for a start for a board: give board too".into());
+        }
         let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
             (None, own) => own,
@@ -3569,6 +3589,66 @@ impl ToolCall<'_, '_> {
             ),
         };
         results::StartedChief { project: project.id.clone(), session, lead, said }
+    }
+
+    /// `start_agent {board}` (aru-143): a ladder start, here or on another
+    /// of the person's machines, under the board's grant.
+    async fn start_for_board(&self, a: StartAgentArgs) -> Out {
+        let others = [
+            (!matches!(a.agent, AgentKind::Claude), "agent"),
+            (a.command.is_some(), "command"),
+            (a.model.is_some(), "model"),
+            (a.title.is_some(), "title"),
+            (!a.allow.is_empty(), "allow"),
+            (a.permission_mode.is_some(), "permission_mode"),
+            (a.user_settings, "user_settings"),
+            (a.beside.is_some(), "beside"),
+            (a.vm, "vm"),
+            (a.chat, "chat"),
+            (a.worktree.is_some(), "worktree"),
+            (a.project.is_some(), "project"),
+            (a.take, "take"),
+        ];
+        let given: Vec<&str> = others.iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect();
+        if !given.is_empty() {
+            return Err(format!(
+                "a start for a board takes prompt, recipe, issue, cwd, session and to, not {}",
+                given.join(", ")
+            ));
+        }
+        let dir = match (&a.cwd, self.own_pane()) {
+            (Some(c), _) => Some(c.clone()),
+            (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
+            (None, None) => None,
+        };
+        let repo = match dir {
+            Some(d) => origin_repo(&d).await,
+            None => None,
+        };
+        let by_session = match self.own_pane() {
+            Some(p) => arugulad_base::agent_mentions::session_name(self.app, p).await,
+            None => None,
+        };
+        let blank = |o: Option<String>| o.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+        let ask = arugulad_base::ladder::Ask {
+            machine: blank(a.to),
+            board: a.board.unwrap_or_default().trim().to_owned(),
+            rung: None,
+            issue: blank(a.issue),
+            recipe: blank(a.recipe),
+            repo,
+            prompt: a.prompt,
+            session: blank(a.session),
+            by_session,
+        };
+        let started = arugulad_base::ladder::start(self.app, ask).await?;
+        done(
+            format!(
+                "Started an agent on {} in %{} (session {}, in {}): {}. Its block is that machine's: its board row shows it",
+                started.machine, started.block, started.session, started.cwd, started.said
+            ),
+            started,
+        )
     }
 
     /// What the agent just started can reach (Arugula #836): its MCP servers
@@ -4210,6 +4290,24 @@ pub mod guests;
 #[doc(hidden)]
 #[path = "whole.rs"]
 pub mod whole;
+
+/// The `owner/name` of the repository `dir` is in, from its `origin`.
+async fn origin_repo(dir: &str) -> Option<String> {
+    let o = tokio::process::Command::new("git").args(["-C", dir, "remote", "get-url", "origin"]).output().await.ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    let url = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+    if let Some((_, repo)) = arugulad_base::git_remote::parse_remote(&url) {
+        return Some(repo);
+    }
+    // A clone of a repository on disk: its last two folders.
+    let path = url.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let mut parts = path.rsplit('/').filter(|p| !p.is_empty());
+    let (name, owner) = (parts.next()?, parts.next()?);
+    Some(format!("{owner}/{name}"))
+}
 
 #[cfg(test)]
 mod tests {
