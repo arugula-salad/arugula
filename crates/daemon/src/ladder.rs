@@ -62,6 +62,9 @@ pub struct Ask {
     pub repo: Option<String>,
     pub prompt: String,
     pub session: Option<String>,
+    /// Its block's title, which its lead and its row's hold go by; default
+    /// its session's name.
+    pub title: Option<String>,
     /// The calling session's name.
     pub by_session: Option<String>,
     /// Its session's permission mode, tools it may use without asking, and
@@ -110,6 +113,7 @@ pub async fn start(app: &Arc<App>, ask: Ask) -> Result<LadderStarted, String> {
         repo: ask.repo,
         prompt: ask.prompt,
         session: ask.session,
+        title: ask.title,
         by: arugula_control_wire::ladder::StartedBy { machine: String::new(), session: ask.by_session },
         permission_mode: ask.permission_mode,
         allow: ask.allow,
@@ -218,8 +222,13 @@ pub async fn start_here(
     let worn = worn_recipe(claims.rung, blank(&s.recipe)).map_err(|why| (StatusCode::BAD_REQUEST, why))?;
     let issue = blank(&s.issue);
     let session = blank(&s.session).unwrap_or_else(|| default_session(s.rung, issue.as_deref(), &s.board));
+    // A title: a post that names it finds the block (agent mentions name an
+    // agent block by its title), so it's the name the lead and the row's
+    // hold go by, and the board's or the issue's thread reaches it. Its own,
+    // else the session's name.
+    let title = blank(&s.title).unwrap_or_else(|| session.clone());
     if let Some(i) = &issue
-        && let Some(held) = crate::board_attach::held(app, Some(claims.project.clone()), i, Some(session.clone())).await
+        && let Some(held) = crate::board_attach::held(app, Some(claims.project.clone()), i, Some(title.clone())).await
     {
         return Err((StatusCode::CONFLICT, format!("{held}; no agent was started")));
     }
@@ -262,10 +271,10 @@ pub async fn start_here(
         None => crate::mcp::registry::board_lead_prompt(Some(&claims.board), &s.prompt)
             .map_err(|why| (StatusCode::SERVICE_UNAVAILABLE, why))?,
     };
-    // Titled by its session's name, it leads its issue's thread (or is found
-    // on the board's) by that name from the start, not after its first turn
-    // names it (Arugula #1440).
-    let mut config = json!({ "agent": "claude", "prompt": prompt, "cwd": cwd, "work": work, "title": session });
+    // Titled (its start's title, else its session's name), it leads its
+    // issue's thread (or is found on the board's) by that name from the
+    // start, not after its first turn names it (Arugula #1440, #1416).
+    let mut config = json!({ "agent": "claude", "prompt": prompt, "cwd": cwd, "work": work, "title": title });
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);
     }
@@ -307,7 +316,7 @@ pub async fn start_here(
                 i,
                 block,
                 take,
-                Some(session.clone()),
+                Some(title.clone()),
                 Some(claims.jti.clone()),
             )
             .await
@@ -322,7 +331,7 @@ pub async fn start_here(
         }
         _ => {
             let body =
-                serde_json::to_value(LeadBoard { session: Some(session.clone()), pane: Some(block), release: false })
+                serde_json::to_value(LeadBoard { session: Some(title.clone()), pane: Some(block), release: false })
                     .unwrap_or_default();
             match app.control.cloud(Method::POST, &agent_board_lead(&claims.board), Some(&body)).await {
                 Ok(_) => "it leads the board".to_owned(),
@@ -480,7 +489,7 @@ fn remote_is(url: &str, repo: &str) -> bool {
 
 /// A clone of `repo` here: a repository this machine's panes work in, or
 /// one a hosted box's setup cloned, whose origin is it.
-async fn clone_of(app: &App, repo: &str) -> Option<String> {
+pub(crate) async fn clone_of(app: &App, repo: &str) -> Option<String> {
     let mut dirs: Vec<String> =
         crate::hosted::clones(app.control.state_dir()).into_iter().map(|(_, d)| d.display().to_string()).collect();
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();

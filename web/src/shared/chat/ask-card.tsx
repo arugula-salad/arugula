@@ -20,12 +20,15 @@
 //   as its person (Arugula #1278): start an agent on an issue, or stop
 //   sessions. Its card (`ProposalCard`) says what and why, with Approve
 //   and Deny for that person only; answered, it's a line saying what
-//   answering did. The Overview's Needs you draws the same card.
+//   answering did. The Overview's Needs you draws the same card. A "Run
+//   this board" card (`run_board`, Arugula #1416) says the board, where its
+//   lead runs, which machines its issue agents may use and how many at
+//   once, and when the grant lapses.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import type { ChatAsk, ChatMessage, ChatRoom, SessionAct, SessionView } from "../proto";
+import type { ChatAsk, ChatMessage, ChatRoom, ProposalRun, SessionAct, SessionView } from "../proto";
 import { Bar, BarWhere } from "../ui/bar";
 import { StateChip } from "../ui/state-chip";
 import { Card } from "../ui/card";
@@ -240,6 +243,35 @@ function ProposalAsk({ room, m }: { room: ChatRoom; m: ChatMessage }) {
   return <ProposalCard a={a} project={room.project} answered={setA} />;
 }
 
+/** A "Run this board" card's lines (Arugula #1416): the board, where its
+ * lead runs, where its issue agents may and how many at once, and when the
+ * grant lapses. */
+function RunLines({ run, project }: { run: ProposalRun; project: string | null }) {
+  const board = project ? `/p/${enc(project)}/boards/${enc(run.board)}` : null;
+  return (
+    <>
+      <p class="session-card-line session-ask-question" data-proposal-board={run.board}>
+        Run {board ? <a href={board}>{run.board_title || run.board}</a> : <b>{run.board_title || run.board}</b>}
+      </p>
+      <p class="session-card-line" data-proposal-lead={run.lead_machine.id}>
+        Lead on <b>{run.lead_machine.name}</b>
+      </p>
+      <p class="session-card-line" data-proposal-machines>
+        Issue agents on {run.machines.map((m) => m.name).join(", ")} · up to {run.cap} at once
+      </p>
+      <p class="session-card-line" data-proposal-lapse>
+        {lapseWords(run.lapse_days)}
+      </p>
+    </>
+  );
+}
+
+/** When a grant lapses, as its card says it. */
+export function lapseWords(days: number | null | undefined): string {
+  if (!days) return "Until the board closes";
+  return days === 1 ? "For 1 day, or until the board closes" : `For ${days} days, or until the board closes`;
+}
+
 /** What answering a proposal did, in a line: who, and what came of it. */
 export function answeredLine(a: ChatAsk): string {
   const p = a.proposal!;
@@ -260,9 +292,10 @@ export function ProposalCard({ a, project, answered, open }: { a: ChatAsk; proje
   const [busy, setBusy] = useState<"Approve" | "Deny" | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const p = a.proposal!;
-  const action = p.action === "close" ? "close" : "start";
+  const action = p.action === "close" ? "close" : p.action === "run_board" ? "run_board" : "start";
   if (p.state !== "open" || !a.open) {
-    const started = p.started && project ? api.sessionHref?.(project, p.started) : undefined;
+    // A machine's start is a block there (`%N`), with no page of its own.
+    const started = p.started?.startsWith("ses_") && project ? api.sessionHref?.(project, p.started) : undefined;
     return (
       <p class="session-ask-done dim" data-ask={a.seq} data-ask-state="answered" data-proposal={p.id} data-proposal-action={action} data-proposal-state={p.state}>
         {answeredLine(a)}
@@ -289,7 +322,7 @@ export function ProposalCard({ a, project, answered, open }: { a: ChatAsk; proje
       setBusy(null);
     }
   };
-  const what = `Chief of staff · ${action === "close" ? "stop sessions" : "start an agent"}`;
+  const what = `Chief of staff · ${action === "close" ? "stop sessions" : action === "run_board" ? "run a board" : "start an agent"}`;
   const issue = p.issue;
   // A native issue's page, in its project where the page knows it.
   const issueHref = issue && (project ? `/p/${enc(project)}/issues/${enc(issue.id)}` : `/issues/${enc(issue.id)}`);
@@ -323,7 +356,9 @@ export function ProposalCard({ a, project, answered, open }: { a: ChatAsk; proje
       data-proposal={p.id}
       data-proposal-action={action}
     >
-      {action === "start" ? (
+      {action === "run_board" && p.run ? (
+        <RunLines run={p.run} project={project} />
+      ) : action === "start" ? (
         <>
           {issue && (
             <p class="session-card-line session-ask-question" data-proposal-issue={issue.number}>

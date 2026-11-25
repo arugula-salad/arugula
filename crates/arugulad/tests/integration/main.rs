@@ -120,6 +120,8 @@ mod recipes;
 mod remote_layout;
 mod resume;
 mod review;
+#[cfg(unix)]
+mod run_board;
 mod session_history;
 mod session_links;
 // `Daemon::stop` (to enroll it with the fake control) is unix-only.

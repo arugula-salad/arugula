@@ -459,6 +459,37 @@ agent?: ChatAgent, created_at: number, };
 export type BoardEntryKind = "zone" | "row";
 
 /**
+ * A board's standing grant (Arugula #1415, #1416): what its person approved
+ * on its "Run this board" card. Its lead runs on `lead_machine`; its issue
+ * agents on that machine or `machines`, at most `cap` at once.
+ */
+export type BoardGrant = { 
+/**
+ * `grt_…`.
+ */
+id: string, 
+/**
+ * The account that gave it, and its name now.
+ */
+person: string, person_name: string, lead_machine: GrantMachine, 
+/**
+ * Every machine its issue agents may use: the lead's first.
+ */
+machines: Array<GrantMachine>, cap: number, 
+/**
+ * Its issue agents running now (and tickets not attached yet).
+ */
+running: number, created_at: number, 
+/**
+ * When it lapses; absent: when the board closes.
+ */
+lapses_at?: number, 
+/**
+ * The reader gave it, so Revoke is theirs.
+ */
+mine: boolean, };
+
+/**
  * A named, ordered section of a board that its author sets: a phase, a
  * wave, an area. A row belongs to at most one ([`Row::group`]); a group
  * holds no lane, and a row's lane is the same in any group.
@@ -870,6 +901,12 @@ branch: string,
 pr?: string, };
 
 /**
+ * [`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the
+ * person's staff room. `again`: it was open already.
+ */
+export type BoardRunAsked = { ask: string, room: string, seq: number, again: boolean, };
+
+/**
  * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
  * `completed` (when not given), `not_planned` or `duplicate`.
  */
@@ -976,7 +1013,11 @@ order?: Array<string>,
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.
  */
-said?: string, };
+said?: string, 
+/**
+ * Its live grant to start agents (Arugula #1416), if it has one.
+ */
+grant?: BoardGrant, };
 
 /**
  * One thing a row may point at.
@@ -1623,7 +1664,7 @@ export type ChatProposal = {
  */
 id: string, 
 /**
- * `start` or `close`.
+ * `start`, `close` or `run_board`.
  */
 action: string, 
 /**
@@ -1666,7 +1707,11 @@ outcome: string | null,
 /**
  * `start`, approved: the session it started.
  */
-started: string | null, };
+started: string | null, 
+/**
+ * `run_board`: the board, where its lead runs and what it may start.
+ */
+run?: ProposalRun, };
 
 /**
  * Why control pushed someone.
@@ -3364,6 +3409,12 @@ plan_digest: string | null,
  * The member's latest release in the env watched.
  */
 last_release: GateRelease | null, };
+
+/**
+ * A machine a [`BoardGrant`] names: its id, and its name now (its id while
+ * it can't be told).
+ */
+export type GrantMachine = { id: string, name: string, };
 
 /**
  * An ssh invite to a pane (M65). `token`, `command` and the pinning lines
@@ -5500,6 +5551,31 @@ export type ProposalIssue = {
  * `iss_…`.
  */
 id: string, number: number, title: string, };
+
+/**
+ * A "Run this board" card's lines ([`ChatProposal::run`]).
+ */
+export type ProposalRun = { 
+/**
+ * `brd_…`, and its title now.
+ */
+board: string, board_title: string, 
+/**
+ * Where its lead runs.
+ */
+lead_machine: GrantMachine, 
+/**
+ * Where its issue agents may run: the lead's machine first.
+ */
+machines: Array<GrantMachine>, 
+/**
+ * How many issue agents at once.
+ */
+cap: number, 
+/**
+ * None: until the board closes.
+ */
+lapse_days?: number, };
 
 /**
  * One of [`ChatProposal::sessions`].

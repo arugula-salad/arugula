@@ -558,13 +558,14 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     if (front === chief) talk.pick(`${front.kind}:${front.id}`);
     else talk.open(front);
   }, [zkey, front && `${front.kind}:${front.id}`]);
-  // A board no one leads: ask the chief of staff for one, in the staff room, and bring its tab up to read the answer.
-  async function askChief(t: TalkTab, b: OvBoard) {
+  // A board no one leads: Run this board (#1416) puts its card in the staff room, under Needs you, and brings that tab up.
+  async function runBoard(b: OvBoard) {
     try {
-      await chat.post(t.id, `Please start a session to lead the board "${b.title}" (${b.id}): read its goal and open tickets, then lead it.`);
-      pickChief(t);
+      const r = await boards.run(b.id);
+      api.toast(r.again ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.");
+      if (chief) pickChief(chief);
     } catch (e) {
-      api.toast(`Couldn't ask the chief of staff: ${(e as Error).message}`);
+      api.toast(`Couldn't ask to run it: ${(e as Error).message}`);
     }
   }
   // The lead's tab: its session's peek, as its chip opens it (#1290); a board no one leads, its thread.
@@ -655,7 +656,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           leadWho={zoomedBoard.lead && teammateOf(zoomedBoard.lead.machine)}
           leads={zoomedBoard.lead ? o.boards.filter((x) => x.lead?.machine === zoomedBoard.lead!.machine && x.lead.session === zoomedBoard.lead!.session).length : 0}
           thread={chat.on ? () => talkTo({ kind: "thread", id: zoomedBoard.id, title: zoomedBoard.title }) : undefined}
-          askChief={chief ? () => void askChief(chief, zoomedBoard) : undefined}
+          run={() => void runBoard(zoomedBoard)}
         />
       ) : !zoomedRow ? (
         <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>

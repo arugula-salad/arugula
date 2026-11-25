@@ -151,8 +151,8 @@ itself; you edit it after (Arugula #1442). It:
 6. posts the board in your staff room, groups, issues and blockers, and
    says it has no lead yet.
 
-It starts nothing. Running a board will be the **Run this board** card
-(Arugula #1416), which it will offer once that exists. It changes a board it
+It starts nothing. It offers to run the board, and asks for a **Run this
+board** card only when you say yes (see "Run this board" below). It changes a board it
 made while that board has no lead, when you ask, and never changes a board
 another lead runs, except to add a row you asked it to add.
 
@@ -422,7 +422,52 @@ The chief of staff on one of your machines asks the same way (Arugula
    `session`, the `machine`, and for a start the block it `started`
    (`%N`). The chief of staff watches it per card.
 
-A start on another of your machines isn't a card's yet: it's a ladder
-start, with control's start ticket (aru-143, #1415). The op names no
-machine but the one whose agent asked, so that's where a later card would
-hand off.
+A start on another of your machines isn't a card's: it's a ladder start,
+with control's start ticket (aru-143, #1415), under the board's grant. The
+"Run this board" card gives that grant.
+
+### Run this board
+
+One card starts a board's lead and grants it agents (Arugula #1416).
+Approval is at the board, not at every agent. The card comes two ways:
+
+- **Your chief of staff on a machine asks:** `ask_approval` `action`
+  `run_board` with `board`, and optionally `machine` (its lead's machine,
+  by name or id; default the chief of staff's), `machines` (others its
+  issue agents may use), `cap` (issue agents at once; default 3),
+  `lapse_days` (default: until the board closes) and `prompt` (for the
+  lead). Its recipe offers this after it builds a board, and asks only
+  when you say yes.
+- **You press Run this board** on a board with no lead: on the Overview's
+  Board level, or on the board's page under who leads it
+  (`POST /api/boards/{id}/run`). The card has the defaults: the lead on the
+  machine your chief of staff runs on (else one of yours that's online), 3
+  at once there, until the board closes.
+
+The card is in your staff room, under Needs you and on your phone. It
+reads: **Run** the board / **Lead on** a machine / **Issue agents on**
+machines **· up to N at once** / **Until the board closes** (or for N days)
+/ **Why**. There's one card per board: another is refused while one is open,
+and pressing Run this board again finds it.
+
+**Approve** writes the board's grant (`board_grants`: its lead's machine,
+the other machines, the cap, the lapse) and sends `agents.approved`
+`run_board` to the lead's machine, whichever asked. That machine starts the
+lead as a ladder start: a start ticket under the grant, then an agent block
+titled "Lead · <board>", in a worktree of the project's repo when it has a
+clone, which takes the board's lead (`lead_board`, by that title), so the
+board's thread reaches it. Started, the grant replaces any the board had;
+not started (offline, remote input off, too old), the grant is revoked and
+the card says why. **Deny** drops it.
+
+The board's page shows the grant under its lead: "Grant: lead on geek ·
+agents on geek, jake-mini · up to 3 · until the board closes", with
+**Revoke** for you. Revoking (`DELETE /api/boards/{id}/grant`) leaves the
+lead and its agents running, and refuses the next start under it. Closing
+the board lapses it.
+
+Going past the grant (another machine, more at once) takes a new card. A
+lead refused past the grant asks the chief of staff in your staff room; it
+decides whether the need is real and, if so, asks you with a new card for
+the board. A card for a board that has a lead doesn't start another: Approve
+replaces the grant, and the lead runs on where it is.

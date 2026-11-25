@@ -3836,6 +3836,7 @@ impl ToolCall<'_, '_> {
             repo,
             prompt: a.prompt,
             session: blank(a.session),
+            title: None,
             by_session,
             permission_mode: blank(a.permission_mode),
             allow: a.allow,

@@ -764,6 +764,73 @@
       ],
       "type": "object"
     },
+    "BoardGrant": {
+      "description": "A board's standing grant (Arugula #1415, #1416): what its person approved\non its \"Run this board\" card. Its lead runs on `lead_machine`; its issue\nagents on that machine or `machines`, at most `cap` at once.",
+      "properties": {
+        "cap": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`grt_…`.",
+          "type": "string"
+        },
+        "lapses_at": {
+          "description": "When it lapses; absent: when the board closes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lead_machine": {
+          "$ref": "#/$defs/GrantMachine"
+        },
+        "machines": {
+          "description": "Every machine its issue agents may use: the lead's first.",
+          "items": {
+            "$ref": "#/$defs/GrantMachine"
+          },
+          "type": "array"
+        },
+        "mine": {
+          "default": false,
+          "description": "The reader gave it, so Revoke is theirs.",
+          "type": "boolean"
+        },
+        "person": {
+          "description": "The account that gave it, and its name now.",
+          "type": "string"
+        },
+        "person_name": {
+          "default": "",
+          "type": "string"
+        },
+        "running": {
+          "default": 0,
+          "description": "Its issue agents running now (and tickets not attached yet).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "person",
+        "lead_machine",
+        "machines",
+        "cap",
+        "created_at"
+      ],
+      "type": "object"
+    },
     "BoardLead": {
       "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
       "properties": {
@@ -917,6 +984,17 @@
             "$ref": "#/$defs/BoardDoc"
           },
           "type": "array"
+        },
+        "grant": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardGrant"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its live grant to start agents (Arugula #1416), if it has one."
         },
         "groups": {
           "default": [],
@@ -2259,6 +2337,22 @@
         "plan",
         "run",
         "recorded"
+      ],
+      "type": "object"
+    },
+    "GrantMachine": {
+      "description": "A machine a [`BoardGrant`] names: its id, and its name now (its id while\nit can't be told).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ],
       "type": "object"
     },
@@ -3684,6 +3778,65 @@
           },
           "required": [
             "action"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "\"Run this board\" (Arugula #1416): start the board's lead on\n`machine`, and grant it issue agents on that machine and `machines`,\n`cap` at once, until the board closes or `lapse_days` pass. Approve\nwrites the board's grant (replacing any it had) and starts the lead\nthere. A machine's agent's only: `machine` is a machine of its\nperson's, by name or id (none: the asking machine).",
+          "properties": {
+            "action": {
+              "const": "run_board",
+              "type": "string"
+            },
+            "board": {
+              "description": "`brd_…`.",
+              "type": "string"
+            },
+            "cap": {
+              "description": "None: [`RUN_BOARD_CAP`].",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "lapse_days": {
+              "description": "None: when the board closes.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "machine": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "machines": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "prompt": {
+              "description": "What the lead is told; none: to run the board.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "board"
           ],
           "type": "object"
         }

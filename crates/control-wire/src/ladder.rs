@@ -167,6 +167,11 @@ pub struct LadderStart {
     /// A name for its session there; default the rung and the issue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// Its block's title there; default its session's name. A block with a
+    /// title is one a post naming its session reaches (the board's thread,
+    /// for a lead).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default)]
     pub by: StartedBy,
     /// The permission mode its session starts in (Claude Code's `auto`,

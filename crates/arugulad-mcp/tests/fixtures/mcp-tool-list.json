@@ -361,7 +361,7 @@
         "readOnlyHint": false,
         "title": "Ask your person to approve"
       },
-      "description": "Ask your person to approve something only they may do, on this machine: start an agent on one of the project's issues (action start: issue #N, prompt), or close agent blocks here (action close: blocks, by pane). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them, here, and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.",
+      "description": "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -381,7 +381,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "action": {
-            "description": "start (an agent on an issue, on this machine) or close (agent\nblocks on this machine).",
+            "description": "start (an agent on an issue, on this machine), close (agent blocks\non this machine) or run_board (a board's lead, and a grant for its\nissue agents).",
             "type": "string"
           },
           "blocks": {
@@ -391,6 +391,24 @@
             },
             "type": "array"
           },
+          "board": {
+            "default": null,
+            "description": "run_board: the board (brd_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cap": {
+            "default": null,
+            "description": "run_board: how many issue agents at once, 1 to 20. Default 3.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "issue": {
             "default": null,
             "description": "start: the issue, as #N or N, in the project.",
@@ -398,6 +416,32 @@
               "string",
               "null"
             ]
+          },
+          "lapse_days": {
+            "default": null,
+            "description": "run_board: the grant lapses after this many days. Default: when\nthe board closes.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "machine": {
+            "default": null,
+            "description": "run_board: the machine its lead runs on, by name or id. Default:\nthis one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machines": {
+            "default": [],
+            "description": "run_board: other machines its issue agents may use, by name or id\n(the lead's machine always may), at most 10.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "project": {
             "default": null,
@@ -409,7 +453,7 @@
           },
           "prompt": {
             "default": null,
-            "description": "start: what the new agent is told, at most 4000 characters.\nWithout it: to work on the issue.",
+            "description": "start, run_board: what the new agent (or the lead) is told, at most\n4000 characters. Without it: to work on the issue (run the board).",
             "type": [
               "string",
               "null"
