@@ -1517,6 +1517,15 @@ pub enum ChatLive {
         seq: i64,
         github: ChatToGithub,
     },
+    /// The reader's Inbox changed (Arugula #1430): its one `count` now, and
+    /// the ids of the items that came, went or changed (empty when it
+    /// isn't known which): read `GET /api/inbox` again. Sent to that
+    /// account only.
+    Inbox {
+        count: u32,
+        #[serde(default)]
+        changed: Vec<String>,
+    },
     Resync {},
 }
 

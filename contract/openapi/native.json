@@ -8601,6 +8601,32 @@
             "type": "object"
           },
           {
+            "description": "The reader's Inbox changed (Arugula #1430): its one `count` now, and\nthe ids of the items that came, went or changed (empty when it\nisn't known which): read `GET /api/inbox` again. Sent to that\naccount only.",
+            "properties": {
+              "changed": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "count": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "inbox",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "count"
+            ],
+            "type": "object"
+          },
+          {
             "properties": {
               "type": {
                 "const": "resync",
@@ -11146,15 +11172,57 @@
       },
       "Inbox": {
         "properties": {
+          "count": {
+            "default": 0,
+            "description": "The one count (Arugula #1430): the open items whose `counts` is\ntrue. Every client shows this number and adds nothing to it. Seen\ndoesn't lower it: an item counts until it clears. 0 from a server\nbefore it.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "entries": {
+            "description": "Today's list, unchanged, for apps released before `items` (One\nInbox, Arugula #1428): removed once the oldest supported app reads\n`items`.",
             "items": {
               "$ref": "#/components/schemas/InboxEntry"
+            },
+            "type": "array"
+          },
+          "handled": {
+            "default": 0,
+            "description": "How many asks agents are handling among themselves (Arugula #1393):\nshown as a line, never counted.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "default": [],
+            "description": "The one list: what needs the reader or names them, ranked by group\n([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first\nwithin a group. One item per thing: a mention in a thread is its\n`mention` item, never also the thread's `thread_news`.",
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
             },
             "type": "array"
           }
         },
         "required": [
           "entries"
+        ],
+        "type": "object"
+      },
+      "InboxAnswer": {
+        "description": "How to answer an item in place. `via` is `attention_act`,\n`session_action`, `proposal`, `board_answer`, `deploy` or\n`chat_reply`; `options` only where the server holds them (a board ask's\nand a proposal's).",
+        "properties": {
+          "options": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "via": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "via"
         ],
         "type": "object"
       },
@@ -11261,6 +11329,122 @@
         ],
         "type": "object"
       },
+      "InboxFrom": {
+        "description": "Who an item is from: a person, or an agent and its machine.",
+        "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agent": {
+            "description": "An agent session's id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "A person's or a GitHub login's name, as the list shows it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InboxItem": {
+        "description": "One item of the one Inbox (Arugula #1430): a thing that needs the\nreader or names them, until its source no longer does.",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How to answer it in place, when it can be."
+          },
+          "counts": {
+            "description": "Whether it's in `count`: false for `turn_finished`.",
+            "type": "boolean"
+          },
+          "done_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "from": {
+            "$ref": "#/components/schemas/InboxFrom",
+            "default": {},
+            "description": "Who asks or wrote."
+          },
+          "group": {
+            "description": "One of [`INBOX_GROUPS`].",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (a\nproposal), `ask_…` (a board ask), `dep_…` (a deploy), `room:<id>`\n(a DM, a thread or a chat mention), or an entry's item and reason\n(`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).\n`POST /api/inbox/{id}` marks it.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "One of [`INBOX_KINDS`].",
+            "type": "string"
+          },
+          "seen_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "since": {
+            "description": "When it started waiting on the reader (ms): it ranks the list.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "snippet": {
+            "description": "The message, for a DM, a thread or a chat mention. Never an agent's\nquestion, which stays on its machine.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "$ref": "#/components/schemas/InboxSubject",
+            "description": "What it's about, and where Open goes."
+          },
+          "title": {
+            "description": "One line: the PR's title, the question, \"Approve deploy v0.70.105\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "group",
+          "counts",
+          "title",
+          "subject",
+          "since"
+        ],
+        "type": "object"
+      },
       "InboxMark": {
         "description": "Mark an item's entries: `true` sets seen or done (now, if it wasn't),\n`false` clears it, and one not given stays as it is.",
         "properties": {
@@ -11324,6 +11508,66 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "InboxSubject": {
+        "description": "What an item is about. `type` is `pane`, `session`, `proposal`,\n`board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is\nwhere Open goes (a path on the platform's page, or the item on GitHub).",
+        "properties": {
+          "board": {
+            "description": "A board ask's board.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "machine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pane": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "description": "The chat room it's in: a proposal's card, a thread, a DM.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seq": {
+            "description": "The message in `room`: a proposal's card, the first unread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "url"
+        ],
         "type": "object"
       },
       "Issue": {

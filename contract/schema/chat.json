@@ -942,6 +942,32 @@
           "type": "object"
         },
         {
+          "description": "The reader's Inbox changed (Arugula #1430): its one `count` now, and\nthe ids of the items that came, went or changed (empty when it\nisn't known which): read `GET /api/inbox` again. Sent to that\naccount only.",
+          "properties": {
+            "changed": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "count": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "inbox",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "count"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "type": {
               "const": "resync",
