@@ -319,24 +319,47 @@ final class MachineSession: ObservableObject {
 
 // ---- Machines: one page of machines › sessions › pane rows (Arugula #1357)
 
-/// The pane last opened in a project, on this device: Machines lights its
-/// row as "where you were", and an iPad shows its tab live before anything
-/// is picked.
+/// The pane last opened in a project, shared with the web (Arugula #1360):
+/// Machines lights its row as "where you were", and an iPad shows its tab
+/// live before anything is picked. Kept in the account's prefs as the web
+/// keeps it (`app.pane.<project>` in `/api/me/prefs`, its places-kept.ts),
+/// and on this device for when control can't be asked.
 enum WhereYouWere {
     struct Pane: Equatable { var machine: String; var pane: UInt32 }
 
     private static func key(_ project: String?) -> String { "arugula.last-pane.\(project ?? "")" }
+    /// The account's pref, the web's name for it.
+    private static func pref(_ project: String) -> String { "app.pane.\(project)" }
+    private static let prefs = "/api/me/prefs"
 
+    /// This device's copy.
     static func of(_ project: String?) -> Pane? {
         let parts = UserDefaults.standard.string(forKey: key(project))?.split(separator: " ") ?? []
         guard parts.count == 2, let pane = UInt32(parts[1]) else { return nil }
         return Pane(machine: String(parts[0]), pane: pane)
     }
 
-    /// It was opened: and its machine is the one used last.
-    static func note(_ p: Pane, in project: String?) {
+    /// The account's, as the web lights it; this device's when control
+    /// can't be asked (offline, or a control that doesn't let the app read
+    /// prefs yet).
+    static func load(_ project: String?, _ control: Control) async -> Pane? {
+        guard let project else { return of(nil) }
+        guard let data = try? await control.call("GET", prefs),
+              let all = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return of(project) }
+        guard let path = all[pref(project)] as? String,
+              let s = takeString(aru_kept_pane(path, project)),
+              let v = (try? JSONSerialization.jsonObject(with: Data(s.utf8))) as? [String: Any],
+              let machine = v["machine"] as? String, let pane = v["pane"] as? Int else { return nil }
+        return Pane(machine: machine, pane: UInt32(pane))
+    }
+
+    /// It was opened: kept for the account and on this device, and its
+    /// machine is the one used last.
+    static func note(_ p: Pane, in project: String?, _ control: Control) {
         UserDefaults.standard.set("\(p.machine) \(p.pane)", forKey: key(project))
         UserDefaults.standard.set(p.machine, forKey: MachinesView.lastKey)
+        guard let project, let path = takeString(aru_pane_path(project, p.machine, p.pane)) else { return }
+        Task { _ = try? await control.call("POST", prefs, body: [pref(project): path]) }
     }
 }
 
@@ -420,6 +443,9 @@ struct MachinesView: View {
     /// The machine whose pane is driven, to watch its tab again after.
     @State private var driven: MachineSession?
     @State private var last: WhereYouWere.Pane?
+    /// When a pane was last opened here: a read of the account's from
+    /// before then is older.
+    @State private var notedAt = Date.distantPast
     @State private var problem: String?
     @State private var loaded = false
     @State private var quietOpen = false
@@ -465,6 +491,7 @@ struct MachinesView: View {
             while !Task.isCancelled {
                 await fleet.load(control)
                 await pins.load(control)
+                await loadLast()
                 loaded = true
                 try? await Task.sleep(for: .seconds(30))
             }
@@ -473,6 +500,7 @@ struct MachinesView: View {
             last = WhereYouWere.of(now)
             picked = nil
             path = []
+            Task { await loadLast() }
         }
         // A notification about a pane that home couldn't place (#1260):
         // it opens full screen once its machine is reached.
@@ -489,6 +517,17 @@ struct MachinesView: View {
                 }
             }
         }
+    }
+
+    /// Where you were in the project, as the account keeps it: the web's
+    /// last pane, or this app's.
+    private func loadLast() async {
+        let project = scope.current?.id
+        let asked = Date()
+        let got = await WhereYouWere.load(project, control)
+        // One opened since, or still being written, is newer.
+        guard scope.current?.id == project, notedAt.addingTimeInterval(10) < asked else { return }
+        last = got
     }
 
     /// The link to a machine, kept by the fleet.
@@ -694,8 +733,9 @@ struct MachinesView: View {
 
     private func note(_ m: MachineSession, _ row: PaneRow) {
         let p = WhereYouWere.Pane(machine: m.machine.id, pane: row.id)
-        WhereYouWere.note(p, in: scope.current?.id)
+        WhereYouWere.note(p, in: scope.current?.id, control)
         last = p
+        notedAt = Date()
     }
 
     /// A new shell on one of your machines, open full screen once it's there.

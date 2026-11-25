@@ -34,6 +34,16 @@ object Core {
      */
     fun machines(input: JSONObject): JSONObject = JSONObject(Native.machines(input.toString()))
 
+    /**
+     * Where you were in [project] (Arugula #1360), from its `app.pane.<project>`
+     * pref, as the web reads it: `{machine, pane}`, or null when [path] names
+     * no pane the app can place.
+     */
+    fun keptPane(path: String, project: String): JSONObject? = Native.keptPane(path, project)?.let(::JSONObject)
+
+    /** The `app.pane.<project>` pref's value for [pane] on [machine], as the web writes it. */
+    fun panePath(project: String, machine: String, pane: Int): String = Native.panePath(project, machine, pane).orEmpty()
+
     /** Where control's page sends a sign-in's grant: `arugula://signin?ticket=…&grant=…`. */
     const val CALLBACK_SCHEME = "arugula"
 }

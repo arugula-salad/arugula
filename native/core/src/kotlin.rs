@@ -332,6 +332,33 @@ pub extern "system" fn Java_io_arugula_core_Native_machines<'l>(
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_keptPane<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    path: JString<'l>,
+    project: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let (path, project) = (c(&text(env, &path)?), c(&text(env, &project)?));
+        taken(env, unsafe { ffi::aru_kept_pane(path.as_ptr(), project.as_ptr()) })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_panePath<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    project: JString<'l>,
+    machine: JString<'l>,
+    pane: jint,
+) -> jstring {
+    run(env, |env| {
+        let (project, machine) = (c(&text(env, &project)?), c(&text(env, &machine)?));
+        taken(env, unsafe { ffi::aru_pane_path(project.as_ptr(), machine.as_ptr(), pane as u32) })
+    })
+}
+
 // ---- a machine
 
 /// As `aru_link_open`, with Kotlin's `Notify` in place of a C callback: the

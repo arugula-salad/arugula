@@ -235,6 +235,59 @@ pub fn pinned_cards(machines: &[MachineSection], pins: &[Pin]) -> (Vec<Pin>, Vec
     (pinned, rest)
 }
 
+/// Where you were in a project, as the web keeps it (Arugula #1360): the
+/// pane last opened there, in the account's `app.pane.<project>` pref.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct KeptPane {
+    pub machine: String,
+    pub pane: u32,
+}
+
+/// The `app.pane.<project>` pref's value for `pane` on `machine`: that
+/// machine page's path with the pane, as the web writes it
+/// (web/src/platform/places-kept.ts, without the slugs it reads past).
+pub fn pane_path(project: &str, machine: &str, pane: u32) -> String {
+    format!("/p/{project}/machines/{machine}?pane={pane}")
+}
+
+/// The pane a kept path names, if it's a machine page of `project`'s with a
+/// pane: the web's `paneOf` and `lastPane` (web/src/app/machines-list.tsx).
+/// A path naming no machine (a daemon's own page's) isn't one an app can
+/// place.
+pub fn kept_pane(path: &str, project: &str) -> Option<KeptPane> {
+    if path.len() > 400 {
+        return None;
+    }
+    let path = path.split('#').next()?;
+    let (path, query) = path.split_once('?').unwrap_or((path, ""));
+    let rest: Vec<&str> = path.strip_prefix("/p/")?.split('/').collect();
+    let [at, "machines", machine] = rest[..] else { return None };
+    if id_of(at)? != project {
+        return None;
+    }
+    // A daemon's id is hex, before its slug.
+    let machine = machine.split('-').next()?;
+    if !(6..=64).contains(&machine.len()) || !machine.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return None;
+    }
+    let pane = query.split('&').find_map(|kv| kv.strip_prefix("pane="))?;
+    if !(1..=9).contains(&pane.len()) || !pane.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(KeptPane { machine: machine.to_owned(), pane: pane.parse().ok()? })
+}
+
+/// An id at the front of a path segment, before its slug: the web's `idOf`.
+fn id_of(segment: &str) -> Option<&str> {
+    let id = segment.split('-').next()?;
+    let (kind, hex) = id.split_once('_')?;
+    let ok = (2..=3).contains(&kind.len())
+        && kind.bytes().all(|b| b.is_ascii_lowercase())
+        && (4..=64).contains(&hex.len())
+        && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    ok.then_some(id)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -369,5 +422,31 @@ mod tests {
         let (_, rest) =
             pinned_cards(&machine_sections(&[host("bee", true, None)], Some(&at("prj_a", false)), None).0, &one);
         assert!(rest.is_empty(), "a machine whose sessions were all pinned is left out");
+    }
+    #[test]
+    fn where_you_were_reads_as_the_web_writes_it() {
+        let kept = |m: &str, p| Some(KeptPane { machine: m.into(), pane: p });
+        // The web's, with its slugs and flags; and the apps' own.
+        assert_eq!(
+            kept_pane("/p/prj_ab12-my-work/machines/0a1b2c3d-mini?pane=7&share", "prj_ab12"),
+            kept("0a1b2c3d", 7)
+        );
+        let ours = pane_path("prj_ab12", "0a1b2c3d", 12);
+        assert_eq!(ours, "/p/prj_ab12/machines/0a1b2c3d?pane=12");
+        assert_eq!(kept_pane(&ours, "prj_ab12"), kept("0a1b2c3d", 12));
+        // Another project's, no machine, no pane, or not a machine page: none.
+        for path in [
+            "/p/prj_cd34/machines/0a1b2c3d?pane=7",
+            "/p/prj_ab12/machines?pane=7",
+            "/p/prj_ab12/machines/0a1b2c3d",
+            "/p/prj_ab12/machines/swarm?focus=7",
+            "/p/prj_ab12/machines/mini?pane=7",
+            "/p/prj_ab12/board/brd_1?pane=7",
+            "//evil/p/prj_ab12/machines/0a1b2c3d?pane=7",
+            "/p/prj_ab12/machines/0a1b2c3d?pane=1234567890",
+            "",
+        ] {
+            assert_eq!(kept_pane(path, "prj_ab12"), None, "{path}");
+        }
     }
 }

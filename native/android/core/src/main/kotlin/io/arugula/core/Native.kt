@@ -41,6 +41,8 @@ internal object Native {
 
     @JvmStatic external fun shown(atId: String?, atPersonal: Boolean, sessionProject: String?, onIssueProject: String?, yours: Boolean): Boolean
     @JvmStatic external fun machines(input: String): String
+    @JvmStatic external fun keptPane(path: String, project: String): String?
+    @JvmStatic external fun panePath(project: String, machine: String, pane: Int): String?
 
     @JvmStatic external fun chatOpen(control: Long, notify: Notify): Long
     @JvmStatic external fun chatNext(h: Long): String?
