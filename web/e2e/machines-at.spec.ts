@@ -43,6 +43,14 @@ async function openApp(page: Page, path: string) {
 const at = (session?: number) => new RegExp(`/p/${P}[^/]*/machines\\?show=[^&#]+${session === undefined ? "" : `&session=${session}`}$`);
 const list = (page: Page) => page.locator("[data-machines-list]");
 
+/** The session crumb, which the header shows while the sidebar's closed. */
+async function crumbOf(page: Page) {
+  const crumb = page.locator(".ws-head [data-crumb-session]");
+  if (await page.locator("[data-session-sidebar] .ws-sidebar-head").isVisible()) await page.locator(".ws-head [data-open-sessions]").click();
+  await expect(crumb).toBeVisible();
+  return crumb;
+}
+
 /** The suite's machine on Machines, the one marked; at `session`'s card, marked instead. */
 async function shownAt(page: Page, session?: number) {
   const picked = list(page).locator("[data-machines-picked]");
@@ -83,7 +91,7 @@ test("the palette and the session crumb open Machines at this machine, and at th
   // Back on the machine's page, the session crumb: its card.
   await page.goBack();
   await expect(page.locator(`[data-pane="${last.pane}"]`)).toBeVisible();
-  const crumb = page.locator(".ws-head [data-crumb-session]");
+  const crumb = await crumbOf(page);
   await expect(crumb).toHaveAttribute("title", /on Machines/);
   await crumb.click();
   await expect(page).toHaveURL(at(last.id));
@@ -116,7 +124,8 @@ test("on the daemon's own page, the mark opens Machines at this machine where th
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(all[0].id);
 
   // Given a platform page (control's would say), Machines there, at this machine.
-  await page.route(`${APP}/**`, (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><title>the app</title><p data-app-stand-in>the app</p>" }));
+  // On the context: the mark opens it in a window of its own.
+  await page.context().route(`${APP}/**`, (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><title>the app</title><p data-app-stand-in>the app</p>" }));
   await page.evaluate((o) => (window.__arugula as unknown as { platform(origin: string): void }).platform(o), APP);
   await expect(mark).toHaveAttribute("aria-label", /^Arugula: .+ on Machines$/);
   const machine = await page.evaluate(() => {
@@ -131,7 +140,7 @@ test("on the daemon's own page, the mark opens Machines at this machine where th
   await app.close();
   // The session crumb there: its card.
   const card = page.waitForEvent("popup");
-  await page.locator(".ws-head [data-crumb-session]").click();
+  await (await crumbOf(page)).click();
   const cardPage = await card;
   await expect(cardPage).toHaveURL(`${APP}/machines?show=${encodeURIComponent(machine)}&session=${all[0].id}`);
   await cardPage.close();
