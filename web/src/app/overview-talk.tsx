@@ -9,10 +9,12 @@
 // ×, once it has a room; until then its slot is empty (`pinned` null). The
 // tabs a reader opened are kept for the browser tab, per project, as the
 // field's open boards are. Under the tabs, the who-line (#1290) says who
-// the open tab talks to and where a message there goes.
+// the open tab talks to and where a message there goes; the chief of
+// staff's is its head (./agent-head.tsx, #1342): where it runs and whether
+// it's awake.
 
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ChatRoom } from "../shared/proto";
 import { boards } from "../shared/boards/store";
 import { chat } from "../shared/chat-store";
@@ -20,7 +22,9 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
-import { PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
+import { leadAwake } from "../shell/swarm/overview";
+import { AgentHead } from "./agent-head";
+import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -56,17 +60,7 @@ export const TAB_KINDS = {
   staff: {
     Body: ({ tab, phone }) => <StaffTab room={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (chat.rooms.find((r) => r.id === tab.id)?.unread ?? 0) > 0,
-    Who: ({ tab }) => {
-      const lead = chat.rooms.find((r) => r.id === tab.id)?.lead;
-      return lead ? (
-        <>
-          Talking to your chief of staff, <b>{lead.session}</b>
-          {lead.machine_name ? ` on ${lead.machine_name}` : ""}: a message goes straight to it.
-        </>
-      ) : (
-        <>Talking to your chief of staff: no session leads it yet, so a message waits here.</>
-      );
-    },
+    Who: ({ tab }) => <StaffWho room={tab.id} />,
   },
   /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
   peek: {
@@ -255,6 +249,17 @@ function useFitWindow(on: boolean) {
 export function staffTab(project: string): TalkTab | null {
   const r = chat.rooms.find((x) => x.staff && x.project === project);
   return r ? { kind: "staff", id: r.id, title: "Chief of staff" } : null;
+}
+
+/** The staff room's head (#1342): the chief of staff, where it runs and
+ * whether a message is heard now, from its lead session's panes on its
+ * machine (or the hub's word for it) and its machine's state in the fleet. */
+function StaffWho({ room }: { room: string }) {
+  const place = useContext(PeekContext);
+  useSubscribe((fn) => (place ? place.fleet.subscribe(fn) : () => {}));
+  const l = chat.rooms.find((r) => r.id === room)?.lead;
+  const lead = !l ? null : place ? place.lead(l) : { machineName: l.machine_name, standing: null };
+  return <AgentHead role="Chief of staff" at={leadAwake(lead, l && place?.fleet.hostById(l.machine))} />;
 }
 
 /** The staff room: its messages, which its lead session hears, and the box. */

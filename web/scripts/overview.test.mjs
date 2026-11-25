@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardLead, boardSays, groupByOwner, leadAwake, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -249,6 +249,28 @@ test("a board's lead stands as its session's panes on its machine, else as the h
   // Still its own session, only where it runs: never the board's thread.
   assert.deepEqual([gone.peek.key, gone.peek.where, gone.peek.panes.length], ["lead:m_ws:gone", "workstation", 0]);
   assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
+});
+
+test("a lead's tab head says where it runs and whether it's awake: awake, idle, asleep on an offline machine or a paused Cloud workspace, or none (#1342)", () => {
+  const panes = [pane("workstation", 1, { machine: "m_ws", session: { id: 3, name: "cos" }, standing: "working" })];
+  const on = { name: "workstation", status: "online", state: "connected" };
+  // A staff room's lead reads as a board's: its session's panes on its machine.
+  const cos = boardLead({ machine: "m_ws", machine_name: "workstation", session: "cos" }, panes, null, hostOf);
+  assert.equal(cos.standing, "working");
+  assert.deepEqual(leadAwake(cos, on), { state: "awake", machine: "workstation" });
+  // A turn not running, on a machine that's up: idle there; a message wakes it.
+  assert.deepEqual(leadAwake({ ...cos, standing: "quiet" }, on), { state: "idle", machine: "workstation" });
+  assert.deepEqual(leadAwake({ ...cos, standing: null }, on), { state: "idle", machine: "workstation" });
+  // Offline in control's directory, whatever its last summary said; a Cloud workspace's paused box, by its own name.
+  assert.deepEqual(leadAwake(cos, { ...on, status: "offline", state: "stale" }), { state: "asleep", machine: "workstation" });
+  assert.deepEqual(leadAwake({ machineName: "", standing: null }, { name: "arugula-dev-3", status: "online", state: "asleep" }), { state: "asleep", machine: "arugula-dev-3" });
+  // No directory word: the page's own.
+  assert.deepEqual(leadAwake({ ...cos, standing: null }, { name: "workstation", state: "offline" }), { state: "asleep", machine: "workstation" });
+  // A machine the page doesn't reach, nothing telling: only where. One control no longer names has left.
+  assert.deepEqual(leadAwake({ machineName: "build-01", standing: null }, undefined), { state: "unknown", machine: "build-01" });
+  assert.deepEqual(leadAwake({ machineName: "", standing: null }, undefined), { state: "asleep", machine: "its machine" });
+  // No lead.
+  assert.deepEqual(leadAwake(null, on), { state: "none" });
 });
 
 test("Needs you groups by owner: yours first, then people by how many asks and then name, each in its order", () => {

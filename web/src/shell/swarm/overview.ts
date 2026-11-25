@@ -289,9 +289,10 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   return { boards, loose: sortSessions(loose), cardOf };
 }
 
-/** A board's lead as the row names it: how it stands from its session's
- * panes on its machine, else from the hub's sessions by card. */
-function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
+/** A board's lead as the row names it, or a staff room's (#1342): how it
+ * stands from its session's panes on its machine, else from the hub's
+ * sessions by card. */
+export function boardLead(l: Pick<BoardLead, "machine" | "machine_name" | "session" | "pane">, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
   // A pane whose machine has no id here (a daemon's own page) is matched by its name.
   const on = (p: OvPane) => (p.machine ? p.machine === l.machine : !!l.machine_name && p.host === l.machine_name);
   // The daemon names a lead by its Claude Code conversation's title (#429), not by the session its pane sits in: a terminal's session is the tab group's own name. So a session by name, else the session of the pane with that title.
@@ -314,6 +315,27 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
       ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch, ...hubId }
       : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
   return { machine: l.machine, machineName, session: l.session, standing, peek };
+}
+
+/** Where a lead runs and whether it's awake (#1342), for its tab's head:
+ * `awake` while a turn runs; `idle` on a machine control has online (a
+ * message wakes it); `asleep` on one that's offline, or a Cloud
+ * workspace's paused box (a message waits); `unknown` where neither its
+ * panes nor the hub tell; `none` with no lead. `host` is its machine in
+ * the page's fleet, which names it (a Cloud workspace by its own name). */
+export type LeadAwake = { state: "none" } | { state: "awake" | "idle" | "asleep" | "unknown"; machine: string };
+
+export function leadAwake(lead: Pick<OvLead, "machineName" | "standing"> | null, host: { name: string; status?: string; state: string } | undefined): LeadAwake {
+  if (!lead) return { state: "none" };
+  const machine = host?.name || lead.machineName;
+  // A machine control no longer names has left: nothing hears it.
+  if (!machine) return { state: "asleep", machine: "its machine" };
+  const offline = host ? host.status === "offline" || host.state === "asleep" || (!host.status && host.state === "offline") : false;
+  if (offline) return { state: "asleep", machine };
+  if (lead.standing === "working") return { state: "awake", machine };
+  // Its panes or the hub tell how it stands, or its machine is connected here and shows no turn running.
+  if (lead.standing !== null || host?.state === "connected" || host?.status === "online") return { state: "idle", machine };
+  return { state: "unknown", machine };
 }
 
 /** How a pane stands for the reader: one that needs someone else waits on them (#1392). */

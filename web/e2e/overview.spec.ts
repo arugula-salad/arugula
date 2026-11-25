@@ -806,7 +806,7 @@ test.describe("on a computer", () => {
     expect(row!.y + row!.height).toBeLessThanOrEqual(tabs!.y);
   });
 
-  test("the reader's staff room is the talk panel's first tab, pinned, saying which session hears it (Arugula #1275)", async ({ page }) => {
+  test("the reader's staff room is the talk panel's first tab, pinned, its head saying where its chief of staff runs and whether it's awake (Arugula #1275, #1342)", async ({ page }) => {
     await overview(page);
     const panel = page.locator("[data-ov-panel]");
     await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
@@ -833,7 +833,25 @@ test.describe("on a computer", () => {
     await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
     await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
-    await expect(panel.locator('[data-ov-who="staff"]')).toHaveText("Talking to your chief of staff, cos on geek: a message goes straight to it.");
+    // Its head (#1342): a machine this page doesn't reach tells only where it runs.
+    const head = panel.locator('[data-ov-who="staff"] [data-agent-head]');
+    await expect(head).toHaveText("Chief of staff · geek");
+    await expect(head).toHaveAttribute("data-agent-state", "unknown");
+    // Led by the project's scratch session on the suite's daemon, which this page reads: idle there, its shell quiet.
+    const host = (await page.locator("[data-ov-loose] [data-ov-panes]").getAttribute("data-ov-panes"))!.split(":")[0];
+    await page.evaluate((host) => {
+      const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
+      c.rooms = c.rooms.map((r) => (r.id === "dm_cos" ? { ...r, lead: { machine: "m_suite", machine_name: host, session: "scratch" } } : r));
+      c.emit();
+    }, host);
+    await expect(head).toHaveText(`Chief of staff · idle on ${host} (wakes on its own)`);
+    // No session leads it: none.
+    await page.evaluate(() => {
+      const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
+      c.rooms = c.rooms.map((r) => (r.id === "dm_cos" ? { ...r, lead: undefined } : r));
+      c.emit();
+    });
+    await expect(head).toHaveText("Chief of staff · none");
   });
 
   test("an agent's proposal to start one is under Needs you, counted; Approve sends it and it leaves (Arugula #1278)", async ({ page }) => {

@@ -53,7 +53,7 @@ import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
-import { asksYou, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
+import { asksYou, boardLead, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
 import { Asks, paneOwner, useProposals } from "./overview-asks";
 import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
@@ -347,7 +347,8 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     const who = fleet.personOf(h);
     return who.kind === "me" || who.name === fleet.me ? undefined : who.name;
   };
-  const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf, machineOwner);
+  const ovPanes = fleet.panes.map((p) => ovPane(fleet, p));
+  const o = overviewOf(project, views ?? [], ovPanes, byCard, hostOf, machineOwner);
   const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
   // What needs you is yours: a teammate's ask is in Needs you under their name, not counted (#1392).
   const paneNeeds = mine.filter((p) => needsYou(p.info) && paneOwner(fleet, p) === null).length;
@@ -453,6 +454,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && is(b.lead.peek))?.lead?.peek;
       return s && { s, card: null };
     },
+    lead: (l) => boardLead(l, ovPanes, byCard, hostOf),
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
