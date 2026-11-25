@@ -3,7 +3,7 @@
 // the platform page once control has one (M156).
 
 import { expect, test } from "@playwright/test";
-import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "../src/shell/tap";
+import { chatTap, platformOf, platformTap, shareUrl, tapUrl, turnActions, withShare } from "../src/shell/tap";
 
 test("a chat push from control opens its room at the message (M123)", () => {
   const room = `ch_${"0a".repeat(8)}`;
@@ -74,6 +74,10 @@ test("Share comes first where there's room for it (#237)", () => {
   // Not a pane that wants you: as it was.
   expect(withShare(dismiss, { pane: 3 })).toEqual(dismiss);
   expect(withShare(dismiss, { reason })).toEqual(dismiss);
+});
+
+test("a finished turn offers Open and Dismiss, no Share (#1432)", () => {
+  expect(turnActions.map((a) => a.action)).toEqual(["open", "dismiss"]);
 });
 
 test("with no pane it opens the app", () => {

@@ -144,9 +144,11 @@ impl Push {
         if subs.is_empty() {
             return;
         }
-        let payload = serde_json::Value::Object(payload(pane, title, body, extra)).to_string();
+        let payload = payload(pane, title, body, extra);
+        let urgency = urgency(&payload);
+        let payload = serde_json::Value::Object(payload).to_string();
         let this = self.clone();
-        crate::task::spawn(async move { this.post_all(subs, &payload).await });
+        crate::task::spawn(async move { this.post_all(subs, &payload, urgency).await });
     }
 
     /// [`Push::send_to`], waited for (#233): how many subscriptions `to`
@@ -160,8 +162,10 @@ impl Push {
         to: impl Fn(&str) -> bool,
     ) -> (usize, usize) {
         let subs = self.picked(to);
-        let payload = serde_json::Value::Object(payload(pane, title, body, extra)).to_string();
-        (subs.len(), self.post_all(subs, &payload).await)
+        let payload = payload(pane, title, body, extra);
+        let urgency = urgency(&payload);
+        let payload = serde_json::Value::Object(payload).to_string();
+        (subs.len(), self.post_all(subs, &payload, urgency).await)
     }
 
     fn picked(&self, to: impl Fn(&str) -> bool) -> Vec<Subscription> {
@@ -169,10 +173,10 @@ impl Push {
     }
 
     /// Post to each; how many push services took it.
-    async fn post_all(&self, subs: Vec<Subscription>, payload: &str) -> usize {
+    async fn post_all(&self, subs: Vec<Subscription>, payload: &str, urgency: &str) -> usize {
         let mut took = 0;
         for sub in subs {
-            match self.deliver(&sub, payload.as_bytes()).await {
+            match self.deliver(&sub, payload.as_bytes(), urgency).await {
                 Ok(status) if status == 404 || status == 410 => {
                     info!(endpoint = %sub.endpoint, "push subscription expired; dropping it");
                     let mut subs = self.subs.lock().unwrap();
@@ -187,7 +191,7 @@ impl Push {
         took
     }
 
-    async fn deliver(&self, sub: &Subscription, payload: &[u8]) -> anyhow::Result<u16> {
+    async fn deliver(&self, sub: &Subscription, payload: &[u8], urgency: &str) -> anyhow::Result<u16> {
         let ua_public = B64.decode(&sub.keys.p256dh)?;
         let auth = B64.decode(&sub.keys.auth)?;
         let body = encrypt(payload, &ua_public, &auth, &new_secret(), &random::<16>())?;
@@ -198,7 +202,7 @@ impl Push {
             .http
             .post(url)
             .header("TTL", "3600")
-            .header("Urgency", "high")
+            .header("Urgency", urgency)
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
             .header("Authorization", format!("vapid t={jwt}, k={}", self.public_key()))
@@ -227,6 +231,13 @@ pub fn payload(
         p.extend(extra);
     }
     p
+}
+
+/// RFC 8030's `Urgency` for a notification: `normal` for a lighter one
+/// (`quiet`, a turn that finished: Arugula #1432), which control's APNs
+/// sends with no sound; else `high`.
+pub fn urgency(payload: &serde_json::Map<String, serde_json::Value>) -> &'static str {
+    if payload.get("quiet").and_then(serde_json::Value::as_bool) == Some(true) { "normal" } else { "high" }
 }
 
 /// RFC 8291, shared with control (which encrypts its own notices).
@@ -266,6 +277,14 @@ mod tests {
         assert_eq!((p["tag"].as_str(), p["invite"].as_u64(), p["pane"].as_u64()), (Some("invite-7"), Some(7), Some(3)));
         assert_eq!(payload(3, "t", "b", None)["tag"], "pane-3");
         assert_eq!(payload(3, "t", "b", Some(serde_json::json!({ "ask": 1 })))["tag"], "pane-3");
+    }
+
+    /// Arugula #1432: a lighter notification goes at `normal` urgency.
+    #[test]
+    fn a_quiet_one_is_normal_urgency() {
+        assert_eq!(urgency(&payload(3, "Turn finished", "b", Some(serde_json::json!({ "quiet": true })))), "normal");
+        assert_eq!(urgency(&payload(3, "Needs you", "b", None)), "high");
+        assert_eq!(urgency(&payload(3, "t", "b", Some(serde_json::json!({ "quiet": false })))), "high");
     }
 
     /// RFC 8291 Appendix A, byte for byte.

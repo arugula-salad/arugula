@@ -3250,13 +3250,13 @@ impl Control {
         extra: Option<serde_json::Value>,
         to: impl Fn(&Principal) -> bool,
     ) {
-        let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else {
+        let Some((e, subs, payload, urgency)) = self.to_push(pane, title, body, extra, to) else {
             info!(pane, "no push through control: not joined, or nobody it's for has a device subscribed");
             return;
         };
         let me = self.clone();
         crate::task::spawn(async move {
-            let got = me.relay_push(&e, subs, &payload).await;
+            let got = me.relay_push(&e, subs, &payload, urgency).await;
             info!(pane, matched = got.matched, relayed = got.relayed, refused = got.refused, "pushed through control");
         });
     }
@@ -3273,11 +3273,14 @@ impl Control {
         extra: Option<serde_json::Value>,
         to: impl Fn(&Principal) -> bool,
     ) -> Pushed {
-        let Some((e, subs, payload)) = self.to_push(pane, title, body, extra, to) else { return Pushed::default() };
-        self.relay_push(&e, subs, &payload).await
+        let Some((e, subs, payload, urgency)) = self.to_push(pane, title, body, extra, to) else {
+            return Pushed::default();
+        };
+        self.relay_push(&e, subs, &payload, urgency).await
     }
 
-    /// The subscriptions `to` picks, and what to tell them.
+    /// The subscriptions `to` picks, what to tell them, and how urgently
+    /// ([`crate::push::urgency`]).
     fn to_push(
         &self,
         pane: u32,
@@ -3285,7 +3288,7 @@ impl Control {
         body: &str,
         extra: Option<serde_json::Value>,
         to: impl Fn(&Principal) -> bool,
-    ) -> Option<(Arc<Enrolled>, Vec<PushSub>, String)> {
+    ) -> Option<(Arc<Enrolled>, Vec<PushSub>, String, &'static str)> {
         let e = self.enrolled()?;
         // A team's other owner's devices are the owner's, and theirs by
         // account too (#386): `account:<id>` picks them alone.
@@ -3297,8 +3300,9 @@ impl Control {
         }
         let mut payload = crate::push::payload(pane, title, body, extra);
         payload.entry("daemon").or_insert_with(|| e.saved.cert.device.clone().into());
+        let urgency = crate::push::urgency(&payload);
         let payload = serde_json::Value::Object(payload).to_string();
-        Some((e, subs, payload))
+        Some((e, subs, payload, urgency))
     }
 
     /// Notify one device (S33: wake a hand). False when control has no
@@ -3313,11 +3317,13 @@ impl Control {
         payload["daemon"] = e.saved.cert.device.clone().into();
         let payload = payload.to_string();
         let me = self.clone();
-        crate::task::spawn(async move { me.relay_push(&e, subs, &payload).await });
+        crate::task::spawn(async move { me.relay_push(&e, subs, &payload, "high").await });
         true
     }
 
-    async fn relay_push(&self, e: &Enrolled, subs: Vec<PushSub>, payload: &str) -> Pushed {
+    /// Relay `payload` to each of `subs` through control, at `urgency`:
+    /// control's APNs rings only for `high` (Arugula #1432).
+    async fn relay_push(&self, e: &Enrolled, subs: Vec<PushSub>, payload: &str, urgency: &str) -> Pushed {
         use base64::Engine;
         let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
         let mut got = Pushed { matched: subs.len(), ..Default::default() };
@@ -3336,7 +3342,8 @@ impl Control {
                 endpoint: s.endpoint,
                 body: base64::engine::general_purpose::STANDARD.encode(body),
                 ttl: None,
-                urgency: None,
+                // `high` is control's default: said only when it isn't.
+                urgency: (urgency != "high").then(|| urgency.to_owned()),
             };
             match self.post_json(e, wire::PUSH, &req).send().await {
                 Ok(r) if r.status().is_success() => {
@@ -7434,7 +7441,7 @@ pub(crate) mod tests {
 
         let to = |f: fn(&Principal) -> bool| -> Vec<String> {
             c.to_push(1, "t", "b", None, f)
-                .map(|(_, s, _)| s.into_iter().map(|s| s.account).collect())
+                .map(|(_, s, _, _)| s.into_iter().map(|s| s.account).collect())
                 .unwrap_or_default()
         };
         assert_eq!(to(|p| p.id() == "account:o"), ["o"], "their own devices, by account");
@@ -7754,7 +7761,7 @@ pub(crate) mod tests {
 
         let to = |f: fn(&Principal) -> bool| -> Vec<String> {
             c.to_push(1, "t", "b", None, f)
-                .map(|(_, s, _)| s.into_iter().map(|s| s.account).collect())
+                .map(|(_, s, _, _)| s.into_iter().map(|s| s.account).collect())
                 .unwrap_or_default()
         };
         assert_eq!(to(|p| p.is_owner()), ["o", "e"], "the owner's pushes reach both");
