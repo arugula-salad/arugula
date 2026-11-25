@@ -161,6 +161,16 @@ impl Control {
         self.call("GET", path, None)
     }
 
+    /// A `GET` whose reply isn't JSON (a person's picture, Arugula #1420):
+    /// its bytes as they came, or [`Refused`].
+    pub fn bytes(&self, path: &str) -> Result<Vec<u8>> {
+        let got = self.site.request("GET", path, &self.auth(), &[])?;
+        if !(200..300).contains(&got.status) {
+            return Err(Refused::of(got.status, &got.body).into());
+        }
+        Ok(got.body)
+    }
+
     pub fn post(&self, path: &str, body: &Value) -> Result<Value> {
         self.call("POST", path, Some(body))
     }
