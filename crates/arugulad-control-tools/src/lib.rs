@@ -22,6 +22,7 @@
 //! only through `mcp::registry`.
 
 mod agent_sessions;
+mod approvals;
 mod boards;
 mod cloud;
 mod deploys;
@@ -70,7 +71,7 @@ pub fn chief_of_staff_on_a_machine(prompt: Option<&str>) -> String {
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 23] = [
+    let tools: [Listed; 24] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -94,6 +95,7 @@ pub fn register() {
         (trackers::WRITE_TOOL, link_def, run_link),
         (links::TOOL, project_split_def, run_project_split),
         (splits::TOOL, watch_def, run_watch),
+        (watches::TOOL, ask_approval_def, run_ask_approval),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -234,6 +236,7 @@ grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::trac
 one!(run_link, links::link);
 grouped!(run_watch, watches::TOOL, |c, kind, args| watches::watch(c, kind, args));
 one!(run_project_split, splits::project_split);
+one!(run_ask_approval, approvals::ask_approval);
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -506,6 +509,28 @@ fn watch_def() -> Def {
             "wake your agent when a PR merges, closes, finishes its checks or is ready, or another agent here finishes its turn, after it has stopped, without it polling",
             "Watch acme/app#7 and tell me when it merges.",
             Needs::Nothing,
+        ),
+    }
+}
+
+// Arugula #1417: the chief of staff on a machine asks its person to approve
+// a start or a close here, on a card in their staff room.
+fn ask_approval_def() -> Def {
+    Def {
+        name: approvals::TOOL,
+        title: "Ask your person to approve",
+        description: approvals::DESCRIPTION,
+        args: Args::One(schema_for_type::<approvals::AskApprovalArgs>),
+        read_only: false,
+        destructive: false,
+        idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "ask you on a card in your staff room to start an agent on an issue, or close agent blocks, on this machine: your Approve does it, never the agent",
+            "Ask me to approve an agent on #12.",
+            Needs::Control,
         ),
     }
 }

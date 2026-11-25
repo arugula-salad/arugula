@@ -466,6 +466,59 @@
       ],
       "type": "object"
     },
+    "MachinePropose": {
+      "description": "[`agent_proposals`]' body.",
+      "properties": {
+        "blocks": {
+          "default": [],
+          "description": "A close's blocks as the machine sees them now, for the card: `id`\nis `%N`, `title` the block's, `state` its agent's.",
+          "items": {
+            "$ref": "#/$defs/ProposalSession"
+          },
+          "type": "array"
+        },
+        "pane": {
+          "description": "Its block, by pane: a start works in its repo.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "proposal": {
+          "$ref": "#/$defs/Proposal"
+        },
+        "session": {
+          "description": "The proposing agent's session, by its name on the machine.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal",
+        "session",
+        "pane"
+      ],
+      "type": "object"
+    },
+    "MachineProposed": {
+      "description": "[`agent_proposals`]' answer: the card (`prp_…`, what `ask.answered`\nmatches as `ask`), and its message in the person's staff room.",
+      "properties": {
+        "ask": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ask",
+        "room",
+        "seq"
+      ],
+      "type": "object"
+    },
     "Proposal": {
       "description": "What an agent session asks its asker to approve (Arugula #1278): it\ndoes nothing itself. The proposal is an ask in their staff room\n(`via` `ask:prp_…`) that mentions them, so it's under Needs you and\npushed to their phone; **Approve** does it as them, through the same\npath their own press would take, and **Deny** drops it. Either way\n`ask.answered` tells the session. Chat never approves it.",
       "oneOf": [
@@ -507,13 +560,22 @@
           "type": "object"
         },
         {
-          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does.",
+          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does. A machine's agent (Arugula #1417) names agent blocks\non its own machine instead (`blocks`, by pane), and no sessions.",
           "properties": {
             "action": {
               "const": "close",
               "type": "string"
             },
+            "blocks": {
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
             "sessions": {
+              "default": [],
               "items": {
                 "type": "string"
               },
@@ -525,8 +587,7 @@
             }
           },
           "required": [
-            "action",
-            "sessions"
+            "action"
           ],
           "type": "object"
         }

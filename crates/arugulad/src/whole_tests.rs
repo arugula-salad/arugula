@@ -81,7 +81,8 @@ fn old_argument_and_kind_names_are_read_as_the_new() {
 }
 
 /// The chief of staff on a machine (Arugula #1337), rendered as its first
-/// prompt, names only tools an agent block has, and the ones it works with.
+/// prompt, names only tools an agent block has, and the ones it works with:
+/// `ask_approval` for a start or a close since Arugula #1417.
 #[test]
 fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
     register();
@@ -98,6 +99,7 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
         "board_write",
         "link",
         "doc",
+        "ask_approval",
     ];
     for tool in works {
         assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");

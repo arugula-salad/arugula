@@ -222,6 +222,7 @@ pub fn op_from_control(app: &Arc<App>, text: &str, answers: &tokio::sync::mpsc::
             DaemonOp::DocsList(_) => library_docs(app.control.state_dir().to_owned()).await,
             DaemonOp::SessionCard(c) => crate::session_card::set(app.as_ref(), &c).await,
             DaemonOp::SessionProject(p) => crate::session_project::set(&app.mux, &app.control, &p).await,
+            DaemonOp::AskApproved(a) => crate::approvals::approved(&app, &a).await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });

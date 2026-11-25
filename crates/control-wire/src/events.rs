@@ -333,11 +333,11 @@ pub const CATALOG: &[EventType] = &[
     // the card is in its asker's staff room, so threads.read.
     EventType {
         name: "ask.answered",
-        meaning: "A person answered an agent session's approval card: approved it, denied it, or approved it and doing it failed.",
+        meaning: "A person answered their agent's approval card (an agent session's, or a machine's agent's): approved it, denied it, or approved it and doing it failed.",
         matches: &[
             m("ask", "the card, prp_…"),
             PROJECT,
-            m("session", "the session that proposed it, ses_…"),
+            m("session", "the session that proposed it: ses_…, or a machine's agent's session name"),
             m("action", "what it proposed: start or close"),
             m("answer", "approved, denied or failed"),
         ],

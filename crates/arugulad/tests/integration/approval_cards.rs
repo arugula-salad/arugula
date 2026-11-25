@@ -1,0 +1,287 @@
+//! Arugula #1417: the chief of staff on a machine asks its person to approve
+//! a start or a close on a card (`ask_approval`), the person's Approve
+//! reaches this machine as `agents.approved`, which starts an agent block on
+//! the issue (or closes blocks) here, and the card's `ask.answered` wakes the
+//! chief of staff through its watch. Against a fake control (it takes the
+//! card, plays the person's Approve on the relay socket, and fires the
+//! watch) and a real daemon whose agents are the fake ACP agent.
+#![cfg(unix)]
+
+use std::{
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    process::Command,
+    sync::{Arc, Mutex},
+};
+
+use axum::{
+    Json, Router,
+    extract::{
+        Request, State,
+        ws::{Message, WebSocketUpgrade},
+    },
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+
+use super::agentd::{Daemon, Mcp, PYTHON, fake};
+use super::mention_agent_block::enroll;
+
+#[derive(Clone, Default)]
+struct Fake {
+    /// Every call but the relay's: method and path, and its body.
+    calls: Arc<Mutex<Vec<(String, Value)>>>,
+    /// What the daemon said on its relay socket, and what's for it to hear.
+    said: Arc<Mutex<Vec<Value>>>,
+    outbox: Arc<Mutex<Vec<String>>>,
+}
+
+impl Fake {
+    fn asked(&self, what: &str) -> Vec<Value> {
+        self.calls.lock().unwrap().iter().filter(|(c, _)| c.starts_with(what)).map(|(_, b)| b.clone()).collect()
+    }
+
+    /// The daemon's answer to op `id`, once it gives one.
+    fn answer(&self, id: &str) -> Option<Value> {
+        self.said.lock().unwrap().iter().find(|v| v["t"] == "op.done" && v["id"] == id).map(|v| v["answer"].clone())
+    }
+
+    fn send(&self, op: Value) {
+        self.outbox.lock().unwrap().push(op.to_string());
+    }
+}
+
+async fn any(State(f): State<Fake>, req: Request) -> Response {
+    let (method, at) = (req.method().to_string(), req.uri().to_string());
+    let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+    let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    f.calls.lock().unwrap().push((format!("{method} {at}"), b.clone()));
+    let path = at.split_once('?').map_or(at.as_str(), |(p, _)| p);
+    let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    match (method.as_str(), segs.as_slice()) {
+        ("POST", ["api", "daemon", "projects", "prj_1", "proposals"]) => {
+            let n = f.asked("POST /api/daemon/projects/prj_1/proposals").len() - 1;
+            Json(json!({ "ask": format!("prp_{n}"), "room": "dm_staff", "seq": 40 + n })).into_response()
+        }
+        ("POST", ["api", "daemon", "watches"]) => {
+            let n = f.asked("POST /api/daemon/watches").len() - 1;
+            Json(json!({ "id": format!("wch_{n}"), "state": "live", "expires_ms": 1 })).into_response()
+        }
+        ("PUT", ["api", "daemon", "chat", "mention-state"]) => Json(json!({})).into_response(),
+        _ => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("no route {method} {path}") }))).into_response(),
+    }
+}
+
+async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
+    up.on_upgrade(|ws| async move {
+        let (mut tx, mut rx) = ws.split();
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                m = rx.next() => {
+                    let Some(Ok(Message::Text(t))) = m else { if m.is_none() { break } else { continue } };
+                    if let Ok(v) = serde_json::from_str::<Value>(t.as_str()) {
+                        f.said.lock().unwrap().push(v);
+                    }
+                }
+                _ = tick.tick() => {
+                    let out: Vec<String> = std::mem::take(&mut *f.outbox.lock().unwrap());
+                    for o in out {
+                        let _ = tx.send(Message::Text(o.into())).await;
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let url = rt.block_on(async {
+        let home = json!({ "project": "prj_1", "name": "Launch crew", "home": "native" });
+        let app = Router::new()
+            .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+            .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+            .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+            .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+            .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+            .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
+            .route("/api/relay/dial", get(dial))
+            .fallback(any)
+            .with_state(f);
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        at
+    });
+    (rt, url)
+}
+
+/// Runs `git ARGS` in `dir`, as a test identity.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// What the fake agent in block `id` was prompted with, every turn's.
+fn prompts(d: &Daemon, id: u64) -> String {
+    let Some(sid) = d.state(id)["session_id"].as_str().map(str::to_owned) else { return String::new() };
+    std::fs::read_to_string(d.sessions.join(format!("prompt-{sid}.json"))).unwrap_or_default()
+}
+
+fn pane(d: &Daemon, id: u64) -> Option<Value> {
+    d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == id).cloned()
+}
+
+#[test]
+fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    // A clone whose origin is a bare repo: the chief of staff works in it.
+    let tmp = std::env::temp_dir().join(format!("arugula-cards-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let tmp = tmp.canonicalize().unwrap();
+    git(&tmp, &["init", "-q", "--bare", "-b", "main", "origin.git"]);
+    git(&tmp, &["init", "-q", "-b", "main", "work"]);
+    let work = tmp.join("work");
+    git(&work, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&work, &["remote", "add", "origin", tmp.join("origin.git").to_str().unwrap()]);
+    git(&work, &["push", "-q", "origin", "main"]);
+    // Claude Code, as an approved start runs it, is the fake agent.
+    let agents = tmp.join("agents");
+    let bin = agents.join("claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let agents_dir = agents.display().to_string();
+    let d = Daemon::child_in(&[], &[("ARUGULA_AGENTS_DIR", &agents_dir)], |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+    let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
+    assert!(ops["ops"].as_array().unwrap().contains(&json!("agents.approved")), "{ops}");
+
+    // The chief of staff: an agent block in the clone.
+    let config = json!({ "agent": "acp", "command": [PYTHON, fake()], "cwd": work, "title": "Chief of staff",
+        "prompt": "hello" });
+    let chief = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(chief, "idle");
+    let mcp = Mcp::bridge(&d, Some(chief));
+
+    // It asks: a card, which it watches. It does nothing itself.
+    let before = d.get("/api/panes").as_array().unwrap().len();
+    let asked = mcp
+        .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_0", "{asked}");
+    assert!(asked["summary"].as_str().unwrap().contains("Watch event ask.answered"), "{asked}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
+    assert_eq!(
+        card["proposal"],
+        json!({ "action": "start", "number": 12, "prompt": null, "repo": null,
+        "why": "it's next" })
+    );
+    assert_eq!((&card["session"], &card["pane"]), (&json!("Chief of staff"), &json!(chief)), "{card}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+    let watched =
+        mcp.call("watch", json!({ "kind": "create", "event": "ask.answered", "match": { "ask": "prp_0" } })).unwrap();
+    assert_eq!(watched["id"], "wch_0", "{watched}");
+    let watch = f.asked("POST /api/daemon/watches")[0].clone();
+    assert_eq!((&watch["event"], &watch["match"]["ask"]), (&json!("ask.answered"), &json!("prp_0")), "{watch}");
+    // Refused here, before control: what isn't the card's.
+    let why = mcp.call("ask_approval", json!({ "action": "close", "blocks": [chief], "why": "x" })).unwrap_err();
+    assert!(why.contains("your own block"), "{why}");
+    let why = mcp.call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "" })).unwrap_err();
+    assert!(why.contains("say why"), "{why}");
+
+    // The person approves on the card: control asks this machine.
+    f.send(json!({ "t": "op", "id": "approve-1", "op": { "op": "agents.approved", "ask": "prp_0",
+        "project": "prj_1", "action": "start", "session": "Chief of staff", "pane": chief,
+        "issue": { "id": "iss_12", "number": 12, "title": "Fix the login" } } }));
+    d.wait_for("its answer", || f.answer("approve-1").is_some());
+    let a = f.answer("approve-1").unwrap();
+    assert_eq!(a["answer"], "approved", "{a}");
+    let block = a["block"].as_u64().unwrap();
+    assert!(a["said"].as_str().unwrap().starts_with(&format!("started agent block %{block} on #12")), "{a}");
+
+    // An agent block on the issue, in a worktree of the clone on its branch.
+    let p = pane(&d, block).expect("the new block");
+    assert_eq!(p["session_name"], "issue-12", "a tab of its own: {p}");
+    let b = d.get(&format!("/api/blocks/{block}"));
+    let config = &b["state"];
+    assert_eq!((&config["agent"], &config["title"]), (&json!("claude"), &json!("#12 Fix the login")), "{b}");
+    assert_eq!(config["work"], json!({ "issue": "#12", "project": "prj_1" }), "{b}");
+    assert_eq!(config["user_settings"], true, "{b}");
+    let cwd = config["cwd"].as_str().unwrap();
+    assert_eq!(config["worktree"], cwd, "{b}");
+    assert!(Path::new(cwd).is_dir() && cwd != work.to_str().unwrap(), "{cwd}");
+    assert_eq!(git(Path::new(cwd), &["branch", "--show-current"]), "feat/12-fix-the-login");
+    d.wait(block, "idle");
+    assert!(prompts(&d, block).contains("Work on #12, Fix the login."), "{}", prompts(&d, block));
+
+    // The card's answer reaches the chief of staff: its watch fires.
+    let session = watch["session"].as_str().unwrap();
+    f.send(json!({ "t": "op", "id": "m-wch_0", "op": { "op": "agents.mention", "room": "wch_0", "seq": 0,
+        "author": "Arugula", "text": format!("ask.answered: prp_0 approved, started %{block}"),
+        "watch": { "id": "wch_0", "session": session } } }));
+    d.wait_for("the chief of staff woken", || prompts(&d, chief).contains("ask.answered: prp_0 approved"));
+
+    // A close: asked, approved, and the block goes.
+    let asked = mcp
+        .call(
+            "ask_approval",
+            json!({ "action": "close", "blocks": [format!("%{block}")],
+        "why": "#12 is done", "project": "prj_1" }),
+        )
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_1", "{asked}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[1];
+    assert_eq!(card["proposal"]["blocks"], json!([block]), "{card}");
+    assert_eq!(card["blocks"][0]["id"], format!("%{block}"), "{card}");
+    assert_eq!(card["blocks"][0]["title"], "#12 Fix the login", "{card}");
+    assert!(pane(&d, block).is_some(), "not closed by asking");
+    f.send(json!({ "t": "op", "id": "approve-2", "op": { "op": "agents.approved", "ask": "prp_1",
+        "project": "prj_1", "action": "close", "session": "Chief of staff", "pane": chief, "blocks": [block] } }));
+    d.wait_for("its answer", || f.answer("approve-2").is_some());
+    let a = f.answer("approve-2").unwrap();
+    assert_eq!(a["answer"], "approved", "{a}");
+    assert!(a["said"].as_str().unwrap().starts_with(&format!("closed %{block}")), "{a}");
+    assert!(pane(&d, block).is_none(), "closed");
+
+    // Not an agent block: nothing is closed.
+    let shell = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
+    f.send(json!({ "t": "op", "id": "approve-3", "op": { "op": "agents.approved", "ask": "prp_2",
+        "project": "prj_1", "action": "close", "session": "Chief of staff", "pane": chief, "blocks": [shell] } }));
+    d.wait_for("its answer", || f.answer("approve-3").is_some());
+    let a = f.answer("approve-3").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    assert!(pane(&d, shell).is_some());
+
+    // The chief of staff is gone (moved, Arugula #1340): its card's start
+    // fails, and nothing opens in some other directory.
+    drop(mcp);
+    d.post(&format!("/api/panes/{chief}/close"), json!({}));
+    d.wait_for("closed", || pane(&d, chief).is_none());
+    let before = d.get("/api/panes").as_array().unwrap().len();
+    f.send(json!({ "t": "op", "id": "approve-4", "op": { "op": "agents.approved", "ask": "prp_3",
+        "project": "prj_1", "action": "start", "session": "Chief of staff", "pane": chief,
+        "issue": { "id": "iss_13", "number": 13, "title": "Another" } } }));
+    d.wait_for("its answer", || f.answer("approve-4").is_some());
+    let a = f.answer("approve-4").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    assert!(a["error"].as_str().unwrap().contains("isn't running on"), "{a}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}

@@ -3656,13 +3656,22 @@
           "type": "object"
         },
         {
-          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does.",
+          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does. A machine's agent (Arugula #1417) names agent blocks\non its own machine instead (`blocks`, by pane), and no sessions.",
           "properties": {
             "action": {
               "const": "close",
               "type": "string"
             },
+            "blocks": {
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
             "sessions": {
+              "default": [],
               "items": {
                 "type": "string"
               },
@@ -3674,8 +3683,7 @@
             }
           },
           "required": [
-            "action",
-            "sessions"
+            "action"
           ],
           "type": "object"
         }

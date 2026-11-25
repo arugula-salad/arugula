@@ -794,7 +794,7 @@ fn proposal(a: AskApprovalArgs) -> Result<Proposal, String> {
                 }
                 None => {}
             }
-            Ok(Proposal::Close { sessions, why })
+            Ok(Proposal::Close { sessions, blocks: vec![], why })
         }
         a => Err(format!("action {a}: start or close")),
     }
@@ -1090,7 +1090,11 @@ mod tests {
         );
         assert_eq!(
             proposal(args(json!({ "action": "close", "sessions": ["ses_a", "ses_a", "ses_b"], "why": "idle 3 days" }))),
-            Ok(Proposal::Close { sessions: vec!["ses_a".into(), "ses_b".into()], why: "idle 3 days".into() })
+            Ok(Proposal::Close {
+                sessions: vec!["ses_a".into(), "ses_b".into()],
+                blocks: vec![],
+                why: "idle 3 days".into()
+            })
         );
         for (v, says) in [
             (json!({ "action": "start", "issue": "#1", "why": " " }), "say why"),

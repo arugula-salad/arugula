@@ -44,6 +44,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "block, labs true": [
@@ -91,6 +92,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "full, labs false": [
@@ -137,6 +139,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "full, labs true": [
@@ -184,6 +187,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "read, labs false": [
@@ -348,6 +352,83 @@
         "type": "object"
       },
       "title": "Answer an agent"
+    },
+    "ask_approval": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Ask your person to approve"
+      },
+      "description": "Ask your person to approve something only they may do, on this machine: start an agent on one of the project's issues (action start: issue #N, prompt), or close agent blocks here (action close: blocks, by pane). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them, here, and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.",
+      "inputSchema": {
+        "$defs": {
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "action": {
+            "description": "start (an agent on an issue, on this machine) or close (agent\nblocks on this machine).",
+            "type": "string"
+          },
+          "blocks": {
+            "description": "close: the agent blocks to close, by pane (7 or \"%7\"), at most 10.",
+            "items": {
+              "$ref": "#/$defs/PaneArg"
+            },
+            "type": "array"
+          },
+          "issue": {
+            "default": null,
+            "description": "start: the issue, as #N or N, in the project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project (prj_…). Default: the current project, whose staff room\nthe card goes in.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "start: what the new agent is told, at most 4000 characters.\nWithout it: to work on the issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "why": {
+            "description": "Why, in a line or two (at most 500 characters): the card shows it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "why"
+        ],
+        "title": "AskApprovalArgs",
+        "type": "object"
+      },
+      "name": "ask_approval",
+      "title": "Ask your person to approve"
     },
     "attach": {
       "annotations": {
