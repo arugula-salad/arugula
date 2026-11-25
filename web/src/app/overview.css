@@ -198,7 +198,10 @@ button.ov-lead:focus-visible {
   background: var(--warn);
 }
 .ov-lead-dot[data-ov-lead-standing="working"] {
-  background: var(--ok);
+  background: var(--warn);
+}
+.ov-lead-dot[data-ov-lead-standing="quiet"] {
+  background: var(--muted);
 }
 .ov-lead-dot[data-ov-lead-standing="needs"] {
   background: var(--accent);

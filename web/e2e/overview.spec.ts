@@ -1657,6 +1657,17 @@ test.describe("on a computer", () => {
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
     await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "working");
+    // Working has the yellow (warn); quiet is the muted grey (#1445).
+    const colour = (v: string) => page.evaluate((name) => { const e = document.createElement("i"); e.style.color = `var(${name})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; }, v);
+    const warn = await colour("--warn");
+    const working = tile(page, "row_c").locator("[data-ov-card-state]");
+    await expect(working).toHaveText("working");
+    await expect(working).toHaveCSS("color", warn);
+    // Its session in the preview, on no card: shows its standing word the same way.
+    const quiet = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" }).locator(".ov-word");
+    await expect(quiet).toHaveText("quiet");
+    await expect(quiet).not.toHaveCSS("color", warn);
+    await expect(quiet).toHaveCSS("color", await colour("--muted"));
     // Its peek: its box is paused, so its last answer (with chat off, its history), and Stop on the platform.
     await page.route("**/api/sessions/hs_e2e", (r) =>
       r.fulfill({ json: { card: { session: "hs_e2e", project: P, room: "room_hs", parent: 1, state: "working", branch: "arugula/13-tidy-docs", machine: null, block: null, parked: false }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: "working", at: 1, signed: true, text: "Tidied the docs index; pushed." }] } }),
