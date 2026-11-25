@@ -1,0 +1,7 @@
+---
+section: Changed
+title: The sessions sidebar caret sits by the tabs
+line: The caret that shows and hides the sessions sidebar is now at the left end of the tab strip, and the header shows the machine › session path.
+headline: no
+---
+The caret moved out of the top header to a small inset before the first tab, at the sidebar's edge. It points left to close the sidebar and right to open it, and works the same by keyboard. The header's left now reads like the Overview's path: the machine, then the session and tab, then the connection. The separate session and tab trail it showed when the sidebar was closed is gone.
