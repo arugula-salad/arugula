@@ -55,6 +55,20 @@ pub trait ControlTools: Send + Sync + 'static {
     /// Make `session`, an agent block's on this machine, the lead of the
     /// person's staff room in `project` (Arugula #1338). Answers the room.
     fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out>;
+    /// The person's staff room in `project`, with its lead (Arugula #1340).
+    fn staff_room<'a>(&'a self, app: &'a App, project: &'a str) -> BoxFuture<'a, Out>;
+    /// Tell the staff room's lead `session` that it's moved (Arugula #1340):
+    /// `notice` in `room`, by `by`, the session taking over, as this
+    /// machine's agent; or, for a hosted session (`ses_…`), stop it with
+    /// `notice` as the reason.
+    fn stand_down<'a>(
+        &'a self,
+        app: &'a App,
+        room: &'a str,
+        session: &'a str,
+        notice: &'a str,
+        by: &'a str,
+    ) -> BoxFuture<'a, Out>;
 }
 
 static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
@@ -138,6 +152,22 @@ pub async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
     match CONTROL_TOOLS.get() {
         Some(c) => c.lead_staff(app, project, session).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't lead a staff room")),
+    }
+}
+
+/// [`ControlTools::staff_room`].
+pub async fn staff_room(app: &App, project: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.staff_room(app, project).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't read a staff room")),
+    }
+}
+
+/// [`ControlTools::stand_down`].
+pub async fn stand_down(app: &App, room: &str, session: &str, notice: &str, by: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.stand_down(app, room, session, notice, by).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't move a chief of staff")),
     }
 }
 

@@ -66,8 +66,52 @@ const TAIL_LINES: usize = 40;
 const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
 
 /// A chief of staff's block's title (Arugula #1338), unless the caller
-/// names another: its session's name, which leads the staff room.
+/// names another: its session's name, which leads the staff room. The
+/// project's name follows it (Arugula #1340): a staff room's posts reach its
+/// lead by that name, so a machine with a chief of staff for two projects
+/// needs two names.
 const CHIEF_TITLE: &str = "Chief of staff";
+
+/// [`CHIEF_TITLE`] for the project named `project`.
+fn chief_title(project: &str) -> String {
+    match project.trim() {
+        "" => CHIEF_TITLE.to_owned(),
+        p => format!("{CHIEF_TITLE} · {p}"),
+    }
+}
+
+/// Who led the staff room before a chief of staff was started (Arugula
+/// #1340), and what becomes of it.
+enum Before {
+    /// An agent block on another machine: it's told, and hands over its
+    /// place in the log in staff.
+    Machine { machine_name: String, session: String },
+    /// A hosted agent session (`ses_…`): it's stopped.
+    Hosted { session: String },
+    /// A block on this machine, closed before the new one opens: its
+    /// notes file is the new one's.
+    Here { session: String },
+}
+
+/// What a chief of staff is told after its standing instructions when it
+/// takes over from another session (Arugula #1340): what became of that one
+/// and where its place in the log is.
+fn handover(before: &(String, Before)) -> String {
+    match &before.1 {
+        Before::Machine { machine_name, session } => {
+            let on = if machine_name.is_empty() { "another machine" } else { machine_name };
+            format!(
+                "You take over from {session} on {on}, which led your person's staff room until now. It's told to stand down and post its place in the log in staff: see \"Taking over\"."
+            )
+        }
+        Before::Hosted { session } => format!(
+            "You take over from hosted session {session}, which led your person's staff room until now. It's stopped, and its place in the log stayed on its Cloud workspace: start from the log's head, and tell your person so (see \"Taking over\")."
+        ),
+        Before::Here { session, .. } => format!(
+            "You take over from {session}, on this machine, which led your person's staff room until now. It's closed, and its notes file is yours: carry on from its cursor."
+        ),
+    }
+}
 
 /// What `open_forge` asks the forge block's `open_config` for (a `Value` it
 /// keeps, being the block's persisted config): a PR or issue by reference,
@@ -391,11 +435,13 @@ pub struct StartAgentArgs {
     #[serde(default)]
     pub command: Option<String>,
     /// For claude: `chief-of-staff` starts your person's chief of staff in
-    /// the project on this machine: an agent block titled "Chief of staff"
-    /// that leads their staff room there (their posts in it are its
-    /// prompts), with its standing instructions as its first prompt and
-    /// prompt after them (it may be empty). Not on an issue, a worktree, a
-    /// VM or another machine's pane. With Labs agent delegation, any other
+    /// the project on this machine: an agent block titled "Chief of staff ·
+    /// <project>" that leads their staff room there (their posts in it are
+    /// its prompts), with its standing instructions as its first prompt and
+    /// prompt after them (it may be empty). There's one per project: one
+    /// that led before is moved here (another machine's is told to stand
+    /// down, a hosted one is stopped, this machine's is closed). Not on an
+    /// issue, a worktree, a VM or another machine's pane. With Labs agent delegation, any other
     /// name runs as that recipe, a Claude Code subagent by its name
     /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
     /// host: its prompt, model, tools, skills and MCP servers.
@@ -3436,9 +3482,18 @@ impl ToolCall<'_, '_> {
             true => Some(self.chosen_project(a.project.as_deref()).await?),
             false => None,
         };
+        let (mut before, mut closed) = (None, vec![]);
         if let Some(p) = &staff {
-            a.prompt = crate::mcp::registry::chief_of_staff_prompt(&a.prompt)?;
-            a.title = Some(a.title.take().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| CHIEF_TITLE.into()));
+            let title = a.title.take().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+            let title = title.unwrap_or_else(|| chief_title(&p.name));
+            (before, closed) = self.chief_before(&p.id, &title).await;
+            let prompt = match before.as_ref().map(handover) {
+                Some(h) if a.prompt.trim().is_empty() => h,
+                Some(h) => format!("{h}\n\n{}", a.prompt),
+                None => a.prompt.clone(),
+            };
+            a.prompt = crate::mcp::registry::chief_of_staff_prompt(&prompt)?;
+            a.title = Some(title);
             project = Some(p.id.clone());
         }
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
@@ -3547,7 +3602,10 @@ impl ToolCall<'_, '_> {
             tail.push_str(&format!(". {}", on.said));
         }
         let chief_of_staff = match &staff {
-            Some(p) => Some(self.lead_staff(block, p, a.title.as_deref().unwrap_or(CHIEF_TITLE)).await),
+            Some(p) => {
+                let title = a.title.as_deref().unwrap_or(CHIEF_TITLE);
+                Some(self.lead_staff(block, p, title, before, closed).await)
+            }
             None => None,
         };
         if let Some(c) = &chief_of_staff {
@@ -3567,14 +3625,24 @@ impl ToolCall<'_, '_> {
     /// finds itself the lead, and a person's post in staff reaches it from
     /// the start. If control refuses, the block stays, and its recipe takes
     /// the lead on its first wake, which says why if it can't.
+    ///
+    /// The lead it takes was another's (Arugula #1340): one on another
+    /// machine is told first, while it still leads, so control tells it; a
+    /// hosted one is stopped. One on this machine was closed before.
     async fn lead_staff(
         &self,
         block: arugula_proto::PaneId,
         project: &crate::mcp::issues::Chosen,
         title: &str,
+        before: Option<(String, Before)>,
+        closed: Vec<arugula_proto::PaneId>,
     ) -> results::StartedChief {
         let session =
             arugulad_base::agent_mentions::session_name(self.app, block).await.unwrap_or_else(|| title.into());
+        let moved_from = match before {
+            Some((room, b)) => Some(self.stand_down(&room, b, &session).await),
+            None => None,
+        };
         let (lead, said) = match crate::mcp::registry::lead_staff(self.app, &project.id, &session).await {
             Ok(_) => (
                 true,
@@ -3588,7 +3656,98 @@ impl ToolCall<'_, '_> {
                 ),
             ),
         };
-        results::StartedChief { project: project.id.clone(), session, lead, said }
+        let mut said = match &moved_from {
+            Some(m) => format!("{said}. {}", m.said),
+            None => said,
+        };
+        if !closed.is_empty() {
+            let panes: Vec<String> = closed.iter().map(|p| format!("%{p}")).collect();
+            said.push_str(&format!(". Closed {} here, going by its name", panes.join(", ")));
+        }
+        results::StartedChief { project: project.id.clone(), session, lead, said, moved_from, closed }
+    }
+
+    /// Who leads the person's staff room in `project` now (Arugula #1340),
+    /// with the room's id: None when nobody does, or control can't say.
+    /// The lead's block, when it's on this machine, is closed here, before
+    /// the chief of staff about to start as `title` opens, and so is any
+    /// other agent block here going by `title`: posts reach a lead by its
+    /// session's name, and one name is one session. Answers those closed.
+    async fn chief_before(&self, project: &str, title: &str) -> (Option<(String, Before)>, Vec<PaneId>) {
+        let Ok(room) = crate::mcp::registry::staff_room(self.app, project).await else { return (None, vec![]) };
+        let Some(id) = room["id"].as_str().map(str::to_owned) else { return (None, vec![]) };
+        let lead = &room["lead"];
+        let session = lead["session"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+        let me = self.app.control.enrolled().map(|e| e.keys.id());
+        let here = session.is_some() && me.is_some() && lead["machine"].as_str() == me.as_deref();
+        let names = [Some(title), session.as_deref().filter(|_| here)];
+        let mut closed = vec![];
+        for (pane, name) in arugulad_base::agent_mentions::session_names(self.app, None).await {
+            if Some(pane) == self.own_pane() || !names.iter().flatten().any(|n| n.eq_ignore_ascii_case(&name)) {
+                continue;
+            }
+            let agent = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+            if agent.is_some_and(|b| b.kind() == BlockType::Agent)
+                && crate::mcp::ops::call::<ClosePane>(self, json!({ "pane": pane })).await.is_ok()
+            {
+                closed.push(pane);
+            }
+        }
+        let Some(session) = session else { return (None, closed) };
+        let before = if here {
+            Before::Here { session }
+        } else if session.starts_with("ses_") {
+            Before::Hosted { session }
+        } else {
+            Before::Machine { machine_name: lead["machine_name"].as_str().unwrap_or_default().to_owned(), session }
+        };
+        (Some((id, before)), closed)
+    }
+
+    /// The staff room's lead before (Arugula #1340) is told it no longer
+    /// leads, by `by`, the session taking over, and said.
+    async fn stand_down(&self, room: &str, before: Before, by: &str) -> results::MovedFrom {
+        let registry = crate::mcp::registry::stand_down;
+        match before {
+            Before::Machine { machine_name, session } => {
+                let on = if machine_name.is_empty() { "another machine".to_owned() } else { machine_name.clone() };
+                let notice = format!(
+                    "Your chief of staff moves here, to {by}. {session} on {on}: you no longer lead this room. Stand down, and post your place in the log here."
+                );
+                let (how, said) = match registry(self.app, room, &session, &notice, by).await {
+                    Ok(_) => (
+                        "told",
+                        format!(
+                            "{session} on {on} led it before: it's told to stand down and hand over its place in the log in staff"
+                        ),
+                    ),
+                    Err(e) => (
+                        "not_told",
+                        format!(
+                            "{session} on {on} led it before, and couldn't be told to stand down ({e}): it stands down at its next wake, when it finds it no longer leads"
+                        ),
+                    ),
+                };
+                results::MovedFrom { machine_name, session, how: how.into(), said }
+            }
+            Before::Hosted { session } => {
+                let notice = format!("Your chief of staff moved to {by}, on one of your machines");
+                let (how, said) = match registry(self.app, room, &session, &notice, by).await {
+                    Ok(_) => ("stopped", format!("Hosted session {session} led it before: it's stopped")),
+                    Err(e) => (
+                        "not_stopped",
+                        format!(
+                            "Hosted session {session} led it before, and couldn't be stopped ({e}): stop it from its card"
+                        ),
+                    ),
+                };
+                results::MovedFrom { machine_name: String::new(), session, how: how.into(), said }
+            }
+            Before::Here { session } => {
+                let said = format!("{session} on this machine led it before: its notes file carries on");
+                results::MovedFrom { machine_name: String::new(), session, how: "here".into(), said }
+            }
+        }
     }
 
     /// `start_agent {board}` (aru-143): a ladder start, here or on another

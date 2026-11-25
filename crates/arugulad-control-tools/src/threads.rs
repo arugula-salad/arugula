@@ -484,6 +484,30 @@ pub(crate) async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
     done(format!("{session} leads {}: your person's posts there come to it", room_name(&v)), v)
 }
 
+/// `start_agent` `recipe` chief-of-staff (Arugula #1340): the person's staff
+/// room in `project`, made the first time, with its lead.
+pub(crate) async fn staff_room(app: &App, project: &str) -> Out {
+    let v = app.control.cloud(Method::POST, &agent_staff_room(project), None).await.map_err(said)?;
+    done(room_name(&v), v)
+}
+
+/// `start_agent` `recipe` chief-of-staff (Arugula #1340): the staff room's
+/// lead `session` is told it's moved. A machine's hears `notice`, posted in
+/// `room` by `by` while it still leads, so control tells it; a hosted one
+/// (`ses_…`) is stopped, `notice` its reason.
+pub(crate) async fn stand_down(app: &App, room: &str, session: &str, notice: &str, by: &str) -> Out {
+    use arugula_control_wire::sessions::{AgentSessionStop, STOP_REASON_MAX, agent_session_stop};
+    if session.starts_with("ses_") {
+        let reason = notice.chars().take(STOP_REASON_MAX).collect();
+        let body = serde_json::to_value(AgentSessionStop { reason: Some(reason) }).map_err(|e| e.to_string())?;
+        let v = app.control.cloud(Method::POST, &agent_session_stop(session), Some(&body)).await.map_err(said)?;
+        return done(format!("Stopped session {session}"), v);
+    }
+    let body = json!({ "text": notice, "session": by });
+    let v = app.control.cloud(Method::POST, &agent_messages(room), Some(&body)).await.map_err(said)?;
+    done(format!("Posted as seq {} in {room}", v["seq"]), v)
+}
+
 /// How this machine's agents are named in a message's mentions.
 fn mention(c: &Call<'_>) -> String {
     let id = c.app().control.enrolled().map(|e| e.keys.id()).unwrap_or_default();

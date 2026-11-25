@@ -1311,7 +1311,7 @@ impl App {
 /// an agent block goes by its title, a terminal by the title of the Claude
 /// Code conversation in it. Display and addressing only: a name is no
 /// authority.
-pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
+pub async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
     let mut out = vec![];
     let mut terminals = HashMap::new();
     let mut hooked = vec![];
