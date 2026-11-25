@@ -244,7 +244,7 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
   const before = await status();
   test.skip(before.state === "installed", "codex-acp is on this machine's PATH");
   expect(before.state).toBe("missing");
-  const pinned = /^npm install --omit=optional --prefix \S+\/codex @agentclientprotocol\/codex-acp@\d+\.\d+\.\d+$/;
+  const pinned = /^npm install --prefix \S+\/codex @agentclientprotocol\/codex-acp@\d+\.\d+\.\d+$/;
   expect(before.npm).toMatch(pinned);
   const [term] = await panes(page);
 

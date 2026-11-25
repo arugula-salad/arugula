@@ -912,12 +912,17 @@ pub fn stderr_tail(dir: &Path) -> Option<String> {
 /// note when it exits with an error.
 fn last_words(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("agent.err")).ok()?;
-    let tail = &text[text.len().saturating_sub(4096)..];
-    let line = tail.lines().map(str::trim).filter(|l| !l.is_empty()).find(|l| {
+    let tail = &text[text.ceil_char_boundary(text.len().saturating_sub(4096))..];
+    let said = |l: &&str| !l.is_empty();
+    // A Node crash is `throw er; // Unhandled 'error' event`, a `^`, then
+    // the error itself (#1447): not the line that merely mentions an error,
+    // nor the stack under it.
+    let node = |l: &str| l.starts_with("at ") || l.starts_with("throw ") || l.contains("event on ") || l == "^";
+    let line = tail.lines().map(str::trim).filter(said).filter(|l| !node(l)).find(|l| {
         let l = l.to_ascii_lowercase();
         l.contains("error") || l.contains("not found") || l.contains("cannot")
     });
-    let line = line.or_else(|| tail.lines().map(str::trim).rfind(|l| !l.is_empty()))?;
+    let line = line.or_else(|| tail.lines().map(str::trim).filter(said).rfind(|l| !node(l)))?;
     Some(line.chars().take(240).collect())
 }
 
@@ -943,6 +948,34 @@ mod windows_tests {
         let text = format!("first\r\n\r\n \n{big}\nlast\r\ncut off");
         assert_eq!(read_stream(text.as_bytes(), &sink), "closed its output");
         assert_eq!(*lines.lock().unwrap(), ["first".to_owned(), big, "last".to_owned()]);
+    }
+
+    /// #1447: a Node crash's last words are its error, not `throw er;`.
+    /// Both are captured from codex-acp 2.1.0 (Node 23, macOS).
+    #[test]
+    fn a_node_crash_says_its_error() {
+        let enoent = "node:events:485\n      throw er; // Unhandled 'error' event\n      ^\n\n\
+            Error: spawn codex ENOENT\n    at ChildProcess._handle.onexit (node:internal/child_process:286:19)\n    \
+            at onErrorNT (node:internal/child_process:484:16)\nEmitted 'error' event on ChildProcess instance at:\n    \
+            at ChildProcess._handle.onexit (node:internal/child_process:292:12) {\n  errno: -2,\n  code: 'ENOENT',\n  \
+            syscall: 'spawn codex',\n  path: 'codex',\n  spawnargs: [ 'app-server' ]\n}\n\nNode.js v23.6.0\n";
+        let missing = "file:///x/node_modules/@openai/codex/bin/codex.js:107\n  throw new Error(\n        ^\n\n\
+            Error: Missing optional dependency @openai/codex-darwin-arm64. Reinstall Codex: npm install -g @openai/codex@latest\n    \
+            at findCodexExecutable (file:///x/codex.js:107:9)\n    at ModuleJob.run (node:internal/modules/esm/module_job:272:25)\n\n\
+            Node.js v23.6.0\n";
+        let said = |text: &str| {
+            let d = std::env::temp_dir().join(format!("arugula-last-words-{}-{}", std::process::id(), text.len()));
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("agent.err"), text).unwrap();
+            let w = last_words(&d);
+            let _ = std::fs::remove_dir_all(&d);
+            w
+        };
+        assert_eq!(said(enoent).as_deref(), Some("Error: spawn codex ENOENT"));
+        assert!(said(missing).unwrap().starts_with("Error: Missing optional dependency @openai/codex-darwin-arm64."));
+        // Not a Node crash: the last line, or the one that says error.
+        assert_eq!(said("starting\nfailed: cannot open x\nbye\n").as_deref(), Some("failed: cannot open x"));
+        assert_eq!(said("starting\nbye\n").as_deref(), Some("bye"));
     }
 
     #[test]
