@@ -88,7 +88,18 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
     let text = arugulad_control_tools::chief_of_staff_on_a_machine(Some("brief me"));
     assert!(text.ends_with("\n\nbrief me"), "{text}");
     let named = tools::a_recipe_names_only_a_blocks_tools(&text);
-    for tool in ["watch", "post_thread", "read_thread", "forge_read", "issue_write", "board_read", "doc"] {
+    let works = [
+        "watch",
+        "post_thread",
+        "read_thread",
+        "forge_read",
+        "issue_write",
+        "board_read",
+        "board_write",
+        "link",
+        "doc",
+    ];
+    for tool in works {
         assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
     }
 }
