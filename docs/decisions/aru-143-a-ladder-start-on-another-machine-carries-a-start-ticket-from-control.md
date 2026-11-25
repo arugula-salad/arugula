@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-143"
 title: "A ladder start on another machine carries a start ticket from control"
-state: "proposed"
+state: "decided"
 area: "Agents and blocks"
 source:
   via: "cli"
@@ -24,8 +24,16 @@ options:
     label: "The grant is copied to the person's machines, which check it offline"
     how: "Approving the card pushes the grant to each machine it names; a start is checked against the local copy."
     tradeoff: "Revokes and the cap have to reach every machine before they count; offline machines keep stale grants. It duplicates what control already holds, to avoid trusting control, which aru-141 decided to trust."
-choice: null
-rejected: []
+choice:
+  option: "a"
+  reason: "Control holds the grant, the board, the revokes and the count across machines, so it decides and signs what it decided; the target checks the signature itself, as it checks machine tokens (aru-141). Jake took the three answers below as recommended (2026-11-24)."
+rejected:
+  - option: "b"
+    why: "A peer channel outlives a start and carries many, so a token can't count the cap or stop the next start after a revoke."
+  - option: "c"
+    why: "The cap spans machines, so a target can count only its own starts."
+  - option: "d"
+    why: "It re-creates device keys' distrust of control, which aru-141 gave up."
 supersedes: []
 evidence:
   - title: "Arugula #1415 (Machines as hands), #1416 (Run this board), #1438 (a lead starts issue agents inside the grant)"
@@ -33,8 +41,8 @@ evidence:
   - title: "Board: Chief of staff for everyone (brd_e3bdf5fbb0a5e3e334aae27ebd5467c7)"
   - title: "PR #2835, Machine to machine by token: agents and drives (Arugula #1002)"
     url: "https://github.com/arugula-salad/arugula/pull/2835"
-decided_by: null
-decided_on: null
+decided_by: "jhgaylor"
+decided_on: "2026-11-24"
 reviews: []
 constrains:
   - "aru-049"
@@ -74,7 +82,7 @@ Missing: a start that says what the agent is for (its board, issue, recipe,
 and the room it leads), checked against the board's grant, and an answer
 that says when the target is offline.
 
-## Proposed: option (a)
+## Decided: option (a)
 
 **Control decides; the target checks control's word.** It's aru-141's shape
 again: control holds the grant, the board, the revokes and the count across
@@ -191,24 +199,24 @@ grant, with its machines, cap, what counts against it and *Revoke*, is
 - ***Run there* (a person's)** is unchanged.
 - **Ladder starts are new:** they carry a purpose and a ticket; they are
   checked against a board's grant, not "this is the same account"; and
-  (proposed below) they may wear any recipe the target has, not only an
-  offered one, because offering is sharing with the team, which a ladder
-  start isn't.
+  they may wear any recipe the target has, not only an offered one,
+  because offering is sharing with the team, which a ladder start isn't.
 - **No passkey** on the grant. aru-099's run grant is passkey-signed
   because a hosted box trusted control less. Since aru-141, control can
   already open a shell on every machine of the account, so a passkey on a
   grant that only starts that account's own agents on its own machines
   would guard nothing control couldn't do anyway.
 
-## Open for Jake
+## Jake's answers (2026-11-24)
 
-1. **Which recipes a ladder start may wear on the target:** any recipe the
-   target has (proposed); only offered ones; or only those the grant names.
-2. **What a revoke does to agents already running:** they keep going and
-   only the next start is refused (proposed, as #1416 and #1438 say); a
-   revoke also stops them; or the revoke asks.
-3. **Offline:** refuse at once and name the other machines the grant
-   allows (proposed); or wait for it to come back, until the grant lapses.
+1. **Recipes:** a ladder start may wear any recipe the target has, its
+   user's or its projects', offered or not. Not only offered ones, and not
+   only ones the grant names.
+2. **A revoke** refuses the next start. Agents already running under the
+   grant keep running; a person stops them as they would any agent.
+3. **Offline:** refused at once, naming the grant's other machines that are
+   online. A Cloud workspace that's asleep counts as online and is woken.
+   Nothing waits for a machine to come back.
 
 ## Order
 
