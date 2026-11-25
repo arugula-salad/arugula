@@ -11,7 +11,7 @@ names the tools it has there:
 
 | Recipe | Runs as | Its tools |
 |---|---|---|
-| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `watch` |
+| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `board_write`, `link`, `watch` |
 | [`chief-of-staff-hosted.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff-hosted.md) | a hosted agent session on the project's Cloud workspace | a hosted session's: `post_session_thread`, `read_session_thread`, `read_session_issues`, `create_session_issue`, `read_project_doc`, `board_read`, `ask_approval`, `watch` |
 
 The machine's is the chief of staff from now on: it runs on whichever machine
@@ -69,6 +69,29 @@ recipe tries again on its first wake.
 It refuses a chief of staff on an issue, in a worktree, on a VM or beside
 another machine's pane: the lead is a session of the machine that asks
 control, so call `start_agent` on the machine it is to run on.
+
+### Building boards
+
+Ask it to turn a conversation or a Doc into work and it writes the board
+itself; you edit it after (Arugula #1442). It:
+
+1. reads the Doc (or the room) through, and checks no open board already
+   has that goal;
+2. makes the board with `board_write` `create_board`: a title, a goal that
+   says what you can do when it's done, and one group per phase of the Doc,
+   in its order, each item a new issue whose body ends with a "Done when" line and names the Doc;
+3. sets blockers with `link` (`blocks`), only where one issue needs another
+   closed first, inside a phase or across them;
+4. puts the Doc in the board's Docs strip (`link_doc`);
+5. lets go of the board's lead (`lead_board`, `release`): making a board
+   makes its session the lead, and the chief of staff doesn't run boards;
+6. posts the board in your staff room, groups, issues and blockers, and
+   says it has no lead yet.
+
+It starts nothing. Running a board will be the **Run this board** card
+(Arugula #1416), which it will offer once that exists. It changes a board it
+made while that board has no lead, when you ask, and never changes a board
+another lead runs, except to add a row you asked it to add.
 
 ## Hosted: starting it
 
@@ -134,6 +157,7 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Read the project's events, issues, Docs and rooms, as you may | Read terminals, or anything you can't |
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
+| Make a board when you ask, and change it while nobody leads it (on a machine) | Change a board another lead runs, except to add a row you asked for |
 | Make and fill its own Docs | Write other people's Docs |
 | Ask you to approve starting a session on an issue, or stopping sessions, on a card (hosted only, for now) | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
