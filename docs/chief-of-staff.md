@@ -78,10 +78,10 @@ itself; you edit it after (Arugula #1442). It:
 1. reads the Doc (or the room) through, and checks no open board already
    has that goal;
 2. makes the board with `board_write` `create_board`: a title, a goal that
-   says what you can do when it's done, and one group per phase, each item a
-   new issue whose body ends with a "Done when" line and names the Doc;
+   says what you can do when it's done, and one group per phase of the Doc,
+   in its order, each item a new issue whose body ends with a "Done when" line and names the Doc;
 3. sets blockers with `link` (`blocks`), only where one issue needs another
-   closed first;
+   closed first, inside a phase or across them;
 4. puts the Doc in the board's Docs strip (`link_doc`);
 5. lets go of the board's lead (`lead_board`, `release`): making a board
    makes its session the lead, and the chief of staff doesn't run boards;
