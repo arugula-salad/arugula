@@ -97,9 +97,25 @@ pub struct SessionStartArgs {
     pub recipe: Option<String>,
 }
 
-/// The recipes `session_start` starts a session as: its name, and its
-/// standing instructions (Arugula #1276).
-pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("recipes/chief-of-staff.md"))];
+/// The recipes `session_start` starts a hosted session as: its name, and
+/// its standing instructions (Arugula #1276). They name a hosted session's
+/// tools; a chief of staff on a machine runs [`CHIEF_OF_STAFF_ON_A_MACHINE`]
+/// (Arugula #1337).
+pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("recipes/chief-of-staff-hosted.md"))];
+
+/// The chief of staff's standing instructions as an agent block on one of
+/// the person's machines, a Cloud workspace included (Arugula #1337): the
+/// tools an agent block has, where [`RECIPES`]' names a hosted session's.
+pub(crate) const CHIEF_OF_STAFF_ON_A_MACHINE: &str = include_str!("recipes/chief-of-staff.md");
+
+/// A recipe's first prompt: its standing instructions, then what the
+/// person asked, if anything.
+pub(crate) fn recipe_prompt(text: &str, prompt: Option<&str>) -> String {
+    match prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => format!("{}\n\n{p}", text.trim_end()),
+        None => text.trim_end().to_owned(),
+    }
+}
 
 /// The chief of staff (Arugula #1276): it starts in the person's staff room,
 /// which it leads.
@@ -285,10 +301,7 @@ pub(crate) fn start_body(a: &SessionStartArgs, project: Option<String>) -> Resul
         if a.issue.is_some() || room.is_some_and(|r| r != STAFF) || a.thread.is_some() {
             return Err(format!("recipe {name} starts in your person's staff room: leave issue, room and thread out"));
         }
-        prompt = Some(match prompt {
-            Some(p) => format!("{}\n\n{p}", text.trim_end()),
-            None => text.trim_end().to_owned(),
-        });
+        prompt = Some(recipe_prompt(text, prompt.as_deref()));
         return Ok(AgentSessionStart { room: Some(STAFF.to_owned()), prompt, ..Default::default() });
     }
     match (a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()), room) {
@@ -640,7 +653,7 @@ mod tests {
             assert!(start_body(&args(a), None).unwrap_err().contains("staff room"), "{elsewhere}");
         }
         assert!(start_body(&args(json!({ "recipe": "ceo" })), None).unwrap_err().contains("chief-of-staff"));
-        // Every tool the recipe names is a hosted session's.
+        // Every tool the hosted recipe names is a hosted session's.
         for tool in [
             "read_session_issues",
             "read_session_thread",

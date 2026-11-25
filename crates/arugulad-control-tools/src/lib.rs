@@ -56,6 +56,14 @@ use crate::{
     server::App,
 };
 
+/// The chief of staff's first prompt as an agent block on one of the
+/// person's machines (Arugula #1337): its standing instructions, then
+/// `prompt`. Every tool it names is an agent block's (the binary's
+/// `whole_tests`).
+pub fn chief_of_staff_on_a_machine(prompt: Option<&str>) -> String {
+    agent_sessions::recipe_prompt(agent_sessions::CHIEF_OF_STAFF_ON_A_MACHINE, prompt)
+}
+
 /// Lists the tools where they were: `forge_read` and `forge_draft` after
 /// `draft`, the rest after `device_call`, and `list`'s kinds after
 /// `agents`. Before any other crate that lists a tool after one of these.

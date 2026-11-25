@@ -530,6 +530,42 @@ pub fn old_argument_and_kind_names_are_read_as_the_new() {
     }
 }
 
+/// A recipe for an agent block on a machine (Arugula #1337) names only
+/// tools such a block is listed, without Labs: each code span that is the
+/// name of a tool, the machine's or a hosted session's, and each
+/// "`tool` kind `kind`". Returns the tools it names.
+pub fn a_recipe_names_only_a_blocks_tools(text: &str) -> Vec<String> {
+    let listed = listed_names(Scope::Block(1), fl(false), true);
+    let known: Vec<String> = all_defs()
+        .into_iter()
+        .map(|d| d.name.to_owned())
+        .chain(crate::session::tools().into_iter().map(|t| t.name.into_owned()))
+        .collect();
+    // The odd pieces are the code spans: the recipe has no fences.
+    let pieces: Vec<&str> = text.split('`').collect();
+    let mut named = vec![];
+    let mut wrong = vec![];
+    for (i, span) in pieces.iter().enumerate().skip(1).step_by(2) {
+        if !known.iter().any(|k| k == span) {
+            continue;
+        }
+        if !listed.iter().any(|l| l == span) {
+            wrong.push(span.to_string());
+        }
+        if pieces.get(i + 1).is_some_and(|between| between.trim().trim_start_matches('(') == "kind")
+            && let Some(kind) = pieces.get(i + 2)
+            && !listed.contains(&format!("{span}:{kind}"))
+        {
+            wrong.push(format!("{span} kind {kind}"));
+        }
+        if !named.contains(&span.to_string()) {
+            named.push(span.to_string());
+        }
+    }
+    assert!(wrong.is_empty(), "an agent block on a machine has no {wrong:?}");
+    named
+}
+
 /// Each tool, and each kind of a grouped one, listed or not.
 fn every_tool_and_kind() -> Vec<(&'static str, Option<&'static str>)> {
     let mut out = vec![];
