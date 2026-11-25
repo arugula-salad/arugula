@@ -4,6 +4,8 @@
 //! project, control attaches the block to that issue's row on every board of
 //! the project ([`attach`]). Without the grant the block keeps its issue and
 //! `start_agent` says the row wasn't attached and which grant would do it.
+//! Control also makes the block, by its name, the lead of the issue's thread
+//! (Arugula #1439), so a post there is told to it wherever it runs.
 //!
 //! The boards the block is on are kept with it ([`WorkBoard`]: the board's
 //! title, from control's answer, and the row), for the chip in its header.
@@ -15,7 +17,7 @@ use arugula_control_wire::boards::{
     agent_project_claim_check,
 };
 use arugula_control_wire::issues::{agent_issue, agent_project_issue};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use arugula_proto::PaneId;
 use reqwest::Method;
@@ -104,16 +106,23 @@ impl From<String> for NotKept {
 /// when known. `take`: take a row another machine's block holds, folding that
 /// block under `earlier`. The boards (none when no board has a row for the
 /// issue), or why it wasn't tried or was refused. `session`: the starter's
-/// name, which holds the row from now (Arugula #765).
+/// name, which holds the row from now (Arugula #765). The block itself leads
+/// the issue's thread (Arugula #1439): a post there is told to it. One with no
+/// name yet leads it once it has one ([`lead_when_named`]).
 pub async fn keep(
-    app: &App,
+    app: &Arc<App>,
     home: Option<String>,
     issue: &str,
     pane: PaneId,
     take: bool,
     session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
-    let boards = attach(app, home, issue, pane, take, session).await?;
+    let lead = crate::agent_mentions::session_name(app, pane).await;
+    let named = lead.is_some();
+    let boards = attach(app, home.clone(), issue, pane, take, session, lead).await?;
+    if !named {
+        lead_when_named(app.clone(), home, issue.to_owned(), pane);
+    }
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
     {
@@ -122,12 +131,41 @@ pub async fn keep(
     Ok(boards)
 }
 
+/// How long a block started on an issue is waited for to have a name, to lead
+/// the issue's thread by it ([`lead_when_named`]).
+const NAME_WAIT: Duration = Duration::from_secs(600);
+
+/// A block started on an issue with no name yet leads the issue's thread
+/// once it has one (Arugula #1439): an agent its starter didn't title goes by
+/// the title its session gives itself, after its first turn. It is attached
+/// again with its name, which changes nothing else for a block on its rows.
+/// Given up when the pane is gone or after [`NAME_WAIT`].
+fn lead_when_named(app: Arc<App>, home: Option<String>, issue: String, pane: PaneId) {
+    crate::task::spawn(async move {
+        let deadline = tokio::time::Instant::now() + NAME_WAIT;
+        while tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            if app.mux.api(|r| Api::Block(pane, r)).await.flatten().is_none() {
+                return;
+            }
+            if let Some(name) = crate::agent_mentions::session_name(&app, pane).await {
+                match attach(&app, home, &issue, pane, false, None, Some(name)).await {
+                    Ok(_) => debug!(pane, issue, "a block leads its issue's thread, by the name it has now"),
+                    Err(why) => debug!(pane, issue, "a block doesn't lead its issue's thread: {why}"),
+                }
+                return;
+            }
+        }
+    });
+}
+
 /// [`keep`] for an issue found from a branch's name: the block is on it only
 /// if a board has a row for it, so a block with none keeps no issue, and one
 /// refused (a row another machine's block holds, no grant) says nothing. The
-/// boards, none when it isn't on one.
+/// boards, none when it isn't on one. It leads no thread: it wasn't started
+/// on the issue.
 pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Vec<WorkBoard> {
-    let boards = match attach(app, home, issue, pane, false, None).await {
+    let boards = match attach(app, home, issue, pane, false, None, None).await {
         Ok(b) => b,
         Err(why) => {
             debug!(pane, issue, "a branch's issue isn't attached: {why}");
@@ -257,6 +295,7 @@ async fn attach(
     pane: PaneId,
     take: bool,
     session: Option<String>,
+    lead: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
     let Some(enrolled) = app.control.enrolled() else {
         return Err("this machine hasn't joined Arugula cloud, so the row wasn't attached".into());
@@ -268,6 +307,7 @@ async fn attach(
         pane: pane.to_string(),
         take,
         session,
+        lead,
     })
     .map_err(|e| e.to_string())?;
     let v =

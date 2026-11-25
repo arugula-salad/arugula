@@ -368,6 +368,12 @@ export function IssueView({
               ) : null}
             </div>
           </article>
+          {room?.lead && (
+            <p class="doc-meta issue-lead" data-issue-lead={room.lead.session} title="The comments here are told to it">
+              Led by <b>{room.lead.session}</b>
+              {room.lead.machine_name && ` on ${room.lead.machine_name}`}
+            </p>
+          )}
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
               <RoomBody room={room} phone={phone} focus={thread === undefined ? msg : undefined} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet" }} />

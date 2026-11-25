@@ -1901,6 +1901,12 @@ pub struct AttachBlock {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub session: Option<String>,
+    /// The started block's own name (Arugula #1439): it leads the issue's
+    /// thread from now, so a post there is told to it, as a board's thread's
+    /// is to the board's lead. Absent: the thread's lead stays as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<String>,
 }
 
 /// [`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it

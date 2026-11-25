@@ -4048,6 +4048,8 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     }
     let first = control.attached.lock().unwrap()[0].clone();
     assert_eq!(first["issue"], "#12", "{first}");
+    // The block it started leads the issue's thread, by its name (Arugula #1439).
+    assert_eq!(first["lead"], "Lexer lane", "{first}");
     let block: u64 = first["pane"].as_str().unwrap().parse().unwrap();
     let work = json!({ "issue": "#12", "project": "prj_1", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
     assert_eq!(d.state(block)["work"], work);
@@ -4104,6 +4106,19 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     // Through the API, as `arugula agent --issue` does.
     let opened = d.open_with(json!({ "type": "agent", "config": agent(json!({ "work": { "issue": "#12" } })) }));
     d.wait_for("its row", || d.state(opened)["work"] == work);
+    // One with no name yet leads the thread once its session names itself.
+    let config = agent(json!({ "prompt": "retitle Docs lane", "work": { "issue": "#12" } }));
+    let named = d.open_with(json!({ "type": "agent", "config": config }));
+    let lead_of = |pane: u64| {
+        let attached = control.attached.lock().unwrap().clone();
+        attached
+            .iter()
+            .filter(|b| b["pane"] == pane.to_string().as_str())
+            .map(|b| b["lead"].clone())
+            .collect::<Vec<_>>()
+    };
+    d.wait_for("its lead, by its name", || lead_of(named).contains(&json!("Docs lane")));
+    assert_eq!(lead_of(named)[0], Value::Null, "nameless at first: {:?}", lead_of(named));
     let bad = d.raw(
         "POST",
         "/api/blocks",
