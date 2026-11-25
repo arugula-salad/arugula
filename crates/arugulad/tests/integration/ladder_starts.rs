@@ -9,6 +9,12 @@
 //! grant at its cap are refused in control's words. The target checks the
 //! ticket itself: from the machine it names, of its own account, for the
 //! start it names, once, and never with remote input off.
+//!
+//! The lead staffs a board's rows inside the grant (Arugula #1438): with a
+//! cap of two it starts two issue agents, one here and one on the other
+//! machine; a third is refused naming the cap; `close {pane, to}`
+//! stops the other machine's, which tells control at once, so the next
+//! start fits without waiting; and a revoked grant refuses the next start.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -95,17 +101,41 @@ struct Fake {
     muxes: Arc<Mutex<HashMap<String, Mux>>>,
     /// Machines control says are offline.
     offline: Arc<Mutex<Vec<String>>>,
-    /// The board's grant: how many starts at once.
+    /// The board's grant: how many issue agents at once, and whether it was
+    /// revoked.
     cap: Arc<AtomicUsize>,
+    revoked: Arc<AtomicBool>,
     issued: Arc<Mutex<Vec<Value>>>,
     attached: Arc<Mutex<Vec<Value>>>,
     leads: Arc<Mutex<Vec<Value>>>,
+    /// Each block's last state, by (machine, pane), as its machine told it.
+    states: Arc<Mutex<HashMap<(String, String), String>>>,
     dialed: Arc<AtomicBool>,
 }
 
 impl Fake {
     fn name_of(&self, id: &str) -> String {
         self.machines.lock().unwrap().iter().find(|(i, _)| i == id).map(|(_, n)| n.clone()).unwrap_or_default()
+    }
+
+    /// The issue agents the grant has running, as control counts them: a
+    /// ticket not attached yet, or an attached block its machine hasn't
+    /// said is closed.
+    fn running(&self) -> usize {
+        let attached = self.attached.lock().unwrap().clone();
+        let states = self.states.lock().unwrap().clone();
+        let issued = self.issued.lock().unwrap().clone();
+        issued
+            .iter()
+            .filter(|t| t["rung"] == "issue")
+            .filter(|t| match attached.iter().find(|a| a["ticket"] == t["jti"]) {
+                None => true,
+                Some(a) => {
+                    let at = (a["signer"].as_str().unwrap().to_owned(), a["pane"].as_str().unwrap().to_owned());
+                    states.get(&at).is_none_or(|s| s != "closed")
+                }
+            })
+            .count()
     }
 }
 
@@ -162,9 +192,15 @@ async fn start_ticket(
             format!("{} is offline; the board's grant also allows {} (online)", f.name_of(&to), others.join(", "));
         return refuse(StatusCode::CONFLICT, why, "offline").into_response();
     }
-    let cap = f.cap.load(Ordering::SeqCst);
-    if f.issued.lock().unwrap().len() >= cap {
-        let why = format!("the board's grant allows {cap} agents at once, and {cap} are running");
+    if f.revoked.load(Ordering::SeqCst) {
+        let why = "this board has no grant to start agents: its person gives one with \"Run this board\"".to_owned();
+        return refuse(StatusCode::FORBIDDEN, why, "no-grant").into_response();
+    }
+    let (cap, running) = (f.cap.load(Ordering::SeqCst), f.running());
+    if a["rung"] == "issue" && running >= cap {
+        let why = format!(
+            "the board's grant allows {cap} issue agents at once, and {running} are running: stop one, or ask for a new card"
+        );
         return refuse(StatusCode::FORBIDDEN, why, "cap").into_response();
     }
     let iat = now();
@@ -185,6 +221,13 @@ async fn attach_block(State(f): State<Fake>, h: HeaderMap, Json(mut a): Json<Val
     a["signer"] = json!(signer(&h));
     f.attached.lock().unwrap().push(a);
     Json(json!({ "on": [{ "board": BOARD, "title": "The ladder", "row": "row_1" }] }))
+}
+
+/// A machine's word on one of its blocks.
+async fn block_state(State(f): State<Fake>, h: HeaderMap, Json(a): Json<Value>) -> Json<Value> {
+    let (pane, state) = (a["pane"].as_str().unwrap_or_default(), a["block"]["state"].as_str().unwrap_or_default());
+    f.states.lock().unwrap().insert((signer(&h), pane.to_owned()), state.to_owned());
+    Json(json!({}))
 }
 
 async fn lead(State(f): State<Fake>, h: HeaderMap, Json(mut a): Json<Value>) -> Json<Value> {
@@ -274,6 +317,7 @@ async fn serve(f: Fake) -> String {
         .route("/api/daemon/boards/{board}/lead", post(lead))
         .route("/api/daemon/projects/{p}/claim-check", post(claim_check))
         .route("/api/daemon/projects/{p}/attach-block", post(attach_block))
+        .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, axum::routing::put(block_state))
         .with_state(f.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let at = format!("http://{}", l.local_addr().unwrap());
@@ -357,7 +401,11 @@ async fn bridge(d: &Daemon) -> Session {
 }
 
 async fn call(s: &Session, args: Value) -> CallToolResult {
-    let params = CallToolRequestParams::new("start_agent").with_arguments(args.as_object().cloned().unwrap());
+    call_tool(s, "start_agent", args).await
+}
+
+async fn call_tool(s: &Session, tool: &'static str, args: Value) -> CallToolResult {
+    let params = CallToolRequestParams::new(tool).with_arguments(args.as_object().cloned().unwrap());
     s.call_tool(params).await.unwrap()
 }
 
@@ -376,8 +424,18 @@ fn ticket(url: &str, aud: &str, from: &str, edit: impl FnOnce(&mut Value)) -> St
     jwt(&c)
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
+/// Two machines of one account, alpha and bravo, joined to a fake control
+/// whose board grant allows `cap` issue agents at once, bravo on the relay.
+struct Pair {
+    a: Daemon,
+    b: Daemon,
+    a_id: String,
+    b_id: String,
+    f: Fake,
+    url: String,
+}
+
+async fn pair(cap: usize) -> Pair {
     let root = DeviceKeys::generate();
     let mut root_cert = Cert::new(&root, ACCOUNT, Kind::Browser, "laptop");
     root_cert.sign_with(&root);
@@ -387,7 +445,7 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     let certs = vec![root_cert, a_cert.clone(), b_cert.clone()];
 
     let f = Fake::default();
-    f.cap.store(2, Ordering::SeqCst);
+    f.cap.store(cap, Ordering::SeqCst);
     *f.certs.lock().unwrap() = certs.clone();
     *f.machines.lock().unwrap() = vec![(a_id.clone(), "alpha".into()), (b_id.clone(), "bravo".into())];
     let url = serve(f.clone()).await;
@@ -396,6 +454,12 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     arugula_testkit::wait_for("bravo on the relay", Duration::from_secs(30), || {
         f.muxes.lock().unwrap().contains_key(&b_id)
     });
+    Pair { a, b, a_id, b_id, f, url }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
+    let Pair { a, b, a_id, b_id, f, url } = pair(1).await;
 
     // Each machine has its own clone of the board's repo, where a pane works.
     let work = a.state.join("ladder-work");
@@ -499,7 +563,7 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     // At the grant's cap: control's refusal, as it said it.
     let r = call(&s, json!({ "prompt": "Fix #8", "board": BOARD, "issue": "#8", "to": "bravo" })).await;
     assert_eq!(r.is_error, Some(true));
-    assert!(text(&r).contains("allows 2 agents at once"), "{}", text(&r));
+    assert!(text(&r).contains("allows 1 issue agents at once"), "{}", text(&r));
     drop(s);
 
     // Bravo checks a ticket itself, sent here by its owner (no channel:
@@ -533,4 +597,71 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     let (status, said) = start(ticket(&url, &b_id, &b_id, |_| {}), None);
     assert_eq!(status, 403);
     assert!(said.contains("remote input is off"), "{said}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lead_staffs_its_board_inside_the_grant_and_stops_to_free_a_slot() {
+    let Pair { a, b, a_id, b_id, f, url: _ } = pair(2).await;
+    let work = a.state.join("ladder-work");
+    std::fs::create_dir_all(&work).unwrap();
+    let clone_a = clone_in(&work, "alpha-clone");
+    let clone_b = clone_in(&work, "bravo-clone");
+    a.post("/api/run", json!({ "cwd": clone_a }));
+    let shell_b = b.post("/api/run", json!({ "cwd": clone_b }))["pane"].as_u64().unwrap();
+    let s = bridge(&a).await;
+    let start = |issue: &str, to: Option<&str>| {
+        let mut args = json!({ "prompt": format!("Fix {issue}"), "board": BOARD, "issue": issue, "cwd": clone_a });
+        if let Some(to) = to {
+            args["to"] = json!(to);
+        }
+        args
+    };
+
+    // Two issue agents under a cap of two: one on bravo, one here.
+    let r = call(&s, start("#1", Some("bravo"))).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let on_b = r.structured_content.clone().unwrap();
+    assert_eq!(on_b["id"], b_id.as_str());
+    let r = call(&s, start("#2", None)).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let here = r.structured_content.clone().unwrap();
+    assert_eq!(here["id"], a_id.as_str());
+    let attached = f.attached.lock().unwrap().clone();
+    assert_eq!(attached.len(), 2, "each start is on its row: {attached:?}");
+    assert_eq!((attached[0]["issue"].as_str(), attached[0]["signer"].as_str()), (Some("#1"), Some(b_id.as_str())));
+    assert_eq!((attached[1]["issue"].as_str(), attached[1]["signer"].as_str()), (Some("#2"), Some(a_id.as_str())));
+
+    // A third is refused, naming the cap.
+    let r = call(&s, start("#3", Some("bravo"))).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("allows 2 issue agents at once, and 2 are running"), "{}", text(&r));
+
+    // Another machine's pane is closed only if a ladder start opened it.
+    let r = call_tool(&s, "close", json!({ "pane": shell_b, "to": "bravo" })).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("isn't an agent a ladder start opened"), "{}", text(&r));
+
+    // Stopping bravo's frees its slot at once: the next start fits without
+    // waiting for bravo's next report.
+    let block = on_b["block"].as_u64().unwrap();
+    let r = call_tool(&s, "close", json!({ "pane": block, "to": "bravo" })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    assert!(text(&r).contains(&format!("Closed %{block} on bravo")), "{}", text(&r));
+    assert!(text(&r).contains("its slot under the board's grant is free"), "{}", text(&r));
+    let r = call(&s, start("#3", Some("bravo"))).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+
+    // Here, close does the same.
+    let mine = here["block"].as_u64().unwrap();
+    let r = call_tool(&s, "close", json!({ "pane": mine })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    assert_eq!(f.states.lock().unwrap().get(&(a_id.clone(), mine.to_string())).map(String::as_str), Some("closed"));
+    assert_eq!(f.running(), 1);
+
+    // Revoked: the next start is refused.
+    f.revoked.store(true, Ordering::SeqCst);
+    let r = call(&s, start("#4", Some("bravo"))).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("no grant to start agents"), "{}", text(&r));
+    assert_eq!(f.attached.lock().unwrap().len(), 3, "nothing more started");
 }

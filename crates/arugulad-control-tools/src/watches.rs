@@ -7,7 +7,10 @@
 //! - **Its session.** A watch is keyed to the calling pane's Claude Code
 //!   session: a terminal's from its hooks, or an agent block's. A pane that
 //!   can't take follow-ups (no hooks heard, or no agent) is refused, since
-//!   nothing could ever wake it. So is a hosted box's session, for now.
+//!   nothing could ever wake it. A Cloud workspace's box is one more
+//!   machine (Arugula #1448): an agent block there, a chief of staff say,
+//!   is woken as on any other. A hosted session's agent never reaches this
+//!   tool (`arugulad_mcp::session` has its own `watch`, as its asker).
 //! - **Its targets.** A pull request on github.com in a repo linked through
 //!   Arugula's GitHub App, until it merges or closes. Control refuses a repo
 //!   without the App, and a PR the owner can't see answers as one that
@@ -278,9 +281,6 @@ pub(crate) async fn watch(c: &Call<'_>, kind: &str, args: Value) -> Out {
 /// The caller's Claude Code session and its name, or why it has none a
 /// watch could wake.
 async fn session(c: &Call<'_>) -> Result<(String, Option<String>), String> {
-    if c.app().control.enrolled().is_some_and(|e| e.saved.is_hosted()) {
-        return Err("watch doesn't wake a session on a hosted box yet: reply in the session's thread instead".into());
-    }
     let pane = c.own_pane().ok_or("watch wakes the session it's called from: call it from a pane in Arugula")?;
     let Some(id) = arugulad_base::agent_mentions::conversation(c.app(), pane).await else {
         return Err(format!(
@@ -421,9 +421,6 @@ pub(crate) async fn wait_event(
             None => not_yet(on.name(), &watching.id, limit),
         };
     }
-    if c.app().control.enrolled().is_some_and(|e| e.saved.is_hosted()) {
-        return Err("wait with event doesn't hear the cloud's events on a hosted box yet: use watch from a terminal or an agent block on a machine".into());
-    }
     let mut body = create_body(a)?;
     if wants_project(&body)
         && let Ok(project) = c.current_project(None).await
@@ -501,7 +498,7 @@ pub(crate) enum Watched {
     Happened,
     /// The call ended first: its watch is cancelled.
     NotYet,
-    /// No watch to wait on (not joined, a hosted box, an agent a guest
+    /// No watch to wait on (not joined, an agent a guest
     /// stands behind, or the cloud refused it): long-poll as before.
     Unwatched,
 }
@@ -512,7 +509,7 @@ pub(crate) enum Watched {
 /// then (https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e).
 /// The caller reads what happened after, as it did, for the same answer.
 pub(crate) async fn watched(c: &Call<'_>, targets: Vec<WatchTarget>, what: &str, limit: Duration) -> Watched {
-    let joined = c.app().control.enrolled().is_some_and(|e| !e.saved.is_hosted());
+    let joined = c.app().control.enrolled().is_some();
     // More than a watch takes are long-polled.
     if !joined || targets.len() > TARGETS_MAX || c.owners_own("wait").await.is_err() {
         return Watched::Unwatched;

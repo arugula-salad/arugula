@@ -114,6 +114,49 @@
       ],
       "type": "object"
     },
+    "LadderStop": {
+      "description": "`POST` [`STOP_PATH`]: close an agent block a ladder start opened on the\ntarget.",
+      "properties": {
+        "block": {
+          "description": "The agent block, there ([`LadderStarted::block`]).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block"
+      ],
+      "type": "object"
+    },
+    "LadderStopped": {
+      "description": "The target's answer to a [`LadderStop`].",
+      "properties": {
+        "block": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "machine": {
+          "description": "The target's name and id.",
+          "type": "string"
+        },
+        "said": {
+          "description": "What became of its worktree, and whether control was told it closed\n(its grant's slot is free once it was).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "id",
+        "block",
+        "said"
+      ],
+      "type": "object"
+    },
     "Rung": {
       "description": "Which rung of the ladder the agent is.",
       "oneOf": [

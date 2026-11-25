@@ -72,7 +72,7 @@ test("panes, sessions sidebar closed", async ({ page }) => {
   await everyWay(page, "panes-sidebar-closed", async (width) => {
     await home(page);
     if (width !== "desktop") return;
-    if (await page.locator("[data-session-sidebar]").count()) await page.locator(".ws-head [data-open-sessions]").click();
+    if (await page.locator("[data-session-sidebar]").count()) await page.locator(".ws-tabs [data-open-sessions]").click();
     await expect(page.locator(".ws-crumb-caret")).toBeVisible();
   });
 });

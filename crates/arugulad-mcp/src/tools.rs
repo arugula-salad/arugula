@@ -1766,7 +1766,7 @@ impl ToolCall<'_, '_> {
                 Ok(a) => self.wait(a).await,
                 Err(e) => Err(e),
             },
-            ("close", _) => crate::mcp::ops::call::<ClosePane>(self, args).await,
+            ("close", _) => self.close(args).await,
             (crate::feedback::TOOL, _) => crate::mcp::ops::call::<FeedbackSend>(self, args).await,
             ("history", _) => match parse(args) {
                 Ok(a) => self.history_or_output(a).await,
@@ -3776,6 +3776,19 @@ impl ToolCall<'_, '_> {
                 results::MovedFrom { machine_name: String::new(), session, how: "here".into(), said }
             }
         }
+    }
+
+    /// `close`: here, or with `to` another machine's agent a ladder start
+    /// opened (Arugula #1438).
+    async fn close(&self, args: Value) -> Out {
+        let to = args.get("to").and_then(Value::as_str).unwrap_or_default().to_owned();
+        if !to.trim().is_empty() {
+            let pane = parse::<crate::mcp::tools::CloseArgs>(args.clone())?.pane.id()?;
+            if let Some(stopped) = arugulad_base::ladder::stop(self.app, &to, pane).await? {
+                return done(format!("Closed %{pane} on {}: {}", stopped.machine, stopped.said), stopped);
+            }
+        }
+        crate::mcp::ops::call::<ClosePane>(self, args).await
     }
 
     /// `start_agent {board}` (aru-143): a ladder start, here or on another

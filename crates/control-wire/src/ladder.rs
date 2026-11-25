@@ -13,6 +13,13 @@
 //! it's for this machine, of its own account, from the channel's caller,
 //! unused), and that the start matches it, then opens the agent block and
 //! answers [`LadderStarted`].
+//!
+//! A lead stops an issue agent on another machine with a [`LadderStop`] to
+//! that machine's [`STOP_PATH`], over the same channel: no ticket, since a
+//! stop only frees what a start took. The target closes only a block a
+//! ladder start opened there, and only for the machine that started it or
+//! the board's lead, then tells control at once so the grant's slot is free
+//! for the next start.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +34,9 @@ pub const START_TICKET_SECS: u64 = 60;
 /// The target's route for a ladder start, under `/api/a2a/` so an `agents`
 /// machine token reaches it.
 pub const START_PATH: &str = "/api/a2a/start";
+
+/// The target's route for stopping an agent a ladder start opened there.
+pub const STOP_PATH: &str = "/api/a2a/stop";
 
 /// The reason of a 409 that refuses a ticket because the target is offline:
 /// the sentence names it, and the grant's other machines that are online.
@@ -191,6 +201,28 @@ pub struct LadderStarted {
     pub said: String,
 }
 
+/// `POST` [`STOP_PATH`]: close an agent block a ladder start opened on the
+/// target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct LadderStop {
+    /// The agent block, there ([`LadderStarted::block`]).
+    pub block: u32,
+}
+
+/// The target's answer to a [`LadderStop`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct LadderStopped {
+    /// The target's name and id.
+    pub machine: String,
+    pub id: String,
+    pub block: u32,
+    /// What became of its worktree, and whether control was told it closed
+    /// (its grant's slot is free once it was).
+    pub said: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +232,7 @@ mod tests {
         assert_ne!(START_USE, crate::machine_token::USE);
         assert_ne!(START_USE, crate::machine_token::BLOCK_USE);
         assert!(START_PATH.starts_with("/api/a2a/"), "an agents token reaches it");
+        assert!(STOP_PATH.starts_with("/api/a2a/"), "an agents token reaches it");
         assert_eq!(start_ticket_path("brd_1"), "/api/daemon/boards/brd_1/start-ticket");
     }
 

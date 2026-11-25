@@ -279,6 +279,21 @@ of your machines, by name or id; without it, this one.
    (`work.ladder` in its config), and the target's remote sessions log gets
    an `agent` line.
 
+Issue agents count against the grant's cap from their ticket until control
+hears their block closed. A start past the cap is refused, naming it
+("allows 2 issue agents at once, and 2 are running").
+
+The lead stops an issue agent with `close {pane}` here, or `close {pane, to}`
+on another of your machines (Arugula #1438). The stop goes to the target's
+`POST /api/a2a/stop` over the same channel, with no ticket: a stop only frees
+what a start took. The target closes only a block a ladder start opened
+there (`work.ladder`), and only for the machine that started it or the
+board's current lead, as control says it. Either way the machine tells
+control at once that the block closed, without waiting for its next
+block-state report, so the slot is free for the lead's next start. The
+answer says so. A guest's agent can't use `start_agent` with `board` or
+`close` with `to`.
+
 Revoking the grant refuses the next start; agents already running keep
 running. Another account's agents still send tasks (docs/labs.md, "Tasks and
 consent").

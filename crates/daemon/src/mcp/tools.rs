@@ -83,6 +83,17 @@ pub struct PaneOnly {
     pub pane: PaneArg,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CloseArgs {
+    pub pane: PaneArg,
+    /// Another of your machines, by name or id, where the pane is: only an
+    /// agent a board's start opened there (start_agent with board and to),
+    /// which this machine started or whose board it leads. Default: this
+    /// one.
+    #[serde(default)]
+    pub to: Option<String>,
+}
+
 #[derive(Deserialize, JsonSchema, Default)]
 pub struct ListArgs {}
 

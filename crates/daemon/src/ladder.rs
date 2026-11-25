@@ -17,15 +17,25 @@
 //!   against the grant) or makes it the board's lead, keeps who started it on
 //!   the block, and writes the start to the remote sessions log.
 //!
+//! - **A stop** ([`stop`], [`stop_post`], Arugula #1438): the lead closes an
+//!   issue agent on another machine over the same channel, with no ticket
+//!   (it only frees what a start took). The target closes only a block a
+//!   ladder start opened, for the machine that started it or the board's
+//!   lead as control says it, and tells control at once that it closed, so
+//!   the grant's slot is free for the next start. Here, `close` does the
+//!   same.
+//!
 //! Another account's agents still send tasks (aru-050): a ticket names the
 //! target's own account, and the target refuses any other.
 
 use std::sync::Arc;
 
 use arugula_control_wire::{
+    boards::agent_board,
     boards::{LeadBoard, agent_board_lead},
     ladder::{
-        LadderStart, LadderStarted, Rung, START_PATH, StartClaims, StartTicket, StartTicketAsk, start_ticket_path,
+        LadderStart, LadderStarted, LadderStop, LadderStopped, Rung, START_PATH, STOP_PATH, StartClaims, StartTicket,
+        StartTicketAsk, start_ticket_path,
     },
 };
 use axum::{
@@ -353,6 +363,91 @@ fn worn_recipe(rung: Rung, named: Option<String>) -> Result<Option<String>, Stri
         Some(r) if own_recipe(&r) => Err(format!("recipe {r} isn't a {} start's: it runs {own}", rung.as_str())),
         other => Ok(other),
     }
+}
+
+/// Stop agent block `block` on `machine` (by name or id), one a ladder start
+/// opened there: what it answered, or why not. None: `machine` is this one,
+/// where `close` does it.
+pub async fn stop(app: &Arc<App>, machine: &str, block: u32) -> Result<Option<LadderStopped>, String> {
+    let e = app.control.enrolled().ok_or("this machine hasn't joined Arugula cloud: a stop elsewhere needs it")?;
+    let machine = machine.trim();
+    if machine.is_empty() || machine == e.keys.id() || machine == app.hosts.name() {
+        return Ok(None);
+    }
+    let m = crate::peer::find(&app.control, machine).await.map_err(|e| e.to_string())?;
+    let body = serde_json::to_value(LadderStop { block }).map_err(|e| e.to_string())?;
+    let (status, bytes) = crate::peer::request(&app.control, &m, "POST", STOP_PATH, Some(&body), &[])
+        .await
+        .map_err(|e| format!("{}: {e:#}", m.name))?;
+    if status != 200 {
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        let why =
+            v["error"].as_str().map(str::to_owned).unwrap_or_else(|| String::from_utf8_lossy(&bytes).into_owned());
+        return Err(format!("{} refused it ({status}): {why}", m.name));
+    }
+    let mut stopped: LadderStopped =
+        serde_json::from_slice(&bytes).map_err(|e| format!("{} answered something I can't read: {e}", m.name))?;
+    // By its name in control, as the lead named it.
+    stopped.machine = m.name;
+    Ok(Some(stopped))
+}
+
+/// `POST /api/a2a/stop`: close an agent block a ladder start opened here,
+/// for the machine that started it or the board's lead (another machine of
+/// this account, over its channel), or this machine's owner.
+pub async fn stop_post(
+    State(app): State<Arc<App>>,
+    who: Option<axum::Extension<Principal>>,
+    dev: Option<axum::Extension<crate::e2e::Caller>>,
+    Json(s): Json<LadderStop>,
+) -> Response {
+    let Some(e) = app.control.enrolled() else {
+        return refuse(StatusCode::NOT_FOUND, "this machine hasn't joined Arugula cloud");
+    };
+    let from = match &dev {
+        Some(d) if d.0.account != e.saved.cert.account => {
+            return refuse(StatusCode::FORBIDDEN, "another account's machine stops nothing here");
+        }
+        Some(d) => Some(d.0.device.clone()),
+        None if who.as_ref().is_none_or(|w| w.0.is_owner()) => None,
+        None => return refuse(StatusCode::FORBIDDEN, "a ladder stop comes from a machine of this account"),
+    };
+    let block = s.block;
+    let config = app.mux.api(|r| Api::Block(block, r)).await.flatten().map(|b| b.config());
+    let ladder = config
+        .and_then(|c| c["work"].get("ladder").cloned())
+        .and_then(|l| serde_json::from_value::<crate::board_attach::LadderWork>(l).ok());
+    let Some(ladder) = ladder else {
+        return refuse(StatusCode::NOT_FOUND, format!("%{block} here isn't an agent a ladder start opened"));
+    };
+    if let Some(from) = &from
+        && *from != ladder.by_id
+        && lead_machine(&app, &ladder.board).await.as_deref() != Some(from.as_str())
+    {
+        return refuse(
+            StatusCode::FORBIDDEN,
+            format!("%{block} is stopped by the machine that started it ({}) or the board's lead", ladder.by_machine),
+        );
+    }
+    let Some((closed, told)) = crate::ops::close::close(&app, block).await else {
+        return refuse(StatusCode::NOT_FOUND, format!("%{block} is gone already"));
+    };
+    let mut said = match &closed.worktree {
+        Some(w) => crate::worktree::sentence(w),
+        None => "it had no worktree of its own".to_owned(),
+    };
+    said.push_str(match told {
+        true => "; Arugula cloud was told it closed, so its slot under the board's grant is free",
+        false => "; Arugula cloud wasn't told yet: its slot frees when it is",
+    });
+    tracing::info!(from = from.as_deref().unwrap_or("owner"), board = ladder.board, block, "ladder stop");
+    Json(LadderStopped { machine: app.hosts.name().to_owned(), id: e.keys.id(), block, said }).into_response()
+}
+
+/// The machine of the session that leads `board`, as control says it.
+async fn lead_machine(app: &App, board: &str) -> Option<String> {
+    let v = app.control.cloud(Method::GET, &agent_board(board), None).await.ok()?;
+    v.pointer("/board/lead/machine").and_then(|m| m.as_str()).map(str::to_owned)
 }
 
 /// A session's name for a start that gave none: its rung and its issue, or
