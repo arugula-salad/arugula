@@ -323,6 +323,7 @@ pub async fn held(app: &App, home: Option<String>, issue: &str, session: Option<
     serde_json::from_value::<ClaimChecked>(v).ok()?.held
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn attach(
     app: &App,
     home: Option<String>,
