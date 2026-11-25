@@ -1284,7 +1284,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, changed: Array<string>, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -3558,7 +3558,40 @@ team?: string,
  */
 features?: HostFeatures, };
 
-export type Inbox = { entries: Array<InboxEntry>, };
+export type Inbox = { 
+/**
+ * Today's list, unchanged, for apps released before `items` (One
+ * Inbox, Arugula #1428): removed once the oldest supported app reads
+ * `items`.
+ */
+entries: Array<InboxEntry>, 
+/**
+ * The one count (Arugula #1430): the open items whose `counts` is
+ * true. Every client shows this number and adds nothing to it. Seen
+ * doesn't lower it: an item counts until it clears. 0 from a server
+ * before it.
+ */
+count: number, 
+/**
+ * The one list: what needs the reader or names them, ranked by group
+ * ([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first
+ * within a group. One item per thing: a mention in a thread is its
+ * `mention` item, never also the thread's `thread_news`.
+ */
+items: Array<InboxItem>, 
+/**
+ * How many asks agents are handling among themselves (Arugula #1393):
+ * shown as a line, never counted.
+ */
+handled: number, };
+
+/**
+ * How to answer an item in place. `via` is `attention_act`,
+ * `session_action`, `proposal`, `board_answer`, `deploy` or
+ * `chat_reply`; `options` only where the server holds them (a board ask's
+ * and a proposal's).
+ */
+export type InboxAnswer = { via: string, options: Array<string>, };
 
 export type InboxEntry = { 
 /**
@@ -3609,6 +3642,70 @@ room: string | null,
 created_at: number, updated_at: number, seen_at: number | null, done_at: number | null, };
 
 /**
+ * Who an item is from: a person, or an agent and its machine.
+ */
+export type InboxFrom = { account?: string, 
+/**
+ * A person's or a GitHub login's name, as the list shows it.
+ */
+name?: string, 
+/**
+ * An agent session's id.
+ */
+agent?: string, machine?: string, };
+
+/**
+ * One item of the one Inbox (Arugula #1430): a thing that needs the
+ * reader or names them, until its source no longer does.
+ */
+export type InboxItem = { 
+/**
+ * Stable and unique for the reader, and a push's tag: `prp_…` (a
+ * proposal), `ask_…` (a board ask), `dep_…` (a deploy), `room:<id>`
+ * (a DM, a thread or a chat mention), or an entry's item and reason
+ * (`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).
+ * `POST /api/inbox/{id}` marks it.
+ */
+id: string, 
+/**
+ * One of [`INBOX_KINDS`].
+ */
+kind: string, 
+/**
+ * One of [`INBOX_GROUPS`].
+ */
+group: string, 
+/**
+ * Whether it's in `count`: false for `turn_finished`.
+ */
+counts: boolean, 
+/**
+ * One line: the PR's title, the question, "Approve deploy v0.70.105".
+ */
+title: string, 
+/**
+ * The message, for a DM, a thread or a chat mention. Never an agent's
+ * question, which stays on its machine.
+ */
+snippet?: string, 
+/**
+ * Who asks or wrote.
+ */
+from: InboxFrom, 
+/**
+ * What it's about, and where Open goes.
+ */
+subject: InboxSubject, 
+/**
+ * How to answer it in place, when it can be.
+ */
+answer?: InboxAnswer, 
+/**
+ * When it started waiting on the reader (ms): it ranks the list.
+ */
+since: number, seen_at?: number, done_at?: number, };
+
+/**
  * Mark an item's entries: `true` sets seen or done (now, if it wasn't),
  * `false` clears it, and one not given stays as it is.
  */
@@ -3623,6 +3720,25 @@ export type InboxMarked = { item: string,
  * How many entries it changed.
  */
 marked: number, };
+
+/**
+ * What an item is about. `type` is `pane`, `session`, `proposal`,
+ * `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
+ * where Open goes (a path on the platform's page, or the item on GitHub).
+ */
+export type InboxSubject = { type: string, id: string, url: string, project?: string, machine?: string, pane?: string, 
+/**
+ * The chat room it's in: a proposal's card, a thread, a DM.
+ */
+room?: string, 
+/**
+ * The message in `room`: a proposal's card, the first unread.
+ */
+seq?: number, 
+/**
+ * A board ask's board.
+ */
+board?: string, };
 
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, project?: ProjectRef, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
