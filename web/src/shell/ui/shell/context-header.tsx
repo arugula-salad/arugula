@@ -62,10 +62,10 @@ export function ConnectionChip({ client }: { client: Client }) {
   );
 }
 
-/** Shows and hides the sessions sidebar (#378). It's in the header, not the
- * sidebar, so it stays when the sidebar is closed. The panes only: the other
- * places cover the sidebar. */
-function SidebarToggle({ client }: { client: Client }) {
+/** Shows and hides the sessions sidebar (#378). It's the tab strip's first
+ * thing, at the sidebar's edge, so it stays when the sidebar is closed. The
+ * panes only: the other places cover the sidebar. */
+export function SidebarToggle({ client }: { client: Client }) {
   const at = usePlace(client);
   const { open } = useSidebar();
   if (at !== "panes") return null;
@@ -85,6 +85,15 @@ function SidebarToggle({ client }: { client: Client }) {
   );
 }
 
+/** The step between two crumbs, as the Overview's bar draws it (platform/bar.tsx). */
+function Sep() {
+  return (
+    <span class="app-path-sep" aria-hidden="true">
+      <ChevronIcon dir="right" />
+    </span>
+  );
+}
+
 /** The workspace's header. */
 export function ContextHeader({
   client,
@@ -97,7 +106,6 @@ export function ContextHeader({
   onSwarm?: () => void;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
-  const sidebar = useSidebar();
   const at = usePlace(client);
   // The session's own parts (where you are in it, Share) are the panes'.
   const panes = at === "panes";
@@ -108,8 +116,10 @@ export function ContextHeader({
   const tab = client.tabView();
   return (
     <header class="ws-head" data-tauri-drag-region>
-      <nav class="ws-crumbs" aria-label="This machine" data-tauri-drag-region>
-        <SidebarToggle client={client} />
+      {/* The place stack, as the Overview's bar shows it: machine, then (on the
+          panes) session and tab. This header doesn't know the shown project's
+          name (the platform's list), so the stack starts at the machine. */}
+      <nav class="ws-crumbs app-path ws-stack" aria-label="This machine" data-tauri-drag-region>
         {/* The machine's name even where there's no menu of others (a
             daemon's own page alone): HostButton draws nothing then. */}
         {hostMenuShown() ? (
@@ -119,26 +129,23 @@ export function ContextHeader({
             {directory.current || client.hostName || "This machine"}
           </span>
         )}
+        {panes && session && (
+          <span class="app-path-step">
+            <Sep />
+            <SessionButton client={client} session={session} setRenaming={setRenaming} />
+          </span>
+        )}
+        {panes && session && tab && (
+          <span class="app-path-step ws-crumb-tab" title="This tab" data-tauri-drag-region>
+            <Sep />
+            <span class="ws-crumb-tab-name app-path-here">{tabLabel(client, tab)}</span>
+          </span>
+        )}
         <ConnectionChip client={client} />
       </nav>
       {/* Docs sits under this head (Arugula #796); the other places cover it
           with a bar of their own (AppBar). */}
       {(panes || at === "docs") && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
-      {/* The sidebar and tab strip say which session and tab this is; without
-          the sidebar, this does (Arugula #637). */}
-      {panes && (!sidebar.open || sidebar.narrow) && (
-        <nav class="ws-crumbs ws-trail" aria-label="Where you are" data-tauri-drag-region>
-          {session && <SessionButton client={client} session={session} setRenaming={setRenaming} />}
-          {tab && (
-            <span class="ws-crumb-tab" title="This tab" data-tauri-drag-region>
-              <span class="ws-crumb-sep" aria-hidden="true">
-                /
-              </span>
-              <span class="ws-crumb-tab-name">{tabLabel(client, tab)}</span>
-            </span>
-          )}
-        </nav>
-      )}
       <div class="bar-fill" data-tauri-drag-region />
       <CommandsButton client={client} search />
       <UpdateChip client={client} />

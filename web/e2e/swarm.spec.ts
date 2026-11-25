@@ -125,7 +125,7 @@ test("an agent on an issue wears its chip in the swarm, which clusters by board 
   await page.screenshot({ path: testInfo.outputPath("swarm-by-board.png") });
   // The sessions sidebar on the panes: its session's row has the chip, linking to the board's row.
   await page.goto("/");
-  if (!(await page.locator("[data-session-sidebar]").count())) await page.locator(".ws-head [data-open-sessions]").click();
+  if (!(await page.locator("[data-session-sidebar]").count())) await page.locator(".ws-tabs [data-open-sessions]").click();
   await expect(page.locator("[data-session-sidebar]")).toBeVisible();
   const row = page.locator(".ws-session", { has: page.locator("[data-session-work]", { hasText: "#12" }) }).first();
   await expect(row.locator("[data-session-work]").first()).toHaveAttribute("title", /#12 on Launch/, { timeout: 20_000 });
