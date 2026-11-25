@@ -25,6 +25,7 @@ mod blocks;
 #[cfg(all(unix, feature = "labs"))]
 mod board_state;
 mod chat_blocks;
+mod chief_of_staff_wakes;
 #[cfg(unix)]
 mod client_fixtures;
 mod control_moves;
