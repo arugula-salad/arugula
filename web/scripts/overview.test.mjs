@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardLead, boardSays, groupByOwner, leadAwake, inFlight, overviewOf, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardLead, boardSays, groupByOwner, leadAwake, inFlight, overviewOf, staffSpots, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -293,4 +293,44 @@ test("Your work on the Overview lists the reader's own machines, on their person
   ];
   assert.deepEqual(yourWorkMachines(true, hosts), ["laptop", "desk"]);
   assert.deepEqual(yourWorkMachines(false, hosts), []);
+});
+
+// Arugula #1341: Start offers your machines this page reaches whose daemon
+// starts a chief of staff, here first and the project's Cloud workspaces
+// last; the default is here, else your first, never a Cloud workspace.
+test("the chief of staff starts on your reached, new-enough machines, here by default, a Cloud workspace never the default", () => {
+  const host = (name, more = {}) => ({ name, id: `m_${name}`, state: "connected", ...more });
+  const hosts = [
+    host("zed"),
+    host("geek"),
+    host("old"),
+    host("away", { state: "offline", status: "offline" }),
+    host("dozing", { state: "asleep" }),
+    host("pending", { state: "connecting", status: "online" }),
+    host("sams", { owner: "sam" }),
+    host("box", { teamBox: true }),
+    host("ws", { hosted: true }),
+    host("other-ws", { hosted: true }),
+  ];
+  const features = (n) => (n === "old" ? { labs: false } : n === "pending" ? null : { chief_of_staff: true });
+  const hostedIn = (id) => ({ m_ws: "prj_1", "m_other-ws": "prj_2" })[id];
+  const o = { project: "prj_1", here: "zed", features, hostedIn };
+  const r = staffSpots(hosts, o);
+  assert.deepEqual(r.can.map((s) => s.name), ["zed", "geek", "ws"]);
+  assert.equal(r.pick, "zed");
+  assert.deepEqual(r.can.map((s) => [s.here, s.cloud]), [[true, false], [false, false], [false, true]]);
+  assert.deepEqual(r.cannot, [
+    { name: "away", why: "offline" },
+    { name: "dozing", why: "asleep" },
+    { name: "old", why: "needs an update" },
+    { name: "pending", why: "not reached from here" },
+  ]);
+  // In a browser (no machine here): your first by name.
+  assert.equal(staffSpots(hosts, { ...o, here: null }).pick, "geek");
+  // Here can't: your first that can.
+  assert.equal(staffSpots(hosts, { ...o, here: "old" }).pick, "geek");
+  // Only a Cloud workspace can: offered, not picked.
+  const cloudOnly = staffSpots([host("ws", { hosted: true }), host("away", { state: "offline" })], o);
+  assert.deepEqual(cloudOnly.can.map((s) => s.name), ["ws"]);
+  assert.equal(cloudOnly.pick, null);
 });

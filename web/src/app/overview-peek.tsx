@@ -61,6 +61,9 @@ export interface PeekPlace {
   project?: string;
   /** A session's rung on the agent ladder (#1441), where it has one: a board's lead, or an issue agent. */
   rung?(s: OvSession, card: OvCard | null): PeekRung | null;
+  /** The project a Cloud workspace's machine (by control's id) is in: the
+   * chief of staff's Start offers this project's (#1341). */
+  hostedIn?(machine: string | undefined): string | undefined;
 }
 
 /** Where a session is on the agent ladder (#1441), for its tab. */

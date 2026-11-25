@@ -33,7 +33,9 @@
 // thread over its peek, posted in, with its rung, who started it and its
 // lead's latest word (#1441); coming back to the page
 // after 30 seconds reading the boards once and the briefing once, and after
-// less reading nothing (#1297); and on a phone, one list
+// less reading nothing (#1297); the chief of staff's tab with no staff
+// room yet saying what it does and starting it on this computer (#1341);
+// and on a phone, one list
 // with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
@@ -801,10 +803,11 @@ test.describe("on a computer", () => {
     await page.screenshot({ path: info.outputPath("overview-talk.png") });
     // Opening it again doesn't make a second tab; × closes it.
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
-    await expect(panel.locator("[data-ov-tab]")).toHaveCount(1);
+    await expect(panel.locator('[data-ov-tab^="thread:"]')).toHaveCount(1);
     await tab.locator("[data-ov-tab-close]").click();
-    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
-    await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
+    await expect(panel.locator('[data-ov-tab^="thread:"]')).toHaveCount(0);
+    // The chief of staff's tab, pinned, is what's open then: with no staff room, Start (#1341).
+    await expect(panel.locator(`[data-ov-talk-open="staffStart:${P}"]`)).toBeVisible();
   });
 
   test("with no ask or one, the page keeps its height and only the open thread's list scrolls (Arugula #1334)", async ({ page }) => {
@@ -914,6 +917,67 @@ test.describe("on a computer", () => {
       c.emit();
     });
     await expect(head).toHaveText("Chief of staff · none");
+  });
+
+  test("with no staff room, the chief of staff's tab is Start: what it does and this computer to run it on; Start calls start_agent there, and the tab becomes its room with its head (Arugula #1341)", async ({ page }) => {
+    await overview(page);
+    const panel = page.locator("[data-ov-panel]");
+    // Chat off: no staff room to have, no tab.
+    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
+    await chatOn(page);
+    const tab = panel.locator(`[data-ov-tab="staffStart:${P}"]`);
+    await expect(tab.getByRole("tab")).toHaveText("Chief of staff");
+    await expect(tab.getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
+    await expect(panel.locator('[data-ov-who="staffStart"] [data-agent-head]')).toHaveText("Chief of staff · none");
+    const start = panel.locator("[data-ov-staff-start]");
+    await expect(start.locator(".empty-state-title")).toHaveText("Start your chief of staff");
+    // The suite's daemon is the only machine, this page's own, and new enough.
+    const host = (await page.locator("[data-ov-loose] [data-ov-panes]").getAttribute("data-ov-panes"))!.split(":")[0];
+    await expect(start.locator("[data-ov-staff-machine-one]")).toHaveText(`On ${host} (this computer)`);
+
+    // Start asks the machine, over this page's connection to it, as its owner: start_agent, recipe chief-of-staff, in the project.
+    const calls: unknown[] = [];
+    page.on("request", (r) => void (new URL(r.url()).pathname === "/api/mcp/call" && calls.push(r.postDataJSON())));
+    // This daemon has joined no Arugula cloud, so it can't choose the project: it says so, and nothing starts.
+    const paneCount = () => page.evaluate(async () => ((await (await fetch("/api/panes")).json()) as unknown[]).length);
+    const before = await paneCount();
+    await start.locator("[data-ov-staff-go]").click();
+    await expect(start.locator("[data-ov-staff-failed]")).toBeVisible();
+    await expect(start.locator("[data-ov-staff-failed]")).not.toBeEmpty();
+    expect(calls).toEqual([{ tool: "start_agent", arguments: { agent: "claude", recipe: "chief-of-staff", project: P, prompt: "" }, client: "Overview" }]);
+    expect(await paneCount()).toBe(before);
+    await expect(start.locator("[data-ov-staff-go]")).toBeEnabled();
+
+    // On a joined machine it starts the block and makes it the staff room's lead (#1338): the hub's staff room then has it.
+    await page.route("**/api/mcp/call", (r) =>
+      r.fulfill({ json: { content: [{ type: "text", text: "Started an agent in %9" }], structuredContent: { block: 9, chief_of_staff: { project: P, session: "scratch", lead: true, said: "It leads your person's staff room in Arugula" } } } }),
+    );
+    await page.evaluate(
+      ({ P, host }) => {
+        const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_suite", machine_name: host, session: "scratch" } };
+        const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+        const before = window.fetch;
+        window.fetch = async (input, init) => {
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+          if (url.pathname === `/api/chat/projects/${P}/staff` && init?.method === "POST") return json(room);
+          if (url.pathname === "/api/chat/rooms/dm_cos/messages") return json({ room, messages: [], more: false });
+          return before(input, init);
+        };
+      },
+      { P, host },
+    );
+    await start.locator("[data-ov-staff-go]").click();
+    // The tab is the room's now, still pinned first and open, its head saying where the chief of staff runs.
+    const room = panel.locator('[data-ov-tab="staff:dm_cos"]');
+    await expect(room.getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
+    await expect(panel.locator(`[data-ov-tab="staffStart:${P}"]`)).toHaveCount(0);
+    await expect(panel.locator("[data-ov-staff-start]")).toHaveCount(0);
+    await expect(panel.locator('[data-ov-staff="dm_cos"]')).toBeVisible();
+    await expect(panel.locator('[data-ov-who="staff"] [data-agent-head]')).toHaveText(`Chief of staff · idle on ${host}`);
+    expect(calls).toHaveLength(2);
   });
 
   test("an agent's proposal to start one is under Needs you, counted; Approve sends it and it leaves (Arugula #1278)", async ({ page }) => {
