@@ -1,0 +1,65 @@
+# Quarantines a test that ejects merge groups (scripts/flaky-quarantine.mjs,
+# Arugula #1423): when the same test fails the queue's verdict in two groups
+# within a day, for two pull requests that both merged later, it files a
+# native `flaky` issue through the project's CI alerts and opens a pull
+# request adding the test to chant.workspace.json's ci.green.quarantine
+# (docs/testing.md, "Quarantine"). A person merges it. Every hour, so a
+# flaky test is out of the queue's way the same day. The repository variable
+# ARUGULA_QUARANTINE=off turns it off. By hand, `replay` (FROM..TO, ISO)
+# only prints what it would have quarantined each hour in that span.
+name: flaky-quarantine
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+    inputs:
+      replay:
+        description: "FROM..TO (ISO): only say what it would have quarantined"
+        required: false
+        default: ""
+
+concurrency:
+  group: flaky-quarantine
+  cancel-in-progress: false
+
+permissions:
+  # The queue's runs, their jobs' logs and the pull requests.
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Not named like a required check (chant.workspace.json): its runs land
+  # on main's head commit too.
+  quarantine:
+    runs-on: ubuntu-latest
+    # CI_GREEN_TOKEN and the CI alerts secrets are the ci-green
+    # environment's, which only main reaches.
+    environment: ci-green
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+          # Not the job's own token: a pull request opened with that one runs
+          # no workflows, so it could never pass the checks a merge needs.
+          token: ${{ secrets.CI_GREEN_TOKEN }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - if: inputs.replay != ''
+        run: scripts/flaky-quarantine.mjs --replay "$REPLAY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPLAY: ${{ inputs.replay }}
+      - if: inputs.replay == ''
+        run: scripts/flaky-quarantine.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARUGULA_QUARANTINE_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+          ARUGULA_CI_NOTIFY_URL: ${{ secrets.ARUGULA_CI_NOTIFY_URL }}
+          ARUGULA_CI_NOTIFY_KEY: ${{ secrets.ARUGULA_CI_NOTIFY_KEY }}
+          ARUGULA_QUARANTINE: ${{ vars.ARUGULA_QUARANTINE }}
