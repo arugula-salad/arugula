@@ -129,6 +129,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         // The handler checks its start ticket: of this account, from the
         // machine whose channel sends it.
         ["api", "a2a", "start"] if !get => Policy::Handler,
+        // Arugula #1438: its stop. The handler closes only a block a ladder
+        // start opened, for this account's machine that started it or the
+        // board's lead.
+        ["api", "a2a", "stop"] if !get => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
         // from where a "from now" share starts).
         ["api", "history" | "events"] if get => Policy::Handler,

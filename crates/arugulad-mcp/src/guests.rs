@@ -114,11 +114,20 @@ pub const OWNERS: &[Entry] = &[
 ];
 
 /// Arguments that take a tab's tool past the tab, by tool (`*`: any):
-/// a Cloud workspace's machine, and `wait` on a run or agent sessions in
+/// a Cloud workspace's machine, `wait` on a run or agent sessions in
 /// control (`agent_session`, and `session`, its old name, which `route`
-/// reads as the new one first).
-pub const OWNERS_ARGS: &[(&str, &str)] =
-    &[("*", hosted::ARG), ("wait", "run"), ("wait", "agent_session"), ("wait", "session"), ("wait", "pr")];
+/// reads as the new one first), and a board's ladder start or stop, which
+/// asks control as this machine and reaches the owner's other machines
+/// (aru-143, Arugula #1438).
+pub const OWNERS_ARGS: &[(&str, &str)] = &[
+    ("*", hosted::ARG),
+    ("wait", "run"),
+    ("wait", "agent_session"),
+    ("wait", "session"),
+    ("wait", "pr"),
+    ("start_agent", "board"),
+    ("close", "to"),
+];
 
 fn placed(list: &[Entry], tool: &str, kind: Option<&str>) -> bool {
     list.iter().any(|(t, k)| *t == tool && (k.is_none() || *k == kind))
@@ -217,6 +226,9 @@ mod tests {
         assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "agent_block": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "cloud_workspace": "hw_abc", "tab": "4" }), on()).is_some());
         assert!(refusal("wait", &json!({ "run": "run_1" }), on()).unwrap().contains("wait with run"));
+        assert!(refusal("close", &json!({ "pane": 4, "to": "bravo" }), on()).is_some());
+        assert!(refusal("close", &json!({ "pane": 4 }), on()).is_none());
+        assert!(refusal("start_agent", &json!({ "prompt": "p", "board": "brd_1" }), on()).is_some());
         let why = refusal("wait", &json!({ "agent_session": "ses_1" }), on()).unwrap();
         assert!(why.contains("wait with agent_session"), "{why}");
         let why = refusal("wait", &json!({ "session": "ses_1" }), on()).unwrap();

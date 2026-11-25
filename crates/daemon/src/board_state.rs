@@ -474,6 +474,19 @@ async fn tell_sessions(app: &App, sessions: &mut Sessions) {
     }
 }
 
+/// Tell control now that agent block `id`, in `place`, closed: for a block
+/// a ladder start opened (Arugula #1438), whose grant's slot is then free
+/// for the lead's next start without waiting for the next [`EVERY`]. The
+/// close the events keep goes too, as any other; control takes the word
+/// twice. False when control wasn't told.
+pub(crate) async fn tell_closed(app: &App, id: PaneId, place: &Place) -> bool {
+    if !enabled(app) {
+        return false;
+    }
+    let state = body(BlockWord::Closed, &Repo::default(), None);
+    send(app, id, &state, place, None, 0, &mut Takes::default()).await.is_ok()
+}
+
 /// Whether this machine reports now: it has joined control.
 fn enabled(app: &App) -> bool {
     app.control.enrolled().is_some()
