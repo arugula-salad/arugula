@@ -414,7 +414,11 @@ async fn a_lead_starts_agents_on_another_machine_within_the_grant() {
     assert_eq!(started["session"], "issue-7");
     let block = started["block"].as_u64().unwrap();
     let wt = started["cwd"].as_str().unwrap();
-    assert!(wt.starts_with(&clone_b.display().to_string()) && wt.contains("ladder/issue-7"), "{wt}");
+    // Bravo answers with git's own path for its clone, through any symlink
+    // (macOS's /var is /private/var): compare it with the clone's real path.
+    let real_b = std::fs::canonicalize(&clone_b).unwrap();
+    let real_wt = std::fs::canonicalize(wt).unwrap();
+    assert!(real_wt.starts_with(&real_b) && real_wt.ends_with("ladder/issue-7"), "{wt} isn't in {}", real_b.display());
     assert!(Path::new(wt).join("README").exists(), "a worktree of bravo's own clone");
 
     // Control was asked by alpha, for bravo; bravo attached its block with the ticket.
