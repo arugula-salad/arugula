@@ -11,7 +11,7 @@
 
 pub(crate) mod access;
 mod acl;
-mod close;
+pub(crate) mod close;
 mod feedback;
 mod flags;
 mod fs;
@@ -495,6 +495,7 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     // A ladder start (aru-143): another machine's, let in by the start
     // ticket it carries, not by the caller's role.
     ("/api/a2a/start", "a machine's ladder start: its ticket decides"),
+    ("/api/a2a/stop", "a machine's ladder stop: the block's start decides"),
     // Block calls: the arguments depend on the block's type and method (#459).
     ("/api/blocks/{id}/call/{method}", "block calls, decided per method"),
     ("/api/panes/{id}/hook", "hook input, not yet converted"),
