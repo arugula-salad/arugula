@@ -31,6 +31,10 @@ pub(crate) const TOOL: &str = "ask_approval";
 
 pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do, on this machine: start an agent on one of the project's issues (action start: issue #N, prompt), or close agent blocks here (action close: blocks, by pane). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them, here, and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.";
 
+/// What a control from before the cards means for the agent.
+const NOT_YET: &str =
+    "Arugula cloud doesn't take a machine's approval cards yet: tell your person where to do it themselves";
+
 #[derive(Deserialize, JsonSchema)]
 pub struct AskApprovalArgs {
     /// start (an agent on an issue, on this machine) or close (agent
@@ -145,12 +149,12 @@ pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
                 "this machine hasn't joined Arugula cloud, where the card goes: ask your person to join it".into()
             );
         }
-        Err(CloudRefused::OldControl | CloudRefused::Said { status: 404 | 405, .. }) => {
-            return Err(
-                "Arugula cloud doesn't take a machine's approval cards yet: tell your person where to do it themselves"
-                    .into(),
-            );
+        // No such route (no words of its own): a control from before the
+        // cards. A 404 that says why (no such project) is passed on.
+        Err(CloudRefused::Said { status: 404 | 405, said, .. }) if said.starts_with("control answered") => {
+            return Err(NOT_YET.into());
         }
+        Err(CloudRefused::OldControl) => return Err(NOT_YET.into()),
         Err(e) => return Err(e.to_string()),
     };
     let p: MachineProposed = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
