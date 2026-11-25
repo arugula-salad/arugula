@@ -4,13 +4,46 @@ The chief of staff is one agent per person per project. It watches what
 happens in the project and tells you what matters (Arugula #1276). The design
 is in the Docs "Chief of staff on the event log" and "Plan as home".
 
-It's an agent session with standing instructions, not a new kind of thing.
-Its instructions are
-[the recipe](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md).
-The recipe is also its first message in your staff room, so you can read what
-it was told.
+It's an agent with standing instructions, not a new kind of thing. Its
+instructions are a recipe, which is also its first prompt, so you can read
+what it was told. There are two, one for each place it can run, because each
+names the tools it has there:
 
-## Starting it
+| Recipe | Runs as | Its tools |
+|---|---|---|
+| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `watch` |
+| [`chief-of-staff-hosted.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff-hosted.md) | a hosted agent session on the project's Cloud workspace | a hosted session's: `post_session_thread`, `read_session_thread`, `read_session_issues`, `create_session_issue`, `read_project_doc`, `board_read`, `ask_approval`, `watch` |
+
+The machine's is the chief of staff from now on: it runs on whichever machine
+you pick, and nothing needs a Cloud workspace (Arugula #1337). The hosted one
+stays while hosted chiefs of staff still run; `session_start` starts it. A
+test in the binary (`whole_tests.rs`) renders the machine's recipe and checks
+that each tool it names, and each `tool` kind `kind`, is listed for an agent
+block.
+
+## On a machine
+
+It runs as an agent block. `start_agent` is to start it (Arugula #1338), and
+the daemon is to wake it when it's idle (Arugula #1339): on your post in your
+staff room, which it leads, or when one of its watches fires. Each wake is
+one turn, and it differs from the hosted one in three ways:
+
+- **Its notes** are in `~/.chief-of-staff/<project>.json` on the machine, one
+  file per project, since the machine's home is every project's.
+- **Its own events.** It learns who it is on its first wake: it posts in
+  your staff room and reads the post back, whose `agent` gives its machine
+  and session name, and `capabilities` gives its pane. It skips an event
+  whose actor is an agent on its machine with its session name in
+  `data.agent_session`, or whose `data.machine` and `data.pane` are its own
+  block's (its own `session.needs_input` and `session.idle`).
+- **No approval cards yet.** A machine has no `ask_approval` (Arugula
+  #1417). Asked to get an agent on an issue or to close sessions, it tells
+  you where to press **Agent on this** or **Stop**, and does neither itself.
+
+It never watches `session.idle` for the project, as the hosted one never
+watches `session.settled`: its own turns end too.
+
+## Hosted: starting it
 
 Ask one of your agents to call `session_start` with `recipe: chief-of-staff`.
 Add `project` if it isn't the current project. The agent needs two of your
@@ -35,7 +68,8 @@ prompt.
 
 ## What it does
 
-Each time it wakes, it:
+What follows is the hosted one's; the machine's differs as
+[On a machine](#on-a-machine) says. Each time it wakes, it:
 
 - **reads** every event in the project after its cursor (`watch` kind
   `events`). It keeps the cursor in `~/.chief-of-staff/notes.json`, in its
@@ -74,7 +108,7 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
 | Make and fill its own Docs | Write other people's Docs |
-| Ask you to approve starting a session on an issue, or stopping sessions, on a card | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
+| Ask you to approve starting a session on an issue, or stopping sessions, on a card (hosted only, for now) | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
 
 It acts with your rights, in this project only. Events carry ids and states,

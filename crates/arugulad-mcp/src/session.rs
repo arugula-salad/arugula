@@ -352,7 +352,7 @@ fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
     Ok(out)
 }
 
-fn tools() -> Vec<Tool> {
+pub(crate) fn tools() -> Vec<Tool> {
     let read = ToolAnnotations::with_title("Read the project's issues").read_only(true).open_world(false);
     let comment =
         ToolAnnotations::with_title("Comment on an issue").read_only(false).destructive(false).open_world(false);

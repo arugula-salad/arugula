@@ -79,3 +79,16 @@ fn old_argument_and_kind_names_are_read_as_the_new() {
     register();
     tools::old_argument_and_kind_names_are_read_as_the_new();
 }
+
+/// The chief of staff on a machine (Arugula #1337), rendered as its first
+/// prompt, names only tools an agent block has, and the ones it works with.
+#[test]
+fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
+    register();
+    let text = arugulad_control_tools::chief_of_staff_on_a_machine(Some("brief me"));
+    assert!(text.ends_with("\n\nbrief me"), "{text}");
+    let named = tools::a_recipe_names_only_a_blocks_tools(&text);
+    for tool in ["watch", "post_thread", "read_thread", "forge_read", "issue_write", "board_read", "doc"] {
+        assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
+    }
+}
