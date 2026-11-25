@@ -267,7 +267,21 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     assert_eq!(a["answer"], "failed", "{a}");
     assert!(pane(&d, shell).is_some());
 
+    // The chief of staff is gone (moved, Arugula #1340): its card's start
+    // fails, and nothing opens in some other directory.
     drop(mcp);
+    d.post(&format!("/api/panes/{chief}/close"), json!({}));
+    d.wait_for("closed", || pane(&d, chief).is_none());
+    let before = d.get("/api/panes").as_array().unwrap().len();
+    f.send(json!({ "t": "op", "id": "approve-4", "op": { "op": "agents.approved", "ask": "prp_3",
+        "project": "prj_1", "action": "start", "session": "Chief of staff", "pane": chief,
+        "issue": { "id": "iss_13", "number": 13, "title": "Another" } } }));
+    d.wait_for("its answer", || f.answer("approve-4").is_some());
+    let a = f.answer("approve-4").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    assert!(a["error"].as_str().unwrap().contains("isn't running on"), "{a}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+
     drop(d);
     let _ = std::fs::remove_dir_all(&tmp);
 }

@@ -8,7 +8,8 @@
 //!   worktree}` makes one: Claude Code with the person's own settings, in a
 //!   worktree of the repo the asking agent works in, on a branch named for
 //!   the issue (no repo: in its directory), in a tab of its own, attached
-//!   to the issue's row. A row another agent holds refuses it. Only on this
+//!   to the issue's row. A row another agent holds refuses it, and so does
+//!   an asking agent that's gone (moved or closed). Only on this
 //!   machine: a start on another of the person's machines is a ladder
 //!   start's, with control's start ticket (aru-143, #1415).
 //! - **`close`:** each agent block named, as its `close` does (a worktree
@@ -87,21 +88,24 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     if let Some(held) = crate::board_attach::held(app, home.clone(), &item, Some(session.clone())).await {
         return Err(format!("{held}; no agent was started"));
     }
-    // Where the asking agent works: its repo, when it's in one.
-    let dir = asker_dir(app, a).await;
-    let runner = crate::worktree::local(app).await?;
-    let worktree = match &dir {
-        Some(d) => {
-            let branch = branch_of(issue.number, &issue.title);
-            match crate::worktree::make(&runner, d, &branch, "", "", true).await {
-                Ok(made) => Some(crate::worktree::Owned { repo: made.repo, path: made.path, branch, base: made.base }),
-                Err(e) if is_repo(d).await => return Err(format!("no worktree for it in {d}: {e}")),
-                Err(_) => None,
-            }
-        }
-        None => None,
+    // Where the asking agent works: its repo, when it's in one. Gone (it
+    // was moved to another session, Arugula #1340, or closed), there's no
+    // telling where: the card fails, and the agent that leads now asks again.
+    let Some(dir) = asker_dir(app, a).await else {
+        return Err(format!(
+            "{} isn't running on {} now (moved or closed), so there's no telling where: ask your chief of staff again",
+            a.session,
+            app.hosts.name()
+        ));
     };
-    let cwd = worktree.as_ref().map(|w| w.path.clone()).or(dir).unwrap_or_else(home_dir);
+    let runner = crate::worktree::local(app).await?;
+    let branch = branch_of(issue.number, &issue.title);
+    let worktree = match crate::worktree::make(&runner, &dir, &branch, "", "", true).await {
+        Ok(made) => Some(crate::worktree::Owned { repo: made.repo, path: made.path, branch, base: made.base }),
+        Err(e) if is_repo(&dir).await => return Err(format!("no worktree for it in {dir}: {e}")),
+        Err(_) => None,
+    };
+    let cwd = worktree.as_ref().map_or(dir, |w| w.path.clone());
     let mut config = json!({
         "agent": "claude",
         "prompt": prompt_of(issue.number, &issue.title, a.prompt.as_deref()),
@@ -156,7 +160,7 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
 }
 
 /// The asking agent's directory: its block's, if it's still the agent of
-/// that name; else a live block's of that name.
+/// that name; else a live block's of that name; none when it's gone.
 async fn asker_dir(app: &App, a: &AskApproved) -> Option<String> {
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
     let mut agents = vec![];
@@ -178,10 +182,6 @@ async fn is_repo(dir: &str) -> bool {
         .output()
         .await
         .is_ok_and(|o| o.status.success())
-}
-
-fn home_dir() -> String {
-    arugula_mux::sys::home().display().to_string()
 }
 
 /// Close each of `blocks`, an agent block here, as its `close` does.

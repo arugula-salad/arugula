@@ -247,6 +247,28 @@ pub struct StartedChief {
     pub session: String,
     pub lead: bool,
     pub said: String,
+    /// The session that led the staff room before (Arugula #1340), and what
+    /// became of it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moved_from: Option<MovedFrom>,
+    /// Agent blocks on this machine closed first (Arugula #1340): the one
+    /// that led, and any other going by this one's name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub closed: Vec<PaneId>,
+}
+
+/// The chief of staff a new one took over from (Arugula #1340): its
+/// machine's name (empty for a hosted session or this machine), its session,
+/// and `how` it stood down: `told` (a block on another machine, to hand over
+/// its place in the log in staff), `not_told`, `stopped` (a hosted session),
+/// `not_stopped`, or `here` (this machine's: its block is closed, and its
+/// notes file is the new one's); said.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct MovedFrom {
+    pub machine_name: String,
+    pub session: String,
+    pub how: String,
+    pub said: String,
 }
 
 /// What a started agent can reach: its MCP servers by name, whether
