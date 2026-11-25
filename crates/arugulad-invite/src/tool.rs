@@ -195,7 +195,7 @@ async fn invite_person(call: &Call<'_>, a: InvitePersonArgs) -> Out {
                 Some(r) => r?,
                 None => return Err("the daemon is shutting down".into()),
             };
-            let by = StartedBy { by: call.by(), block: None };
+            let by = StartedBy { by: call.by(), block: None, from: None };
             call.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(id, by)));
             let b = call.app.mux.api(|r| Api::Block(id, r)).await.flatten().ok_or("the invite block closed")?;
             (id, b)
@@ -238,8 +238,8 @@ async fn started_text(call: &Call<'_>) -> Result<String, String> {
         return Err("only the owner's own agents may ask to invite someone".into());
     }
     Ok(match call.readable(me).await?.info.started_by {
-        Some(StartedBy { by, block: Some(b) }) => format!("started by {by} in %{b}"),
-        Some(StartedBy { by, block: None }) => format!("started by {by}"),
+        Some(StartedBy { by, block: Some(b), .. }) => format!("started by {by} in %{b}"),
+        Some(StartedBy { by, block: None, .. }) => format!("started by {by}"),
         None => "you started it".into(),
     })
 }

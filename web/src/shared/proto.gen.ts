@@ -6678,7 +6678,14 @@ by: string,
  * The agent block whose token it came with, if any: that block may
  * drive and close it.
  */
-block?: number, };
+block?: number, 
+/**
+ * The pane the caller runs in, by its own word (`x-arugula-pane`)
+ * where it isn't an agent block: a Claude Code terminal that started
+ * an agent, so the Overview can say who did (Arugula #1441). Display
+ * only, never a credential: what may drive it is `block`'s alone.
+ */
+from?: number, };
 
 /**
  * Everything a client needs to draw: sessions in order, each tab's tree
