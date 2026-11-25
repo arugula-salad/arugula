@@ -6,7 +6,8 @@
 // A tab's kind says what it shows (`TAB_KINDS`): a board's thread, or a
 // session's peek (./overview-peek.tsx, #1271); the chief of staff's room
 // (#1275) adds its own. The chief of staff's tab is pinned first, with no
-// ×, once it has a room; until then its slot is empty (`pinned` null). The
+// ×: its room once it has one, until then (with chat on) Start
+// (./overview-staff-start.tsx, #1341). The
 // tabs a reader opened are kept for the browser tab, per project, as the
 // field's open boards are. Under the tabs, the who-line (#1290) says who
 // the open tab talks to and where a message there goes; the chief of
@@ -25,6 +26,7 @@ import { CloseIcon, IconButton } from "../shared/ui/icons";
 import { leadAwake } from "../shell/swarm/overview";
 import { AgentHead, starterOf } from "./agent-head";
 import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
+import { StaffStart } from "./overview-staff-start";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -61,6 +63,13 @@ export const TAB_KINDS = {
     Body: ({ tab, phone }) => <StaffTab room={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (chat.rooms.find((r) => r.id === tab.id)?.unread ?? 0) > 0,
     Who: ({ tab }) => <StaffWho room={tab.id} />,
+  },
+  /** The chief of staff's tab before there is one (#1341): what it does,
+   * and Start on one of the reader's machines; by its project's id. */
+  staffStart: {
+    Body: ({ tab }) => <StaffStartTab project={tab.id} />,
+    unread: () => false,
+    Who: () => <AgentHead role="Chief of staff" at={{ state: "none" }} />,
   },
   /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
   peek: {
@@ -155,7 +164,8 @@ export function useTalk(project: string): Talk {
 export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: TalkTab | null; needs?: ComponentChildren; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const tabs = pinned ? [pinned, ...talk.tabs.filter((t) => keyOf(t) !== keyOf(pinned))] : talk.tabs;
-  const open = tabs.find((t) => keyOf(t) === talk.active) ?? (pinned && !talk.active ? pinned : undefined);
+  // With no tab of its own open (or the pinned one's key changed: its room came, #1341), the pinned one.
+  const open = tabs.find((t) => keyOf(t) === talk.active) ?? pinned ?? undefined;
   const Body = open && TAB_KINDS[open.kind].Body;
   const fit = useFitWindow(!!open);
   return (
@@ -249,6 +259,19 @@ function useFitWindow(on: boolean) {
 export function staffTab(project: string): TalkTab | null {
   const r = chat.rooms.find((x) => x.staff && x.project === project);
   return r ? { kind: "staff", id: r.id, title: "Chief of staff" } : null;
+}
+
+/** The chief of staff's tab with no staff room in `project` yet (#1341):
+ * Start, while chat is on (the room is chat's). */
+export function staffStartTab(project: string): TalkTab | null {
+  return chat.on ? { kind: "staffStart", id: project, title: "Chief of staff" } : null;
+}
+
+/** Start, where the Overview gives its fleet. */
+function StaffStartTab({ project }: { project: string }) {
+  const place = useContext(PeekContext);
+  if (!place) return <p class="dim ov-talk-note">Reaching your machines…</p>;
+  return <StaffStart project={project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} />;
 }
 
 /** The staff room's head (#1342): the chief of staff, where it runs and

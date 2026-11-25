@@ -86,7 +86,7 @@ async function noLabsItems(page: Page, pane: number) {
 test("the host says labs is off, and what follows it", async () => {
   expect(await features()).toEqual({
     ...{ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, block_grants: true },
-    ...{ guest_ssh: false, remote_input: true, flags: [] },
+    ...{ guest_ssh: false, remote_input: true, chief_of_staff: true, flags: [] },
   });
 });
 
@@ -284,6 +284,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
     remote_input: true,
+    chief_of_staff: true,
     flags: ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"],
   });
 

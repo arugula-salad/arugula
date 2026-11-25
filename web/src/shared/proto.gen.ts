@@ -3519,6 +3519,12 @@ guest_ssh?: boolean,
  */
 remote_input?: boolean, 
 /**
+ * `start_agent` starts a chief of staff here (`recipe: chief-of-staff`,
+ * Arugula #1338), through `POST /api/mcp/call`: the Overview's Start
+ * offers this machine (Arugula #1341). Absent from a daemon before it.
+ */
+chief_of_staff?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */

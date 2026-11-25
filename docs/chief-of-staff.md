@@ -69,9 +69,16 @@ watches `session.settled`: its own turns end too.
 
 ### On a machine: starting it
 
-Ask an agent on the machine to call `start_agent` with
-`recipe: chief-of-staff` (the Overview's **Start** will call it on the
-machine you pick, Arugula #1341). Add `project` if it isn't the current
+The Overview's **Start** does it for you (Arugula #1341): with no staff room
+yet, its Chief of staff tab says what the chief of staff does and offers your
+machines that the page reaches and whose daemon says `chief_of_staff` in its
+features (a Cloud workspace of the project is one more, never the default).
+The default is the machine the page is on, if it can. Start calls
+`start_agent` there over the page's own connection (`POST /api/mcp/call`, as
+the machine's owner). Leading the staff room, one of your DMs, needs the
+machine's `threads.read` and `threads.post` over your DMs: if it lacks them,
+the tab asks you on a card first and grants them as you. Or ask an agent on
+the machine to call `start_agent` with `recipe: chief-of-staff`. Add `project` if it isn't the current
 project, and `prompt` for anything to tell it after its instructions (it may
 be empty). It needs no Labs flag, and runs the same on a Cloud workspace's
 daemon as on any machine. That call:
