@@ -416,6 +416,183 @@ fn an_agent_block_drives_its_own_doc_and_no_one_elses() {
     assert!(e.contains("isn't a Doc"), "{e}");
 }
 
+/// Another agent in agent `a`'s tab.
+fn agent_beside(d: &Daemon, a: u64) -> u64 {
+    let b = agent_mcp(
+        d,
+        a,
+        "start_agent",
+        json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello" }),
+    )
+    .unwrap()["block"]
+        .as_u64()
+        .unwrap();
+    d.wait(b, "idle");
+    b
+}
+
+fn open(d: &Daemon, agent: u64, doc: &str) -> Value {
+    agent_mcp(d, agent, "doc", json!({ "kind": "open", "doc": doc })).unwrap()
+}
+
+#[test]
+fn doc_open_gives_another_agent_a_block_it_can_fill_and_both_fills_are_kept() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let made = agent_mcp(&d, a, "doc", outline(3)).unwrap();
+    let (first, id) = (made["block"].as_u64().unwrap(), made["doc"].as_str().unwrap().to_owned());
+    agent_mcp(&d, a, "doc", fill(first, "s1", "From A.")).unwrap();
+
+    // Another agent in the tab opens it: not A's block, but its own.
+    let b = agent_beside(&d, a);
+    let opened = open(&d, b, &id);
+    let second = opened["block"].as_u64().unwrap();
+    assert_ne!(second, first, "{opened}");
+    assert_eq!(d.get(&format!("/api/blocks/{second}"))["info"]["started_by"]["block"], b);
+    let said = opened["summary"].as_str().unwrap();
+    assert!(said.contains(&format!("Opened Doc {id} in block %{second}")), "{said}");
+    assert!(said.contains(&format!("also open in %{first}, which another agent drives")), "{said}");
+    // It shows what A wrote, and B can fill what's left.
+    assert_eq!(bodies(&d.state(second))[0].as_deref(), Some("From A."));
+    agent_mcp(&d, b, "doc", fill(second, "s2", "From B.")).unwrap();
+
+    // A still drives its own, and B still can't drive A's.
+    agent_mcp(&d, a, "doc", fill(first, "s3", "From A, later.")).unwrap();
+    let e = agent_mcp(&d, b, "doc", fill(first, "s2", "x")).unwrap_err();
+    assert!(e.contains("wasn't started by this agent"), "{e}");
+
+    // The stored Doc has all three, and a block opened on it now shows them.
+    d.post(&format!("/api/panes/{first}/close"), json!({}));
+    d.post(&format!("/api/panes/{second}/close"), json!({}));
+    d.wait_for("both blocks to close", || {
+        [first, second].iter().all(|b| d.raw("GET", &format!("/api/blocks/{b}"), None).0 == 404)
+    });
+    let again = d.post("/api/docs/open", json!({ "id": id }))["pane"].as_u64().unwrap();
+    let want = ["From A.", "From B.", "From A, later."].map(str::to_owned).map(Some);
+    assert_eq!(bodies(&d.state(again)), want);
+}
+
+#[test]
+fn doc_open_gives_an_agent_a_block_in_its_own_tab_when_the_doc_is_open_in_another() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let made = agent_mcp(&d, a, "doc", outline(2)).unwrap();
+    let (first, id) = (made["block"].as_u64().unwrap(), made["doc"].as_str().unwrap().to_owned());
+    agent_mcp(&d, a, "doc", fill(first, "s1", "From A.")).unwrap();
+
+    // An agent in a tab of its own.
+    d.post("/api/run", json!({}));
+    let b = d.open("hello");
+    d.wait(b, "idle");
+    assert_ne!(tab_of(&d, a), tab_of(&d, b));
+    let e = agent_mcp(&d, b, "doc", fill(first, "s2", "x")).unwrap_err();
+    assert!(e.contains("another tab"), "{e}");
+
+    let second = open(&d, b, &id)["block"].as_u64().unwrap();
+    assert_ne!(second, first);
+    assert_eq!(tab_of(&d, second), tab_of(&d, b), "in its own tab");
+    agent_mcp(&d, b, "doc", fill(second, "s2", "From B.")).unwrap();
+
+    // Opening it again is the block B has, not a third.
+    assert_eq!(open(&d, b, &id)["block"], second);
+    assert_eq!(open(&d, a, &id)["block"], first);
+    d.post(&format!("/api/panes/{first}/close"), json!({}));
+    d.post(&format!("/api/panes/{second}/close"), json!({}));
+    d.wait_for("both blocks to close", || {
+        [first, second].iter().all(|b| d.raw("GET", &format!("/api/blocks/{b}"), None).0 == 404)
+    });
+    let again = d.post("/api/docs/open", json!({ "id": id }))["pane"].as_u64().unwrap();
+    assert_eq!(bodies(&d.state(again)), ["From A.", "From B."].map(str::to_owned).map(Some));
+}
+
+#[test]
+fn doc_open_says_what_each_unwritten_section_was_meant_to_hold() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let made = agent_mcp(&d, a, "doc", outline(3)).unwrap();
+    let (block, id) = (made["block"].as_u64().unwrap(), made["doc"].as_str().unwrap().to_owned());
+    agent_mcp(&d, a, "doc", fill(block, "s1", "Done.")).unwrap();
+
+    let b = agent_beside(&d, a);
+    let opened = open(&d, b, &id);
+    let said = opened["summary"].as_str().unwrap();
+    assert!(said.contains("s1 \"Part 1\": filled"), "{said}");
+    assert!(said.contains("s2 \"Part 2\": pending, meant to hold: what part 2 holds"), "{said}");
+    assert!(said.contains("s3 \"Part 3\": pending, meant to hold: what part 3 holds"), "{said}");
+    assert_eq!(opened["sections"], json!(["s1", "s2", "s3"]));
+    let sections = opened["outline"].as_array().unwrap();
+    assert_eq!(sections.len(), 3);
+    assert_eq!(sections[0], json!({ "id": "s1", "heading": "Part 1", "pending": false }));
+    assert_eq!(sections[1], json!({ "id": "s2", "heading": "Part 2", "pending": true, "intent": "what part 2 holds" }));
+}
+
+#[test]
+fn doc_open_hands_an_agent_a_block_nobody_started_and_it_drives_it() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    // A Doc another agent made, closed, and the person opens: nobody started it.
+    let b = agent_beside(&d, a);
+    let made = agent_mcp(
+        &d,
+        b,
+        "doc",
+        json!({ "kind": "new", "title": "Notes", "sections": [{ "heading": "One", "intent": "x" }] }),
+    )
+    .unwrap();
+    let theirs = made["block"].as_u64().unwrap();
+    d.post(&format!("/api/panes/{theirs}/close"), json!({}));
+    d.wait_for("the block to close", || d.raw("GET", &format!("/api/blocks/{theirs}"), None).0 == 404);
+    let own = d.post("/api/docs/open", json!({ "id": made["doc"], "split": a }))["pane"].as_u64().unwrap();
+    assert_eq!(d.get(&format!("/api/blocks/{own}"))["info"]["started_by"], Value::Null);
+    let opened = open(&d, a, made["doc"].as_str().unwrap());
+    assert_eq!(opened["block"], own, "{opened}");
+    agent_mcp(&d, a, "doc", fill(own, "s1", "Mine now.")).unwrap();
+}
+
+#[test]
+fn doc_open_doesnt_hand_an_agent_a_block_nobody_started_in_another_tab() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let made = agent_mcp(&d, a, "doc", outline(1)).unwrap();
+    let (first, id) = (made["block"].as_u64().unwrap(), made["doc"].as_str().unwrap().to_owned());
+    d.post(&format!("/api/panes/{first}/close"), json!({}));
+    d.wait_for("the block to close", || d.raw("GET", &format!("/api/blocks/{first}"), None).0 == 404);
+    // The person opens it in a tab of its own.
+    d.post("/api/run", json!({}));
+    let theirs = d.post("/api/docs/open", json!({ "id": id }))["pane"].as_u64().unwrap();
+    assert_ne!(tab_of(&d, theirs), tab_of(&d, a));
+    let mine = open(&d, a, &id)["block"].as_u64().unwrap();
+    assert_ne!(mine, theirs);
+    assert_eq!(tab_of(&d, mine), tab_of(&d, a));
+    agent_mcp(&d, a, "doc", fill(mine, "s1", "Mine.")).unwrap();
+}
+
+#[test]
+fn deleting_a_doc_closes_every_block_that_shows_it() {
+    let (d, _, _) = shared();
+    let a = d.open("hello");
+    d.wait(a, "idle");
+    let made = agent_mcp(&d, a, "doc", outline(1)).unwrap();
+    let (first, id) = (made["block"].as_u64().unwrap(), made["doc"].as_str().unwrap().to_owned());
+    let b = agent_beside(&d, a);
+    let second = open(&d, b, &id)["block"].as_u64().unwrap();
+    assert_ne!(first, second);
+    assert_eq!(d.raw("DELETE", &format!("/api/docs/{id}"), None).0, 200);
+    for block in [first, second] {
+        assert_eq!(d.raw("GET", &format!("/api/blocks/{block}"), None).0, 404, "%{block} is closed");
+    }
+}
+
+fn tab_of(d: &Daemon, pane: u64) -> u64 {
+    let panes = d.get("/api/panes");
+    panes.as_array().unwrap().iter().find(|p| p["id"] == pane).map(|p| p["tab"].as_u64().unwrap()).expect("open")
+}
+
 #[test]
 fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
     let d = Daemon::child();
