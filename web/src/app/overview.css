@@ -5,13 +5,32 @@
    rows; Needs you holds Swarm's own rail cards, or one quiet line. */
 
 .ov {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The right column is a third by default (#1444), at least 18rem, at most half. */
+  grid-template-columns: minmax(0, 1fr) clamp(18rem, var(--ov-col, 33.333%), 50%);
   gap: var(--space-4);
   align-items: start;
 }
 .ov.phone {
   grid-template-columns: minmax(0, 1fr);
+}
+/* The divider sits on the column's left edge, over the panel's hairline. */
+.ov-split {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  justify-self: start;
+  width: 6px;
+  margin-left: calc(-3px - var(--space-4) / 2);
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+.ov-split:hover,
+.ov-split:focus-visible {
+  background: linear-gradient(to right, transparent 2px, var(--line) 2px, var(--line) 4px, transparent 4px);
+  outline: none;
 }
 
 .ov-field {
@@ -443,8 +462,12 @@ button.ov-peek:disabled {
    and the conversation the rest, its box at the foot. Needs you doesn't
    shrink then: the conversation's list does, else a long thread squeezes
    its heading under the tabs. */
+.ov:not(.phone) > .ov-panel {
+  grid-column: 2;
+  grid-row: 1;
+}
 .ov-panel {
-  width: 380px;
+  width: auto;
   position: sticky;
   top: 0;
   max-height: calc(100vh - 80px);
@@ -789,6 +812,13 @@ button.ov-peek:disabled {
 @media (max-width: 1000px) {
   .ov {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-split {
+    display: none;
+  }
+  .ov:not(.phone) > .ov-panel {
+    grid-column: auto;
+    grid-row: auto;
   }
   .ov-panel {
     width: auto;
