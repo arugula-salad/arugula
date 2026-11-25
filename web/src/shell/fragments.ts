@@ -43,7 +43,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#issuer-signin=", why: "A product's sign-in through the hub's issuer resumed after signing in here (M228): the /oauth/authorize, /oauth/hud or /oauth/hud/post (M237) request it came in on.", where: ["shell/control.ts"] },
   // ---- the shell's own places: one page, served by the daemon
   { route: "#swarm", why: "The swarm (M41): the shell's.", where: ["shell/swarm/route.ts", "shell/main.tsx"] },
-  { route: "#overview", why: "A machine's sessions at a glance (M111): the shell's.", where: ["shell/ui/places.tsx", "shell/ui/shell/overview.tsx"] },
+  { route: "#overview", why: "A machine's sessions at a glance (M111), retired for the Machines page (Arugula #1349): an old link lands there, at the machine shown.", where: ["shell/ui/places.tsx", "shell/ui/app.tsx"] },
   { route: "#agents", why: "The machine's agents (#403): the shell's.", where: ["shell/ui/agents-route.ts", "shell/ui/agents-page.tsx", "shell/ui/shell/rail.tsx"] },
   { route: "#docs", why: "The Docs this machine keeps (#1494): the shell's.", where: ["shell/ui/docs-route.ts", "shell/ui/docs-page.tsx", "shell/ui/shell/rail.tsx"] },
   { route: "#pane=", why: "A pane to show, from a notification or the swarm.", where: ["shell/main.tsx"] },
@@ -77,8 +77,7 @@ export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shell/ui/agents-page.tsx", why: "`#agents`." },
   { where: "shell/ui/app.tsx", why: "Redraws on the shell's places." },
   { where: "shell/ui/docs-page.tsx", why: "`#docs`." },
-  { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#overview`, `#agents`, `#docs`." },
-  { where: "shell/ui/shell/overview.tsx", why: "`#overview`." },
+  { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#agents`, `#docs`." },
   { where: "shell/ui/shell/rail.tsx", why: "The rail follows the shell's places." },
   { where: "shell/ui/settings-page.tsx", why: "Notes the section `#settings=…` opened at, for its index to scroll to." },
 ];

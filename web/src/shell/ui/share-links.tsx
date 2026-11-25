@@ -12,7 +12,7 @@ import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
 import type { GuestInvite, PaneId, SessionId, SessionLink, Share } from "../../shared/proto.gen";
 import { Time } from "../../shared/ui/time";
-import { paneName } from "./shell/overview";
+import { paneName } from "./pane-name";
 
 /** One line of `GET /api/acl`'s `audit` (crates/mux/src/acl.rs). */
 interface AuditLine {

@@ -31,7 +31,7 @@ function inSettings(hash: string): string | null {
 
 /** Control's page at `at`, in this window. */
 export function OnControl({ at }: { at: MachineAt }) {
-  // A machine's own place (`#overview`, `#settings=machine`) rides in the fragment.
+  // A machine's own place (`#agents`, `#settings=machine`) rides in the fragment.
   const here = at.at === "machines" ? (parseMachines([], new URLSearchParams(location.search), location.hash) ?? at) : at;
   const hash = controlHash(here);
   const href = `${controlOrigin()}/${hash ? `#${hash}` : ""}`;
