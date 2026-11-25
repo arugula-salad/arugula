@@ -4141,6 +4141,149 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// What a fake control saw of the staff room (Arugula #1338): each lead
+/// asked, as `(machine, session)`. It refuses a lead while `refuse` is set.
+#[derive(Clone, Default)]
+struct FakeStaff {
+    machine: Arc<std::sync::Mutex<String>>,
+    leads: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    refuse: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// The staff room of `prj_1` ("Launch crew"), `dm_staff`, and its lead.
+async fn fake_staff(f: FakeStaff) -> String {
+    use arugula_control_wire::chat::{agent_room_lead, agent_staff_room};
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+    };
+    use std::sync::atomic::Ordering::Relaxed;
+    fn room(lead: Option<(&str, &str)>) -> Value {
+        let mut r = json!({
+            "id": "dm_staff", "kind": "dm", "name": "Chief of staff", "project": "prj_1", "staff": true,
+            "last": 0, "powers": ["threads.read", "threads.post"], "writable": true,
+        });
+        if let Some((machine, session)) = lead {
+            r["lead"] = json!({ "machine": machine, "machine_name": "test", "session": session });
+        }
+        r
+    }
+    async fn lead(State(f): State<FakeStaff>, Json(b): Json<Value>) -> axum::response::Response {
+        if f.refuse.load(Relaxed) {
+            let said = json!({ "error": "no threads.read grant over this project" });
+            return (StatusCode::FORBIDDEN, Json(said)).into_response();
+        }
+        let machine = f.machine.lock().unwrap().clone();
+        let session = b["session"].as_str().unwrap_or_default().to_owned();
+        f.leads.lock().unwrap().push((machine.clone(), session.clone()));
+        Json(room(Some((&machine, &session)))).into_response()
+    }
+    let home = json!({ "project": "prj_1", "name": "Launch crew", "home": "native" });
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
+        .route(&agent_staff_room("prj_1"), post(|| async { Json(room(None)) }))
+        .route(&agent_room_lead("dm_staff"), post(lead))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// `start_agent` `recipe` chief-of-staff (Arugula #1338) starts an agent
+/// block titled "Chief of staff" in the project, its standing instructions
+/// as its first prompt, and makes it the lead of the person's staff room
+/// there, by its session's name, which is that block's. No Labs flag is
+/// needed. A refused lead still starts it and says why; one on an issue,
+/// a worktree or a VM is refused, and any other recipe needs Labs.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let control = FakeStaff::default();
+    let url = fake_staff(control.clone()).await;
+    let machine = control.machine.clone();
+    let d = Daemon::child_in(&[], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+    });
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let chief = |extra: Value| {
+        let mut a = json!({
+            "agent": "claude", "command": format!("python3 {}", agentd::fake()),
+            "recipe": "chief-of-staff", "prompt": "brief me",
+        });
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        a
+    };
+    // Refused before a pane opens: it works the whole project, here.
+    let panes = || d.get("/api/panes").as_array().unwrap().len();
+    let before = panes();
+    assert!(refused(&s, "start_agent", chief(json!({ "issue": "#12" }))).await.contains("whole project"));
+    assert!(refused(&s, "start_agent", chief(json!({ "vm": true }))).await.contains("machine that starts it"));
+    let other = json!({ "agent": "claude", "recipe": "fixer", "prompt": "hello" });
+    assert!(refused(&s, "start_agent", other).await.contains("agent-delegation on"));
+    assert_eq!(panes(), before, "no pane opened");
+
+    // The daemon takes a moment to join the fake control: until then the
+    // project can't be chosen, and nothing starts.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let r = loop {
+        let r = call_raw(&s, "start_agent", chief(json!({}))).await;
+        if r.is_error != Some(true) {
+            break r.structured_content.unwrap();
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {:?}", r.content);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    };
+    let block = r["block"].as_u64().unwrap();
+    let me = control.machine.lock().unwrap().clone();
+    assert_eq!(*control.leads.lock().unwrap(), [(me.clone(), "Chief of staff".to_owned())], "{r}");
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["project"], &c["session"], &c["lead"]), (&json!("prj_1"), &json!("Chief of staff"), &json!(true)));
+    assert!(r["summary"].as_str().unwrap().contains("leads your person's staff room in Launch crew"), "{r}");
+
+    // The lead names this block: its session is the block's, by its title.
+    let pane = d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == block).cloned().unwrap();
+    assert_eq!((&pane["kind"], &pane["title"]), (&json!("agent"), &json!("Chief of staff")), "{pane}");
+    // Its first prompt is the recipe, then what was asked; it works in the
+    // project, whose staff room is the one it leads.
+    let layout = || -> Value {
+        serde_json::from_str(&std::fs::read_to_string(d.state.join("layout.json")).unwrap_or_default())
+            .unwrap_or_default()
+    };
+    d.wait_for("its config saved", || !layout()["panes"][block.to_string()]["config"].is_null());
+    let config = &layout()["panes"][block.to_string()]["config"];
+    assert_eq!(config["work"]["project"], "prj_1", "{config}");
+    d.wait(block, "idle");
+    let sid = d.state(block)["session_id"].as_str().unwrap().to_owned();
+    let sent = std::fs::read_to_string(d.sessions.join(format!("prompt-{sid}.json"))).unwrap();
+    let sent: Value = serde_json::from_str(&sent).unwrap();
+    let prompt = sent[0]["text"].as_str().unwrap_or_default();
+    assert!(prompt.starts_with("You are this project's chief of staff") && prompt.ends_with("\n\nbrief me"), "{sent}");
+    assert!(config.get("recipe").is_none(), "no Claude Code subagent worn: {config}");
+
+    // Control refuses the lead: it starts all the same, and says why.
+    control.refuse.store(true, Relaxed);
+    let r = call(&s, "start_agent", chief(json!({ "prompt": "", "title": "My staff" }))).await;
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["session"], &c["lead"]), (&json!("My staff"), &json!(false)), "{r}");
+    assert!(c["said"].as_str().unwrap().contains("threads.read"), "{r}");
+    assert_eq!(control.leads.lock().unwrap().len(), 1);
+    s.cancel().await.unwrap();
+}
+
 /// A fake control's platform with two projects whose boards this machine
 /// writes (#430): `prj_1` "Launch crew" holds #12 and #7 (and #5, which no board has a row for), `prj_2` "Other
 /// crew" holds #7 and is the one `acme/linked` is linked to. A caller with no

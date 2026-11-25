@@ -43,6 +43,33 @@ one turn, and it differs from the hosted one in three ways:
 It never watches `session.idle` for the project, as the hosted one never
 watches `session.settled`: its own turns end too.
 
+### On a machine: starting it
+
+Ask an agent on the machine to call `start_agent` with
+`recipe: chief-of-staff` (the Overview's **Start** will call it on the
+machine you pick, Arugula #1341). Add `project` if it isn't the current
+project, and `prompt` for anything to tell it after its instructions (it may
+be empty). It needs no Labs flag, and runs the same on a Cloud workspace's
+daemon as on any machine. That call:
+
+1. starts a Claude Code agent block titled "Chief of staff" (or the `title`
+   you give), in the project: its `staff` is that project's staff room;
+2. sends it the machine's recipe, then your `prompt`, as its first prompt;
+3. makes it your staff room's lead there, by its session's name (an agent
+   block's session is named by its title), as its own `post_thread`
+   `room: staff`, `lead: true` would. The answer's `chief_of_staff` says
+   whether it leads.
+
+`start_agent` takes the lead itself rather than leaving it to the first
+wake: a post of yours in staff reaches it from the start, and the first wake
+finds itself the lead. If control refuses the lead (no `threads.read` grant
+over the project, say), the block still starts, the answer says why, and the
+recipe tries again on its first wake.
+
+It refuses a chief of staff on an issue, in a worktree, on a VM or beside
+another machine's pane: the lead is a session of the machine that asks
+control, so call `start_agent` on the machine it is to run on.
+
 ## Hosted: starting it
 
 Ask one of your agents to call `session_start` with `recipe: chief-of-staff`.

@@ -37,7 +37,7 @@ use crate::mcp::{
     results::{ThreadScope, ThreadsReach},
     tools::{Call, Kind, NoArgs, Out, done},
 };
-use crate::{control::CloudRefused, mux::Api};
+use crate::{control::CloudRefused, mux::Api, server::App};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadThreadArgs {
@@ -459,6 +459,18 @@ async fn lead_room(c: &Call<'_>, room: &str, release: bool) -> Out {
         format!("This session leads {}: your person's posts there come to it", room_name(&v))
     };
     done(what, v)
+}
+
+/// `start_agent` `recipe` chief-of-staff (Arugula #1338): `session`, the
+/// agent block it started, leads the person's staff room in `project`, as
+/// that block's own `post_thread` `room` staff, `lead` true would make it.
+pub(crate) async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
+    let room = app.control.cloud(Method::POST, &agent_staff_room(project), None).await.map_err(said)?;
+    let id = room["id"].as_str().ok_or("Arugula cloud named no staff room")?;
+    let body = serde_json::to_value(LeadRoom { session: Some(session.to_owned()), release: false })
+        .map_err(|e| e.to_string())?;
+    let v = app.control.cloud(Method::POST, &agent_room_lead(id), Some(&body)).await.map_err(said)?;
+    done(format!("{session} leads {}: your person's posts there come to it", room_name(&v)), v)
 }
 
 /// How this machine's agents are named in a message's mentions.
