@@ -5653,7 +5653,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). Not on an\nissue, a worktree, a VM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -6078,7 +6078,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). Not on an\nissue, a worktree, a VM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"

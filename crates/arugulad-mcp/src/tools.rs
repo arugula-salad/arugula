@@ -440,8 +440,9 @@ pub struct StartAgentArgs {
     /// its prompts), with its standing instructions as its first prompt and
     /// prompt after them (it may be empty). There's one per project: one
     /// that led before is moved here (another machine's is told to stand
-    /// down, a hosted one is stopped, this machine's is closed). Not on an
-    /// issue, a worktree, a VM or another machine's pane. With Labs agent delegation, any other
+    /// down, a hosted one is stopped, this machine's is closed). It runs
+    /// here: not on an issue, in a worktree or beside another machine's
+    /// pane. With Labs agent delegation, any other
     /// name runs as that recipe, a Claude Code subagent by its name
     /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
     /// host: its prompt, model, tools, skills and MCP servers.
