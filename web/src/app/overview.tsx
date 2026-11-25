@@ -48,6 +48,7 @@ import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
+import { OverviewSplit, useColumn } from "./overview-split";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
@@ -334,6 +335,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
+  const column = useColumn();
   const refocus = useRefocus();
   const { views, put } = useBoardViews(project, refocus);
   const byCardRead = useByCard(project);
@@ -699,9 +701,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     </section>
   );
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
+    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px`, "--ov-col": `${column * 100}%` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chief) && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}</PeekContext.Provider>
+      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chief) && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <OverviewSplit key="split" />, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}</PeekContext.Provider>
       {opened && shownView && (
         <Drawer
           r={opened}
