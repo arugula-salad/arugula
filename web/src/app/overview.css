@@ -720,6 +720,39 @@ button.ov-peek:disabled {
   margin: 0;
   padding: var(--space-2) var(--space-3);
 }
+/* An agent's head in the who-line (#1342), its rung and its parent's latest word under it (#1441), a line each. */
+.ov-who .agent-rung,
+.ov-who .agent-word {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An issue agent's tab (#1441): its issue's thread over its peek. */
+.ov-agent-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ov-agent-tab > .ov-talk-room {
+  flex: 3 1 0;
+  min-height: 12em;
+}
+.ov-agent-tab > .ov-peek-tab {
+  flex: 2 1 0;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+.ov-agent-tab .ov-peek-tail {
+  min-height: 4em;
+}
+.ov-agent-note {
+  flex: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}
 
 /* A session's peek (#1271): its head, its last lines, its buttons, and its box at the foot. */
 .ov-peek-tab {

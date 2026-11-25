@@ -528,7 +528,8 @@ impl<'a> Call<'a> {
     }
 
     pub async fn started(&self, pane: PaneId) {
-        let by = StartedBy { by: self.by(), block: self.me() };
+        let from = if self.me().is_none() { self.own_pane() } else { None };
+        let by = StartedBy { by: self.by(), block: self.me(), from };
         self.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(pane, by)));
     }
 

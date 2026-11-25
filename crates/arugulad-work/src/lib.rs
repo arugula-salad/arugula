@@ -1050,7 +1050,7 @@ async fn take(app: &Arc<App>, item: ReadyRun) {
     let _ = app.mux.api(|r| Api::OwnTab(pane, Some(tab_name(&item.run, &item.op_hash, &shown)), r)).await;
     app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(
         pane,
-        StartedBy { by: format!("run {} (operation sha256:{})", item.run, item.op_hash), block: None },
+        StartedBy { by: format!("run {} (operation sha256:{})", item.run, item.op_hash), block: None, from: None },
     )));
     let epoch = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().map(|h| h.epoch);
     l.pane = Some(pane);

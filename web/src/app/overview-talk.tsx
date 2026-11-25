@@ -23,7 +23,7 @@ import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
 import { leadAwake } from "../shell/swarm/overview";
-import { AgentHead } from "./agent-head";
+import { AgentHead, starterOf } from "./agent-head";
 import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
@@ -64,7 +64,7 @@ export const TAB_KINDS = {
   },
   /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
   peek: {
-    Body: ({ tab }) => <PeekTab id={tab.id} />,
+    Body: ({ tab, phone }) => <PeekTab id={tab.id} phone={phone} />,
     unread: () => false,
     Who: ({ tab }) => <PeekWho id={tab.id} title={tab.title} />,
   },
@@ -253,13 +253,16 @@ export function staffTab(project: string): TalkTab | null {
 
 /** The staff room's head (#1342): the chief of staff, where it runs and
  * whether a message is heard now, from its lead session's panes on its
- * machine (or the hub's word for it) and its machine's state in the fleet. */
+ * machine (or the hub's word for it) and its machine's state in the fleet;
+ * under it, its rung (#1441): the project it's for, and who started it.
+ * Its parent is the reader, whose word to it is the room itself. */
 function StaffWho({ room }: { room: string }) {
   const place = useContext(PeekContext);
   useSubscribe((fn) => (place ? place.fleet.subscribe(fn) : () => {}));
   const l = chat.rooms.find((r) => r.id === room)?.lead;
   const lead = !l ? null : place ? place.lead(l) : { machineName: l.machine_name, standing: null };
-  return <AgentHead role="Chief of staff" at={leadAwake(lead, l && place?.fleet.hostById(l.machine))} />;
+  const rung = lead && place && "peek" in lead ? { line: `for ${place.project ?? "this project"}`, started: starterOf(place.fleet, lead.peek) } : undefined;
+  return <AgentHead role="Chief of staff" at={leadAwake(lead, l && place?.fleet.hostById(l.machine))} rung={rung} />;
 }
 
 /** The staff room: its messages, which its lead session hears, and the box. */

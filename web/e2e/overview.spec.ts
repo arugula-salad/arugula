@@ -28,7 +28,10 @@
 // behind a skeleton, with no thread opened by the page, and read one by one
 // from a hub that has no such route yet (#1296), the stats line saying
 // so until they land, not 0 in flight, and a session's Work address by the
-// hub's id (#1380), and its talk tab by that id across a reload (#1390); coming back to the page
+// hub's id (#1380), and its talk tab by that id across a reload (#1390);
+// an issue agent's chip at the Board level opening its tab, its issue's
+// thread over its peek, posted in, with its rung, who started it and its
+// lead's latest word (#1441); coming back to the page
 // after 30 seconds reading the boards once and the briefing once, and after
 // less reading nothing (#1297); and on a phone, one list
 // with Needs you on top. The platform's boards and the
@@ -222,6 +225,34 @@ async function launchRoom(page: Page) {
       return before(input, init);
     };
   }, B);
+}
+
+/** #12's thread on control (Arugula #1441), led by `lead`, with the board's
+ * lead's word in it, and what's posted in it (in `window.saidOn12`); any
+ * other thread is left to what was there. */
+async function issueRoom(page: Page, lead: { machine: string; machine_name: string; session: string }) {
+  await page.evaluate((lead) => {
+    const room = { id: "room_i12", kind: "object", team: null, name: "#12", machine: null, machine_name: null, target: "iss_12", project: null, with: null, others: [], private: false, last: 2, read: 2, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, lead };
+    const msg = (seq: number, name: string, text: string, agent: unknown = null) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent, reactions: [], files: [], pinned: false, also: false });
+    const said = [msg(1, "Jo", "The installer fails on Fedora."), msg(2, "Me", "Start with the Linux installer; leave macOS for now.", { machine: lead.machine, machine_name: lead.machine_name, session: "scratch" })];
+    (window as unknown as { saidOn12: typeof said }).saidOn12 = said;
+    const now = () => ({ ...room, last: said.length, read: said.length });
+    const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    const before = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (url.pathname === "/api/chat/targets" && (JSON.parse(String(init?.body ?? "{}")) as { target?: string }).target === "iss_12") return json(now());
+      if (url.pathname === "/api/chat/rooms/room_i12/messages") {
+        if (init?.method === "POST") {
+          said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
+          return json({ seq: said.length, mentions: [], unreached: [] });
+        }
+        const after = Number(url.searchParams.get("after") ?? 0);
+        return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
+      }
+      return before(input, init);
+    };
+  }, lead);
 }
 
 /** Chat on, as the page reads it once it has said it's off. */
@@ -919,9 +950,10 @@ test.describe("on a computer", () => {
     await expect(peek.locator("[data-ov-peek-name]")).toHaveText("Agent");
     await expect(peek.locator("[data-ov-peek-where]")).not.toBeEmpty();
     await expect(peek.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
-    // The who-line says it's that agent, and a message goes straight to it (#1290).
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Talking to Agent on");
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("a message goes straight to this agent.");
+    // It's on #12 for Launch: its who-line is its head, with its rung (#1441); with chat off, its tab is its peek alone.
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-head="Agent"]')).toBeVisible();
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("on #12 for Launch · started by you");
+    await expect(panel.locator("[data-ov-agent-tab]")).toHaveCount(0);
     // The field stays where it is.
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     // Its box goes in as its composer's does: the agent answers it.
@@ -1023,6 +1055,74 @@ test.describe("on a computer", () => {
     await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
     await pill("project").click();
     await expect(page.locator("[data-ov-boards]")).toBeVisible();
+  });
+
+  test("an issue agent's chip at the Board level opens its tab: its issue's thread over its peek, a post there that prompts it, its rung, who started it and its lead's latest word; the Work level brings the same tab (Arugula #1441)", async ({ page }, info) => {
+    // Launch is led by the project's scratch session; #12's thread is led by its agent block, by its session's name, as control names it.
+    let led: unknown;
+    const { agent } = await overview(page, null, false, () => led);
+    const loose = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(loose).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await loose.getAttribute("data-ov-panes"))!.split(":")[0];
+    const session = await page.evaluate(async (id) => ((await (await fetch("/api/panes")).json()) as { id: number; session_name: string }[]).find((p) => p.id === id)!.session_name, agent);
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await issueRoom(page, { machine: "m_suite", machine_name: host, session });
+    await chatOn(page);
+
+    // The Board level: #12's agent is a chip on its ticket.
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-title]`).click();
+    await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
+    const panel = page.locator("[data-ov-panel]");
+    // The lead's tab is in front: its head says it leads Launch.
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by you");
+    const chip = page.locator('[data-ov-ticket="row_b"] [data-ov-agent-chip]');
+    await expect(chip).toHaveCount(1);
+    await chip.click();
+    const front = panel.locator("[data-ov-tabs] .ov-tab-on");
+    await expect(front).toHaveAttribute("data-ov-tab", /^peek:/);
+    const key = (await front.getAttribute("data-ov-tab"))!;
+    // Its tab: #12's thread, which its agent leads, over its peek, which has no box of its own.
+    const tab = panel.locator('[data-ov-agent-tab="iss_12"]');
+    await expect(tab).toHaveAttribute("data-ov-agent-hears", "");
+    const thread = tab.locator('[data-ov-issue-thread="room_i12"]');
+    await expect(thread).toContainText("The installer fails on Fedora.");
+    await expect(tab.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "block");
+    await expect(tab.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    await expect(tab.locator("[data-ov-peek-reply]")).toHaveCount(0);
+    await expect(tab.locator("[data-ov-agent-note]")).toHaveCount(0);
+    // Its head: where it runs, its rung and who started it, and its lead's latest word to it.
+    const who = panel.locator('[data-ov-who="peek"]');
+    await expect(who.locator("[data-agent-head]")).toContainText(host);
+    await expect(who.locator("[data-agent-rung]")).toHaveText("on #12 for Launch · started by you");
+    await expect(who.locator("[data-agent-word]")).toHaveText("Last from its lead, scratch: “Start with the Linux installer; leave macOS for now.”");
+    // A post in its thread, which prompts it.
+    const box = thread.locator(".thread-compose textarea");
+    await box.fill("Check the arm64 build too.");
+    await box.press("Enter");
+    await expect(thread).toContainText("Check the arm64 build too.");
+    expect(await page.evaluate(() => (window as unknown as { saidOn12: { text: string }[] }).saidOn12.map((m) => m.text))).toContain("Check the arm64 build too.");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: info.outputPath("overview-issue-agent.png") });
+
+    // The Work level brings the same tab to the front, and its pane is the one outlined.
+    await page.locator(`[data-ov-tab="${key}"] [data-ov-tab-close]`).click();
+    await page.locator('[data-ov-ticket="row_b"] [data-ov-ticket-title]').click();
+    await expect(page.locator('[data-ov-level-work="row_b"]')).toBeVisible();
+    await expect(front).toHaveAttribute("data-ov-tab", key);
+    await expect(panel.locator('[data-ov-agent-tab="iss_12"]')).toBeVisible();
+    await expect(page.locator('[data-ov-level-work="row_b"] [data-ov-work-pane]').first()).toHaveAttribute("data-ov-work-kind", "block");
+
+    // A thread another session leads says so, and the peek keeps its box.
+    await page.evaluate(() => {
+      const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
+      c.rooms = c.rooms.map((r) => (r.id === "room_i12" ? { ...r, lead: { machine: "m_other", machine_name: "elsewhere", session: "someone" } } : r));
+      c.emit();
+    });
+    await expect(panel.locator("[data-ov-agent-tab]")).not.toHaveAttribute("data-ov-agent-hears", "");
+    await expect(panel.locator("[data-ov-agent-note]")).toContainText("someone leads #12's thread");
+    await expect(panel.locator("[data-ov-agent-tab] [data-ov-peek-reply]")).toBeVisible();
   });
 
   test("the Work level draws the card's panes live side by side: a shell and an agent block typed into, its question answered above them; a card with no agent offers its lead (Arugula #1289)", async ({ page }, info) => {
@@ -1248,8 +1348,10 @@ test.describe("on a computer", () => {
     await expect(panel.locator(`[data-ov-tab="thread:${B}"]`)).toHaveCount(0);
     // The peek is the scratch session's own: its shell, as its row on no card shows it.
     await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText(`scratch on ${host}`);
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("typed into this terminal");
+    // Its who-line is its head (#1342, #1441): where it runs and how it stands, and its rung.
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-head]')).toHaveText(`scratch · idle on ${host}`);
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by you");
+    await expect(panel.locator("[data-ov-peek-reply]")).toBeVisible();
     await expect(row).not.toHaveAttribute("data-ov-open", "");
     // It's the same tab as the session's own row opens.
     await page.locator("[data-ov-loose] [data-ov-session] [data-ov-row-open]").click();
@@ -1288,8 +1390,7 @@ test.describe("on a computer", () => {
     await expect(peek).not.toHaveAttribute("data-ov-peek-readonly", "");
     await expect(panel.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
     await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Typing into");
-    await expect(panel.locator('[data-ov-who="peek"]')).not.toContainText("Watching");
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by you");
     await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
     // It takes a message, typed into its terminal.
     await panel.locator("[data-ov-peek-reply] input").fill("echo from-the-lead");
@@ -1317,7 +1418,7 @@ test.describe("on a computer", () => {
     await expect(peek).not.toHaveAttribute("data-ov-peek-readonly", "");
     await expect(panel.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
     await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Typing into");
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by you");
     await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
   });
 
@@ -1410,7 +1511,8 @@ test.describe("on a computer", () => {
     }, P);
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
     const panel = page.locator("[data-ov-panel]");
-    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Watching");
+    await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by jhgaylor");
+    await expect(panel.locator("[data-ov-peek-readonly]")).toBeVisible();
     await expect(panel.locator('[data-ov-who="peek"]')).not.toContainText("doesn't reach");
     await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
     await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
