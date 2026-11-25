@@ -44,6 +44,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "block, labs true": [
@@ -91,6 +92,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "full, labs false": [
@@ -137,6 +139,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "full, labs true": [
@@ -184,6 +187,7 @@
       "link",
       "project_split",
       "watch",
+      "ask_approval",
       "feedback"
     ],
     "read, labs false": [
@@ -348,6 +352,83 @@
         "type": "object"
       },
       "title": "Answer an agent"
+    },
+    "ask_approval": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Ask your person to approve"
+      },
+      "description": "Ask your person to approve something only they may do, on this machine: start an agent on one of the project's issues (action start: issue #N, prompt), or close agent blocks here (action close: blocks, by pane). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them, here, and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.",
+      "inputSchema": {
+        "$defs": {
+          "PaneArg": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A pane or block: `7` or `\"%7\"`."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "action": {
+            "description": "start (an agent on an issue, on this machine) or close (agent\nblocks on this machine).",
+            "type": "string"
+          },
+          "blocks": {
+            "description": "close: the agent blocks to close, by pane (7 or \"%7\"), at most 10.",
+            "items": {
+              "$ref": "#/$defs/PaneArg"
+            },
+            "type": "array"
+          },
+          "issue": {
+            "default": null,
+            "description": "start: the issue, as #N or N, in the project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project (prj_…). Default: the current project, whose staff room\nthe card goes in.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "default": null,
+            "description": "start: what the new agent is told, at most 4000 characters.\nWithout it: to work on the issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "why": {
+            "description": "Why, in a line or two (at most 500 characters): the card shows it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "why"
+        ],
+        "title": "AskApprovalArgs",
+        "type": "object"
+      },
+      "name": "ask_approval",
+      "title": "Ask your person to approve"
     },
     "attach": {
       "annotations": {
@@ -1807,7 +1888,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- rename {doc, title}: Retitle a Doc.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a project (a team's, or the user's own): it leaves this list.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block you can fill, beside your pane. Lists its sections.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- rename {doc, title}: Retitle a Doc.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a project (a team's, or the user's own): it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -5582,6 +5663,14 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "board": {
+            "default": null,
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chat": {
             "default": false,
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
@@ -5645,7 +5734,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff\"\nthat leads their staff room there (their posts in it are its\nprompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). Not on an issue, a worktree, a\nVM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -5667,6 +5756,14 @@
           "title": {
             "default": null,
             "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "default": null,
+            "description": "With board: another of your machines to start it on, by name or id.\nDefault: this one. One that's offline is refused, naming the grant's\nmachines that are online.",
             "type": [
               "string",
               "null"
@@ -5703,6 +5800,30 @@
       "name": "start_agent",
       "outputSchema": {
         "$defs": {
+          "MovedFrom": {
+            "description": "The chief of staff a new one took over from (Arugula #1340): its\nmachine's name (empty for a hosted session or this machine), its session,\nand `how` it stood down: `told` (a block on another machine, to hand over\nits place in the log in staff), `not_told`, `stopped` (a hosted session),\n`not_stopped`, or `here` (this machine's: its block is closed, and its\nnotes file is the new one's); said.",
+            "properties": {
+              "how": {
+                "type": "string"
+              },
+              "machine_name": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "machine_name",
+              "session",
+              "how",
+              "said"
+            ],
+            "type": "object"
+          },
           "StartedBoard": {
             "properties": {
               "board": {
@@ -5725,8 +5846,27 @@
           "StartedChief": {
             "description": "A chief of staff just started (Arugula #1338): its project, the name of\nits session, and whether that session leads the person's staff room in\nthe project, said.",
             "properties": {
+              "closed": {
+                "description": "Agent blocks on this machine closed first (Arugula #1340): the one\nthat led, and any other going by this one's name.",
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
               "lead": {
                 "type": "boolean"
+              },
+              "moved_from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/MovedFrom"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The session that led the staff room before (Arugula #1340), and what\nbecame of it."
               },
               "project": {
                 "type": "string"
@@ -5948,6 +6088,14 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "board": {
+            "default": null,
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chat": {
             "default": false,
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
@@ -6011,7 +6159,7 @@
           },
           "recipe": {
             "default": null,
-            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff\"\nthat leads their staff room there (their posts in it are its\nprompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). Not on an issue, a worktree, a\nVM or another machine's pane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
+            "description": "For claude: `chief-of-staff` starts your person's chief of staff in\nthe project on this machine: an agent block titled \"Chief of staff ·\n<project>\" that leads their staff room there (their posts in it are\nits prompts), with its standing instructions as its first prompt and\nprompt after them (it may be empty). There's one per project: one\nthat led before is moved here (another machine's is told to stand\ndown, a hosted one is stopped, this machine's is closed). It runs\nhere: not on an issue, in a worktree or beside another machine's\npane. With Labs agent delegation, any other\nname runs as that recipe, a Claude Code subagent by its name\n(`.claude/agents/NAME.md` in cwd's project, or the user's), on this\nhost: its prompt, model, tools, skills and MCP servers.",
             "type": [
               "string",
               "null"
@@ -6033,6 +6181,14 @@
           "title": {
             "default": null,
             "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "default": null,
+            "description": "With board: another of your machines to start it on, by name or id.\nDefault: this one. One that's offline is refused, naming the grant's\nmachines that are online.",
             "type": [
               "string",
               "null"
@@ -6064,6 +6220,30 @@
       "name": "start_agent",
       "outputSchema": {
         "$defs": {
+          "MovedFrom": {
+            "description": "The chief of staff a new one took over from (Arugula #1340): its\nmachine's name (empty for a hosted session or this machine), its session,\nand `how` it stood down: `told` (a block on another machine, to hand over\nits place in the log in staff), `not_told`, `stopped` (a hosted session),\n`not_stopped`, or `here` (this machine's: its block is closed, and its\nnotes file is the new one's); said.",
+            "properties": {
+              "how": {
+                "type": "string"
+              },
+              "machine_name": {
+                "type": "string"
+              },
+              "said": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "machine_name",
+              "session",
+              "how",
+              "said"
+            ],
+            "type": "object"
+          },
           "StartedBoard": {
             "properties": {
               "board": {
@@ -6086,8 +6266,27 @@
           "StartedChief": {
             "description": "A chief of staff just started (Arugula #1338): its project, the name of\nits session, and whether that session leads the person's staff room in\nthe project, said.",
             "properties": {
+              "closed": {
+                "description": "Agent blocks on this machine closed first (Arugula #1340): the one\nthat led, and any other going by this one's name.",
+                "items": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              },
               "lead": {
                 "type": "boolean"
+              },
+              "moved_from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/MovedFrom"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The session that led the staff room before (Arugula #1340), and what\nbecame of it."
               },
               "project": {
                 "type": "string"

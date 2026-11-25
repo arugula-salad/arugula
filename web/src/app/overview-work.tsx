@@ -72,9 +72,11 @@ interface Item {
  * daemon's own page, whose hosts carry no ids, its name (./machine-client). */
 const machineOf = (p: OvPane): string | undefined => p.machine ?? (directory.home !== null ? p.host : undefined);
 
-/** Each session's panes, its agents first. */
+/** Each session's panes, its agents first; a session with an agent (the
+ * card's issue agent, whose tab is in front, #1441) before its helpers. */
 function itemsOf(sessions: OvSession[]): Item[] {
-  return sessions.flatMap((s) => (s.panes.length ? [...s.panes].sort((a, b) => Number(b.agent) - Number(a.agent)).map((p) => ({ key: p.key, s, p })) : [{ key: s.key, s }]));
+  const agent = (s: OvSession) => Number(!!s.hosted || s.panes.some((p) => p.agent));
+  return [...sessions].sort((a, b) => agent(b) - agent(a)).flatMap((s) => (s.panes.length ? [...s.panes].sort((a, b) => Number(b.agent) - Number(a.agent)).map((p) => ({ key: p.key, s, p })) : [{ key: s.key, s }]));
 }
 
 /** The pane a session's Talk is with: its agent, else the one it opens. */

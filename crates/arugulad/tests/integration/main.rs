@@ -14,6 +14,8 @@ mod agent_screens;
 mod agents;
 mod agents_real;
 mod api;
+#[cfg(unix)]
+mod approval_cards;
 #[cfg(feature = "labs")]
 mod apps;
 #[cfg(unix)]
@@ -25,6 +27,7 @@ mod blocks;
 #[cfg(all(unix, feature = "labs"))]
 mod board_state;
 mod chat_blocks;
+mod chief_of_staff_wakes;
 #[cfg(unix)]
 mod client_fixtures;
 mod control_moves;
@@ -82,6 +85,9 @@ mod hint_facts;
 mod hooks_in_front;
 #[cfg(unix)]
 mod hosted_sessions;
+// A chief of staff on a Cloud workspace sets its watches (Arugula #1448).
+#[cfg(unix)]
+mod hosted_watches;
 #[cfg(unix)]
 mod hosted_work;
 mod hosts;
@@ -90,6 +96,8 @@ mod ide;
 mod invite;
 #[cfg(unix)]
 mod join_tokens;
+#[cfg(unix)]
+mod ladder_starts;
 mod local_auth;
 mod local_watches;
 #[cfg(unix)]

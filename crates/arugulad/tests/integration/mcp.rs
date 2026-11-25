@@ -148,7 +148,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 44 - NO_FORGE);
+    assert_eq!(tools.len(), 45 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -431,7 +431,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 44 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 45 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -1110,7 +1110,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 44 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 45 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
     // A daemon that hasn't joined Arugula cloud says Docs, not issues or
     // boards (Arugula #1403).
@@ -1124,7 +1124,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 45, "{:?}", names(&with));
+        assert_eq!(with.len(), 46, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1141,7 +1141,7 @@ async fn labs_lists_all_the_tools() {
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 44 - NO_FORGE);
+        assert_eq!(without.len(), 45 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1150,7 +1150,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 44 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 45 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1215,6 +1215,9 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     assert_ne!(split, mine);
     let tab = |p: u64| d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == p).unwrap()["tab"].clone();
     assert_eq!(tab(split), tab(mine), "{r}");
+    // It records the terminal that started it, for the Overview to name (Arugula #1441), and no block that may drive it.
+    let info = d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == split).cloned().unwrap();
+    assert_eq!((info["started_by"]["from"].as_u64(), info["started_by"].get("block")), (Some(mine), None), "{info}");
     let l = call(&s, "list", json!({})).await;
     let you: Vec<u64> = l["panes"]
         .as_array()
@@ -4156,37 +4159,53 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
-/// What a fake control saw of the staff room (Arugula #1338): each lead
-/// asked, as `(machine, session)`. It refuses a lead while `refuse` is set.
+/// What a fake control saw of the staff rooms (Arugula #1338, #1340): each
+/// lead asked, as `(machine, session)`; who leads each room now; each post
+/// in one, with who led it then; each hosted session stopped, with its
+/// reason. It refuses a lead while `refuse` is set.
 #[derive(Clone, Default)]
 struct FakeStaff {
     machine: Arc<std::sync::Mutex<String>>,
     leads: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    lead: Arc<std::sync::Mutex<std::collections::HashMap<String, Value>>>,
+    posts: Arc<std::sync::Mutex<Vec<(String, Value, Value)>>>,
+    stops: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
     refuse: Arc<std::sync::atomic::AtomicBool>,
 }
 
-/// The staff room of `prj_1` ("Launch crew"), `dm_staff`, and its lead.
+impl FakeStaff {
+    /// Who leads `room` now (null: nobody).
+    fn lead_of(&self, room: &str) -> Value {
+        self.lead.lock().unwrap().get(room).cloned().unwrap_or(Value::Null)
+    }
+}
+
+/// The staff rooms of `prj_1` ("Launch crew"), `dm_staff`, and of `prj_2`
+/// ("Other crew"), `dm_staff2`, with their leads.
 async fn fake_staff(f: FakeStaff) -> String {
-    use arugula_control_wire::chat::{agent_room_lead, agent_staff_room};
+    use arugula_control_wire::chat::{agent_messages, agent_room_lead, agent_staff_room};
+    use arugula_control_wire::sessions::agent_session_stop;
     use axum::{
         Json, Router,
-        extract::State,
+        extract::{Path, Query, State},
         http::StatusCode,
         response::IntoResponse,
         routing::{get, post},
     };
     use std::sync::atomic::Ordering::Relaxed;
-    fn room(lead: Option<(&str, &str)>) -> Value {
+    fn room(f: &FakeStaff, id: &str) -> Value {
+        let (project, name) = if id == "dm_staff" { ("prj_1", "Launch crew") } else { ("prj_2", "Other crew") };
         let mut r = json!({
-            "id": "dm_staff", "kind": "dm", "name": "Chief of staff", "project": "prj_1", "staff": true,
+            "id": id, "kind": "dm", "name": format!("Chief of staff · {name}"), "project": project, "staff": true,
             "last": 0, "powers": ["threads.read", "threads.post"], "writable": true,
         });
-        if let Some((machine, session)) = lead {
-            r["lead"] = json!({ "machine": machine, "machine_name": "test", "session": session });
+        let lead = f.lead_of(id);
+        if !lead.is_null() {
+            r["lead"] = lead;
         }
         r
     }
-    async fn lead(State(f): State<FakeStaff>, Json(b): Json<Value>) -> axum::response::Response {
+    async fn lead(f: FakeStaff, id: &str, b: Value) -> axum::response::Response {
         if f.refuse.load(Relaxed) {
             let said = json!({ "error": "no threads.read grant over this project" });
             return (StatusCode::FORBIDDEN, Json(said)).into_response();
@@ -4194,23 +4213,100 @@ async fn fake_staff(f: FakeStaff) -> String {
         let machine = f.machine.lock().unwrap().clone();
         let session = b["session"].as_str().unwrap_or_default().to_owned();
         f.leads.lock().unwrap().push((machine.clone(), session.clone()));
-        Json(room(Some((&machine, &session)))).into_response()
+        let now = json!({ "machine": machine, "machine_name": "test", "session": session });
+        f.lead.lock().unwrap().insert(id.to_owned(), now);
+        Json(room(&f, id)).into_response()
     }
-    let home = json!({ "project": "prj_1", "name": "Launch crew", "home": "native" });
-    let app = Router::new()
+    let home = |Query(q): Query<std::collections::HashMap<String, String>>| async move {
+        match q.get("project").map(String::as_str) {
+            Some("prj_2") => Json(json!({ "project": "prj_2", "name": "Other crew", "home": "native" })),
+            _ => Json(json!({ "project": "prj_1", "name": "Launch crew", "home": "native" })),
+        }
+    };
+    let mut app = Router::new()
         .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
         .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
         .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
         .route("/api/daemon/access", post(|| async { Json(json!({})) }))
-        .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
-        .route(&agent_staff_room("prj_1"), post(|| async { Json(room(None)) }))
-        .route(&agent_room_lead("dm_staff"), post(lead))
-        .with_state(f);
+        .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(home))
+        .route(
+            &agent_session_stop("{ses}"),
+            post(|State(f): State<FakeStaff>, Path(ses): Path<String>, Json(b): Json<Value>| async move {
+                f.stops.lock().unwrap().push((ses.clone(), b));
+                Json(json!({ "id": ses, "card": { "state": "stopped" } }))
+            }),
+        );
+    for (project, id) in [("prj_1", "dm_staff"), ("prj_2", "dm_staff2")] {
+        app = app
+            .route(
+                &agent_staff_room(project),
+                post(move |State(f): State<FakeStaff>| async move { Json(room(&f, id)) }),
+            )
+            .route(
+                &agent_room_lead(id),
+                post(move |State(f): State<FakeStaff>, Json(b): Json<Value>| async move { lead(f, id, b).await }),
+            )
+            .route(
+                &agent_messages(id),
+                post(move |State(f): State<FakeStaff>, Json(b): Json<Value>| async move {
+                    let mut posts = f.posts.lock().unwrap();
+                    posts.push((id.to_owned(), b, f.lead_of(id)));
+                    Json(json!({ "seq": posts.len() }))
+                }),
+            );
+    }
+    let app = app.with_state(f);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let at = format!("http://{}", l.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
     at
+}
+
+/// A daemon joined to the fake control `url`, whose machine id `control`
+/// then knows.
+fn staff_daemon(control: &FakeStaff, url: String) -> Daemon {
+    let machine = control.machine.clone();
+    Daemon::child_in(&[], &[], |state| {
+        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+        *machine.lock().unwrap() = keys.id();
+        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+    })
+}
+
+/// `start_agent`'s arguments for a chief of staff, with `extra`.
+fn chief_args(extra: Value) -> Value {
+    let mut a = json!({
+        "agent": "claude", "command": format!("python3 {}", agentd::fake()),
+        "recipe": "chief-of-staff", "prompt": "brief me",
+    });
+    a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    a
+}
+
+/// [`chief_args`] started, once the daemon has joined the fake control:
+/// until then the project can't be chosen, and nothing starts.
+async fn start_chief(s: &Session, extra: Value) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let r = call_raw(s, "start_agent", chief_args(extra.clone())).await;
+        if r.is_error != Some(true) {
+            return r.structured_content.unwrap();
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {:?}", r.content);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+/// The first prompt agent block `block` was sent.
+fn first_prompt(d: &Daemon, block: u64) -> String {
+    d.wait(block, "idle");
+    let sid = d.state(block)["session_id"].as_str().unwrap().to_owned();
+    let sent = std::fs::read_to_string(d.sessions.join(format!("prompt-{sid}.json"))).unwrap();
+    let sent: Value = serde_json::from_str(&sent).unwrap();
+    sent[0]["text"].as_str().unwrap_or_default().to_owned()
 }
 
 /// `start_agent` `recipe` chief-of-staff (Arugula #1338) starts an agent
@@ -4225,23 +4321,9 @@ async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
     use std::sync::atomic::Ordering::Relaxed;
     let control = FakeStaff::default();
     let url = fake_staff(control.clone()).await;
-    let machine = control.machine.clone();
-    let d = Daemon::child_in(&[], &[], |state| {
-        let keys = arugula_e2e::DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
-        *machine.lock().unwrap() = keys.id();
-        let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
-        let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
-        std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
-    });
+    let d = staff_daemon(&control, url);
     let s = bridge(&d, Client::named("claude-code")).await;
-    let chief = |extra: Value| {
-        let mut a = json!({
-            "agent": "claude", "command": format!("python3 {}", agentd::fake()),
-            "recipe": "chief-of-staff", "prompt": "brief me",
-        });
-        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-        a
-    };
+    let chief = chief_args;
     // Refused before a pane opens: it works the whole project, here.
     let panes = || d.get("/api/panes").as_array().unwrap().len();
     let before = panes();
@@ -4251,27 +4333,19 @@ async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
     assert!(refused(&s, "start_agent", other).await.contains("agent-delegation on"));
     assert_eq!(panes(), before, "no pane opened");
 
-    // The daemon takes a moment to join the fake control: until then the
-    // project can't be chosen, and nothing starts.
-    let deadline = std::time::Instant::now() + Duration::from_secs(20);
-    let r = loop {
-        let r = call_raw(&s, "start_agent", chief(json!({}))).await;
-        if r.is_error != Some(true) {
-            break r.structured_content.unwrap();
-        }
-        assert!(std::time::Instant::now() < deadline, "never joined: {:?}", r.content);
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    };
+    let r = start_chief(&s, json!({})).await;
     let block = r["block"].as_u64().unwrap();
     let me = control.machine.lock().unwrap().clone();
-    assert_eq!(*control.leads.lock().unwrap(), [(me.clone(), "Chief of staff".to_owned())], "{r}");
+    let name = "Chief of staff · Launch crew";
+    assert_eq!(*control.leads.lock().unwrap(), [(me.clone(), name.to_owned())], "{r}");
     let c = &r["chief_of_staff"];
-    assert_eq!((&c["project"], &c["session"], &c["lead"]), (&json!("prj_1"), &json!("Chief of staff"), &json!(true)));
+    assert_eq!((&c["project"], &c["session"], &c["lead"]), (&json!("prj_1"), &json!(name), &json!(true)));
+    assert!(c.get("moved_from").is_none(), "nobody led it: {r}");
     assert!(r["summary"].as_str().unwrap().contains("leads your person's staff room in Launch crew"), "{r}");
 
     // The lead names this block: its session is the block's, by its title.
     let pane = d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == block).cloned().unwrap();
-    assert_eq!((&pane["kind"], &pane["title"]), (&json!("agent"), &json!("Chief of staff")), "{pane}");
+    assert_eq!((&pane["kind"], &pane["title"]), (&json!("agent"), &json!(name)), "{pane}");
     // Its first prompt is the recipe, then what was asked; it works in the
     // project, whose staff room is the one it leads.
     let layout = || -> Value {
@@ -4281,12 +4355,11 @@ async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
     d.wait_for("its config saved", || !layout()["panes"][block.to_string()]["config"].is_null());
     let config = &layout()["panes"][block.to_string()]["config"];
     assert_eq!(config["work"]["project"], "prj_1", "{config}");
-    d.wait(block, "idle");
-    let sid = d.state(block)["session_id"].as_str().unwrap().to_owned();
-    let sent = std::fs::read_to_string(d.sessions.join(format!("prompt-{sid}.json"))).unwrap();
-    let sent: Value = serde_json::from_str(&sent).unwrap();
-    let prompt = sent[0]["text"].as_str().unwrap_or_default();
-    assert!(prompt.starts_with("You are this project's chief of staff") && prompt.ends_with("\n\nbrief me"), "{sent}");
+    let prompt = first_prompt(&d, block);
+    assert!(
+        prompt.starts_with("You are this project's chief of staff") && prompt.ends_with("\n\nbrief me"),
+        "{prompt}"
+    );
     assert!(config.get("recipe").is_none(), "no Claude Code subagent worn: {config}");
 
     // Control refuses the lead: it starts all the same, and says why.
@@ -4296,6 +4369,95 @@ async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
     assert_eq!((&c["session"], &c["lead"]), (&json!("My staff"), &json!(false)), "{r}");
     assert!(c["said"].as_str().unwrap().contains("threads.read"), "{r}");
     assert_eq!(control.leads.lock().unwrap().len(), 1);
+    s.cancel().await.unwrap();
+}
+
+/// One chief of staff per person per project (Arugula #1340): starting one
+/// where another leads the staff room moves it, leaving one lead. One on
+/// another machine is told in staff while it still leads (so control tells
+/// it) to stand down and hand over its place in the log; a hosted one is
+/// stopped; one on this machine is closed, its notes file carrying on. The
+/// new one's first prompt says which, and so where its cursor comes from.
+/// Two projects' chiefs of staff on one machine go by two names.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn starting_a_chief_of_staff_where_one_leads_moves_it() {
+    let control = FakeStaff::default();
+    let name = "Chief of staff · Launch crew";
+    let elsewhere = json!({ "machine": "m_other", "machine_name": "mini", "session": name });
+    control.lead.lock().unwrap().insert("dm_staff".into(), elsewhere.clone());
+    let url = fake_staff(control.clone()).await;
+    let d = staff_daemon(&control, url);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let me = control.machine.lock().unwrap().clone();
+    let mine = json!({ "machine": me, "machine_name": "test", "session": name });
+    let blocks = |title: &str| -> Vec<u64> {
+        let panes = d.get("/api/panes");
+        panes.as_array().unwrap().iter().filter(|p| p["title"] == title).filter_map(|p| p["id"].as_u64()).collect()
+    };
+
+    // Machine to machine: told in staff while it still leads, then the
+    // lead is this block's.
+    let r = start_chief(&s, json!({})).await;
+    let first = r["block"].as_u64().unwrap();
+    let c = &r["chief_of_staff"];
+    assert_eq!(control.lead_of("dm_staff"), mine, "one lead, this machine's: {r}");
+    let posts = control.posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    let (room, post, led) = &posts[0];
+    assert_eq!((room.as_str(), led), ("dm_staff", &elsewhere), "posted while the old one led");
+    assert_eq!(post["session"], name, "{post}");
+    let text = post["text"].as_str().unwrap();
+    assert!(text.contains(&format!("{name} on mini: you no longer lead this room")), "{text}");
+    assert!(text.contains("post your place in the log here"), "{text}");
+    let m = &c["moved_from"];
+    assert_eq!((&m["machine_name"], &m["session"], &m["how"]), (&json!("mini"), &json!(name), &json!("told")), "{r}");
+    let prompt = first_prompt(&d, first);
+    assert!(prompt.contains(&format!("You take over from {name} on mini")), "{prompt}");
+    assert!(prompt.contains("## Taking over") && prompt.contains("## When you're moved"), "{prompt}");
+    assert!(prompt.ends_with("\n\nbrief me"), "{prompt}");
+    assert!(control.stops.lock().unwrap().is_empty());
+
+    // Another project's chief of staff here goes by another name: the
+    // first stays, and each room has its own lead.
+    let r = start_chief(&s, json!({ "project": "prj_2" })).await;
+    let other = r["block"].as_u64().unwrap();
+    assert_eq!(r["chief_of_staff"]["session"], "Chief of staff · Other crew", "{r}");
+    assert!(r["chief_of_staff"].get("moved_from").is_none(), "{r}");
+    assert_eq!(blocks(name), [first]);
+    assert_eq!(blocks("Chief of staff · Other crew"), [other]);
+    assert_eq!(control.lead_of("dm_staff"), mine);
+    assert_eq!(control.lead_of("dm_staff2")["session"], "Chief of staff · Other crew");
+
+    // Started again here: the old block closes before the new one opens,
+    // and its notes file is the new one's. Nobody else is told.
+    let r = start_chief(&s, json!({})).await;
+    let again = r["block"].as_u64().unwrap();
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["moved_from"]["how"], &c["closed"]), (&json!("here"), &json!([first])), "{r}");
+    assert_eq!(blocks(name), [again], "one block by its name");
+    assert_eq!(control.lead_of("dm_staff"), mine);
+    assert_eq!(control.posts.lock().unwrap().len(), 1, "no post for a move on one machine");
+    assert!(first_prompt(&d, again).contains("its notes file is yours: carry on from its cursor"));
+
+    // Hosted to machine: the session is stopped, saying why; this block
+    // leads, and starts from the log's head, saying so. The block here by
+    // its name closes too.
+    let hosted = json!({ "machine": "wsp_1", "machine_name": "", "session": "ses_1" });
+    control.lead.lock().unwrap().insert("dm_staff".into(), hosted);
+    let r = start_chief(&s, json!({ "prompt": "" })).await;
+    let last = r["block"].as_u64().unwrap();
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["moved_from"]["how"], &c["closed"]), (&json!("stopped"), &json!([again])), "{r}");
+    let stops = control.stops.lock().unwrap().clone();
+    assert_eq!(stops.len(), 1, "{stops:?}");
+    assert_eq!(stops[0].0, "ses_1");
+    assert!(stops[0].1["reason"].as_str().unwrap().contains(&format!("moved to {name}")), "{stops:?}");
+    assert_eq!(control.lead_of("dm_staff"), mine, "one lead, this machine's");
+    assert_eq!(blocks(name), [last]);
+    assert_eq!(control.posts.lock().unwrap().len(), 1, "a hosted one is stopped, not told in staff");
+    let prompt = first_prompt(&d, last);
+    assert!(prompt.contains("You take over from hosted session ses_1") && prompt.contains("start from the log's head"));
     s.cancel().await.unwrap();
 }
 

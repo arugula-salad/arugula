@@ -34,6 +34,10 @@
 // The talk panel's tabs stay as you zoom: each level brings its own to
 // the front, the chief of staff's at Project, the lead's at Board, the
 // card's agent's at Work. A Needs you card zooms to the work that asks.
+// Each agent's tab knows its rung on the agent ladder (#1441): a board's
+// lead is "lead of" its boards, under the chief of staff; an agent on an
+// issue's card is "on #N for" its board, under the board's lead, and its
+// tab is its issue's thread over its peek.
 
 import "./overview.css";
 import type { ComponentChildren } from "preact";
@@ -48,6 +52,7 @@ import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
+import { OverviewSplit, useColumn } from "./overview-split";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
@@ -71,7 +76,7 @@ import { OverviewBoard } from "./overview-board";
 import { CardRow, SessionRow, Word } from "./overview-row";
 import { OverviewWork } from "./overview-work";
 import { PeekContext, peekKey, type PeekPlace, talkKey } from "./overview-peek";
-import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
+import { staffStartTab, staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
 export function OverviewPlace({ project, board, card, zoom, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; session: AppSession | null }) {
@@ -87,7 +92,7 @@ export function OverviewPlace({ project, board, card, zoom, session }: { project
         Reaching your machines…
       </p>
     );
-  return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} />;
+  return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} session={session} />;
 }
 
 /** The Overview's levels, outermost first (Arugula #1287). */
@@ -327,13 +332,14 @@ function useOpened(project: string): [Map<string, boolean>, (board: string, open
   return [m, set];
 }
 
-function OverviewBody({ project, board, card, zoom, fleet }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet }) {
+function OverviewBody({ project, board, card, zoom, fleet, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
   // The chief of staff's room shows as the talk panel's first tab once chat lists it.
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
+  const column = useColumn();
   const refocus = useRefocus();
   const { views, put } = useBoardViews(project, refocus);
   const byCardRead = useByCard(project);
@@ -458,6 +464,22 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
+    project: p?.name ?? "this project",
+    rung: (s, c) => {
+      // A board's lead, by its tab: under the reader's chief of staff, who writes to it in its boards' threads.
+      const led = o.boards.filter((b) => b.lead && talkKey(b.lead.peek) === talkKey(s));
+      if (led.length) {
+        const cos = staffRoom?.lead;
+        return { line: `lead of ${led.map((b) => b.title).join(", ")}`, parent: cos ? { machine: cos.machine, session: cos.session, who: "the chief of staff" } : null, rooms: led.map((b) => b.id) };
+      }
+      // An agent on an issue's card: under its board's lead, who writes to it in the issue's thread.
+      if (!c || c.row.pointer.kind !== "issue" || !(s.hosted || s.panes.some((x) => x.agent))) return null;
+      const b = o.boards.find((x) => x.id === c.board);
+      const label = pointerLabel(c.row.pointer, c.row.live) || "its issue";
+      const l = b?.lead;
+      return { line: `on ${label} for ${b?.title ?? "its board"}`, parent: l ? { machine: l.machine, session: l.session, who: `its lead, ${l.session}` } : null, rooms: [c.row.pointer.id], issue: { id: c.row.pointer.id, label } };
+    },
+    hostedIn: (id) => (id ? session?.daemons.find((d) => d.id === id)?.hosted?.project : undefined),
   };
 
   // A peek tab saved under its tile's key (`host#N`) takes the hub's id for its session once the page knows it (#1390).
@@ -514,8 +536,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     return h && !h.team ? h.owner : undefined;
   };
 
-  // The chief of staff's tab, pinned first, once it has a room (#1275).
+  // The chief of staff's tab, pinned first, once it has a room (#1275); until then, Start (#1341).
   const chief: TalkTab | null = staffTab(project);
+  const chiefTab = chief ?? staffStartTab(project);
 
   // Its pinned tab is picked, not opened, so it never takes one of the tabs' places.
   const pickChief = (t: TalkTab) => {
@@ -699,9 +722,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     </section>
   );
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
+    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px`, "--ov-col": `${column * 100}%` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chief) && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}</PeekContext.Provider>
+      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chiefTab) && <TalkPanel talk={talk} pinned={chiefTab} phone />] : [field, <OverviewSplit key="split" />, <TalkPanel talk={talk} pinned={chiefTab} needs={rail} phone={false} />]}</PeekContext.Provider>
       {opened && shownView && (
         <Drawer
           r={opened}

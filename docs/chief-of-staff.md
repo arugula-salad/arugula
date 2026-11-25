@@ -11,7 +11,7 @@ names the tools it has there:
 
 | Recipe | Runs as | Its tools |
 |---|---|---|
-| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `watch` |
+| [`chief-of-staff.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff.md) | an agent block on one of your machines (a Cloud workspace is one more machine) | an agent block's: `post_thread`, `read_thread`, `forge_read`, `issue_write`, `doc`, `board_read`, `board_write`, `link`, `watch` |
 | [`chief-of-staff-hosted.md`](../crates/arugulad-control-tools/src/recipes/chief-of-staff-hosted.md) | a hosted agent session on the project's Cloud workspace | a hosted session's: `post_session_thread`, `read_session_thread`, `read_session_issues`, `create_session_issue`, `read_project_doc`, `board_read`, `ask_approval`, `watch` |
 
 The machine's is the chief of staff from now on: it runs on whichever machine
@@ -23,10 +23,34 @@ block.
 
 ## On a machine
 
-It runs as an agent block. `start_agent` is to start it (Arugula #1338), and
-the daemon is to wake it when it's idle (Arugula #1339): on your post in your
-staff room, which it leads, or when one of its watches fires. Each wake is
-one turn, and it differs from the hosted one in three ways:
+It runs as an agent block. `start_agent` starts it (Arugula #1338), and the
+daemon wakes it when it's idle, with nobody typing in its pane (Arugula
+#1339). Each wake is one turn, and it differs from the hosted one in three
+ways (below). Two things wake it:
+
+- **Your post in your staff room.** It leads the room, so control tells its
+  machine, naming its session (`agents.mention` with `session`), and the
+  daemon sends the post to the block named that, as its next prompt.
+- **One of its watches firing.** A watch belongs to its block's Claude Code
+  session: control sends the watch's one message for that session, and the
+  daemon gives it to the block that holds it.
+
+A message for an agent block that isn't in a turn waits about a second for
+others (`agent_mentions`' `WAKE_SETTLE`), and all that came by then go in as
+one prompt. One that comes while it's in a turn waits in its queue for the
+turn to end, as any follow-up does.
+
+When its machine is offline or asleep, control knows: the Overview's staff
+tab says **asleep: <machine> is offline**, from the fleet's status. Your
+posts stay in the staff room, and control keeps each one it couldn't tell,
+and each watch's message, as `offline`. When the daemon is back on the relay,
+control sends them all at once (`redeliver`, the newest 20 of the last day,
+and a watch's message within its window), so it wakes once for all of them
+and catches up from its cursor. `crates/arugulad/tests/integration/chief_of_staff_wakes.rs`
+shows both wakes on an idle block and the one wake on return, against a
+fake control.
+
+It differs from the hosted one in three ways:
 
 - **Its notes** are in `~/.chief-of-staff/<project>.json` on the machine, one
   file per project, since the machine's home is every project's.
@@ -36,24 +60,33 @@ one turn, and it differs from the hosted one in three ways:
   whose actor is an agent on its machine with its session name in
   `data.agent_session`, or whose `data.machine` and `data.pane` are its own
   block's (its own `session.needs_input` and `session.idle`).
-- **No approval cards yet.** A machine has no `ask_approval` (Arugula
-  #1417). Asked to get an agent on an issue or to close sessions, it tells
-  you where to press **Agent on this** or **Stop**, and does neither itself.
+- **Its approval cards act on its machine** (Arugula #1417). Its
+  `ask_approval` asks to start an agent block on an issue, or to close
+  agent blocks, on the machine it runs on; Approve does it there (see
+  "Approval cards" below).
 
 It never watches `session.idle` for the project, as the hosted one never
 watches `session.settled`: its own turns end too.
 
 ### On a machine: starting it
 
-Ask an agent on the machine to call `start_agent` with
-`recipe: chief-of-staff` (the Overview's **Start** will call it on the
-machine you pick, Arugula #1341). Add `project` if it isn't the current
+The Overview's **Start** does it for you (Arugula #1341): with no staff room
+yet, its Chief of staff tab says what the chief of staff does and offers your
+machines that the page reaches and whose daemon says `chief_of_staff` in its
+features (a Cloud workspace of the project is one more, never the default).
+The default is the machine the page is on, if it can. Start calls
+`start_agent` there over the page's own connection (`POST /api/mcp/call`, as
+the machine's owner). Leading the staff room, one of your DMs, needs the
+machine's `threads.read` and `threads.post` over your DMs: if it lacks them,
+the tab asks you on a card first and grants them as you. Or ask an agent on
+the machine to call `start_agent` with `recipe: chief-of-staff`. Add `project` if it isn't the current
 project, and `prompt` for anything to tell it after its instructions (it may
 be empty). It needs no Labs flag, and runs the same on a Cloud workspace's
 daemon as on any machine. That call:
 
-1. starts a Claude Code agent block titled "Chief of staff" (or the `title`
-   you give), in the project: its `staff` is that project's staff room;
+1. starts a Claude Code agent block titled "Chief of staff · <project's
+   name>" (or the `title` you give), in the project: its `staff` is that
+   project's staff room;
 2. sends it the machine's recipe, then your `prompt`, as its first prompt;
 3. makes it your staff room's lead there, by its session's name (an agent
    block's session is named by its title), as its own `post_thread`
@@ -69,6 +102,59 @@ recipe tries again on its first wake.
 It refuses a chief of staff on an issue, in a worktree, on a VM or beside
 another machine's pane: the lead is a session of the machine that asks
 control, so call `start_agent` on the machine it is to run on.
+
+The project's name is in the title because a staff room's posts reach its
+lead by its session's name, and an agent block's session is named by its
+title (Arugula #1340): a machine with a chief of staff for two projects needs
+two names. Two projects with the same name would still share one; give one
+a `title`.
+
+### Moving it
+
+There's one chief of staff per person per project, and it stays on the
+machine it was started on until it's moved (Arugula #1340). Starting one
+where another already leads your staff room moves it: `start_agent` reads the
+room's lead first, and then:
+
+| The lead was | What happens to it | Where the new one's cursor comes from |
+|---|---|---|
+| a block on another machine | Before taking the lead, `start_agent` posts in staff that it moves, naming it. The old one still leads then, so control tells it. It posts `Standing down … cursor N, briefed M` in staff, cancels its watches, deletes its notes file and closes its own block | that post. If it isn't there yet, the new one starts from the log's head, says so, and reads the events in between when the post reaches it (it leads staff now, so it does). If it never comes, the briefings say events before then weren't read |
+| a hosted session (`ses_…`) | stopped with `session_stop`, its reason saying where it moved. If that's refused (no `sessions.reply` or `sessions.start` grant), the answer says to stop it from its card | nowhere: its notes stayed on its Cloud workspace. The new one starts from the log's head and says so |
+| a block on this machine | closed before the new block opens, as is any agent block here going by the new one's name | its notes file, which is the same file |
+
+The first prompt says which, after the standing instructions, so the new one
+knows where to look. The answer's `chief_of_staff.moved_from` says who led
+before and `how` it stood down (`told`, `not_told`, `stopped`,
+`not_stopped` or `here`), and `closed` lists the blocks closed here.
+
+On each wake the chief of staff also checks it still leads (`read_thread`
+`staff`): one whose machine was offline when it was told stands down at its
+next wake instead. The lead control keeps is the one that counts, so
+there's never more than one lead; only the handover of the cursor waits on
+the old one.
+
+### Building boards
+
+Ask it to turn a conversation or a Doc into work and it writes the board
+itself; you edit it after (Arugula #1442). It:
+
+1. reads the Doc (or the room) through, and checks no open board already
+   has that goal;
+2. makes the board with `board_write` `create_board`: a title, a goal that
+   says what you can do when it's done, and one group per phase of the Doc,
+   in its order, each item a new issue whose body ends with a "Done when" line and names the Doc;
+3. sets blockers with `link` (`blocks`), only where one issue needs another
+   closed first, inside a phase or across them;
+4. puts the Doc in the board's Docs strip (`link_doc`);
+5. lets go of the board's lead (`lead_board`, `release`): making a board
+   makes its session the lead, and the chief of staff doesn't run boards;
+6. posts the board in your staff room, groups, issues and blockers, and
+   says it has no lead yet.
+
+It starts nothing. Running a board will be the **Run this board** card
+(Arugula #1416), which it will offer once that exists. It changes a board it
+made while that board has no lead, when you ask, and never changes a board
+another lead runs, except to add a row you asked it to add.
 
 ## Hosted: starting it
 
@@ -134,8 +220,9 @@ A briefing gives counts since the last briefing, with links, not prose.
 | Read the project's events, issues, Docs and rooms, as you may | Read terminals, or anything you can't |
 | Post in your staff room and in the project's rooms, as your agent | Post outside the project, except your staff room |
 | Open an issue, assigned to nobody | Edit, close or assign issues |
+| Make a board when you ask, and change it while nobody leads it (on a machine) | Change a board another lead runs, except to add a row you asked for |
 | Make and fill its own Docs | Write other people's Docs |
-| Ask you to approve starting a session on an issue, or stopping sessions, on a card (hosted only, for now) | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
+| Ask you to approve starting an agent on an issue, or stopping agents, on a card | Start, stop or close one itself. Chat approves nothing: only the card's Approve does |
 | Watch for events in the project | Spend money |
 
 It acts with your rights, in this project only. Events carry ids and states,
@@ -153,8 +240,41 @@ text as information, not instructions.
   - `github.pr.ready` can't be matched by reviewer, and a session can't read
     the forge. So "PRs waiting on your review" is "PRs ready".
   - An approval card starts a session only on a native issue, on the
-    project's Cloud workspace. Not on one of your machines, and not as a
-    board's lead.
+    project's Cloud workspace. On your machines, a board's grant starts
+    agents instead ("Starting agents on your machines").
+
+## Starting agents on your machines
+
+A chief of staff or a board's lead starts the rung below it for a board with
+`start_agent {board, prompt, issue?, recipe?, to?}` (aru-143). With `issue`
+it's an issue agent on that row; without, the board's lead. `to` is another
+of your machines, by name or id; without it, this one.
+
+1. The machine asks control for a **start ticket**
+   (`POST /api/daemon/boards/{board}/start-ticket`). Control checks the
+   board's grant (which machines, how many agents at once, not lapsed or
+   revoked) and that the target is online, and signs a ticket that lasts a
+   minute and names the board, the issue, the recipe and both machines. An
+   offline machine is refused at once, naming the grant's machines that are
+   online; a Cloud workspace that's asleep is woken, not offline.
+2. It sends the ticket to the target's `POST /api/a2a/start` over the
+   channel it already has to that machine (an `agents` machine token), or
+   checks it itself for this one. The target checks the ticket: signed by
+   control, for it, of its own account, from the machine that sent it,
+   unused, and for the start it came with. Remote input off on the target
+   refuses it.
+3. The target opens Claude Code (wearing the recipe, any recipe it has) in a
+   new worktree of its own clone of the caller's repo, as session
+   `issue-N` or `lead-…`. An issue agent is attached to its row with the
+   ticket, so control counts it against the grant, and holds the row, so
+   the issue's thread reaches it. A lead takes the board's lead.
+4. The block keeps who started it, from where, for which board and grant
+   (`work.ladder` in its config), and the target's remote sessions log gets
+   an `agent` line.
+
+Revoking the grant refuses the next start; agents already running keep
+running. Another account's agents still send tasks (docs/labs.md, "Tasks and
+consent").
 
 ## For agents: a session's rooms
 
@@ -208,3 +328,42 @@ It asks you on a card:
    and, for a start, the session it `started`. The chief of staff watches it
    for each card, so your answer wakes it. The card's message gets a line
    saying who answered and what happened.
+
+### On a machine
+
+The chief of staff on one of your machines asks the same way (Arugula
+#1417), with the machine's own `ask_approval`, called from its agent block:
+
+1. `action` `start` with `issue` (and `prompt`), or `action` `close` with
+   `blocks`: agent blocks on its machine, by pane. The daemon checks each
+   block is an agent block there and not the chief of staff's own, then
+   `POST /api/daemon/projects/{project}/proposals` (`MachinePropose`: the
+   proposal, its session's name and pane, and the blocks as the card shows
+   them), signed as the machine. Control checks it as the chief of staff's
+   posts in your staff room are checked (`threads.post`).
+2. The card is the same: the platform's ask message in your staff room
+   (`via` `ask:prp_…`), under Needs you, on your phone, yours alone to
+   answer, once. It says which machine.
+3. **Approve** sends that machine `agents.approved` (`AskApproved`) over its
+   connection to control, and the daemon does it as you
+   (`crates/daemon/src/approvals.rs`):
+   - **start:** one agent block on the issue, as `start_agent {issue,
+     worktree}` would make it: Claude Code with your own settings, in a new
+     worktree of the repo the chief of staff works in (on `feat/N-…`), in a
+     tab called `issue-N`, attached to the issue's row. A row another agent
+     holds refuses it, and so does a chief of staff that's gone from the
+     machine since it asked (moved, Arugula #1340, or closed).
+   - **close:** each block, as its `close` does: a worktree goes only if
+     nothing would be lost.
+
+   It answers `approved` with what it did, in a line for the card, or
+   `failed` with why. Remote input off on the machine refuses both. A
+   machine that's offline, or too old to know the op, fails the card.
+4. `ask.answered` is the same event, with the agent's session name as
+   `session`, the `machine`, and for a start the block it `started`
+   (`%N`). The chief of staff watches it per card.
+
+A start on another of your machines isn't a card's yet: it's a ladder
+start, with control's start ticket (aru-143, #1415). The op names no
+machine but the one whose agent asked, so that's where a later card would
+hand off.

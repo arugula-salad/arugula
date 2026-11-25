@@ -14,8 +14,8 @@ The tab bar is always there (#1262), with the web's five places (#1361):
 in portrait. Every place is headed by the project's menu, **New**, the
 **bell** (the Inbox) and **your picture** (your name, Settings, Send feedback,
 the version and Sign out: `Arugula/Account.swift`), which fit on a 390pt
-phone. Settings opens the web's page in the browser: control doesn't take
-the app's session there. Issues aren't a place: a board's rows open their
+phone. Settings opens the web's page in a web view, its sign-in handed over
+by control (`POST /api/handoff`, Arugula #1420). Issues aren't a place: a board's rows open their
 issues, and the project's menu opens its list. Docs lists the project's Docs
 with #1363; until then it says so.
 

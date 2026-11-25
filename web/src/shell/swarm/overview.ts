@@ -458,3 +458,47 @@ export function statsLine(o: Pick<Overview, "boards" | "loose">, needs: number):
 export function yourWorkMachines(personal: boolean, hosts: { name: string; owner?: string; teamBox?: boolean; hosted?: boolean }[]): string[] {
   return personal ? hosts.filter((h) => !h.owner && !h.teamBox && !h.hosted).map((h) => h.name) : [];
 }
+
+/** A machine the chief of staff may start on. */
+export interface StaffSpot {
+  /** Its host's name in the fleet: what the request goes to. */
+  name: string;
+  /** Control's id for it, which a grant names; none on a daemon's own page. */
+  id?: string;
+  /** A Cloud workspace of the project's. */
+  cloud: boolean;
+  /** The machine this page is on. */
+  here: boolean;
+}
+
+/** Where the chief of staff can start: `can`, here first, then the
+ * reader's machines by name, then the project's Cloud workspaces; the
+ * default (`pick`), here if it can, else the first of the reader's own
+ * machines (never a Cloud workspace); and `cannot`, the reader's machines
+ * left out and why (Arugula #1341). `hostedIn` is the project of a Cloud
+ * workspace's machine; `features`, what a machine's daemon says it does:
+ * an older one doesn't say `chief_of_staff`. */
+export function staffSpots(
+  hosts: { name: string; id?: string; state: string; status?: string; owner?: string; teamBox?: boolean; hosted?: boolean }[],
+  o: { project: string; here: string | null; features: (name: string) => { chief_of_staff?: boolean } | null | undefined; hostedIn: (id: string | undefined) => string | undefined },
+): { can: StaffSpot[]; pick: string | null; cannot: { name: string; why: string }[] } {
+  const can: StaffSpot[] = [];
+  const cannot: { name: string; why: string }[] = [];
+  for (const h of hosts) {
+    // Yours: not a teammate's, not a team's own box; a Cloud workspace of this project's.
+    const cloud = !!h.hosted;
+    if (cloud ? o.hostedIn(h.id) !== o.project : h.owner || h.teamBox) continue;
+    // Started over this page's connection to it, so only one it reaches now.
+    const away = h.state === "asleep" ? "asleep" : h.status === "offline" || h.state === "offline" ? "offline" : h.state !== "connected" ? "not reached from here" : null;
+    const why = away ?? (o.features(h.name)?.chief_of_staff !== true ? "needs an update" : null);
+    if (why) {
+      if (!cloud) cannot.push({ name: h.name, why });
+      continue;
+    }
+    can.push({ name: h.name, id: h.id, cloud, here: !!o.here && h.name === o.here });
+  }
+  can.sort((a, b) => Number(b.here) - Number(a.here) || Number(a.cloud) - Number(b.cloud) || a.name.localeCompare(b.name));
+  cannot.sort((a, b) => a.name.localeCompare(b.name));
+  const pick = can.find((s) => s.here)?.name ?? can.find((s) => !s.cloud)?.name ?? null;
+  return { can, pick, cannot };
+}

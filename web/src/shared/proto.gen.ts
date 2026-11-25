@@ -3519,6 +3519,12 @@ guest_ssh?: boolean,
  */
 remote_input?: boolean, 
 /**
+ * `start_agent` starts a chief of staff here (`recipe: chief-of-staff`,
+ * Arugula #1338), through `POST /api/mcp/call`: the Overview's Start
+ * offers this machine (Arugula #1341). Absent from a daemon before it.
+ */
+chief_of_staff?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */
@@ -6678,7 +6684,14 @@ by: string,
  * The agent block whose token it came with, if any: that block may
  * drive and close it.
  */
-block?: number, };
+block?: number, 
+/**
+ * The pane the caller runs in, by its own word (`x-arugula-pane`)
+ * where it isn't an agent block: a Claude Code terminal that started
+ * an agent, so the Overview can say who did (Arugula #1441). Display
+ * only, never a credential: what may drive it is `block`'s alone.
+ */
+from?: number, };
 
 /**
  * Everything a client needs to draw: sessions in order, each tab's tree

@@ -204,6 +204,7 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
             "agents.mention",
             "agents.sessions",
             "agents.grant_ask",
+            "agents.approved",
             "projects.repo_moved",
             "docs.list",
             "sessions.set_card",

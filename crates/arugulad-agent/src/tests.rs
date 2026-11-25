@@ -611,6 +611,46 @@ fn replies_of_one_thread_in_the_queue_are_one_prompt_with_every_tag() {
     assert_eq!(seqs(&g.queue[0]), [21]);
 }
 
+/// Arugula #1339: a wake's prompt carries the tags of several threads. It
+/// waits as one, a restart rebuilds it from the log with every tag, and a
+/// reply to one of its threads waits apart rather than rewriting it.
+#[test]
+fn a_wakes_prompt_keeps_every_tag_and_no_reply_joins_it() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let tag = |room: &str, seq: i64| {
+        let thread = agent_mentions::MentionThread {
+            root: seq,
+            head: format!("Thread {seq}:"),
+            line: format!("ada: {seq}"),
+            tail: "(tail)".into(),
+        };
+        MentionTag { room: room.into(), seq, headline: String::new(), thread: Some(thread), watch: None }
+    };
+    let wake = Queued {
+        text: "2 messages came for you".into(),
+        images: vec![],
+        by: Some("Jake, Arugula".into()),
+        mention: vec![tag("dm_staff", 5), tag("wch_red", 0)],
+    };
+    g.enqueue(&wake, false);
+    let reply = Queued { text: "framed 6".into(), images: vec![], by: None, mention: vec![tag("dm_staff", 5)] };
+    g.enqueue(&reply, false);
+    assert_eq!(g.queue, [wake.clone(), reply], "the reply waits apart");
+
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    let all: Vec<Value> = wake.mention.iter().map(MentionTag::to_json).collect();
+    let logged =
+        json!({ "e": "queue", "text": wake.text, "images": [], "front": false, "by": wake.by, "mentions": all });
+    again.rebuild_line(&frame("note", logged));
+    assert_eq!(again.queue.front(), Some(&wake), "rebuilt with every tag");
+}
+
 /// Arugula #215: a turn's result is its final message, exactly, though the
 /// turn said a lot before it. As claude-agent-acp streams one long turn
 /// (session 44abb505's shape): a status line, a tool, a plan, a question

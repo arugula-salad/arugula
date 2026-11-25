@@ -492,6 +492,9 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/hosted/setup/archive", "binary download: a tarball"),
     ("/api/panes/{id}/upload", "raw bytes, its own body limit (drives: DRIVES_HAND_WRITTEN)"),
     ("/api/panes/{id}/paste", "types a path into the pane (drives: DRIVES_HAND_WRITTEN)"),
+    // A ladder start (aru-143): another machine's, let in by the start
+    // ticket it carries, not by the caller's role.
+    ("/api/a2a/start", "a machine's ladder start: its ticket decides"),
     // Block calls: the arguments depend on the block's type and method (#459).
     ("/api/blocks/{id}/call/{method}", "block calls, decided per method"),
     ("/api/panes/{id}/hook", "hook input, not yet converted"),

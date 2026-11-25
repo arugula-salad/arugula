@@ -168,7 +168,12 @@ signed-in session.
   `remote-sessions.jsonl` in the state directory
   (`crates/daemon/src/remote_log.rs`). The machine's Settings page shows
   it under Remote sessions, to its owner only (`GET /api/remote-sessions`),
-  and `arugulad sharing log` prints it on the machine.
+  and `arugulad sharing log` prints it on the machine. An agent another of
+  your machines started here for a board (aru-143) is an `agent` line in
+  the same file: which machine, which board and issue, which block.
+- **Agents started here for a board** need a start ticket control signs
+  within the board's grant, checked here as a token is, and of this
+  machine's own account (`crates/daemon/src/ladder.rs`).
 - **What only the machine can turn off:** typing through control.
   `arugulad sharing remote-input off`, run on the machine, makes everyone
   who comes with a machine token a viewer, a session shared with them

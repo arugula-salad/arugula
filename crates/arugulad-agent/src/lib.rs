@@ -328,7 +328,8 @@ pub struct TurnStat {
 /// a follow-up queued mid-turn is credited to its own author (M255). A
 /// mention (#611) carries its tag, so its turn reports `working` when it is
 /// sent and `read` when it ends (#540). The replies of one thread that wait
-/// together are one prompt (#580), with every one's tag.
+/// together are one prompt (#580), with every one's tag, and so is what
+/// woke the block together (#1339), whatever its threads.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
@@ -819,8 +820,11 @@ impl Inner {
         if let Some(by) = &q.by {
             e["by"] = json!(by);
         }
-        if let [m] = q.mention.as_slice() {
-            e["mention"] = m.to_json();
+        match q.mention.as_slice() {
+            [] => {}
+            [m] => e["mention"] = m.to_json(),
+            // A wake's (#1339).
+            all => e["mentions"] = all.iter().map(MentionTag::to_json).collect(),
         }
         self.note(e);
     }
@@ -959,7 +963,7 @@ impl Inner {
                     text: e["text"].as_str().unwrap_or_default().to_owned(),
                     images: strings(&e["images"]),
                     by: e["by"].as_str().map(str::to_owned),
-                    mention: mention_of(&e["mention"]).into_iter().collect(),
+                    mention: mentions_of(e),
                 };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
@@ -3293,6 +3297,13 @@ fn mention_of(v: &Value) -> Option<MentionTag> {
     MentionTag::from_json(v)
 }
 
+/// The mentions a `send` or a logged queue entry carries: its `mention`, or
+/// the `mentions` of a wake (#1339), which are one prompt.
+fn mentions_of(v: &Value) -> Vec<MentionTag> {
+    let many = v["mentions"].as_array().map(Vec::as_slice).unwrap_or_default();
+    mention_of(&v["mention"]).into_iter().chain(many.iter().filter_map(mention_of)).collect()
+}
+
 impl Agent {
     fn changed(&self) {
         let _ = self.tx.send(Msg::Changed);
@@ -3562,7 +3573,7 @@ impl Agent {
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
-        let mention: Vec<_> = mention_of(&args["mention"]).into_iter().collect();
+        let mention = mentions_of(args);
         let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned), mention };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();

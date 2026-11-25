@@ -258,11 +258,13 @@ struct DayRule: View {
 }
 
 /// Someone's square: their initials on a color their name picks, the same
-/// every time. An agent's has a chip in the corner.
+/// every time, or their picture when there is one. An agent's has a chip in
+/// the corner.
 struct Avatar: View {
     let name: String
     var size: CGFloat = 36
     var agent = false
+    var picture: UIImage? = nil
 
     private static let tones: [Color] = [
         Palette.accent, Palette.info, Palette.ok, Palette.peach, Palette.teal, Palette.pink, Palette.warn, Palette.merged,
@@ -276,9 +278,15 @@ struct Avatar: View {
             .fill(Avatar.tones[Int(hash % UInt32(Avatar.tones.count))])
             .frame(width: size, height: size)
             .overlay {
-                Text(initials.isEmpty ? "?" : initials)
-                    .font(Face.display(size * 0.5, "Black"))
-                    .foregroundStyle(Palette.void)
+                if let picture {
+                    Image(uiImage: picture).renderingMode(.original).resizable().scaledToFill()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+                } else {
+                    Text(initials.isEmpty ? "?" : initials)
+                        .font(Face.display(size * 0.5, "Black"))
+                        .foregroundStyle(Palette.void)
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if agent {

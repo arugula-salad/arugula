@@ -476,12 +476,53 @@ pub enum Proposal {
         why: String,
     },
     /// Stop these sessions of the project (`ses_…`), as their cards'
-    /// **Stop** does.
+    /// **Stop** does. A machine's agent (Arugula #1417) names agent blocks
+    /// on its own machine instead (`blocks`, by pane), and no sessions.
     Close {
+        #[serde(default)]
         sessions: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        blocks: Vec<u32>,
         #[serde(default)]
         why: String,
     },
+}
+
+/// The route a machine's agent proposes by (Arugula #1417), `POST`, signed
+/// as the machine, a [`MachinePropose`] answered a [`MachineProposed`]:
+/// the chief of staff on one of its person's machines asks them to approve
+/// what only they may do. Control checks it as its post in their staff
+/// room is checked (`threads.post`), and the card is a hosted session's
+/// card (`via` `ask:prp_…`). **Approve** sends the machine
+/// `agents.approved` ([`crate::forge::AskApproved`]), which does it there
+/// as the person, and `ask.answered` follows as for a session's.
+pub fn agent_proposals(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/proposals")
+}
+
+/// [`agent_proposals`]' body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachinePropose {
+    pub proposal: Proposal,
+    /// The proposing agent's session, by its name on the machine.
+    pub session: String,
+    /// Its block, by pane: a start works in its repo.
+    pub pane: u32,
+    /// A close's blocks as the machine sees them now, for the card: `id`
+    /// is `%N`, `title` the block's, `state` its agent's.
+    #[serde(default)]
+    pub blocks: Vec<ProposalSession>,
+}
+
+/// [`agent_proposals`]' answer: the card (`prp_…`, what `ask.answered`
+/// matches as `ask`), and its message in the person's staff room.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineProposed {
+    pub ask: String,
+    pub room: String,
+    pub seq: i64,
 }
 
 /// A proposal as its card draws it ([`ChatAsk::proposal`]).
@@ -1101,7 +1142,12 @@ mod tests {
         let p: Proposal =
             serde_json::from_value(serde_json::json!({ "action": "close", "sessions": ["ses_a"], "why": "idle" }))
                 .unwrap();
-        assert_eq!(p, Proposal::Close { sessions: vec!["ses_a".into()], why: "idle".into() });
+        assert_eq!(p, Proposal::Close { sessions: vec!["ses_a".into()], blocks: vec![], why: "idle".into() });
+        // A machine's agent's close (Arugula #1417): its blocks, by pane.
+        let m: Proposal =
+            serde_json::from_value(serde_json::json!({ "action": "close", "blocks": [4, 9], "why": "done" })).unwrap();
+        assert_eq!(m, Proposal::Close { sessions: vec![], blocks: vec![4, 9], why: "done".into() });
+        assert_eq!(serde_json::to_value(&p).unwrap().get("blocks"), None, "a session's says none");
         let op = crate::work::SessionIssuesOp::Propose { proposal: p };
         let v = serde_json::to_value(&op).unwrap();
         assert_eq!((v["op"].as_str(), v["proposal"]["action"].as_str()), (Some("propose"), Some("close")));

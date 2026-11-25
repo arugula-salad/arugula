@@ -52,8 +52,8 @@ constrains:
   - "path:crates/daemon/src/machine_token.rs"
   - "path:crates/daemon/src/peer.rs"
   - "path:crates/daemon/src/board_attach.rs"
-  - "path:crates/arugulad-labs/src/agents/mod.rs"
-  - "path:crates/arugulad-labs/src/agents/delegate.rs"
+  - "path:crates/control-wire/src/ladder.rs"
+  - "path:crates/daemon/src/ladder.rs"
   - "path:crates/arugulad-mcp/src/tools.rs"
 ---
 
@@ -103,7 +103,7 @@ A JWT the hub signs with its issuer keys, like a machine token, with
 | `aud` | The target machine's id. |
 | `from` | The calling machine's id. The target refuses it from a channel whose caller is another machine. |
 | `grant` | The board's grant (#1416), or none for a lead start the person's own approval is making. |
-| `board` | The board. |
+| `board`, `project` | The board, and its project, where the block is attached. |
 | `rung` | `lead` or `issue`. |
 | `issue` | The row's issue (`iss_…` or `fi_…`), for `issue`. |
 | `recipe` | The recipe it wears, or none for plain Claude Code. |
@@ -231,9 +231,16 @@ grant, with its machines, cap, what counts against it and *Revoke*, is
 4. #1416 (the card and the grant) and #1438 (the lead's starts inside it)
    build on these.
 
-Where: `crates/control-wire/src/machine_token.rs` (the ticket's claims),
-`crates/daemon/src/machine_token.rs` (its check), `crates/daemon/src/peer.rs`
-(the channel), `crates/arugulad-labs/src/agents/` (the start route, beside
-*Run there*), `crates/daemon/src/board_attach.rs` (the attach with the
-grant), `crates/arugulad-mcp/src/tools.rs` (`start_agent`'s `machine`); the
+**Amended while building step 2** (2026-11-24): the ticket also names the
+board's `project`, where the target attaches the block. `start_agent` takes
+the target as `to` (its schema keeps `machine` and `on` for retired
+arguments). The start route is the daemon's own (`ladder.rs`), not Labs',
+since the grant is its gate; the block keeps the start in `work.ladder`.
+
+Where: `crates/control-wire/src/ladder.rs` (the ticket's claims and the
+start), `crates/daemon/src/machine_token.rs` (its check),
+`crates/daemon/src/ladder.rs` (the caller, the start route and the target's
+checks), `crates/daemon/src/peer.rs` (the channel),
+`crates/daemon/src/board_attach.rs` (the attach with the ticket),
+`crates/arugulad-mcp/src/tools.rs` (`start_agent`'s `board` and `to`); the
 ticket route and the grant's checks are in arugula-salad/cloud.

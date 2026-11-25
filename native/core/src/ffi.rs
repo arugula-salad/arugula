@@ -204,6 +204,21 @@ pub unsafe extern "C" fn aru_control_call(
     unsafe { give(call(), err, to_c) }
 }
 
+/// A `GET` whose reply isn't JSON (a picture): its bytes, as base64, the
+/// one string here that isn't JSON. Blocks, as [`aru_control_call`] does.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_control_bytes(
+    c: *const Control,
+    path: *const c_char,
+    err: *mut *mut c_char,
+) -> *mut c_char {
+    use base64::Engine as _;
+    let c = unsafe { &*c };
+    let path = unsafe { text(path) };
+    let got = c.bytes(&path).map(|b| base64::engine::general_purpose::STANDARD.encode(b));
+    unsafe { give(got, err, to_c) }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_control_free(c: *mut Control) {
     if !c.is_null() {
