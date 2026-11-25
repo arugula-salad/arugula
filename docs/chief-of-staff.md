@@ -456,7 +456,11 @@ the other machines, the cap, the lapse) and sends `agents.approved`
 lead as a ladder start: a start ticket under the grant, then an agent block
 titled "Lead · <board>", in a worktree of the project's repo when it has a
 clone, which takes the board's lead (`lead_board`, by that title), so the
-board's thread reaches it. Started, the grant replaces any the board had;
+board's thread reaches it. The lead starts as the board-lead recipe starts
+its issue agents: `permission_mode` `auto`, your own Claude Code settings,
+and `allow` `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep` and `WebFetch`,
+so its commands don't each raise a card. Never a mode that skips every
+check. Started, the grant replaces any the board had;
 not started (offline, remote input off, too old), the grant is revoked and
 the card says why. **Deny** drops it.
 

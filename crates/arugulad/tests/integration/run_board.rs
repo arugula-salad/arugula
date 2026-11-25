@@ -287,6 +287,11 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     assert_eq!(b["state"]["work"]["ladder"]["rung"], "lead", "{b}");
     assert_eq!(b["state"]["title"], "Lead · Launch", "a title, so its session's posts find it: {b}");
     assert_eq!(b["state"]["work"]["ladder"]["by_session"], "Chief of staff", "{b}");
+    // It works without a card for each command, as the board-lead recipe's
+    // issue agents do (Arugula #1440).
+    assert_eq!((&b["state"]["permission_mode"], &b["state"]["user_settings"]), (&json!("auto"), &json!(true)), "{b}");
+    let allow = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch"].map(|t| json!({ "tool": t }));
+    assert_eq!(b["state"]["allow"], json!(allow), "{b}");
     d.wait(lead_block, "idle");
     assert!(prompts(&d, lead_block).contains("You lead the board brd_1"), "{}", prompts(&d, lead_block));
 

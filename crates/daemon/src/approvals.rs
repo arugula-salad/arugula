@@ -19,7 +19,8 @@
 //!   the board's grant on Approve and sends this to the grant's lead
 //!   machine, whichever asked; the lead starts as a ladder start does
 //!   (`ladder.rs`: a start ticket under the grant, then the board's lead),
-//!   in a worktree of the project's repo when there's a clone of it here.
+//!   in a worktree of the project's repo when there's a clone of it here,
+//!   in mode `auto` with [`LEAD_ALLOW`] and the person's own settings.
 //!
 //! Remote input off here refuses both, as it refuses a ladder start: they
 //! type into terminals on this machine through control.
@@ -173,6 +174,12 @@ pub fn lead_prompt_of(board: &str) -> String {
     )
 }
 
+/// The tools a board's lead uses without asking. It starts in mode `auto`
+/// with these and the person's own settings, as the board-lead recipe starts
+/// its issue agents (Arugula #1440): in the default mode every command it
+/// runs is a card for its person.
+pub const LEAD_ALLOW: &[&str] = &["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch"];
+
 /// `run_board`: the board's lead here, as a ladder start under the grant
 /// control just wrote.
 async fn run_board(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId>), String> {
@@ -193,6 +200,9 @@ async fn run_board(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<Pa
         prompt,
         title: a.board_title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| format!("Lead · {t}")),
         by_session: Some(a.session.clone()).filter(|s| !s.is_empty()),
+        permission_mode: Some("auto".into()),
+        allow: LEAD_ALLOW.iter().map(|&t| t.to_owned()).collect(),
+        user_settings: true,
         ..Default::default()
     };
     let started = crate::ladder::start(app, ask).await?;
