@@ -41,6 +41,27 @@ pub struct Work {
     pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<WorkBoard>,
+    /// A ladder start's (aru-143): for which board, as which rung, and who
+    /// started it from where.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ladder: Option<LadderWork>,
+}
+
+/// What a block a ladder start opened keeps of it ([`Work::ladder`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LadderWork {
+    pub board: String,
+    pub rung: arugula_control_wire::ladder::Rung,
+    /// The board's grant it counts against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<String>,
+    /// Its start ticket's `jti`.
+    pub ticket: String,
+    /// The machine that started it, by name and id, and its session.
+    pub by_machine: String,
+    pub by_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_session: Option<String>,
 }
 
 /// The current project of `arugula issue` and `arugula open`, set in an
@@ -117,9 +138,23 @@ pub async fn keep(
     take: bool,
     session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
+    keep_as(app, home, issue, pane, take, session, None).await
+}
+
+/// [`keep`], for a block a ladder start opened (aru-143): `ticket` is its
+/// start ticket's `jti`, which control counts against the board's grant.
+pub async fn keep_as(
+    app: &Arc<App>,
+    home: Option<String>,
+    issue: &str,
+    pane: PaneId,
+    take: bool,
+    session: Option<String>,
+    ticket: Option<String>,
+) -> Result<Vec<WorkBoard>, NotKept> {
     let lead = crate::agent_mentions::session_name(app, pane).await;
     let named = lead.is_some();
-    let boards = attach(app, home.clone(), issue, pane, take, session, lead).await?;
+    let boards = attach(app, home.clone(), issue, pane, take, session, lead, ticket).await?;
     if !named {
         lead_when_named(app.clone(), home, issue.to_owned(), pane);
     }
@@ -149,7 +184,7 @@ fn lead_when_named(app: Arc<App>, home: Option<String>, issue: String, pane: Pan
                 return;
             }
             if let Some(name) = crate::agent_mentions::session_name(&app, pane).await {
-                match attach(&app, home, &issue, pane, false, None, Some(name)).await {
+                match attach(&app, home, &issue, pane, false, None, Some(name), None).await {
                     Ok(_) => debug!(pane, issue, "a block leads its issue's thread, by the name it has now"),
                     Err(why) => debug!(pane, issue, "a block doesn't lead its issue's thread: {why}"),
                 }
@@ -165,7 +200,7 @@ fn lead_when_named(app: Arc<App>, home: Option<String>, issue: String, pane: Pan
 /// boards, none when it isn't on one. It leads no thread: it wasn't started
 /// on the issue.
 pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Vec<WorkBoard> {
-    let boards = match attach(app, home, issue, pane, false, None, None).await {
+    let boards = match attach(app, home, issue, pane, false, None, None, None).await {
         Ok(b) => b,
         Err(why) => {
             debug!(pane, issue, "a branch's issue isn't attached: {why}");
@@ -296,11 +331,17 @@ async fn attach(
     take: bool,
     session: Option<String>,
     lead: Option<String>,
+    ticket: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
     let Some(enrolled) = app.control.enrolled() else {
         return Err("this machine hasn't joined Arugula cloud, so the row wasn't attached".into());
     };
-    let project = write_project(app, home).await?;
+    // A ladder start's ticket names its board's project, and control
+    // checks this machine's grant over it at the attach (aru-143).
+    let project = match (&ticket, home) {
+        (Some(_), Some(id)) => Project { name: id.clone(), id },
+        (_, home) => write_project(app, home).await?,
+    };
     let body = serde_json::to_value(AttachBlock {
         issue: issue.to_owned(),
         machine: enrolled.keys.id(),
@@ -308,6 +349,7 @@ async fn attach(
         take,
         session,
         lead,
+        ticket,
     })
     .map_err(|e| e.to_string())?;
     let v =

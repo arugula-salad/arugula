@@ -125,6 +125,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
+        // aru-143: a ladder start from another of this account's machines.
+        // The handler checks its start ticket: of this account, from the
+        // machine whose channel sends it.
+        ["api", "a2a", "start"] if !get => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
         // from where a "from now" share starts).
         ["api", "history" | "events"] if get => Policy::Handler,

@@ -5582,6 +5582,14 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "board": {
+            "default": null,
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chat": {
             "default": false,
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
@@ -5667,6 +5675,14 @@
           "title": {
             "default": null,
             "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "default": null,
+            "description": "With board: another of your machines to start it on, by name or id.\nDefault: this one. One that's offline is refused, naming the grant's\nmachines that are online.",
             "type": [
               "string",
               "null"
@@ -5948,6 +5964,14 @@
             ],
             "description": "Open it beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
+          "board": {
+            "default": null,
+            "description": "A board it works for, under the board's grant (aru-143): with issue,\nan issue agent on that issue's row; without, the board's lead. It\nruns Claude Code (with recipe, wearing it), in a new worktree of that\nmachine's clone of cwd's repo (or your pane's), and control checks\nthe board's grant first (its machines, how many agents at once, not\nlapsed or revoked) and that the machine is online. Only prompt,\nrecipe, issue, cwd, session and to apply.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "chat": {
             "default": false,
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
@@ -6033,6 +6057,14 @@
           "title": {
             "default": null,
             "description": "A short name for the block, shown instead of the agent's name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "to": {
+            "default": null,
+            "description": "With board: another of your machines to start it on, by name or id.\nDefault: this one. One that's offline is refused, naming the grant's\nmachines that are online.",
             "type": [
               "string",
               "null"
