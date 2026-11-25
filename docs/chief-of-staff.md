@@ -23,10 +23,34 @@ block.
 
 ## On a machine
 
-It runs as an agent block. `start_agent` is to start it (Arugula #1338), and
-the daemon is to wake it when it's idle (Arugula #1339): on your post in your
-staff room, which it leads, or when one of its watches fires. Each wake is
-one turn, and it differs from the hosted one in three ways:
+It runs as an agent block. `start_agent` starts it (Arugula #1338), and the
+daemon wakes it when it's idle, with nobody typing in its pane (Arugula
+#1339). Each wake is one turn, and it differs from the hosted one in three
+ways (below). Two things wake it:
+
+- **Your post in your staff room.** It leads the room, so control tells its
+  machine, naming its session (`agents.mention` with `session`), and the
+  daemon sends the post to the block named that, as its next prompt.
+- **One of its watches firing.** A watch belongs to its block's Claude Code
+  session: control sends the watch's one message for that session, and the
+  daemon gives it to the block that holds it.
+
+A message for an agent block that isn't in a turn waits about a second for
+others (`agent_mentions`' `WAKE_SETTLE`), and all that came by then go in as
+one prompt. One that comes while it's in a turn waits in its queue for the
+turn to end, as any follow-up does.
+
+When its machine is offline or asleep, control knows: the Overview's staff
+tab says **asleep: <machine> is offline**, from the fleet's status. Your
+posts stay in the staff room, and control keeps each one it couldn't tell,
+and each watch's message, as `offline`. When the daemon is back on the relay,
+control sends them all at once (`redeliver`, the newest 20 of the last day,
+and a watch's message within its window), so it wakes once for all of them
+and catches up from its cursor. `crates/arugulad/tests/integration/chief_of_staff_wakes.rs`
+shows both wakes on an idle block and the one wake on return, against a
+fake control.
+
+It differs from the hosted one in three ways:
 
 - **Its notes** are in `~/.chief-of-staff/<project>.json` on the machine, one
   file per project, since the machine's home is every project's.

@@ -1193,7 +1193,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
-        followups: Arc::new(agent_mentions::TurnReports(turns_tx)),
+        followups: Arc::new(agent_mentions::TurnReports(turns_tx.clone())),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
@@ -1251,7 +1251,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hand::Hands::open(&state_dir),
         rules,
     );
-    // Control hears where the turns that took teammates' mentions are (#540).
+    // Control hears where the turns that took teammates' mentions are (#540),
+    // and of the ones a wake couldn't send (#1339).
+    app.agent_mentions.wakes.report_to(turns_tx);
     crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
     // The watches it holds itself, on its own panes and blocks.
     crate::task::spawn(local_watches::keep(app.clone()));
