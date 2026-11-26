@@ -280,7 +280,7 @@ function Session({ m, s, to, last, phone, picked, pinned, ...data }: { m: Machin
             {tabs > 1 && <h4 class="machines-tab dim">{t.name ?? `Tab ${s.tabs.indexOf(t) + 1}`}</h4>}
             <ul class="panes-rows">
               {t.panes.map((p) => (
-                <Row key={p.key} p={p} to={to(machineAt(m, p.id))} last={isLast(last, m, p)} phone={phone} />
+                <PaneLine key={p.key} p={p} to={to(machineAt(m, p.id))} last={isLast(last, m, p)} phone={phone} />
               ))}
             </ul>
           </div>
@@ -295,7 +295,7 @@ function Session({ m, s, to, last, phone, picked, pinned, ...data }: { m: Machin
   );
 }
 
-function Row({ p, to, last, phone }: { p: FleetPane; to: string; last: boolean; phone: boolean }) {
+function PaneLine({ p, to, last, phone }: { p: FleetPane; to: string; last: boolean; phone: boolean }) {
   const asks = needsYou(p.info);
   const what = whatItDoes(p);
   // A pane that says nothing of itself reads as its kind: once.

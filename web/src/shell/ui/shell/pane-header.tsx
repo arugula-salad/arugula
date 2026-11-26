@@ -11,7 +11,7 @@ import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/ui/icons";
-import { HintChip } from "../hints";
+import { PaneHint } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
 import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
 
@@ -165,7 +165,7 @@ export function PaneHeader({
       where={where && where !== title ? <BarWhere class="pane-header-where" title={cwd ?? where}>{where}</BarWhere> : undefined}
       actions={
         <>
-          <HintChip client={client} pane={id} />
+          <PaneHint client={client} pane={id} />
           {sizedElsewhere && (
             <span class="pane-header-sized" data-sized-elsewhere title="Another window set this tab's size">
               <span class="pane-header-sized-what">Sized by another window</span>

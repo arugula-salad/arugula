@@ -7943,7 +7943,10 @@ html[data-scheme="light"] .doc {
   justify-content: center;
 }
 
+/* The picture sits over the letters and fades in once it has loaded
+   (#112, #110). */
 .msg-avatar {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: var(--msg-gutter, 36px);
@@ -7956,9 +7959,13 @@ html[data-scheme="light"] .doc {
 }
 
 .msg-avatar img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
 .msg-hover-time {
@@ -12176,19 +12183,7 @@ button.chat-agent-name:hover {
   color: var(--fg);
 }
 
-/* Pictures and presence (#112, #110). The picture sits over the letters
-   and fades in once it has loaded. */
-.msg-avatar {
-  position: relative;
-}
-
-.msg-avatar img {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
+/* Pictures and presence (#112, #110). */
 .msg-avatar img.loaded {
   opacity: 1;
 }

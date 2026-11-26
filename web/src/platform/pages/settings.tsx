@@ -33,7 +33,7 @@ export function SettingsPage({ r }: { r: SettingsRoute }) {
             <PageHeader title="Settings" sub={scope.whose}>
               <Scopes r={r} />
             </PageHeader>
-            {scope.pick && <Picker r={r} label={scope.pick} />}
+            {scope.pick && <ScopePick r={r} label={scope.pick} />}
           </>
         }
       >
@@ -85,7 +85,7 @@ function Scopes({ r }: { r: SettingsRoute }) {
 }
 
 /** Which machine, project or team: the scope's picker. */
-function Picker({ r, label }: { r: SettingsRoute; label: string }) {
+function ScopePick({ r, label }: { r: SettingsRoute; label: string }) {
   const { machines } = useMachines();
   const choices = r.scope === "machine" ? (machines ?? []) : choicesOf(r);
   const value = r.scope === "machine" ? (r.machine ?? "") : r.scope === "project" ? r.project : r.scope === "team" ? r.owner : "";

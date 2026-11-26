@@ -6,6 +6,7 @@
 // with an id (an issue, a board, a setting, a file) an `ObjectChip`, and a
 // tip about a pane a `HintChip`. The looks are ./state-chip.css.
 
+import type { State } from "../kit/state-mark";
 import type { ComponentChildren } from "preact";
 import "./state-chip.css";
 import { CloseIcon, IconButton } from "./icons";
@@ -49,10 +50,12 @@ export function Chip({
   );
 }
 
-/** A state, as one chip everywhere: a dot and its word in its tone. */
-export function StateChip({ tone, children, ...rest }: { tone: Tone | null; class?: string; title?: string; children: ComponentChildren } & Data) {
+/** A state, as one chip everywhere: a dot and its word in its tone.
+ * `state` names it as the kit's StateMark does (`data-state`), for the screens
+ * that move onto the kit; the chip still draws as it always has. */
+export function StateChip({ tone, state, children, ...rest }: { tone: Tone | null; state?: State; class?: string; title?: string; children: ComponentChildren } & Data) {
   return (
-    <Chip tone={tone} dot {...rest}>
+    <Chip tone={tone} dot data-state={state} data-kit={state && "state"} {...rest}>
       {children}
     </Chip>
   );

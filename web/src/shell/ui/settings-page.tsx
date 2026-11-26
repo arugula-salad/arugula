@@ -25,7 +25,7 @@ import { subscribePush } from "./notify";
 import { settingsRoute } from "./settings-route";
 
 /** One row: a switch, a choice, an action, or a line that only says. */
-function Row({ item, group, did }: { item: MenuItem; group?: string; did: () => void }) {
+function MenuLine({ item, group, did }: { item: MenuItem; group?: string; did: () => void }) {
   if (item === "separator" || "header" in item) return null;
   if ("submenu" in item) {
     const choice = item.submenu.some((i) => i !== "separator" && "checked" in i && i.checked !== undefined);
@@ -34,7 +34,7 @@ function Row({ item, group, did }: { item: MenuItem; group?: string; did: () => 
         <span class="settings-row-name">{item.label}</span>
         <ul class={choice ? "settings-choices" : "settings-rows"} role={choice ? "radiogroup" : undefined} aria-label={item.label}>
           {item.submenu.map((i, n) => (
-            <Row key={n} item={i} group={choice ? item.label : undefined} did={did} />
+            <MenuLine key={n} item={i} group={choice ? item.label : undefined} did={did} />
           ))}
         </ul>
       </li>
@@ -96,7 +96,7 @@ export function SettingsPage({ client }: { client: Client }) {
   const rows = (items: MenuItem[]) => (
     <ul class="settings-rows">
       {items.map((item, n) => (
-        <Row key={n} item={item} did={did} />
+        <MenuLine key={n} item={item} did={did} />
       ))}
     </ul>
   );

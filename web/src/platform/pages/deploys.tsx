@@ -129,7 +129,7 @@ export function DeploysPage({ project }: { project: string }) {
           </thead>
           <tbody>
             {page.deploys.map((d) => (
-              <Row key={d.id} d={d} />
+              <DeployLine key={d.id} d={d} />
             ))}
           </tbody>
         </table>
@@ -143,7 +143,7 @@ export function DeploysPage({ project }: { project: string }) {
   );
 }
 
-function Row({ d }: { d: DeploySummary }) {
+function DeployLine({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
   return (
     <tr class="deploy-row" data-deploy-row={d.id} data-deploy-state={d.state} onClick={(e) => followRow(e, path)}>
