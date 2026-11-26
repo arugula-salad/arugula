@@ -17,6 +17,7 @@
 import type { ComponentChildren, FunctionComponent } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { apply as applyAppearance, legible, palette, PALETTES } from "../../shared/appearance";
+import { paint as paintLook } from "../../shared/kit/look";
 import { Bar, BarTitle, BarWhere } from "../../shared/ui/bar";
 import { EmptyLine, EmptyState, BlockError, BlockLoading } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
@@ -124,7 +125,9 @@ const noop = () => {};
 // ---- sections
 
 function TypeScale() {
-  const names = useMemo(() => tokens(/^--text-[a-z0-9]+$/).sort(numeric), []);
+  // Today's steps; kit/tokens.css's role names for them (--text-label …)
+  // join when the kit rebuilds this page (design lift, phase 2).
+  const names = useMemo(() => tokens(/^--text-(xs|sm|md|lg|xl|2xl|doc)$/).sort(numeric), []);
   return (
     <div class="design-type">
       {names.map((name) => {
@@ -904,7 +907,7 @@ type Scheme = "slate" | "latte";
 function paint(id: Scheme) {
   const p = PALETTES.find((x) => x.id === id)!;
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(legible(p))) root.style.setProperty(`--${k}`, v);
+  for (const [k, v] of Object.entries(paintLook(p.ui, !p.light))) root.style.setProperty(`--${k}`, v);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.palette = p.id;

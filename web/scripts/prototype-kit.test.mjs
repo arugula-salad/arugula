@@ -20,6 +20,16 @@ registerHooks({
 const { PALETTES, legible, contrast } = await import("../src/shared/appearance.ts");
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+/** style.css with the role tokens (kit/tokens.css) it imports, each legacy
+ * name that's an alias of a role (`--text-xs: var(--text-label)`) written
+ * with the role's value, so a test reads the app's value under either name. */
+function appStyle() {
+  const css = read("../src/shared/kit/tokens.css") + read("../src/shared/style.css");
+  return css.replace(/(--[\w-]+): var\((--[\w-]+)\);/g, (all, name, role) => {
+    const v = css.match(new RegExp(`${role}: ([^;]+);`))?.[1];
+    return v && !v.startsWith("var(") ? `${name}: ${v};` : all;
+  });
+}
 const runner = read("../src/shared/ui/runner.html");
 const kit = runner.match(/<template id="arugula-kit"><style>([\s\S]*?)<\/style><\/template>/)?.[1];
 
@@ -133,7 +143,7 @@ test("the runner writes the kit into the prototype's document, after the policy"
 });
 
 test("the kit's type scale is style.css's: the same sizes and line-heights", () => {
-  const style = read("../src/shared/style.css");
+  const style = appStyle();
   for (const step of ["xs", "sm", "md", "lg", "xl", "2xl", "doc"]) {
     const app = style.match(new RegExp(`--text-${step}: ([\\d.]+px);`))?.[1];
     assert.ok(app, `style.css declares --text-${step}`);
@@ -147,7 +157,7 @@ test("the kit's type scale is style.css's: the same sizes and line-heights", () 
 });
 
 test("the kit's icon sizes are style.css's, and ar-icon draws as the app's icons do", () => {
-  const style = read("../src/shared/style.css");
+  const style = appStyle();
   for (const step of ["xs", "sm", "md", "lg"]) {
     const app = style.match(new RegExp(`--icon-${step}: ([\\d.]+px);`))?.[1];
     assert.ok(app, `style.css declares --icon-${step}`);
@@ -162,7 +172,7 @@ test("the kit's icon sizes are style.css's, and ar-icon draws as the app's icons
 });
 
 test("the kit's dialog sits under style.css's backdrop and has its title size", () => {
-  const style = read("../src/shared/style.css");
+  const style = appStyle();
   const app = style.match(/--backdrop: (rgb\([^)]*\));/)?.[1];
   assert.ok(app, "style.css declares --backdrop");
   assert.equal(kit.match(/--ar-backdrop: (rgb\([^)]*\));/)?.[1], app, `--ar-backdrop is ${app}`);
@@ -173,7 +183,7 @@ test("the kit's dialog sits under style.css's backdrop and has its title size", 
 });
 
 test("the kit's card is the app's: its sizes, its tones and Latte's tint", () => {
-  const style = read("../src/shared/style.css");
+  const style = appStyle();
   for (const [app, ar] of [["card-pad", "card-pad"], ["card-pad-dense", "card-pad-dense"], ["card-gap", "card-gap"], ["card-bar", "card-bar"]]) {
     const v = style.match(new RegExp(`--${app}: ([^;]+);`))?.[1];
     assert.ok(v, `style.css declares --${app}`);
