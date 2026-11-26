@@ -29,7 +29,7 @@ import { sessionLabel } from "../shared/chief-of-staff";
 import { leadAwake } from "../shell/swarm/overview";
 import { AgentHead, starterOf } from "./agent-head";
 import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
-import { StaffMove, StaffStart } from "./overview-staff-start";
+import { StaffMove, StaffRestart, StaffStart } from "./overview-staff-start";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -313,6 +313,9 @@ function StaffTab({ room, title, phone }: { room: string; title: string; phone: 
     <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>
       {(at.state === "asleep" || at.state === "none") && place && r.project && (
         <StaffMove key={at.state === "asleep" ? at.machine : ""} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} asleepOn={at.state === "asleep" ? at.machine : undefined} />
+      )}
+      {(at.state === "awake" || at.state === "idle" || at.state === "unknown") && place && r.project && (
+        <StaffRestart key={at.machine} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} runsOn={at.machine} />
       )}
       <RoomBody key={r.id} room={r} phone={phone} embedded name={title} empty={{ title: "Nothing said to your chief of staff yet.", why }} />
     </div>
