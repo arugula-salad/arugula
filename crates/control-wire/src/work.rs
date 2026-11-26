@@ -900,6 +900,10 @@ pub enum SessionIssuesOp {
     /// phone. The session does nothing itself: the person's Approve does
     /// it, as them, and `ask.answered` tells the session how it went.
     Propose { proposal: crate::sessions::Proposal },
+    /// Cancel one of the session's own to-dos (Arugula #1462) while it's
+    /// open: it leaves its person's Needs you, and `ask.answered` says
+    /// `cancelled`. Only a to-do is cancelled.
+    ProposalCancel { ask: String },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -968,6 +972,10 @@ pub enum SessionIssuesGiven {
         ask: String,
         room: String,
         seq: i64,
+    },
+    /// Cancelled (`ProposalCancel`).
+    ProposalCancelled {
+        ask: String,
     },
     /// Not done, and why (the agent reads it).
     Refused {
