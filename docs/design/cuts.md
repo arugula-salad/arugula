@@ -18,3 +18,4 @@ if people miss it. Newest at the bottom.
 - **The switcher's Show archived:** archived projects are listed last in Go to…, marked archived (Lift 3, Arugula #1479).
 - **The Machines rail count:** it counted unread run threads; Runs' own view still does (Lift 3, Arugula #1479).
 - **Your picture on the rail:** the kit's Avatar draws your initials, on the rail and a phone's bar (Lift 3, Arugula #1479).
+- **The team as the crumb's first step:** the crumb starts at the project; a team's pages are under Settings and Chat (Lift 3, Arugula #1479).

@@ -87,7 +87,7 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await reset(page);
   await expect(page.getByRole("navigation", { name: "Places", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "This machine", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Where you are", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Machines' views" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: /^Sessions on / })).toBeVisible();
   await expect(page.getByRole("tablist", { name: /^Tabs in / })).toBeVisible();
@@ -98,7 +98,7 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
   // The header, the tab strip and the toolbar sit above the panes; the
   // footer below; the rail and the sidebar to their left.
   const main = (await page.locator(".main").boundingBox())!;
-  for (const sel of [".ws-head", ".ws-tabs", "[data-pane-toolbar]"]) expect((await page.locator(sel).boundingBox())!.y).toBeLessThan(main.y);
+  for (const sel of ["[data-top]", ".ws-tabs", "[data-pane-toolbar]"]) expect((await page.locator(sel).boundingBox())!.y).toBeLessThan(main.y);
   expect((await page.locator("[data-status-footer]").boundingBox())!.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
   for (const sel of ["[data-rail]", "[data-session-sidebar]"]) {
     const b = (await page.locator(sel).boundingBox())!;
@@ -121,7 +121,7 @@ test.describe("phone", () => {
     await reset(page);
     // M113: a phone keeps its own header; none of the workspace's chrome.
     await expect(page.locator(".phone-bar")).toBeVisible();
-    await expect(page.locator("[data-rail], .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-status-footer]")).toHaveCount(0);
+    await expect(page.locator("[data-rail], [data-top], [data-session-sidebar], [data-pane-toolbar], [data-status-footer]")).toHaveCount(0);
     const pane = await active(page);
     await page.evaluate(
       (p) => fetch(`/api/panes/${p}/attention`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "needs_input" }) }),

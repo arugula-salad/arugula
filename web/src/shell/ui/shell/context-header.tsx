@@ -1,16 +1,16 @@
-// Over the panes, the workspace's context header (M108, #1023) says where
-// you are: the machine and how it's reached, the session and the tab, then
-// command search, the bell, Share, the people here, the account and the
-// window's buttons. It's the desktop app's titlebar.
+// Over the panes, the workspace's top bar (M108, #1023; the kit's since Lift
+// 3, #1479) says where you are: the machine, the session and the tab, as a
+// crumb; then how it's reached, its places, the bell and the people here;
+// then Go to… and Share. It's the desktop app's titlebar.
 
 import { tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
-import { CommandsButton } from "../app-bar";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet, HostButton, hostMenuShown, machineState } from "../hosts";
 import { PeopleBar, shareSession } from "../people";
 import { UpdateChip } from "../update";
-import { WindowButtons } from "../../../shared/ui/window-buttons";
+import type { Step } from "../../../shared/kit/crumb";
+import { TopBar } from "../../../shared/kit/frame/top";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";
@@ -85,15 +85,6 @@ export function SidebarToggle({ client }: { client: Client }) {
   );
 }
 
-/** The step between two crumbs, as the Overview's bar draws it (platform/bar.tsx). */
-function Sep() {
-  return (
-    <span class="app-path-sep" aria-hidden="true">
-      <ChevronIcon dir="right" />
-    </span>
-  );
-}
-
 /** The workspace's header. */
 export function ContextHeader({
   client,
@@ -114,57 +105,42 @@ export function ContextHeader({
   const shown = client.shownSessions();
   const session = shown.find((s) => s.id === client.session) ?? shown[0];
   const tab = client.tabView();
-  return (
-    <header class="ws-head" data-tauri-drag-region>
-      {/* The place stack, as the Overview's bar shows it: machine, then (on the
-          panes) session and tab. This header doesn't know the shown project's
-          name (the platform's list), so the stack starts at the machine. */}
-      <nav class="ws-crumbs app-path ws-stack" aria-label="This machine" data-tauri-drag-region>
-        {/* The machine's name even where there's no menu of others (a
-            daemon's own page alone): HostButton draws nothing then. */}
-        {hostMenuShown() ? (
-          <HostButton path={false} />
-        ) : (
-          <span class="ws-host-name" title="This machine">
-            {directory.current || client.hostName || "This machine"}
-          </span>
-        )}
-        {panes && session && (
-          <span class="app-path-step">
-            <Sep />
-            <SessionButton client={client} session={session} setRenaming={setRenaming} />
-          </span>
-        )}
-        {panes && session && tab && (
-          <span class="app-path-step ws-crumb-tab" title="This tab" data-tauri-drag-region>
-            <Sep />
-            <span class="ws-crumb-tab-name app-path-here">{tabLabel(client, tab)}</span>
-          </span>
-        )}
-        <ConnectionChip client={client} />
-      </nav>
+  // Machine › session › tab: the machine and the session are menus of their
+  // own; the machine's name even where there's no menu of others (a
+  // daemon's own page alone: HostButton draws nothing then).
+  const steps: Step[] = [
+    {
+      label: directory.current || client.hostName || "This machine",
+      hook: "machine",
+      node: hostMenuShown() ? <HostButton path={false} /> : undefined,
+    },
+  ];
+  if (panes && session) steps.push({ label: session.name, hook: "session", node: <SessionButton client={client} session={session} setRenaming={setRenaming} /> });
+  if (panes && session && tab) steps.push({ label: tabLabel(client, tab), hook: "tab" });
+  // The machine's own until Machines' lift (6): how it's reached and its
+  // places beside the crumb; an update, what waits and who's here on the
+  // right, past the empty middle (the window's drag, desktop-xvfb).
+  const views = (
+    <>
+      <ConnectionChip client={client} />
       {/* Docs sits under this head (Arugula #796); the other places cover it
           with a bar of their own (AppBar). */}
       {(panes || at === "docs") && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
-      <div class="bar-fill" data-tauri-drag-region />
-      <CommandsButton search />
+    </>
+  );
+  const tools = (
+    <>
       <UpdateChip client={client} />
       {/* M111: what waits on you, on every machine. */}
       <AttentionBell client={client} />
-      {/* Sharing is the daemon's owner's (M13), and in sight so it's found (#551). */}
-      {panes && session && !state.roles && (
-        <button
-          class="ws-share"
-          aria-label="Share session"
-          title={offlineWhy(client) ?? "Share this session with someone"}
-          disabled={!client.connected}
-          onClick={() => shareSession(session.id)}
-        >
-          Share
-        </button>
-      )}
       <PeopleBar client={client} />
-      <WindowButtons />
-    </header>
+    </>
   );
+  // Sharing is the daemon's owner's (M13), and in sight so it's found (#551).
+  const share = panes && session && !state.roles && (
+    <button class="k-top-act ws-share" aria-label="Share session" title={offlineWhy(client) ?? "Share this session with someone"} disabled={!client.connected} onClick={() => shareSession(session.id)}>
+      Share
+    </button>
+  );
+  return <TopBar steps={steps} views={views} tools={tools} share={share} />;
 }
