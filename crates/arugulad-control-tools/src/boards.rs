@@ -700,6 +700,27 @@ async fn boards_call(c: &Call<'_>, method: Method, path: &str, body: Option<Valu
     c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
 }
 
+/// Post `ask`. A control from before Arugula #1465 knows no
+/// `conversation` and refuses the body ([`unknown_field`]): it's asked
+/// again once without it, so the ask goes in and its answer wakes no one.
+async fn ask_call(c: &Call<'_>, path: &str, ask: NewAsk) -> Result<Value, String> {
+    let has = ask.conversation.is_some();
+    match c.app().control.cloud(Method::POST, path, Some(&given(ask.clone())?)).await {
+        Err(CloudRefused::Said { status, said: s, .. }) if has && unknown_field(status, &s) => {
+            let bare = NewAsk { conversation: None, ..ask };
+            boards_call(c, Method::POST, path, Some(given(bare)?)).await
+        }
+        r => r.map_err(said),
+    }
+}
+
+/// Whether control refused a body it couldn't read: its JSON extractor's
+/// 422, which has no words of its own (the platform's own refusals say
+/// why, as `error`).
+fn unknown_field(status: u16, said: &str) -> bool {
+    status == 422 && said.starts_with("control answered")
+}
+
 /// A board as the platform sends it.
 fn view_of(v: Value) -> Result<BoardView, String> {
     serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent a board I can't read: {e}"))
@@ -1655,15 +1676,15 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                 Some(me) => arugulad_base::agent_mentions::asking(c.app(), me).await,
                 None => None,
             };
-            let body = given(NewAsk {
+            let ask = NewAsk {
                 who: a.who,
                 question: a.question,
                 why: a.why,
                 options: a.options,
                 recommend: a.recommend,
                 conversation,
-            })?;
-            let v = boards_call(c, Method::POST, &agent_board_row_ask(&a.board, &row.id), Some(body)).await?;
+            };
+            let v = ask_call(c, &agent_board_row_ask(&a.board, &row.id), ask).await?;
             one_row(&view_of(v)?, &format!("Asked on {}.", row.item_label()), &row.id, a.verbose)
         }
         "note" => {
@@ -2120,6 +2141,17 @@ mod tests {
         );
         let r: ReleaseArgs = serde_json::from_value(json!({ "board": "b", "item": "ARUGU-2" })).unwrap();
         assert_eq!((r.item.as_str(), r.verbose), ("ARUGU-2", false));
+    }
+
+    /// A control from before Arugula #1465 refuses an ask's conversation
+    /// with its JSON extractor's wordless 422: that one is asked again
+    /// without it. The platform's own refusals, which say why, aren't.
+    #[test]
+    fn only_a_body_control_couldnt_read_is_asked_again() {
+        assert!(unknown_field(422, "control answered 422"));
+        assert!(!unknown_field(422, "a note row has nothing to act on: ask on the issue's row"));
+        assert!(!unknown_field(400, "control answered 400"));
+        assert!(!unknown_field(409, "control answered 409"));
     }
 
     /// An ask names who and the question, and leaves out what isn't given.
