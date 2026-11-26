@@ -815,16 +815,22 @@ pub struct Inbox {
 pub const INBOX_GROUPS: [&str; 4] = ["decide", "named", "chat", "ready"];
 
 /// An item's kind (Arugula #1430), with its group: `agent_ask`,
-/// `permission`, `agent_failed`, `proposal`, `board_ask`,
+/// `permission`, `agent_failed`, `approval`, `todo`, `board_ask`,
 /// `deploy_approval`, `checks_failed`, `run_failed` and
 /// `changes_requested` decide; `review_request`, `mention` and `assigned`
 /// name the reader; `dm` and `thread_news` are chat; `turn_finished` is
 /// ready. A client shows a kind it doesn't know by its title.
-pub const INBOX_KINDS: [&str; 15] = [
+///
+/// An agent's card in its person's staff room (Arugula #1467) is an
+/// `approval` (start, close, Run this board: Approve or Deny) or a `todo`
+/// (work only they can do: Done or Can't, with a note). Before it, both
+/// were `proposal`.
+pub const INBOX_KINDS: [&str; 16] = [
     "agent_ask",
     "permission",
     "agent_failed",
-    "proposal",
+    "approval",
+    "todo",
     "board_ask",
     "deploy_approval",
     "checks_failed",
@@ -844,12 +850,13 @@ pub const INBOX_KINDS: [&str; 15] = [
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxItem {
-    /// Stable and unique for the reader, and a push's tag: `prp_…` (a
-    /// proposal), `ask_…` (a board ask), `dep_…` (a deploy), `ses_…:<since>`
-    /// (a hosted session's open ask, Arugula #1393), `room:<id>`
-    /// (a DM, a thread or a chat mention), or an entry's item and reason
-    /// (`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).
-    /// `POST /api/inbox/{id}` marks it.
+    /// Stable and unique for the reader, and a push's tag: `prp_…` (an
+    /// agent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`
+    /// (a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula
+    /// #1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's
+    /// item and reason (`fi_…:review_requested`, `iss_…:mentioned`,
+    /// `run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an
+    /// approval or a to-do.
     pub id: String,
     /// One of [`INBOX_KINDS`].
     pub kind: String,
@@ -878,7 +885,20 @@ pub struct InboxItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub snippet: Option<String>,
-    /// Who asks or wrote.
+    /// The card's decision lines, as plain text (Arugula #1467): what its
+    /// staff card says, by the same words, so a client shows the expanded
+    /// row without reading the card. An `approval`'s are its terms (a Run
+    /// this board's lead, its issue agents' machines, the cap, the lapse
+    /// and what each machine said of its clone; a close's blocks; a start's
+    /// repo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its
+    /// how when it has one: its steps as written, in one line with its
+    /// newlines, for the mono well. Never a secret, never a to-do's note.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+    pub lines: Vec<String>,
+    /// Who asks or wrote. An agent's card is from its agent (`agent`, the
+    /// session's id or a machine's agent's name, and `machine`); a chief of
+    /// staff's `name` is `Chief of staff · <the project's name>`.
     #[serde(default)]
     pub from: InboxFrom,
     /// What it's about, and where Open goes.
@@ -933,9 +953,13 @@ pub struct InboxSubject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub project: Option<String>,
+    /// The asker's machine: an agent's card's is the machine its agent
+    /// asked from, never what it would act on (a close's blocks are in
+    /// `lines`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub machine: Option<String>,
+    /// The asker's block on `machine`, as `%N`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub pane: Option<String>,
@@ -954,9 +978,11 @@ pub struct InboxSubject {
 }
 
 /// How to answer an item in place. `via` is `attention_act`,
-/// `session_action`, `proposal`, `board_answer`, `deploy` or
-/// `chat_reply`; `options` only where the server holds them (a board ask's
-/// and a proposal's).
+/// `session_action`, `card` (an `approval`), `todo`, `board_answer`,
+/// `deploy` or `chat_reply`; `options` only where the server holds them (a
+/// board ask's, an approval's and a to-do's). An approval or a to-do is
+/// answered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and
+/// a to-do's `note`), as its staff card is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -1018,6 +1044,18 @@ pub struct InboxMark {
     pub seen: Option<bool>,
     #[serde(default)]
     pub done: Option<bool>,
+    /// Answers an `approval` or a `todo` (Arugula #1467) with one of its
+    /// `answer.options`, as its staff card's buttons do, and by the same
+    /// path: only its person, once. `seen` and `done` are then ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub choice: Option<String>,
+    /// A to-do's answer's note: kept on the to-do for its person, never in
+    /// an item, a push or a live event. One that looks like a secret is
+    /// refused. Only with `choice`, and only a to-do's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
