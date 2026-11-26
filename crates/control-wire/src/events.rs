@@ -273,20 +273,21 @@ pub const CATALOG: &[EventType] = &[
     },
     // A machine's agent blocks, from the state its daemon reports for boards
     // (Arugula #1274): ids, a kind and times, never what is asked. Who may
-    // watch them is who sees a block's state on a board.
+    // watch them is who may read sessions: control takes sessions.start,
+    // sessions.reply or threads.read, as `list sessions` does (Arugula #1476).
     EventType {
         name: "session.needs_input",
         meaning: "An agent block on a machine started asking a person something: a question or a permission.",
         matches: &[BLOCK, PROJECT, MACHINE, PANE, m("kind", "what it asks for: ask or permission")],
         home: Home::Cloud,
-        power: Some("boards.read"),
+        power: Some("sessions.start"),
     },
     EventType {
         name: "session.idle",
         meaning: "An agent block on a machine finished its turn, or was answered and went idle.",
         matches: &[BLOCK, PROJECT, MACHINE, PANE],
         home: Home::Cloud,
-        power: Some("boards.read"),
+        power: Some("sessions.start"),
     },
     EventType {
         name: "run.ended",
@@ -811,7 +812,7 @@ mod tests {
         assert_eq!(lookup("board.closed").unwrap().power, Some("boards.read"));
         for name in ["session.needs_input", "session.idle"] {
             let t = lookup(name).unwrap();
-            assert_eq!((t.home, t.power), (Home::Cloud, Some("boards.read")), "{name}");
+            assert_eq!((t.home, t.power), (Home::Cloud, Some("sessions.start")), "{name}");
             assert!(["session", "project", "machine", "pane"].iter().all(|f| t.matches.iter().any(|m| m.name == *f)));
         }
         assert!(lookup("session.needs_input").unwrap().matches.iter().any(|f| f.name == "kind"));
