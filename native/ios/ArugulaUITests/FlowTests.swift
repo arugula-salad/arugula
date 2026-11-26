@@ -770,6 +770,32 @@ final class FlowTests: XCTestCase {
             shot(app, "3-answered")
         }
 
+        // A stand-in agent's to-do (Arugula #1470): it opens in its row under
+        // Needs you, its how is copied, and it's marked Done with a note. The
+        // script checks the agent woke with the note.
+        if let todo = env["ARUGULA_TODO"], !todo.isEmpty {
+            let row = app.buttons["need-todo:\(todo)"]
+            XCTAssertTrue(row.shows(within: 60), "no to-do under Needs you: \(app.debugDescription)")
+            clearAlerts()
+            row.tap()
+            let copy = app.buttons["todo-copy"]
+            XCTAssertTrue(copy.shows(within: 10), "the to-do didn't open with its how")
+            copy.tap()
+            let note = app.descendants(matching: .any)["todo-note"].firstMatch
+            focus(app, note)
+            note.typeText(env["ARUGULA_TODO_NOTE"] ?? "done from the phone")
+            shot(app, "3-todo")
+            let done = app.buttons["todo-Done"]
+            // The keyboard can cover it: put it away first.
+            if !done.isHittable { app.keyboards.buttons["Return"].firstMatch.tap() }
+            done.tap()
+            let doneBy = Date().addingTimeInterval(30)
+            while row.exists && Date() < doneBy { sleep(1) }
+            if row.exists { shot(app, "fail-todo") }
+            XCTAssertFalse(row.exists, "the to-do's row didn't clear: \(app.debugDescription)")
+            shot(app, "3-todo-done")
+        }
+
         // New (Arugula #1257): tell the board, which opens its thread; then
         // a New idea, filed as an issue and handed to an agent (on testnet,
         // which has no hosted sessions, a machine's: box-systemd's), whose

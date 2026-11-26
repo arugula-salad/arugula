@@ -26,6 +26,8 @@
 # opens it from Needs you and writes the address Approve opens to
 # HANDOFF/approve; something else approves it with the account's passkey and
 # writes HANDOFF/approved.
+# ARUGULA_TODO is a stand-in agent's to-do (its prp_ id, Arugula #1470): the
+# test opens it under Needs you and marks it Done with ARUGULA_TODO_NOTE.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -86,6 +88,7 @@ TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TE
   TEST_RUNNER_ARUGULA_STAFF_PROJECT="${ARUGULA_STAFF_PROJECT:-}" TEST_RUNNER_ARUGULA_STAFF_BOARD="${ARUGULA_STAFF_BOARD:-}" \
   TEST_RUNNER_ARUGULA_STAFF_LEAD="${ARUGULA_STAFF_LEAD:-}" TEST_RUNNER_ARUGULA_DEPLOY="${ARUGULA_DEPLOY:-}" \
   TEST_RUNNER_ARUGULA_GRANT_BOARD="${ARUGULA_GRANT_BOARD:-}" TEST_RUNNER_ARUGULA_RUN_BOARD="${ARUGULA_RUN_BOARD:-}" \
+  TEST_RUNNER_ARUGULA_TODO="${ARUGULA_TODO:-}" TEST_RUNNER_ARUGULA_TODO_NOTE="${ARUGULA_TODO_NOTE:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \

@@ -15,7 +15,9 @@
 # person signing in. ARUGULA_TEAM names a team's project with
 # ARUGULA_GRANT_BOARD, a board with a grant the person gave, whose Revoke the
 # test presses, and ARUGULA_RUN_BOARD, one with no lead and no grant, whose
-# Run this board it presses (Arugula #1456). Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
+# Run this board it presses (Arugula #1456). ARUGULA_TODO is a stand-in
+# agent's to-do (its prp_ id, Arugula #1470), marked Done under Needs you with
+# ARUGULA_TODO_NOTE. Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
 # host's: its port is reversed onto the device.
 #
 # It uses the device adb already has (ANDROID_SERIAL), else boots the AVD
@@ -63,7 +65,8 @@ args=(-e control "$url" -e machine "$machine" -e room "$room")
 # adb shell joins its arguments into one command line: an empty one would
 # vanish, and a question's words would split, so each is quoted for the
 # device's shell, and left out when empty.
-for kv in "board=${ARUGULA_BOARD:-}" "ask=${ARUGULA_ASK:-}" "team=${ARUGULA_TEAM:-}" "grant_board=${ARUGULA_GRANT_BOARD:-}" "run_board=${ARUGULA_RUN_BOARD:-}"; do
+for kv in "board=${ARUGULA_BOARD:-}" "ask=${ARUGULA_ASK:-}" "team=${ARUGULA_TEAM:-}" "grant_board=${ARUGULA_GRANT_BOARD:-}" "run_board=${ARUGULA_RUN_BOARD:-}" \
+  "todo=${ARUGULA_TODO:-}" "todo_note=${ARUGULA_TODO_NOTE:-}"; do
   [ -z "${kv#*=}" ] || args+=(-e "${kv%%=*}" "'${kv#*=}'")
 done
 
