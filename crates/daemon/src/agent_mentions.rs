@@ -1541,7 +1541,23 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &MachineAgentsAsk) -> O
 /// first was ([`route`]), and no session gets it twice. A watch's message
 /// is known by its watch, for the watch's life; a mention by its key, for
 /// a day.
+/// What this machine does when an answer to one of its agents' asks
+/// arrives (Arugula #1465), with the state dir and the ask's id: the `todo`
+/// tool forgets the to-do it kept for `list`. Set once, by the crate that
+/// keeps them.
+static ON_ANSWER: std::sync::OnceLock<fn(&std::path::Path, &str)> = std::sync::OnceLock::new();
+
+/// Set [`ON_ANSWER`].
+pub fn on_answer(f: fn(&std::path::Path, &str)) {
+    let _ = ON_ANSWER.set(f);
+}
+
 pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
+    // An answer settles its ask here, whether or not its session takes it
+    // now, and however often control sends it.
+    if let (Some(w), Some(f)) = (m.watch.as_ref().filter(|w| w.is_answer()), ON_ANSWER.get()) {
+        f(app.state_dir(), &w.id);
+    }
     let key = MentionKey::of(m).text();
     let now = arugula_e2e::now_ms();
     let state = app.mentions();
@@ -3204,6 +3220,24 @@ mod tests {
         assert_eq!(tags[0].1.headline, "Arugula: your ask prp_ab12 was answered", "never the note");
         assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("chief".into()), None, true));
         assert_eq!(d.got(2).len(), 1, "told once");
+    }
+
+    /// An answer arriving settles its ask on the machine (Arugula #1465): the
+    /// `todo` tool's hook runs with it, once per arrival, found or not; a
+    /// watch's message doesn't run it.
+    #[tokio::test]
+    async fn an_answer_runs_the_machines_hook_and_a_watch_doesnt() {
+        static GOT: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(vec![]);
+        fn got(_dir: &std::path::Path, id: &str) {
+            GOT.lock().unwrap().push(id.to_owned());
+        }
+        on_answer(got);
+        let d = Fake::new("answer-hook", &[1]).named(&[(1, "chief")]).conversing(&[(1, "c-mine")]);
+        deliver(&d, &watch_message("wch_hook", "c-mine")).await;
+        let answer = AgentMention { room: "prp_hook".into(), ..watch_message("prp_hook", "c-gone") };
+        assert_eq!(deliver(&d, &answer).await, routed(RoutedStep::Away, None, None, true));
+        let mine: Vec<String> = GOT.lock().unwrap().iter().filter(|i| i.ends_with("_hook")).cloned().collect();
+        assert_eq!(mine, ["prp_hook"], "its conversation away, the answer still settles it");
     }
 
     fn bare(step: RoutedStep) -> Routed {

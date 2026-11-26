@@ -15,9 +15,11 @@
 //! - **`list` is this machine's.** Control has no route that lists a
 //!   machine agent's to-dos, so the ones added here are kept in
 //!   `todos.json` in the state dir, by conversation (by session name for a
-//!   caller with none), until they're cancelled. The answer wakes the agent
-//!   with its note (Arugula #1465), but isn't kept here, so one answered
-//!   since stays listed until a cancel finds it settled.
+//!   caller with none), until they're cancelled or answered: the answer
+//!   wakes the agent with its note, and drops the to-do here as it arrives
+//!   (Arugula #1465, `agent_mentions::on_answer`). One answered while this
+//!   machine was away stays until its answer comes, or a cancel finds it
+//!   settled.
 //! - **`cancel`** is `agent_proposal_cancel`, as the session that asked;
 //!   control refuses one that isn't open, and says how it stands.
 
@@ -38,7 +40,6 @@ use serde_json::{Value, json};
 use crate::{
     control::CloudRefused,
     mcp::tools::{Call, Kind, Out, done, parse},
-    mux::Api,
 };
 
 pub(crate) const TOOL: &str = "todo";
@@ -55,7 +56,7 @@ pub(crate) const KINDS: &[Kind] = &[
     },
     Kind {
         name: "list",
-        description: "Your open to-dos, as this machine added them: id, what, its card and project. One answered since stays until you cancel it.",
+        description: "Your open to-dos, as this machine added them: id, what, its card and project. One leaves once its answer reaches you.",
         schema: schema_for_type::<ListArgs>,
         flag: None,
     },
@@ -118,24 +119,10 @@ async fn caller(c: &Call<'_>) -> Result<Caller, String> {
     let session = arugulad_base::agent_mentions::session_name(c.app(), pane)
         .await
         .ok_or("your pane has no session name for the to-do: give its tab a name")?;
-    let conversation = match arugulad_base::agent_mentions::conversation(c.app(), pane).await {
-        Some(id) => harness(c, pane).await.map(|agent| TodoConversation { agent: agent.into(), id }),
-        None => None,
-    };
+    // None for another ACP agent: control would refuse its harness, and
+    // nothing answers to it (Arugula #1465).
+    let conversation = arugulad_base::agent_mentions::asking(c.app(), pane).await;
     Ok(Caller { pane, session, conversation })
-}
-
-/// `claude` or `codex`: an agent block's agent, or a terminal's Claude Code
-/// (its hooks are Claude Code's). None for another ACP agent.
-async fn harness(c: &Call<'_>, pane: PaneId) -> Option<&'static str> {
-    let Some(b) = c.app().mux.api(|r| Api::Block(pane, r)).await.flatten() else {
-        return Some("claude");
-    };
-    match b.config()["agent"].as_str() {
-        Some("claude") => Some("claude"),
-        Some("codex") => Some("codex"),
-        _ => None,
-    }
 }
 
 /// The card's number, when the caller's card is a native `#N` of
@@ -338,7 +325,9 @@ fn keep(dir: &Path, k: Kept) -> std::io::Result<()> {
     write_unlocked(dir, &all)
 }
 
-fn drop_kept(dir: &Path, id: &str) {
+/// Also when its answer reaches this machine (Arugula #1465,
+/// `agent_mentions::on_answer`): answered, it's no longer open.
+pub(crate) fn drop_kept(dir: &Path, id: &str) {
     let _held = FILE.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = read_unlocked(dir);
     let n = all.len();

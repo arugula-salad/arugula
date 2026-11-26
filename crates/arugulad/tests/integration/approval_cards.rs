@@ -339,6 +339,26 @@ fn a_cards_answer_wakes_the_conversation_that_asked_with_no_watch() {
     d.wait_for("its answer", || f.answer("m-2").is_some());
     assert_eq!(prompts(&d, chief).matches("Your ask prp_0 was answered").count(), 1, "once");
 
+    // The done-when, on a machine: it adds a to-do with no watch, ends its
+    // turn, and Done wakes it with the note; the to-do leaves its list.
+    let added = mcp
+        .call("todo", json!({ "kind": "add", "what": "Run the migration", "why": "it needs your prod credentials" }))
+        .unwrap();
+    assert_eq!(added["todo"], "prp_1", "{added}");
+    assert!(added["summary"].as_str().unwrap().contains("no watch needed"), "{added}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[1];
+    assert_eq!(card["conversation"], json!({ "agent": "claude", "id": session }), "{card}");
+    assert!(f.asked("POST /api/daemon/watches").is_empty(), "no watch");
+    let listed = mcp.call("todo", json!({ "kind": "list" })).unwrap();
+    assert!(listed["summary"].as_str().unwrap().contains("prp_1"), "{listed}");
+    d.wait(chief, "idle");
+    let done = "Your to-do \"Run the migration\" (prp_1) is done: Ada did it.\nAda's note: \"14,203 rows\"";
+    f.send(json!({ "t": "op", "id": "m-3", "op": { "op": "agents.mention", "room": "prp_1", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": done, "watch": { "id": "prp_1", "session": session } } }));
+    d.wait_for("woken with the note", || prompts(&d, chief).contains("14,203 rows"));
+    let listed = mcp.call("todo", json!({ "kind": "list" })).unwrap();
+    assert!(!listed["summary"].as_str().unwrap().contains("prp_1"), "answered, it leaves the list: {listed}");
+
     drop(mcp);
     drop(d);
     let _ = std::fs::remove_dir_all(&tmp);
