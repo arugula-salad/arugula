@@ -755,3 +755,157 @@ button.k-foot-key:hover {
   padding: 10px 20px;
   border-top: 1px solid var(--line);
 }
+
+/* The rail: the mark, your projects' marks, the places, then the Inbox,
+   Settings and you (v6). On macOS the frame keeps the buttons' strip above
+   it (style.css, platform.css). */
+
+.k-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: var(--rail-w);
+  padding: 9px 0 10px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--line);
+  background: var(--canvas);
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+.k-rail :is(a, button) {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+.k-rail-brand {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+.k-marks {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 40px;
+  margin: -4px 0 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.k-mark-project {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: var(--card-raised);
+  color: var(--ink-dim);
+  font: 600 var(--text-meta) / 1 var(--font-sans);
+  cursor: pointer;
+}
+.k-mark-project:hover,
+.k-mark-project[aria-current] {
+  color: var(--ink);
+}
+.k-mark-project[aria-current] {
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--section), 0 0 0 2.5px var(--ink);
+}
+.k-mark-tip {
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  left: 42px;
+  display: none;
+  padding: 7px 11px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--shadow-raised);
+  color: var(--ink);
+  text-align: left;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+.k-mark-tip .m-meta {
+  display: block;
+  margin-top: 3px;
+}
+.k-mark-project:is(:hover, :focus-visible) .k-mark-tip {
+  display: block;
+}
+.k-rail-place {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 60px;
+  padding: 3px 0 6px;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: var(--text-label) / 1.3 var(--font-sans);
+  text-decoration: none;
+  cursor: pointer;
+}
+.k-rail-place:hover,
+.k-rail-place[aria-current] {
+  color: var(--ink);
+}
+.k-rail-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 26px;
+  border-radius: 7px;
+}
+.k-rail-place[aria-current] .k-rail-icon {
+  background: var(--card-raised);
+  box-shadow: var(--highlight);
+}
+.k-rail-count {
+  position: absolute;
+  top: -1px;
+  right: 8px;
+  min-width: 14px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  background: var(--needs);
+  color: var(--on-needs);
+  font: 600 var(--text-label) / 14px var(--font-mono);
+  text-align: center;
+}
+.k-rail-count.is-mention {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.k-mark-project .k-rail-count {
+  top: -5px;
+  right: -7px;
+  box-shadow: 0 0 0 2px var(--canvas);
+}
+.k-rail-fill {
+  flex: 1;
+}
+.k-rail-me {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}

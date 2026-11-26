@@ -105,7 +105,7 @@ export function swarmWallTests() {
     await page.keyboard.press("w");
     await outOfWall(page);
     // From the rail's button that opened the swarm too.
-    await page.locator(".ws-rail button").first().focus();
+    await page.locator("[data-rail] button").first().focus();
     await page.keyboard.press("w");
     await inWall(page);
     await page.keyboard.press("Escape");

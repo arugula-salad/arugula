@@ -8,7 +8,7 @@ import { active, panes, reset, tab, tabsInSession, openSettingsPage, closeSettin
 
 async function newWorkspace(page: Page) {
   await reset(page);
-  await expect(page.locator(".ws-rail")).toBeVisible();
+  await expect(page.locator("[data-rail]")).toBeVisible();
 }
 
 /** A new session named `name`, shown once it's there. */
@@ -106,16 +106,16 @@ test.describe("on a computer", () => {
     expect((await page.locator(".ws-head").boundingBox())!.y).toBe(0);
     await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
     const header = (await page.locator(".ws-head").boundingBox())!;
-    const brand = (await page.locator(".ws-brand").boundingBox())!;
+    const rail = (await page.locator("[data-rail]").boundingBox())!;
     expect(header.y).toBe(28);
-    expect(brand.y).toBe(header.y);
+    expect(rail.y).toBe(header.y);
     expect((await page.locator(".ws-crumbs").first().boundingBox())!.y).toBeGreaterThanOrEqual(28);
     await page.evaluate(() => {
       document.documentElement.dataset.nativeTabs = "";
       document.documentElement.style.setProperty("--native-tabs", "64px");
     });
     expect((await page.locator(".ws-head").boundingBox())!.y).toBe(64);
-    expect((await page.locator(".ws-brand").boundingBox())!.y).toBe(64);
+    expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(64);
   });
 
   test("on macOS the Docs page sits under the header and the native controls strip, as the panes do (Arugula #796)", async ({ page }) => {
@@ -129,21 +129,21 @@ test.describe("on a computer", () => {
     const head = (await page.locator(".ws-head").boundingBox())!;
     expect(head).toEqual(onPanes);
     expect(head.y).toBe(28);
-    expect((await page.locator(".ws-brand").boundingBox())!.y).toBe(head.y);
+    expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(head.y);
     await expect(page.locator(".ws-head .ws-search-button svg")).toBeVisible();
     // The page starts under it and doesn't cover the rail.
     const box = (await docs.boundingBox())!;
     expect(box.y).toBe(head.y + head.height);
-    expect(box.x).toBe((await page.locator(".ws-rail").boundingBox())!.width);
+    expect(box.x).toBe((await page.locator("[data-rail]").boundingBox())!.width);
     // A lone machine's Docs are Machines': Machines stays lit.
-    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("aria-current", "page");
   });
 
   test("rail routes keep the way back: Machines returns to the same tab and pane", async ({ page }) => {
     await newWorkspace(page);
     const t = (await tab(page)).id;
     const pane = await active(page);
-    const rail = page.locator(".ws-rail");
+    const rail = page.locator("[data-rail]");
     // The app's places (Arugula #1345). A machine on its own has no platform
     // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
     // Machines or Runs in its bar (its Docs are its bar's, Arugula #418).
@@ -176,7 +176,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
     await expect(caret).toHaveAttribute("aria-expanded", "false");
     await page.reload();
-    await expect(page.locator(".ws-rail")).toBeVisible();
+    await expect(page.locator("[data-rail]")).toBeVisible();
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
     await caret.click();
     await expect(page.locator("[data-session-sidebar]")).toBeVisible();
@@ -269,7 +269,7 @@ test.describe("on a computer", () => {
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
     await fresh.goto(page.url());
-    await expect(fresh.locator(".ws-rail")).toBeVisible();
+    await expect(fresh.locator("[data-rail]")).toBeVisible();
     await expect(fresh.locator("html")).toHaveAttribute("data-palette", "slate");
     await fresh.close();
   });

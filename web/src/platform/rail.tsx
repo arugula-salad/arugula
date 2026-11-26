@@ -1,7 +1,7 @@
 // The app's rail (#377; the project-rooted rail of Arugula #989; one
-// button per place since Arugula #1345): the same one as a machine's own
-// page's (shared/ui/rail), down the left on a computer. The project tile at
-// the top opens Go to…'s projects. Then the places: Overview, Boards, Docs,
+// button per place since Arugula #1345; the kit's since Lift 3, #1479): the
+// same one as a machine's own page's (shared/kit/frame/rail), down the left
+// on a computer, with your projects' marks under Arugula's. Then the places: Overview, Boards, Docs,
 // Machines and Chat; at the foot the Inbox, Settings and you. A place's
 // views are the bar's (`PlaceViews`), beside the path to where you are
 // (./bar). A phone has no rail: the places are a bar along the bottom
@@ -12,13 +12,16 @@ import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, OverviewIcon, SettingsIcon } from "../shared/ui/icons";
-import { Rail, type RailItem } from "../shared/ui/rail";
+import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, Mark, OverviewIcon, SettingsIcon } from "../shared/ui/icons";
+import { Rail, type ProjectMark, type RailPlace } from "../shared/kit/frame/rail";
 import { Count } from "../shared/ui/state-chip";
 import { AccountButton, chatPath, sectionOf } from "./bar";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
-import { useInboxCount } from "./inbox-count";
+import { useInboxByProject, useInboxCount } from "./inbox-count";
+import { leftAt } from "./goto-source";
+import { owners } from "./owners";
+import { placeOf } from "./places-kept";
 import { names } from "./links";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -94,7 +97,7 @@ function usePlaces() {
     { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home" || section === "deploys" || swarm, views: overviewViews },
     { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards", count: issues, views: [] },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs", views: [] },
-    { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: (!!m && !swarm) || section === "workspaces" || section === "runs", count: runs, views: machineViews },
+    { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: (!!m && !swarm) || section === "workspaces" || section === "runs", views: machineViews },
     { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: talk, views: [] },
   ];
   const foot: PlaceLink[] = [
@@ -107,23 +110,39 @@ function usePlaces() {
 
 const external = (to: string) => /^https?:/.test(to);
 
-const railItem = (p: PlaceLink): RailItem => ({
+const railPlace = (p: PlaceLink): RailPlace => ({
+  key: p.key,
   label: p.label,
   tip: p.tip,
-  aria: p.count?.n ? `${p.label}, ${p.count.n}${p.count.mention ? ", for you" : ""}` : undefined,
-  here: p.here,
-  hook: `data-open-${p.key}`,
   icon: p.icon,
+  here: p.here,
   count: p.count,
   href: p.to,
   // Control's page is a page load; the rest are this page's.
   onClick: external(p.to) ? undefined : () => go(p.to),
 });
 
+/** Your projects as the rail's marks (v6): each with what's for you there
+ * and where you left it. */
+function useMarks(shown: string | undefined): ProjectMark[] {
+  const counts = useInboxByProject();
+  return owners(session.projects).flatMap((o) =>
+    o.projects.map((p) => {
+      const kept = placeOf(p.id);
+      return { id: p.id, name: p.name, here: p.id === shown, count: counts.by.get(p.id) ?? 0, left: leftAt(kept), go: () => go(kept ?? pathOf({ page: "project", project: p.id }, names)) };
+    }),
+  );
+}
+
 export function PlatformRail() {
-  const { places, foot, project, shown } = usePlaces();
-  const brand = <ProjectTile project={project} shown={shown} />;
-  return <Rail brand={brand} items={places.map(railItem)} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
+  const { places, foot, shown } = usePlaces();
+  const marks = useMarks(shown);
+  const brand = (
+    <a class="k-rail-brand" data-rail-brand href="/" title="Arugula: your projects" aria-label="Arugula" onClick={(e) => follow(e, "/")}>
+      <Mark />
+    </a>
+  );
+  return <Rail brand={brand} marks={marks} onProjects={() => openGoTo("projects")} places={places.map(railPlace)} foot={foot.map(railPlace)} me={<AccountButton />} />;
 }
 
 /** The place you're in's views, in the bar (Arugula #1345): the Overview's
@@ -153,20 +172,6 @@ export function PlaceViews() {
   );
 }
 
-/** The project tile at the top of the rail: the project you're in; it
- * opens Go to…'s projects. */
-function ProjectTile({ project, shown }: { project: ReturnType<typeof session.project>; shown: string | undefined }) {
-  const name = shown && project ? project.name : "All projects";
-  const initial = shown && project ? (project.name.trim()[0] ?? "?").toUpperCase() : "∗";
-  return (
-    <button class="ws-brand ws-project-tile" data-project-switcher title={`${name}: switch project`} aria-label={`Project: ${name}`} aria-haspopup="dialog" onClick={() => openGoTo("projects")}>
-      <span class="ws-project-initial" aria-hidden="true">
-        {initial}
-      </span>
-    </button>
-  );
-}
-
 /** The phone's bar along the bottom (decision 15; Arugula #1345): the
  * rail's five places. A place's views are the top bar's; the Inbox is its
  * bell (`PhoneInbox`) and Settings is under your picture. */
@@ -178,7 +183,7 @@ export function PhoneTabs() {
         <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => !external(p.to) && (e.preventDefault(), go(p.to))}>
           {p.icon}
           <span>{p.label}</span>
-          {!!p.count?.n && <span class={p.count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{p.count.mention ? `@${p.count.n}` : p.count.n}</span>}
+          {!!p.count?.n && <span class={p.count.mention ? "k-rail-count is-mention" : "k-rail-count"} data-count>{p.count.mention ? `@${p.count.n}` : p.count.n}</span>}
         </a>
       ))}
     </nav>
@@ -201,7 +206,7 @@ export function PhoneInbox() {
       onClick={(e) => follow(e, inbox.to)}
     >
       <BellIcon />
-      {!!n && <span class={inbox.count?.mention ? "ws-rail-count mention" : "ws-rail-count"}>{inbox.count?.mention ? `@${n}` : n}</span>}
+      {!!n && <span class={inbox.count?.mention ? "k-rail-count is-mention" : "k-rail-count"} data-count>{inbox.count?.mention ? `@${n}` : n}</span>}
     </a>
   );
 }

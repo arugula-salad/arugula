@@ -8,8 +8,9 @@
 // control has a platform page.
 // It stays while the swarm or agents cover the panes, so the way back is
 // always in one place, and Machines goes back to the session's last tab and
-// pane (the routes never change the selection). The rail itself is
-// shared/ui/rail.tsx; this builds this page's items.
+// pane (the routes never change the selection). The rail itself is the
+// kit's (shared/kit/frame/rail.tsx); this builds this page's items, and
+// you're its foot (Lift 3).
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -17,7 +18,8 @@ import type { Client } from "../../client";
 import { directory } from "../../hosts";
 import { onSwarmRoute } from "../../swarm/route";
 import { openSettings } from "../settings-route";
-import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
+import { Rail as KitRail, type RailPlace } from "../../../shared/kit/frame/rail";
+import { AccountButton } from "../app-bar";
 import { openPlatform, platformHref } from "../../platform-links";
 import { BOARDS_TO, DOCS_TO, INBOX_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, machinesAt, openChat, openMachinesAt, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
@@ -57,22 +59,21 @@ export function Rail({ client }: { client: Client }) {
   /** One of the app's places, where control has a platform page (the
    * current project's, which it knows, Arugula #880): its own tab, or this
    * window in the app (openPlatform); a modified click is the browser's. */
-  const app = (to: string, label: string, tip: string, hook: string, icon: ComponentChildren): RailItem | false => {
+  const app = (to: string, label: string, tip: string, key: string, icon: ComponentChildren): RailPlace | false => {
     const href = platformHref(to);
-    return !!href && { label, tip, here: false, hook, icon, href, target: "arugula-platform", onClick: () => openPlatform(to) };
+    return !!href && { key, label, tip, here: false, icon, href, target: "arugula-platform", onClick: () => openPlatform(to) };
   };
-  const items: (RailItem | false)[] = [
-    app(PROJECTS_TO, "Overview", "Overview: your project's work", "data-open-overview", <OverviewIcon />),
-    app(BOARDS_TO, "Boards", "Boards: your project's boards and tickets", "data-open-boards", <BoardsIcon />),
-    app(DOCS_TO, "Docs", "Docs: your project's Docs", "data-open-docs", <DocsIcon />),
+  const items: (RailPlace | false)[] = [
+    app(PROJECTS_TO, "Overview", "Overview: your project's work", "overview", <OverviewIcon />),
+    app(BOARDS_TO, "Boards", "Boards: your project's boards and tickets", "boards", <BoardsIcon />),
+    app(DOCS_TO, "Docs", "Docs: your project's Docs", "docs", <DocsIcon />),
     // This page: the panes, the swarm, this machine's Docs and recipes.
-    { label: "Machines", tip: "Machines: your panes, the swarm and your team's machines", here: at !== "settings", hook: "data-open-machines", icon: <MachinesIcon />, onClick: machines },
+    { key: "machines", label: "Machines", tip: "Machines: your panes, the swarm and your team's machines", here: at !== "settings", icon: <MachinesIcon />, onClick: machines },
     threads && {
+      key: "chat",
       label: "Chat",
-      aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
       tip: "Chat: your team's rooms, and every thread on every machine",
       here: false,
-      hook: "data-open-chat",
       icon: <ChatIcon />,
       count: { n, mention },
       onClick: () => openChat(),
@@ -83,7 +84,8 @@ export function Rail({ client }: { client: Client }) {
   const onMachines = !!machinesAt(client);
   const brand = (
     <button
-      class="ws-brand"
+      class="k-rail-brand"
+      data-rail-brand
       aria-label={onMachines ? `Arugula: ${host} on Machines` : `Arugula: search the sessions on ${host}`}
       title={onMachines ? `${host} on Machines: its sessions, tabs and panes` : `Search the sessions on ${host}`}
       data-open-mark
@@ -92,9 +94,9 @@ export function Rail({ client }: { client: Client }) {
       <Mark />
     </button>
   );
-  const bottom: (RailItem | false)[] = [
-    app(INBOX_TO, "Inbox", "Inbox: what wants you, across your projects", "data-open-inbox", <BellIcon />),
-    { label: "Settings", tip: "Settings: this device, this machine and your account", here: at === "settings", hook: "data-open-settings", icon: <SettingsIcon />, onClick: settings },
+  const bottom: (RailPlace | false)[] = [
+    app(INBOX_TO, "Inbox", "Inbox: what wants you, across your projects", "inbox", <BellIcon />),
+    { key: "settings", label: "Settings", tip: "Settings: this device, this machine and your account", here: at === "settings", icon: <SettingsIcon />, onClick: settings },
   ];
-  return <SharedRail brand={brand} items={items.filter((i): i is RailItem => !!i)} bottom={bottom.filter((i): i is RailItem => !!i)} />;
+  return <KitRail brand={brand} places={items.filter((i): i is RailPlace => !!i)} foot={bottom.filter((i): i is RailPlace => !!i)} me={<AccountButton client={client} onRail />} />;
 }

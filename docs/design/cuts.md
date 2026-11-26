@@ -16,3 +16,5 @@ if people miss it. Newest at the bottom.
 - **The palette's other menu rows:** Go to… lists 25 commands (no clipboard ones, no single settings); the rest stay in their menus (Lift 3, Arugula #1479).
 - **Ctrl+Shift+P and Ctrl+Shift+G:** ⌘K / Ctrl+K (Ctrl+Shift+K from a terminal) opens Go to…; Go to directory… is a command in it (Lift 3, Arugula #1479).
 - **The switcher's Show archived:** archived projects are listed last in Go to…, marked archived (Lift 3, Arugula #1479).
+- **The Machines rail count:** it counted unread run threads; Runs' own view still does (Lift 3, Arugula #1479).
+- **Your picture on the rail:** the kit's Avatar draws your initials, on the rail and a phone's bar (Lift 3, Arugula #1479).

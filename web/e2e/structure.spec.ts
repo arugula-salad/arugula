@@ -100,7 +100,7 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
   const main = (await page.locator(".main").boundingBox())!;
   for (const sel of [".ws-head", ".ws-tabs", "[data-pane-toolbar]"]) expect((await page.locator(sel).boundingBox())!.y).toBeLessThan(main.y);
   expect((await page.locator("[data-status-footer]").boundingBox())!.y).toBeGreaterThanOrEqual(main.y + main.height - 1);
-  for (const sel of [".ws-rail", "[data-session-sidebar]"]) {
+  for (const sel of ["[data-rail]", "[data-session-sidebar]"]) {
     const b = (await page.locator(sel).boundingBox())!;
     expect(b.x + b.width).toBeLessThanOrEqual(main.x + 1);
   }
@@ -121,7 +121,7 @@ test.describe("phone", () => {
     await reset(page);
     // M113: a phone keeps its own header; none of the workspace's chrome.
     await expect(page.locator(".phone-bar")).toBeVisible();
-    await expect(page.locator(".ws-rail, .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-status-footer]")).toHaveCount(0);
+    await expect(page.locator("[data-rail], .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-status-footer]")).toHaveCount(0);
     const pane = await active(page);
     await page.evaluate(
       (p) => fetch(`/api/panes/${p}/attention`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ state: "needs_input" }) }),

@@ -56,7 +56,7 @@ const optIn = (p: Page) => p.addInitScript(() => Object.assign(window, { __arugu
 /** The page, connected and drawn, then a moment for the card to come. */
 async function load(page: Page) {
   await open(page);
-  await expect(page.locator(".ws-rail [data-open-settings]")).toBeVisible();
+  await expect(page.locator("[data-rail] [data-open-settings]")).toBeVisible();
   await page.waitForTimeout(500);
 }
 

@@ -113,7 +113,7 @@ test("an old #overview link lands on Machines at that machine, at its session's 
 
 test("on the daemon's own page, the mark opens Machines at this machine where there's a platform page, else the sidebar's search", async ({ page }) => {
   const all = await sessions(page, 2);
-  const mark = page.locator(".ws-rail [data-open-mark]");
+  const mark = page.locator("[data-rail] [data-open-mark]");
 
   // A machine on its own: no Machines page; the mark is the sidebar's search, and an old link the panes at its session.
   await expect(mark).toHaveAttribute("aria-label", /^Arugula: search the sessions on /);

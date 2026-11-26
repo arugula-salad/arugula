@@ -597,7 +597,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-project-rooms], [data-chat-off], [data-project-members], [data-project-runs], [data-project-repos], [data-project-envs], [data-project-boards], [data-ov-more]")).toHaveCount(0);
     // Chat is off here: no faces in the header.
     await expect(page.locator("[data-project-faces]")).toHaveCount(0);
-    await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-rail] [data-open-overview]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-place-views=overview] [data-view-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview.png") });
   });
@@ -733,7 +733,7 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${agent}`));
     await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible();
     // The rail's Overview, back.
-    await page.locator(".ws-rail [data-open-overview]").click();
+    await page.locator("[data-rail] [data-open-overview]").click();
     await expect(page.locator("[data-overview]")).toBeVisible();
   });
 

@@ -22,6 +22,7 @@ import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
+import { Avatar } from "../../shared/kit/avatar";
 import { Caret, SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
@@ -99,7 +100,8 @@ export function AppBar({
       {/* What waits on you, on every machine, in every bar (Arugula #637). */}
       {rail && <AttentionBell client={client} />}
       {end}
-      <AccountButton client={client} />
+      {/* With the rail, you're its foot (Lift 3). */}
+      {!rail && <AccountButton client={client} />}
       <WindowButtons />
     </header>
   );
@@ -130,8 +132,9 @@ export function CommandsButton({ search }: { search?: boolean }) {
 }
 
 /** The account (through control) and the settings that aren't any one
- * session's: this machine's, this device's, and help. */
-export function AccountButton({ client }: { client: Client | null }) {
+ * session's: this machine's, this device's, and help. On the rail's foot
+ * (`onRail`), your initials (the kit's Avatar). */
+export function AccountButton({ client, onRail = false }: { client: Client | null; onRail?: boolean }) {
   const account = useAccount();
   const login = account?.login() ?? null;
   const ref = useRef<HTMLButtonElement>(null);
@@ -149,11 +152,17 @@ export function AccountButton({ client }: { client: Client | null }) {
     // Arugula #1217; Go to… has it too.
     if (client?.state) items.push("separator", { label: "Send feedback…", run: () => openFeedback(client) });
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
-    // Right-aligned under the button; the menu keeps itself on screen.
-    openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
+    // Right-aligned under the button (beside it on the rail); the menu keeps itself on screen.
+    openMenu({ clientX: onRail ? r.right + 4 : r.right, clientY: onRail ? r.top : r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   // A daemon's own page has no account: the rail's Settings is all there is.
   if (rail && !account) return null;
+  if (onRail)
+    return (
+      <button ref={ref} type="button" class="k-rail-me" aria-haspopup="menu" aria-expanded={expanded} title="Your account" data-account-menu data-signed-in-as onClick={open} onContextMenu={open}>
+        <Avatar name={login ?? "?"} />
+      </button>
+    );
   return (
     <>
       <button

@@ -12,7 +12,7 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 async function newWorkspace(page: Page) {
   await reset(page);
-  await expect(page.locator(".ws-rail")).toBeVisible();
+  await expect(page.locator("[data-rail]")).toBeVisible();
 }
 
 /** Every pane of the shown tab, in reading order (also the ones a focused

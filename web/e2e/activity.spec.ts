@@ -18,7 +18,7 @@ async function newWorkspace(page: Page) {
     }
   });
   await reset(page);
-  await expect(page.locator(".ws-rail")).toBeVisible();
+  await expect(page.locator("[data-rail]")).toBeVisible();
 }
 
 test("a command shows under Commands, Refresh doesn't repeat it, and it brings its pane back", async ({ page }) => {

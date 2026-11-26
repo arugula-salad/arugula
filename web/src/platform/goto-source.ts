@@ -38,7 +38,7 @@ function read(project: string) {
 
 /** Where you were in a project, in a few words: its place, or the board or
  * Doc you had open. */
-function leftAt(path: string | null): string {
+export function leftAt(path: string | null): string {
   if (!path) return SECTION_LABEL.home;
   const [pathname, search] = path.split("?");
   const r = parse(pathname!, search ? `?${search}` : "");

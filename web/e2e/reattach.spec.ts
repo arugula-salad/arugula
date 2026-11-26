@@ -176,7 +176,7 @@ test("a reload comes back to the same session, tab and pane, with the sidebar as
 
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
-  await expect(page.locator(".ws-rail")).toBeVisible();
+  await expect(page.locator("[data-rail]")).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(session);
   await expect.poll(() => active(page)).toBe(second);
   expect((await tab(page)).root).toEqual(layout);

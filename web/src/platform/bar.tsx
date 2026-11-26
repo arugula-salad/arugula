@@ -17,7 +17,7 @@ import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
 import { openPlatformFeedback } from "./feedback";
 import { names } from "./links";
-import { AccountPicture } from "../shared/chat/avatar";
+import { Avatar } from "../shared/kit/avatar";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
 import { Caret, ChevronIcon } from "../shared/ui/icons";
@@ -177,16 +177,17 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
 
 /** You, and your account's menu: the status page on hosted Arugula
  * (Arugula #1176), feedback and signing out; your presence is Chat's
- * (Arugula #1079). On the rail's foot (`compact`, the picture alone) or a
- * phone's bar. The rail has Settings, so the menu has no way there; a
- * phone has no rail, so its menu keeps Your account… (Arugula #1319). */
-export function AccountButton({ compact = false }: { compact?: boolean }) {
+ * (Arugula #1079). Your initials (the kit's Avatar), on the rail's foot or a
+ * phone's bar. The rail has Settings, so the menu has no way there; a phone
+ * has no rail, so its menu keeps Your account… (Arugula #1319). */
+export function AccountButton() {
   useSubscribe((fn) => session.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
   const open = useMenuFrom(button);
   const phone = usePhone();
   const me = session.me;
   if (!me) return null;
+  const name = me.login || me.name || "?";
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const status = statusPage(controlOrigin());
@@ -200,28 +201,21 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
     ];
-    openMenu({ clientX: compact ? at.right + 4 : at.right, clientY: compact ? at.top : at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
+    openMenu({ clientX: phone ? at.right : at.right + 4, clientY: phone ? at.bottom + 4 : at.top, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
   };
   return (
     <button
       ref={button}
-      class={compact ? "account-button platform-me ws-rail-me" : "account-button platform-me"}
+      type="button"
+      class="k-rail-me"
       title={me.login ? `Signed in as ${me.login}` : "Signed in"}
-      aria-label={compact ? `You: ${me.login || me.name}` : undefined}
       aria-haspopup="menu"
       aria-expanded={open}
+      data-account-menu
       data-signed-in-as
       onClick={account}
     >
-      <span class="account-avatar" aria-hidden="true">
-        {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
-        <AccountPicture />
-      </span>
-      {!compact && (
-        <>
-          <span class="account-login">{me.login || me.name}</span> <Caret />
-        </>
-      )}
+      <Avatar name={name} />
     </button>
   );
 }
@@ -241,7 +235,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {!rail && <PhoneInbox />}
-      {!rail && <AccountButton compact />}
+      {!rail && <AccountButton />}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}
       <WindowButtons />
     </header>

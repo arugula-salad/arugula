@@ -116,15 +116,15 @@
 /* The desktop app on macOS: its buttons sit over the rail's top, in a strip
    above the page, as on the shell (shared/style.css's `.app.ws`). With no
    rail (a phone's width) they sit over the head's left end instead. */
-html[data-desktop="macos"]:not([data-native-tabs]) .platform:not(:has(> .ws-rail)) .platform-bar {
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:not(:has(> .k-rail)) .platform-bar {
   padding-left: 78px;
 }
-html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .ws-rail) {
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .k-rail) {
   position: relative;
   padding-top: 28px;
   box-sizing: border-box;
 }
-html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .ws-rail)::before {
+html[data-desktop="macos"]:not([data-native-tabs]) .platform:has(> .k-rail)::before {
   content: "";
   position: absolute;
   inset: 0 0 auto;
@@ -1498,49 +1498,6 @@ span.untri-title {
   margin-bottom: 16px;
 }
 
-/* The app's rail (Arugula #989): the project tile at its top (the
-   switcher), a line between the project's places and the team's, and you
-   at its foot. */
-.ws-project-tile {
-  border: 0;
-  border-bottom: 1px solid var(--line-strong);
-  background: none;
-  cursor: pointer;
-}
-
-.ws-project-initial {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--btn-radius);
-  background: var(--accent-fill);
-  color: var(--on-color);
-  font-size: var(--text-lg);
-  font-weight: 700;
-  line-height: 1;
-}
-
-.ws-project-tile:hover .ws-project-initial,
-.ws-project-tile[aria-expanded="true"] .ws-project-initial {
-  outline: 2px solid var(--chrome-selected-line);
-  outline-offset: 2px;
-}
-
-.ws-rail .ws-rail-me {
-  justify-content: center;
-  height: 40px;
-  margin-top: var(--space-1);
-  padding: 0;
-  border-left: 0;
-  background: none;
-}
-
-.ws-rail .ws-rail-me .account-avatar {
-  width: 28px;
-  height: 28px;
-}
-
 /* The bar's path to where you are: each step a level up. */
 .app-path {
   display: flex;
@@ -1615,7 +1572,7 @@ span.untri-title {
     color: var(--accent);
   }
 
-  .app-tab .ws-rail-count {
+  .app-tab .k-rail-count {
     top: 4px;
     right: calc(50% - 22px);
   }
@@ -1639,7 +1596,7 @@ span.untri-title {
   background: var(--chrome-selected);
 }
 
-.platform-inbox-bell .ws-rail-count {
+.platform-inbox-bell .k-rail-count {
   top: 2px;
   right: 0;
 }

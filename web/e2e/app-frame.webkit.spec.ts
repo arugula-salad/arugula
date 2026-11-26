@@ -38,8 +38,8 @@ test.describe("on a computer", () => {
 
   test("the rail is a button per place, one lit on each page; the bar has the place's views", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
-    expect(await hooks(page, ".ws-rail > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
-    const lit = page.locator(".ws-rail [aria-current=page]");
+    expect(await hooks(page, "[data-rail] > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
+    const lit = page.locator("[data-rail] [aria-current=page]");
     // By the rail's buttons: the app's own moves, no page load. Overview
     // and Machines show their place's views.
     for (const [key, url, views] of [
@@ -51,23 +51,23 @@ test.describe("on a computer", () => {
       ["inbox", "/inbox$", []],
       ["settings", "/settings", []],
     ] as const) {
-      await page.locator(`.ws-rail [data-open-${key}]`).click();
+      await page.locator(`[data-rail] [data-open-${key}]`).click();
       await expect(page).toHaveURL(new RegExp(url));
-      await expect(page.locator(`.ws-rail [data-open-${key}]`)).toHaveAttribute("aria-current", "page");
+      await expect(page.locator(`[data-rail] [data-open-${key}]`)).toHaveAttribute("aria-current", "page");
       await expect(lit, key).toHaveCount(1);
       await expect.poll(() => hooks(page, "[data-place-views] > *", "view"), key).toEqual(views);
     }
-    await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*$`));
-    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines$`));
+    await expect(page.locator("[data-rail] [data-open-overview]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*$`));
+    await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines$`));
     // Runs are Machines': lit, with its views.
     await page.goto(`/p/${P}/runs`);
-    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(lit).toHaveCount(1);
     await expect.poll(() => hooks(page, "[data-place-views] > *", "view")).toEqual(["machines", "runs"]);
     await expect(page.locator("[data-view-runs]")).toHaveAttribute("aria-current", "page");
     // The Swarm is the Overview's: its route lights the Overview.
     await page.goto(`/p/${P}/machines/swarm`);
-    await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-rail] [data-open-overview]")).toHaveAttribute("aria-current", "page");
     await expect(lit).toHaveCount(1);
   });
 });
@@ -77,11 +77,11 @@ test.describe("on an iPhone", () => {
 
   test("the five places are a bar along the bottom, the Inbox a bell in the top bar, and no page scrolls sideways", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
-    await expect(page.locator(".ws-rail")).toHaveCount(0);
+    await expect(page.locator("[data-rail]")).toHaveCount(0);
     expect(await hooks(page, "[data-phone-tabs] > *", "tab")).toEqual(["overview", "boards", "docs", "machines", "chat"]);
     await expect(page.locator("[data-phone-tabs] [data-tab-boards]")).toHaveAttribute("aria-current", "page");
     const bell = page.locator("[data-platform-bar] [data-phone-inbox]");
-    await expect(bell.locator(".ws-rail-count")).toHaveText("4");
+    await expect(bell.locator("[data-count]")).toHaveText("4");
     const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     for (const path of ["", "/boards", "/docs", "/chat", "/machines", "/runs"]) {
       await page.goto(`/p/${P}${path}`, { waitUntil: "domcontentloaded" });

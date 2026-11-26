@@ -46,7 +46,7 @@ async function seedThreads(page: Page) {
   }, P);
 }
 
-const rail = (page: Page, place: string) => page.locator(`.ws-rail [data-open-${place}]`);
+const rail = (page: Page, place: string) => page.locator(`[data-rail] [data-open-${place}]`);
 const lit = (page: Page, place: string) => expect(rail(page, place)).toHaveAttribute("aria-current", "page");
 /** A view in the bar's place (Arugula #1345). */
 const view = (page: Page, key: string) => page.locator(`[data-platform-bar] [data-view-${key}]`);
@@ -57,7 +57,7 @@ const hooks = (page: Page, sel: string, prefix: string) =>
 /** Which of the rail's places is lit: one at a time. */
 async function onlyLit(page: Page, key: string) {
   await lit(page, key);
-  await expect(page.locator(".ws-rail [aria-current=page]")).toHaveCount(1);
+  await expect(page.locator("[data-rail] [aria-current=page]")).toHaveCount(1);
 }
 
 test.describe("on a computer", () => {
@@ -65,12 +65,16 @@ test.describe("on a computer", () => {
 
   test("the rail is a button per place, Inbox and Settings at its foot; the bar is the path and the place's views", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
-    // The project's tile, the five places, then the Inbox, Settings and you.
-    await expect(page.locator(".ws-rail [data-project-switcher]")).toHaveText("A");
-    expect(await hooks(page, ".ws-rail > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
-    await expect(page.locator(".ws-rail [data-open-plan], .ws-rail [data-open-build], .ws-rail [data-open-talk]")).toHaveCount(0);
+    // Your projects' marks (this one ringed, with what's for you), the five
+    // places, then the Inbox, Settings and you.
+    const mark = page.locator("[data-rail] [data-project-switcher]");
+    await expect(mark).toHaveAttribute("aria-label", /^Arugula, 3 for you: your projects$/);
+    await expect(mark).toHaveAttribute("aria-current", "true");
+    await expect(page.locator(`[data-rail] [data-project-mark="prj_aaaa0003"]`)).toBeVisible();
+    expect(await hooks(page, "[data-rail] > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
+    await expect(page.locator("[data-rail] [data-open-plan], [data-rail] [data-open-build], [data-rail] [data-open-talk]")).toHaveCount(0);
     await onlyLit(page, "boards");
-    await expect(page.locator(".ws-rail [data-signed-in-as]")).toBeVisible();
+    await expect(page.locator("[data-rail] [data-signed-in-as]")).toBeVisible();
     // The path: the team, the project (a link up), the place.
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
     await expect(page.locator("[data-app-path] [data-path=project]")).toHaveAttribute("href", new RegExp(`^/p/${P}`));
@@ -146,7 +150,7 @@ test.describe("on a computer", () => {
     const swarm = page.locator("[data-app-swarm] .swarm");
     await expect(swarm).toBeVisible();
     // The rail and the bar stay, the Overview lit and its Swarm view.
-    await expect(page.locator(".ws-rail")).toBeVisible();
+    await expect(page.locator("[data-rail]")).toBeVisible();
     await onlyLit(page, "overview");
     await here(page, "swarm");
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula\s*Overview\s*Swarm/);
@@ -166,7 +170,7 @@ test.describe("on a computer", () => {
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
     await expect(swarm).toBeVisible();
-    await expect(page.locator(".ws-rail")).toBeVisible();
+    await expect(page.locator("[data-rail]")).toBeVisible();
     // Escape steps back to the Overview.
     await page.keyboard.press("Escape");
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
@@ -175,15 +179,15 @@ test.describe("on a computer", () => {
     await here(page, "overview");
   });
 
-  test("what's new in the issues' threads is a count on Boards; the runs', on Machines and Runs; chat's, on Chat (Arugula #1345)", async ({ page }) => {
+  test("what's new in the issues' threads is a count on Boards; the runs', on Runs (not Machines, Lift 3); chat's, on Chat (Arugula #1345)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/machines`);
     await seedThreads(page);
-    await expect(rail(page, "boards").locator(".ws-rail-count")).toHaveText("3");
-    await expect(rail(page, "machines").locator(".ws-rail-count")).toHaveText("@4");
-    await expect(rail(page, "overview").locator(".ws-rail-count")).toHaveCount(0);
-    await expect(rail(page, "docs").locator(".ws-rail-count")).toHaveCount(0);
+    await expect(rail(page, "boards").locator("[data-count]")).toHaveText("3");
+    await expect(rail(page, "machines").locator("[data-count]")).toHaveCount(0);
+    await expect(rail(page, "overview").locator("[data-count]")).toHaveCount(0);
+    await expect(rail(page, "docs").locator("[data-count]")).toHaveCount(0);
     await expect(view(page, "runs").locator(".count-after")).toHaveText("@4");
-    await expect(rail(page, "chat").locator(".ws-rail-count")).toHaveText("2");
+    await expect(rail(page, "chat").locator("[data-count]")).toHaveText("2");
   });
 
   test("the Issues page's path is Boards › Issues, Boards a link up; an issue's, Issues a link up too (Arugula #1387)", async ({ page }) => {
@@ -217,7 +221,7 @@ test.describe("on a computer", () => {
 
   test("your picture's menu is your name, Send feedback… and Sign out; Settings is the rail's; presence is Chat's (Arugula #1079)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
-    await page.locator(".ws-rail [data-signed-in-as]").click();
+    await page.locator("[data-rail] [data-signed-in-as]").click();
     const items = page.locator(".menu-item");
     await expect(items).toHaveText(["Send feedback…", "Sign out of this page"]);
     await expect(page.locator(".menu", { hasText: "Your presence" })).toHaveCount(0);
@@ -227,7 +231,7 @@ test.describe("on a computer", () => {
     await openApp(page, () => `/p/${P}/boards`);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
     await page.screenshot({ path: info.outputPath("match-desktop-closed.png") });
-    await page.locator(".ws-rail [data-project-switcher]").click();
+    await page.locator("[data-rail] [data-project-switcher]").click();
     const sw = page.getByRole("dialog", { name: "Switch project" });
     await expect(sw).toBeVisible();
     await expect(sw.locator("[data-goto=projects]")).toBeVisible();
@@ -242,7 +246,7 @@ test.describe("on a computer", () => {
     await sw.locator('[data-command="project/prj_aaaa0003"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0003[^/]*$/);
     // Your own project is named Default, and its address still says personal (Arugula #1165).
-    await page.locator(".ws-rail [data-project-switcher]").click();
+    await page.locator("[data-rail] [data-project-switcher]").click();
     await sw.locator('[data-command="project/prj_aaaa0001"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0001-personal$/);
   });
@@ -251,7 +255,7 @@ test.describe("on a computer", () => {
     const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     const frame = page.locator("[data-platform-machines]");
     // One rail, the app's, with Machines lit.
-    await expect(frame.locator(".ws-rail")).toHaveCount(1);
+    await expect(frame.locator("[data-rail]")).toHaveCount(1);
     await onlyLit(page, "machines");
     // The machine's page, as it ships, with Machines' views: Machines, Runs
     // (Arugula #1345), then its own Recipes. Its own Docs are the rail's Docs
@@ -389,11 +393,11 @@ test.describe("where you were", () => {
     await page.goto("/");
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
     await lit(page, "docs");
-    await page.locator(".ws-rail [data-project-switcher]").click();
+    await page.locator("[data-rail] [data-project-switcher]").click();
     await expect(page.locator(`[data-command="project/${P}"]`)).toContainText("Docs");
     await page.locator('[data-command="project/prj_aaaa0003"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0003[^/]*$/);
-    await page.locator(".ws-rail [data-project-switcher]").click();
+    await page.locator("[data-rail] [data-project-switcher]").click();
     await page.locator(`[data-command="project/${P}"]`).click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
   });
@@ -425,7 +429,7 @@ test.describe("on a phone", () => {
 
   test("the rail's five places are a bar along the bottom; the top bar has the project, the place's views, the Inbox's bell and you", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
-    await expect(page.locator(".ws-rail")).toHaveCount(0);
+    await expect(page.locator("[data-rail]")).toHaveCount(0);
     const tabs = page.locator("[data-phone-tabs]");
     await expect(tabs).toBeVisible();
     expect(await hooks(page, "[data-phone-tabs] > *", "tab")).toEqual(["overview", "boards", "docs", "machines", "chat"]);
@@ -435,7 +439,7 @@ test.describe("on a phone", () => {
     // The Inbox is a bell in the bar, with its count across your projects; Settings is under your picture.
     const bell = page.locator("[data-platform-bar] [data-phone-inbox]");
     await expect(bell).toBeVisible();
-    await expect(bell.locator(".ws-rail-count")).toHaveText("4");
+    await expect(bell.locator("[data-count]")).toHaveText("4");
     await expect(tabs.locator("[data-tab-inbox]")).toHaveCount(0);
     await expect(page.locator("[data-platform-bar] [data-signed-in-as]")).toBeVisible();
     // With no rail, the picture's menu keeps Your account… (Arugula #1319).
@@ -478,10 +482,10 @@ test.describe("on a phone", () => {
   test("what's new in the issues' threads is a count on the Boards tab; the runs', on Machines; chat's, on Chat", async ({ page }) => {
     await openApp(page, () => `/p/${P}`);
     await seedThreads(page);
-    await expect(page.locator("[data-tab-boards] .ws-rail-count")).toHaveText("3");
-    await expect(page.locator("[data-tab-machines] .ws-rail-count")).toHaveText("@4");
-    await expect(page.locator("[data-tab-chat] .ws-rail-count")).toHaveText("2");
-    await expect(page.locator("[data-tab-overview] .ws-rail-count")).toHaveCount(0);
+    await expect(page.locator("[data-tab-boards] [data-count]")).toHaveText("3");
+    await expect(page.locator("[data-tab-machines] [data-count]")).toHaveCount(0);
+    await expect(page.locator("[data-tab-chat] [data-count]")).toHaveText("2");
+    await expect(page.locator("[data-tab-overview] [data-count]")).toHaveCount(0);
   });
 
   test("Machines' tab opens the Machines page; a row opens its pane", async ({ page }, info) => {
@@ -509,7 +513,7 @@ test.describe("on a phone", () => {
 
   test("a pane opens full screen with the machine's own header and key bar, and no places bar", async ({ page }, info) => {
     const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
-    await expect(page.locator(".ws-rail")).toHaveCount(0);
+    await expect(page.locator("[data-rail]")).toHaveCount(0);
     await expect(page.locator("[data-phone-tabs]")).toHaveCount(0);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     await page.screenshot({ path: info.outputPath("frame-phone-pane.png") });

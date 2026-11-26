@@ -269,7 +269,7 @@ test("only the project's owner sees the way in, or the page", async ({ page }) =
 
 test("New project from…, in Go to…'s projects: one of the reader's own projects, then its move, into a new project", async ({ page }) => {
   await open(page, "/p/prj_aaaa0002", () => moved);
-  await page.locator(".ws-rail [data-project-switcher]").click();
+  await page.locator("[data-rail] [data-project-switcher]").click();
   await expect(page.locator('[data-command="project/new-from"]')).toContainText("New project from…");
   if (SHOTS) await page.locator("[data-goto]").screenshot({ path: `${SHOTS}/followup-switcher.png` });
   await page.locator('[data-command="project/new-from"]').click();
@@ -287,7 +287,7 @@ test("New project from…, in Go to…'s projects: one of the reader's own proje
 
 test("a reader who owns no project isn't offered New project from…", async ({ page }) => {
   await open(page, "/p/prj_aaaa0003", () => moved, () => projects(false).filter((p) => p.id === "prj_aaaa0003"));
-  await page.locator(".ws-rail [data-project-switcher]").click();
+  await page.locator("[data-rail] [data-project-switcher]").click();
   await expect(page.locator('[data-command="project/new"]')).toBeVisible();
   await expect(page.locator('[data-command="project/new-from"]')).toHaveCount(0);
 });
