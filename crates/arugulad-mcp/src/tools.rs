@@ -3866,6 +3866,12 @@ impl ToolCall<'_, '_> {
             user_settings: a.user_settings,
         };
         let started = arugulad_base::ladder::start(self.app, ask).await?;
+        // Opened here, it's this caller's: it reads and closes what it
+        // started, in whatever tab (Arugula #1474). Another machine's block
+        // isn't a pane here.
+        if self.app.control.enrolled().is_some_and(|e| e.keys.id() == started.id) {
+            self.started(started.block).await;
+        }
         done(
             format!(
                 "Started an agent on {} in %{} (session {}, in {}): {}. Its block is that machine's: its board row shows it",
