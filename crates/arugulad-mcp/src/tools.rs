@@ -448,7 +448,10 @@ pub struct StartAgentArgs {
     /// that led before is moved here (another machine's is told to stand
     /// down, a hosted one is stopped, this machine's is closed). It runs
     /// here: not on an issue, in a worktree or beside another machine's
-    /// pane. `board-lead` starts the lead of the board its prompt names:
+    /// pane. Nobody watches it, so it runs as a board's lead does: in
+    /// permission_mode `auto` unless you name one, allowing `Bash`, `Read`,
+    /// `Edit`, `Write`, `Glob`, `Grep` and `WebFetch` besides your allow,
+    /// with your person's settings. `board-lead` starts the lead of the board its prompt names:
     /// it starts an agent block per ready row, talks to them in their
     /// issues' threads and merges their work. A Claude Code or Codex agent
     /// on an issue is told first that it leads the issue's thread
@@ -3493,6 +3496,21 @@ impl ToolCall<'_, '_> {
         }
         if chief && (a.issue.is_some() || a.worktree.is_some()) {
             return Err("a chief of staff works the whole project: no issue or worktree".into());
+        }
+        // Arugula #1490: nobody watches a chief of staff's terminal, so it
+        // starts as a board's lead does, whoever starts it: in mode `auto`
+        // (unless the caller names one) with the lead's tools and the
+        // person's own settings. In the default mode each tool is a card.
+        if chief {
+            if a.permission_mode.as_deref().is_none_or(|m| m.trim().is_empty()) {
+                a.permission_mode = Some("auto".into());
+            }
+            for t in arugulad_base::approvals::LEAD_ALLOW {
+                if !a.allow.iter().any(|x| x == t) {
+                    a.allow.push((*t).to_owned());
+                }
+            }
+            a.user_settings = true;
         }
         let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
             Some(i) => {
