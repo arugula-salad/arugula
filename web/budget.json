@@ -1,0 +1,21 @@
+{
+  "max": {
+    "duplicateComponentNames": 28,
+    "cssLines": 27110,
+    "cssFiles": 50,
+    "customPropertiesDefined": 127,
+    "customPropertiesReferenced": 147,
+    "important": 23,
+    "looks": 216,
+    "htmlEntries": 5,
+    "dependencies": 20
+  },
+  "report": [
+    "tsLines",
+    "tsCoreLines",
+    "components",
+    "exportedComponents",
+    "e2eSpecs",
+    "e2eLines"
+  ]
+}
