@@ -20,7 +20,7 @@
 
 .primary,
 .secondary {
-  --btn-fill: var(--accent);
+  --btn-fill: var(--accent-fill);
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -64,6 +64,7 @@
 
 .primary.danger {
   --btn-fill: var(--danger);
+  color: var(--on-needs);
 }
 
 .secondary.danger {
