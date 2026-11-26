@@ -91,46 +91,46 @@ test.describe("on a computer", () => {
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
     // Docs is under the workspace's own header, not a bar of its own (Arugula #796).
     await expect(page.locator(".app-bar")).toHaveCount(0);
-    await expect(page.locator(".ws-head [data-machine-docs]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator(".ws-head [data-open-attention]")).toBeVisible();
-    await page.locator(".ws-head [data-machine-panes]").click();
+    await expect(page.locator("[data-top] [data-machine-docs]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-top] [data-open-attention]")).toBeVisible();
+    await page.locator("[data-top] [data-machine-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
     // The bar's stack says which session this is, with the sidebar open or not.
-    await expect(page.locator(".ws-head .ws-crumb-name")).toBeVisible();
+    await expect(page.locator("[data-top] .ws-crumb-name")).toBeVisible();
     await page.locator("[data-open-sessions]").click();
-    await expect(page.locator(".ws-head .ws-crumb-name")).toBeVisible();
+    await expect(page.locator("[data-top] .ws-crumb-name")).toBeVisible();
   });
 
   test("macOS reserves the native controls strip once, including with native tabs", async ({ page }) => {
     await newWorkspace(page);
-    expect((await page.locator(".ws-head").boundingBox())!.y).toBe(0);
+    expect((await page.locator("[data-top]").boundingBox())!.y).toBe(0);
     await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
-    const header = (await page.locator(".ws-head").boundingBox())!;
+    const header = (await page.locator("[data-top]").boundingBox())!;
     const rail = (await page.locator("[data-rail]").boundingBox())!;
     expect(header.y).toBe(28);
     expect(rail.y).toBe(header.y);
-    expect((await page.locator(".ws-crumbs").first().boundingBox())!.y).toBeGreaterThanOrEqual(28);
+    expect((await page.locator("[data-app-path]").first().boundingBox())!.y).toBeGreaterThanOrEqual(28);
     await page.evaluate(() => {
       document.documentElement.dataset.nativeTabs = "";
       document.documentElement.style.setProperty("--native-tabs", "64px");
     });
-    expect((await page.locator(".ws-head").boundingBox())!.y).toBe(64);
+    expect((await page.locator("[data-top]").boundingBox())!.y).toBe(64);
     expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(64);
   });
 
   test("on macOS the Docs page sits under the header and the native controls strip, as the panes do (Arugula #796)", async ({ page }) => {
     await newWorkspace(page);
     await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
-    const onPanes = (await page.locator(".ws-head").boundingBox())!;
+    const onPanes = (await page.locator("[data-top]").boundingBox())!;
     await page.locator("[data-machine-docs]").click();
     const docs = page.locator("[data-docs-page]");
     await expect(docs).toBeVisible();
     // The same header, where it was: below the strip, beside the rail.
-    const head = (await page.locator(".ws-head").boundingBox())!;
+    const head = (await page.locator("[data-top]").boundingBox())!;
     expect(head).toEqual(onPanes);
     expect(head.y).toBe(28);
     expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(head.y);
-    await expect(page.locator(".ws-head .ws-search-button svg")).toBeVisible();
+    await expect(page.locator("[data-top] [data-open-palette] svg")).toBeVisible();
     // The page starts under it and doesn't cover the rail.
     const box = (await docs.boundingBox())!;
     expect(box.y).toBe(head.y + head.height);
@@ -156,7 +156,7 @@ test.describe("on a computer", () => {
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     // The swarm's bar keeps Machines' views, Swarm lit.
-    const swarm = page.locator(".app-bar [data-machine-swarm]");
+    const swarm = page.locator("[data-top] [data-machine-swarm]");
     await expect(swarm).toHaveAttribute("aria-current", "page");
     await expect(swarm).toHaveAttribute("title", /all machines/);
 

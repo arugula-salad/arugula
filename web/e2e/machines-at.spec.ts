@@ -45,7 +45,7 @@ const list = (page: Page) => page.locator("[data-machines-list]");
 
 /** The session crumb, which the header shows while the sidebar's closed. */
 async function crumbOf(page: Page) {
-  const crumb = page.locator(".ws-head [data-crumb-session]");
+  const crumb = page.locator("[data-top] [data-crumb-session]");
   if (await page.locator("[data-session-sidebar] .ws-sidebar-head").isVisible()) await page.locator(".ws-tabs [data-open-sessions]").click();
   await expect(crumb).toBeVisible();
   return crumb;

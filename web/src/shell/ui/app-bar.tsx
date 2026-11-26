@@ -20,10 +20,13 @@ import { openGoTo } from "../../shared/kit/frame/goto";
 import { openFeedback } from "./feedback";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
+import type { Step } from "../../shared/kit/crumb";
+import { TopBar } from "../../shared/kit/frame/top";
+import { directory } from "../hosts";
 import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
 import { Avatar } from "../../shared/kit/avatar";
-import { Caret, SearchIcon } from "../../shared/ui/icons";
+import { Caret } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
  * items. A daemon's own page has none, and its menu is settings only. */
@@ -57,14 +60,12 @@ export const accountHeader = (login: string | null) => (login ? `Signed in as ${
 export function AppBar({
   client,
   at,
-  inert,
   children,
   end,
   all,
 }: {
   client: Client;
   at: Place;
-  inert?: boolean;
   /** What this place offers: the panes' sessions and tabs, chat's search. */
   children?: ComponentChildren;
   /** Before the account menu: the panes' people. */
@@ -77,8 +78,29 @@ export function AppBar({
   // The workspace's rail has the whole app's places (M108), on a computer
   // once a machine is shown (app.tsx), and the bar this machine's.
   const rail = !usePhone() && !!client.state;
+  if (rail) {
+    // The frame's top bar (Lift 3): the machine (or every machine), then
+    // the place's own, then Go to….
+    const steps: Step[] = [all ? { label: "All machines", hook: "all" } : { label: directory.current || "This machine", hook: "machine", node: <HostButton path={false} /> }];
+    const views = (
+      <>
+        {!all && <ConnectionChip client={client} />}
+        <MachinePlaces client={client} at={at} />
+        {children}
+      </>
+    );
+    const tools = (
+      <>
+        <UpdateChip client={client} />
+        {/* What waits on you, on every machine, in every bar (Arugula #637). */}
+        <AttentionBell client={client} />
+        {end}
+      </>
+    );
+    return <TopBar steps={steps} views={views} tools={tools} data-at={at} />;
+  }
   return (
-    <header class="bar app-bar" data-tauri-drag-region inert={inert} data-at={at}>
+    <header class="bar app-bar" data-tauri-drag-region data-at={at}>
       {all ? (
         <span class="scope-label" data-scope="all" title="This shows every machine. Panes shows one: pick it there.">
           All machines
@@ -109,20 +131,18 @@ export function AppBar({
 
 /** Go to…, where it can be seen: a place, a pane, or a command a pane can do
  * (the rest are in its right-click menu). */
-export function CommandsButton({ search }: { search?: boolean }) {
+export function CommandsButton() {
   return (
     <button
-      class={search ? "commands-button ws-search-button" : "commands-button"}
+      class="commands-button"
       data-open-palette
-      // One label and title in every bar (UI audit #170); the panes' head
-      // draws it as a search field.
+      // One label and title in every bar (UI audit #170).
       title={`Go to a place, a pane or a command (${keyHint("goto")})`}
       // No aria-label: its name is what it shows, "Go to…" and the chord,
       // so voice control's "click Go to" and a screen reader agree.
       aria-keyshortcuts={ariaKeys(keyHint("goto"))}
       onClick={() => openGoTo()}
     >
-      {search && <SearchIcon />}
       <span>Go to…</span>
       {/* A space between them, so the name reads "Go to… Ctrl+K". */}
       {" "}

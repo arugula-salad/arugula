@@ -23,7 +23,7 @@ test("the caret shows and hides the sessions sidebar, and stays when it's closed
   // In the tab strip, before the first tab, centred on the tabs; not in the header.
   await expect(sidebar).toBeVisible();
   await expect(caret).toBeVisible();
-  await expect(page.locator(".ws-head [data-open-sessions]")).toHaveCount(0);
+  await expect(page.locator("[data-top] [data-open-sessions]")).toHaveCount(0);
   await expect(caret).toHaveAttribute("aria-controls", "ws-session-sidebar");
   await expect(caret).toHaveAttribute("aria-expanded", "true");
   await expect(caret).toHaveAttribute("aria-label", "Hide sessions sidebar");
@@ -35,9 +35,8 @@ test("the caret shows and hides the sessions sidebar, and stays when it's closed
   expect(c!.x).toBeGreaterThanOrEqual(sb!.x + sb!.width);
 
   // The header's left is the place stack: machine, then the session.
-  const stack = page.locator(".ws-head .ws-stack");
-  await expect(stack.locator(".host-button, .ws-host-name").first()).toBeVisible();
-  await expect(stack.locator(".app-path-sep")).not.toHaveCount(0);
+  const stack = page.locator("[data-top] [data-app-path]");
+  await expect(stack.locator(".host-button, [data-path=machine]").first()).toBeVisible();
   await expect(stack.locator(".session-button")).toBeVisible();
 
   // Hidden: the caret stays, pointing the other way.

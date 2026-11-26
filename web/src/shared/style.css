@@ -9957,16 +9957,8 @@ button.thread-quote:hover {
   -webkit-app-region: no-drag;
 }
 
-.ws-head .window-buttons {
+:is(.ws-head, .k-top) .window-buttons {
   align-self: stretch;
-}
-
-.ws-crumbs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  font-size: var(--text-md);
 }
 
 /* Every shell bar on a computer is the panes' size and looks the same
@@ -9979,7 +9971,7 @@ button.thread-quote:hover {
   border-bottom: 1px solid var(--line-strong);
 }
 
-.ws-head .host-button,
+:is(.ws-head, .k-top) .host-button,
 .frame .app-bar .host-button,
 .swarm-shell .app-bar .host-button {
   height: 28px;
@@ -9990,14 +9982,9 @@ button.thread-quote:hover {
   font-weight: 600;
 }
 
-.ws-head .host-button:hover,
+:is(.ws-head, .k-top) .host-button:hover,
 .frame .app-bar .host-button:hover {
   background: var(--raised);
-}
-
-.ws-host-name {
-  padding: 0 4px;
-  font-weight: 600;
 }
 
 .ws-conn {
@@ -10081,35 +10068,11 @@ button.thread-quote:hover {
   background: var(--raised);
 }
 
-.ws-crumb-name,
-.ws-crumb-tab-name {
+.ws-crumb-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 260px;
-}
-
-.ws-crumb-tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--dim);
-}
-
-.ws-search-button.commands-button {
-  height: 28px;
-  min-width: 220px;
-  margin: 0;
-  gap: 8px;
-  padding: 0 6px 0 10px;
-  border-color: var(--line);
-  background: var(--bg);
-}
-
-.ws-search-button.commands-button span {
-  flex: 1;
-  text-align: left;
 }
 
 .ws-share {
@@ -10123,11 +10086,6 @@ button.thread-quote:hover {
 .ws-share:hover,
 .ws-icon-button:hover {
   background: var(--raised);
-}
-
-.ws-head .account-button {
-  align-self: stretch;
-  border-left: 1px solid var(--line);
 }
 
 .ws-row {
@@ -10965,20 +10923,9 @@ html[data-workspace="new"] #status {
 /* 700–1100px: the sidebar folds into the rail (it opens over the panes),
    and the header and footer drop what's secondary before the terminals
    get any smaller. */
-@media (max-width: 1100px) {
-  .ws-crumb-tab,
-  .ws-search-button.commands-button kbd {
-    display: none;
-  }
-
-  .ws-search-button.commands-button {
-    min-width: 0;
-  }
-}
 
 @media (max-width: 860px) {
-  .ws-search-button.commands-button span,
-  .ws-conn {
+    .ws-conn {
     font-size: 0;
     gap: 0;
   }

@@ -715,7 +715,7 @@ test.describe("on a computer", () => {
     const drawer = page.locator('[data-board-drawer="row_b"]');
     await expect(drawer).toBeVisible();
     await expect(drawer.locator("[data-board-drawer-title]")).toHaveText("Fix the installer");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Overview\s*Launch\s*#12 · Fix the installer/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Overview\s*Launch\s*#12 · Fix the installer/);
     await page.screenshot({ path: info.outputPath("overview-drawer.png") });
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);

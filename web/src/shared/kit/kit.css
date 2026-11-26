@@ -268,6 +268,7 @@
   background: none;
   color: var(--ink-dim);
   font: inherit;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -908,4 +909,52 @@ button.k-foot-key:hover {
   border-radius: 50%;
   background: none;
   cursor: pointer;
+}
+
+/* The top bar: the crumb, the place's own views, then Go to…, Look and
+   Share at the right (v6). In the desktop app on Linux it's the titlebar. */
+
+.k-top {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  min-width: 0;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+.k-top :is(a, button, input, select) {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+/* The window's drag in the desktop app: the crumb gives way first. */
+.k-top-fill {
+  flex: 1;
+  align-self: stretch;
+  min-width: 48px;
+}
+.k-top-act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-top-act:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
