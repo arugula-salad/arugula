@@ -518,7 +518,7 @@ export function filesOf(data: DataTransfer | null): File[] {
   return data ? [...data.files] : [];
 }
 
-export function Composer({
+export function AgentComposer({
   client,
   id,
   s,
@@ -793,7 +793,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           ))}
         </div>
       )}
-      {archived ? <p class="agent-note">Archived cloud transcript. Agents in the cloud run on cloud workspaces in your Arugula projects now.</p> : <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />}
+      {archived ? <p class="agent-note">Archived cloud transcript. Agents in the cloud run on cloud workspaces in your Arugula projects now.</p> : <AgentComposer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />}
     </div>
   );
 }
