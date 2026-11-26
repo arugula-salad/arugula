@@ -53,7 +53,7 @@ use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::control::CloudRefused;
 use crate::mcp::tools::{Call, Kind, Out, done, parse};
@@ -90,7 +90,7 @@ pub(crate) const KINDS: &[Kind] = &[
     },
     Kind {
         name: "events",
-        description: "A project's event log after a number, oldest first: the events you could watch, and where to read on.",
+        description: "A project's event log after a number, oldest first: a line each, whole with types; cut at 24 KB, so read on.",
         schema: schema_for_type::<EventsArgs>,
         flag: None,
     },
@@ -753,7 +753,74 @@ async fn read_events(c: &Call<'_>, a: EventsArgs) -> Out {
     })?;
     let page: EventsPage =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
-    done(events::page_text(&page), page)
+    events_answer(page, !types.is_empty())
+}
+
+/// The most JSON an events answer carries for its events: Claude Code
+/// saves a tool's output over about 25 KB to a file, and an agent that has
+/// to parse a file with jq has lost the read (Arugula #1509).
+const EVENTS_BYTES_MAX: usize = 24 * 1024;
+
+/// What `events` answers: each event as a line with its ids and states, or
+/// with its whole payload when `full` (the read named types), in order
+/// until the next would pass [`EVENTS_BYTES_MAX`]. The first always goes
+/// in. Cut short, `next_after` is the last one in, not the cloud's, which
+/// is past events left out here.
+fn events_answer(page: EventsPage, full: bool) -> Out {
+    let EventsPage { events, next_after, head, gone_before } = page;
+    let total = events.len();
+    let (mut out, mut bytes) = (vec![], 0);
+    for e in &events {
+        let v = if full { serde_json::to_value(e) } else { Ok(compact_event(e)) }.map_err(|e| e.to_string())?;
+        let size = v.to_string().len() + 1;
+        if !out.is_empty() && bytes + size > EVENTS_BYTES_MAX {
+            break;
+        }
+        bytes += size;
+        out.push(v);
+    }
+    let cut = out.len() < total;
+    let next_after = if cut { events[out.len() - 1].seq } else { next_after };
+    let mut lines = vec![];
+    if let Some(n) = gone_before {
+        lines.push(format!(
+            "The log no longer keeps events before #{n}: those after your after were older than it keeps, and are gone."
+        ));
+    }
+    match out.len() {
+        0 => lines.push("No events.".into()),
+        n => lines.push(format!("{n} event{}, oldest first.", if n == 1 { "" } else { "s" })),
+    }
+    if cut {
+        lines.push(format!("The page was cut at the size limit: pass next_after {next_after} to read on."));
+    }
+    let more = next_after < head;
+    let more_text = if more { "; there's more" } else { "" };
+    lines.push(format!("Read on with after {next_after} (the log's head is #{head}{more_text})."));
+    let mut answer = json!({ "events": out, "next_after": next_after, "head": head, "more": more });
+    if let Some(n) = gone_before {
+        answer["gone_before"] = n.into();
+    }
+    done(lines.join("\n"), answer)
+}
+
+/// One event as a line: its number, type, time, a summary, and from its
+/// data the ids and states the type can be watched by.
+fn compact_event(e: &events::Event) -> Value {
+    let by = e.actor.as_ref().map(|a| format!(" by {}", a.login.as_deref().unwrap_or(&a.id))).unwrap_or_default();
+    let mut v = json!({
+        "seq": e.seq, "type": e.kind, "at_ms": e.at_ms,
+        "summary": format!("#{} {} {}{by}", e.seq, e.kind, e.subject),
+    });
+    let fields = events::lookup(&e.kind).map_or(&[][..], |t| t.matches).iter().map(|m| m.name);
+    let kept: serde_json::Map<String, Value> = fields
+        .chain(["state"])
+        .filter_map(|k| e.data.get(k).filter(|d| !d.is_object() && !d.is_array()).map(|d| (k.to_owned(), d.clone())))
+        .collect();
+    if !kept.is_empty() {
+        v["data"] = Value::Object(kept);
+    }
+    v
 }
 
 /// [`AGENT_EVENTS`] with its query, [`events::EventsQuery`].
@@ -1055,5 +1122,82 @@ mod tests {
     fn when_is_utc_to_the_minute() {
         assert_eq!(when(0), "1970-01-01T00:00Z");
         assert_eq!(when(1_794_652_920_000), "2026-11-14T10:42Z");
+    }
+
+    fn event(seq: u64, blob: usize) -> Value {
+        json!({
+            "id": format!("evt_{seq}"), "seq": seq, "type": "issue.closed", "v": 1, "source": "arugula",
+            "scope": { "team": "team_1", "project": "prj_1" },
+            "subject": "iss_90dd", "actor": { "kind": "account", "id": "acc_1", "login": "jdoe" },
+            "at_ms": 1_763_500_000_000_i64 + seq as i64, "recorded_ms": 1_763_500_000_015_i64,
+            "data": { "issue": "iss_90dd", "state": "closed", "by": "jdoe", "extra": "x".repeat(blob) },
+            "key": format!("issue.closed:iss_90dd:{seq}"),
+        })
+    }
+
+    /// What the cloud serves for `after`: up to `limit` of a log of `n`
+    /// events, its `next_after` past the last it looked at.
+    fn cloud_page(n: u64, blob: usize, after: u64, limit: u64) -> EventsPage {
+        let last = (after + limit).min(n);
+        let events = (after + 1..=last).map(|s| serde_json::from_value(event(s, blob)).unwrap()).collect();
+        EventsPage { events, next_after: last, head: n, gone_before: None }
+    }
+
+    fn event_bytes(a: &Value) -> usize {
+        a["events"].as_array().unwrap().iter().map(|e| e.to_string().len() + 1).sum()
+    }
+
+    fn seqs(a: &Value) -> Vec<u64> {
+        a["events"].as_array().unwrap().iter().map(|e| e["seq"].as_u64().unwrap()).collect()
+    }
+
+    #[test]
+    fn events_come_as_lines_under_the_cap_and_page_on_without_a_gap() {
+        let mut seen = vec![];
+        let (mut after, mut reads) = (0, 0);
+        loop {
+            let a = events_answer(cloud_page(200, 2000, after, 200), false).unwrap();
+            assert!(event_bytes(&a) <= EVENTS_BYTES_MAX, "{}", event_bytes(&a));
+            let first = &a["events"][0];
+            assert_eq!(first["summary"], format!("#{} issue.closed iss_90dd by jdoe", first["seq"]));
+            assert_eq!(first["data"], json!({ "issue": "iss_90dd", "by": "jdoe", "state": "closed" }));
+            seen.extend(seqs(&a));
+            reads += 1;
+            if !a["more"].as_bool().unwrap() {
+                break;
+            }
+            let next = a["next_after"].as_u64().unwrap();
+            assert_eq!(next, *seqs(&a).last().unwrap(), "cut: next_after is the last event in");
+            assert!(a["summary"].as_str().unwrap().contains(&format!("cut at the size limit: pass next_after {next}")));
+            after = next;
+        }
+        assert!(reads > 1, "200 events with 2 KB payloads don't fit one page");
+        assert_eq!(seen, (1..=200).collect::<Vec<u64>>());
+    }
+
+    #[test]
+    fn a_page_that_fits_keeps_the_clouds_next_after() {
+        let mut page = cloud_page(3, 10, 0, 50);
+        page.next_after = 9;
+        page.head = 9;
+        let a = events_answer(page, false).unwrap();
+        assert_eq!((a["next_after"].as_u64(), a["more"].as_bool()), (Some(9), Some(false)));
+        assert!(!a["summary"].as_str().unwrap().contains("cut"));
+    }
+
+    #[test]
+    fn named_types_keep_their_whole_payload_under_the_cap() {
+        let a = events_answer(cloud_page(200, 2000, 0, 200), true).unwrap();
+        assert!(event_bytes(&a) <= EVENTS_BYTES_MAX);
+        assert_eq!(a["events"][0]["data"]["extra"].as_str().unwrap().len(), 2000);
+        assert!(a["more"].as_bool().unwrap());
+        assert_eq!(a["next_after"].as_u64(), seqs(&a).last().copied());
+    }
+
+    #[test]
+    fn one_event_past_the_cap_still_comes_back_alone() {
+        let a = events_answer(cloud_page(5, EVENTS_BYTES_MAX * 2, 0, 50), true).unwrap();
+        assert_eq!(seqs(&a), [1]);
+        assert_eq!((a["next_after"].as_u64(), a["more"].as_bool()), (Some(1), Some(true)));
     }
 }
