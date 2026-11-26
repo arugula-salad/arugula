@@ -136,9 +136,11 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
-  `start_agent`'s `recipe` and `vm` (`UNLISTED` and `UNLISTED_ARGS` in
-  `crates/daemon/src/mcp/tools.rs`). Unlisted tools called by name are
-  refused without their flag. Chat's MCP tools (`read_thread`, `post_thread`)
+  `start_agent`'s `vm` (`UNLISTED` and `UNLISTED_ARGS` in
+  `crates/arugulad-mcp/src/tools.rs`). Unlisted tools called by name are
+  refused without their flag. `start_agent`'s `recipe` is listed for
+  `chief-of-staff` (Arugula #1338); any other recipe is refused without
+  `agent-delegation`. Chat's MCP tools (`read_thread`, `post_thread`)
   aren't labs: they follow the grants in control (see
   [Threads and chat](#threads-and-chat)).
 - **Web client:** `Client.has("vms" | "studio")` and

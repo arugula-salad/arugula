@@ -29,6 +29,120 @@ func takeString(_ p: UnsafeMutablePointer<CChar>?) -> String? {
     return String(cString: p)
 }
 
+/// The project the app shows, as the core's rule reads it (Arugula #1355):
+/// Machines and the Overview show only its sessions; one placed nowhere is yours, on
+/// your own machine, in your personal project.
+struct Shown: Equatable {
+    var id: String
+    /// The reader's personal project.
+    var personal: Bool
+    /// Its name, for a chief of staff's session named by its id (Arugula #1457).
+    var name: String = ""
+
+    /// Whether a pane (its session's project and its card's) or a session
+    /// (no card) on a machine that's `yours` or not shows in `shown`; with
+    /// none, every one does.
+    static func shows(_ shown: Shown?, project: String?, card: String? = nil, yours: Bool) -> Bool {
+        aru_shown(shown?.id, shown?.personal == true ? 1 : 0, project, card, yours ? 1 : 0) != 0
+    }
+}
+
+extension Projects.Project {
+    var shown: Shown { Shown(id: id, personal: team == nil, name: name) }
+}
+
+/// A session's name as people read it, as the core says (Arugula #1457): a
+/// chief of staff's, "Chief of staff · prj_…", by `shown`'s name when it's
+/// that project's; any other as it is. Display only: match by the name itself.
+func sessionLabel(_ session: String, in shown: Shown?) -> String {
+    takeString(aru_session_label(session, shown?.id, shown?.name)) ?? session
+}
+
+/// One machine as the core's `aru_machines` reads it.
+struct HostIn {
+    var id: String
+    var name: String
+    var online: Bool
+    /// Whose it is when it isn't yours.
+    var owner: String?
+    /// Its sessions, as `aru_link_panes` gave them.
+    var panes: String?
+}
+
+/// A session pinned, as the platform keeps it (`/api/sessions/pins`): its
+/// machine's id and the session's there.
+struct Pin: Codable, Hashable {
+    var machine: String
+    var session: UInt32
+}
+
+/// What `aru_machines` answers: every machine in the phone's order, each
+/// one's sessions that show in the project, and those with none.
+struct Sections: Decodable {
+    struct Section: Decodable, Identifiable {
+        var id: String
+        var name: String
+        var online: Bool
+        /// Whose it is when it isn't yours.
+        var owner: String?
+        var sessions: [Card]
+    }
+    struct Card: Decodable, Identifiable {
+        struct Tab: Decodable, Identifiable { var id: UInt32; var name: String?; var panes: [UInt32] }
+        var id: UInt32
+        var name: String
+        var tabs: [Tab]
+        var panes: Int
+        var needs_you: Int
+        /// `needs_input`, `working` or `idle`.
+        var state: String
+    }
+    var order: [Section]
+    var machines: [Section]
+    /// The machines with nothing in the project, by name.
+    var quiet: [Section]
+    /// The sessions pinned that show in the project, in pin order: out of
+    /// their machines in `machines`.
+    var pinned: [Pin]
+
+    /// A pinned session, with its machine.
+    struct PinnedCard: Identifiable {
+        var machine: Section
+        var card: Card
+        var id: String { "\(machine.id)/\(card.id)" }
+    }
+
+    /// Each pinned session's machine and card, from `order`, which has them all.
+    var pinnedCards: [PinnedCard] {
+        pinned.compactMap { p in
+            guard let m = order.first(where: { $0.id == p.machine }), let c = m.sessions.first(where: { $0.id == p.session }) else { return nil }
+            return PinnedCard(machine: m, card: c)
+        }
+    }
+
+    /// From the core, for `hosts` in `shown`; `recent` is the machine used
+    /// last, and `pins` come out first.
+    static func of(_ hosts: [HostIn], shown: Shown?, recent: String?, pins: [Pin] = []) -> Sections? {
+        let hs: [[String: Any]] = hosts.map { h in
+            var o: [String: Any] = ["id": h.id, "name": h.name, "online": h.online]
+            if let owner = h.owner { o["owner"] = owner }
+            if let p = h.panes, let v = try? JSONSerialization.jsonObject(with: Data(p.utf8)) { o["panes"] = v }
+            return o
+        }
+        var input: [String: Any] = ["hosts": hs]
+        if let shown { input["at"] = ["id": shown.id, "personal": shown.personal] }
+        if let recent { input["recent"] = recent }
+        if !pins.isEmpty { input["pins"] = pins.map { ["machine": $0.machine, "session": $0.session] as [String: Any] } }
+        guard let data = try? JSONSerialization.data(withJSONObject: input) else { return nil }
+        var err: UnsafeMutablePointer<CChar>?
+        guard let s = takeString(aru_machines(String(decoding: data, as: UTF8.self), &err)) else {
+            if let err { aru_string_free(err) }
+            return nil
+        }
+        return try? JSONDecoder().decode(Sections.self, from: Data(s.utf8))
+    }
+}
+
 extension Notification.Name {
     /// Control said the session has ended: the app asks for a sign-in again.
     static let arugulaSignedOut = Notification.Name("arugulaSignedOut")
@@ -86,11 +200,16 @@ enum SessionStore {
 /// run off the main thread.
 final class Control: @unchecked Sendable {
     let ptr: OpaquePointer
+    /// Where control is, as the session was kept: its page opens here
+    /// (Approvals.swift).
+    let url: String?
 
     init(stored: String) throws {
         var err: UnsafeMutablePointer<CChar>?
         guard let p = aru_control_open(stored, &err) else { throw err.map(CoreError.init(taking:)) ?? CoreError("not signed in") }
         ptr = p
+        let v = (try? JSONSerialization.jsonObject(with: Data(stored.utf8))) as? [String: Any]
+        url = v?["url"] as? String
     }
 
     deinit { aru_control_free(ptr) }
@@ -117,6 +236,22 @@ final class Control: @unchecked Sendable {
 
     func get<T: Decodable>(_ path: String, as: T.Type = T.self) async throws -> T {
         try JSONDecoder().decode(T.self, from: try await call("GET", path))
+    }
+
+    /// A GET whose reply isn't JSON (a picture): its bytes.
+    func bytes(_ path: String) async throws -> Data {
+        do {
+            return try await Task.detached(priority: .userInitiated) { [self] in
+                var err: UnsafeMutablePointer<CChar>?
+                guard let s = takeString(aru_control_bytes(ptr, path, &err)), let data = Data(base64Encoded: s) else {
+                    throw err.map(CoreError.init(taking:)) ?? CoreError("no answer")
+                }
+                return data
+            }.value
+        } catch let e as CoreError where e.reason == "signed_out" {
+            NotificationCenter.default.post(name: .arugulaSignedOut, object: self)
+            throw e
+        }
     }
 
     /// End the session at control, as far as it can be reached.

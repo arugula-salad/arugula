@@ -16,6 +16,14 @@ async function openApp(page: Page, path: (pane: number) => string): Promise<numb
   const [pane] = await panes(page);
   await inProject(page, P, "Arugula");
   const body = await fixturePage("./app-frame-page.tsx");
+  // Playwright's WebKit has a PushManager but no push service: once the
+  // daemon's page has registered its worker, getSubscription never answers
+  // and the page stops (timers, evaluate, screenshots). On a computer the
+  // Overview's and Machines' code asks it (ui/notify.tsx's pushState; an
+  // iPhone in a tab is "install" first). Safari answers: no subscription.
+  await page.addInitScript(() => {
+    PushManager.prototype.getSubscription = async () => null;
+  });
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(path(pane));
   return pane;
@@ -32,22 +40,22 @@ test.describe("on a computer", () => {
     await openApp(page, () => `/p/${P}/boards`);
     expect(await hooks(page, ".ws-rail > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
     const lit = page.locator(".ws-rail [aria-current=page]");
-    // By the rail's buttons: the app's own moves, no page load. Not the
-    // Overview or Machines on a computer: WebKit stopped on those pages on
-    // main too, apart from the rail (seen before #1346 rebuilt Machines);
-    // app-frame.spec.ts has them, and the iPhone's below.
-    for (const [key, url] of [
-      ["docs", "/docs$"],
-      ["boards", "/boards$"],
-      ["chat", "/chat"],
-      ["inbox", "/inbox$"],
-      ["settings", "/settings"],
+    // By the rail's buttons: the app's own moves, no page load. Overview
+    // and Machines show their place's views.
+    for (const [key, url, views] of [
+      ["overview", `/p/${P}[^/]*$`, ["overview", "swarm"]],
+      ["docs", "/docs$", []],
+      ["machines", "/machines$", ["machines", "runs"]],
+      ["boards", "/boards$", []],
+      ["chat", "/chat", []],
+      ["inbox", "/inbox$", []],
+      ["settings", "/settings", []],
     ] as const) {
       await page.locator(`.ws-rail [data-open-${key}]`).click();
       await expect(page).toHaveURL(new RegExp(url));
       await expect(page.locator(`.ws-rail [data-open-${key}]`)).toHaveAttribute("aria-current", "page");
       await expect(lit, key).toHaveCount(1);
-      await expect(page.locator("[data-place-views]"), key).toHaveCount(0);
+      await expect.poll(() => hooks(page, "[data-place-views] > *", "view"), key).toEqual(views);
     }
     await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*$`));
     await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines$`));

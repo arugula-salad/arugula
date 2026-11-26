@@ -31,8 +31,10 @@ runs:
   steps:
     - shell: bash
       run: scripts/ci-env use
+    # bootstrap's web half: the shards run built binaries, so they need
+    # none of mise's tools (setup's `mise: "false"`, #725).
     - shell: bash
-      run: just bootstrap
+      run: cd web && pnpm install --frozen-lockfile
     # The browsers' system packages, which `just browsers` apt-installs on a
     # runner whose image lacks them (no /etc/arugula-ci/browser-deps): 111 MB,
     # nearly all of it WebKit's, and the runners' Ubuntu mirror can serve it

@@ -5,7 +5,14 @@ import Foundation
 
 struct Projects: Decodable {
     struct Me: Decodable { var account: String; var login: String; var name: String }
-    struct Team: Decodable { var id: String; var name: String; var role: String }
+    struct Team: Decodable {
+        struct Member: Decodable { var account: String; var name: String }
+        var id: String
+        var name: String
+        var role: String
+        /// Its roster: names a teammate's asks folded in the Inbox.
+        var members: [Member]?
+    }
     struct Project: Decodable, Identifiable, Hashable {
         var id: String
         var name: String
@@ -51,7 +58,8 @@ struct BoardDetail: Decodable {
     /// What a row points at; a block names its machine and pane.
     struct Pointer: Decodable { var kind: String; var id: String?; var url: String?; var machine: String?; var pane: String? }
     /// The row's one open question: `mine` when it's for the reader.
-    struct Ask: Decodable { var id: String; var question: String; var options: [String]; var mine: Bool; var can_answer: Bool?; var asked_by: String?; var raised: Bool?; var created_at: Int? }
+    /// `who` is the person it asks (empty: the board raised it), `who_name` their name.
+    struct Ask: Decodable { var id: String; var question: String; var options: [String]; var mine: Bool; var who: String?; var who_name: String?; var can_answer: Bool?; var asked_by: String?; var raised: Bool?; var created_at: Int? }
     struct Attachment: Decodable { var role: String; var pointer: Pointer; var released: Bool?; var live: Live? }
     struct Mark: Decodable { var kind: String }
     struct Row: Decodable, Identifiable {
@@ -68,9 +76,34 @@ struct BoardDetail: Decodable {
     }
     struct Lane: Decodable, Identifiable { var id: String; var title: String; var rows: [Row] }
     struct Group: Decodable, Identifiable { var id: String; var title: String }
+    /// Its live grant to start agents (Arugula #1416, #1456): what its person
+    /// approved on its Run this board card. `mine`: the reader gave it, so
+    /// Revoke is theirs.
+    struct Grant: Decodable {
+        struct Machine: Decodable { var id: String; var name: String }
+        var id: String
+        var person_name: String?
+        var lead_machine: Machine
+        var machines: [Machine]
+        var cap: Int
+        var lapses_at: Int?
+        var mine: Bool?
+
+        /// As the web's board page says it: "Grant: lead on geek · agents on
+        /// geek, mini · up to 3 · until the board closes"; a teammate's is
+        /// "Grant (Jo's): …".
+        var line: String {
+            let by = mine == true ? "" : person_name.flatMap { $0.isEmpty ? nil : " (\($0)'s)" } ?? ""
+            let until = lapses_at.map { at in
+                "until " + Date(timeIntervalSince1970: Double(at) / 1000).formatted(.dateTime.month(.abbreviated).day())
+            } ?? "until the board closes"
+            return "Grant\(by): lead on \(lead_machine.name) · agents on \(machines.map(\.name).joined(separator: ", ")) · up to \(cap) · \(until)"
+        }
+    }
     var board: Info
     var zones: [Lane]
     var groups: [Group]?
+    var grant: Grant?
 
     func groupTitle(_ id: String?) -> String? { id.flatMap { g in groups?.first { $0.id == g }?.title } }
 }
@@ -82,6 +115,30 @@ struct IssueRef: Hashable { var id: String }
 struct ProjectIssue: Hashable { var project: String; var number: String }
 
 struct BoardList: Decodable { var boards: [Board] }
+
+/// `POST /api/boards/{id}/run`'s answer: the card went in the reader's
+/// staff room; `again`, it was there already.
+struct BoardRunAsked: Decodable { var ask: String; var room: String; var again: Bool? }
+
+/// A project Doc on its project's list (the web's `ProjectDoc`), its times
+/// in milliseconds.
+struct ProjectDoc: Decodable, Identifiable, Hashable {
+    var id: String
+    var project: String
+    var title: String
+    /// The account that made it, a machine's agent's owner's included; "" for
+    /// one an agent session made.
+    var author: String
+    /// `tabs` or `prototype`; absent (or one the app doesn't know) is a plain Doc.
+    var layout: String?
+    var created_at: Int
+    var updated_at: Int
+    var updated: Date { Date(timeIntervalSince1970: Double(updated_at) / 1000) }
+    var ref: DocRef { DocRef(project: project, doc: id, label: title) }
+}
+
+/// `GET /api/projects/:project/docs`: the latest changed first.
+struct ProjectDocList: Decodable { var docs: [ProjectDoc] }
 
 struct ChatRoom: Decodable, Identifiable, Hashable {
     var id: String
@@ -103,6 +160,12 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
     var staff: Bool?
     /// The session that leads a staff room: the reader's posts there reach it.
     var lead: Board.Lead?
+    /// An object's thread's object (an issue's `iss_`, a run's `run_`), and
+    /// how it's followed, for the Inbox's New in threads (Arugula #1365).
+    var target: String?
+    var level: String?
+    var wants: Int?
+    var muted: Bool?
     struct Person: Decodable { var name: String }
     static func == (a: ChatRoom, b: ChatRoom) -> Bool { a.id == b.id }
 
@@ -169,6 +232,9 @@ struct Machine: Decodable, Identifiable, Hashable {
     var owner_name: String?
     /// The team's own box, not a person's machine (Arugula #1182).
     var team_box: Bool?
+    /// Whose it is when it isn't yours, as the web's fleet says it; nil: yours.
+    var owner: String? { account.map { owner_name ?? $0 } }
+    var yours: Bool { account == nil }
     static func == (a: Machine, b: Machine) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
@@ -322,8 +388,9 @@ struct PaneList: Decodable {
 struct MuxSession: Decodable, Identifiable, Equatable {
     var id: UInt32
     var name: String
-    /// The Arugula project it's in (`{id, name}`).
-    var project: Named?
+    struct Project: Decodable, Equatable { var id: String; var name: String }
+    /// The Arugula project it's in.
+    var project: Project?
     var tabs: [UInt32]
 }
 

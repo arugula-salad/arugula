@@ -154,11 +154,25 @@ export class HostDirectory {
     this.stale = stale;
     if (first) {
       const asked = linkedMachine();
-      this.shown = asked !== null && this.find(asked) ? asked : load<string>(CONTROL_SHOWN_KEY);
+      const linked = asked !== null && !!this.find(asked);
+      this.shown = linked ? asked : load<string>(CONTROL_SHOWN_KEY);
+      // Arugula #1425: the first machine opened is one that's online (the
+      // last one shown if it is), never the alphabetically first for being
+      // so. A link's machine stays: that one was asked for.
+      if (!linked) {
+        const last = this.shown !== null && this.isOnline(this.shown) ? this.shown : null;
+        this.shown = last ?? this.names.filter((n) => this.isOnline(n)).sort(byName)[0] ?? this.shown;
+      }
     }
     if (this.shown !== null && !this.reaches(this.shown)) this.shown = null;
     if (hosts.length) this.syncUrl();
     this.emit();
+  }
+
+  /** Whether control's directory says `name` is up. */
+  private isOnline(name: string): boolean {
+    const h = this.find(name);
+    return !!h && reachable(h) && h.status !== "offline";
   }
 
   find(name: string): Host | undefined {
@@ -231,6 +245,8 @@ export class HostDirectory {
 function reachable(h: Host): boolean {
   return h.transport === "control" || h.transport === "tailnet";
 }
+
+const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
 /** The machine the address names (`?machine=NAME`), if any. */
 function linkedMachine(): string | null {

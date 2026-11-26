@@ -1,16 +1,16 @@
-// #78: every host's Claude Code conversations in one picker (M33 over
-// M25's fleet). Three daemons stand in for geek (the home daemon the page
-// comes from), jake-mini and a laptop, each with a Claude directory of its
-// own. The picker lists them grouped by host, opens one of jake-mini's on
-// jake-mini and continues it there, and a host that stops answering
-// doesn't hold up the others.
+// #78: every host's Claude Code conversations in one Your work dialog (M33
+// over M25's fleet, Arugula #1396). Three daemons stand in for geek (the
+// home daemon the page comes from), jake-mini and a laptop, each with a
+// Claude directory of its own. The dialog lists them grouped by host, opens
+// one of jake-mini's on jake-mini and continues it there, and a host that
+// stops answering doesn't hold up the others.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, seedConversation } from "./helpers";
+import { menu, menuItem, paneEl, panes, reset, seedConversation } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -86,7 +86,7 @@ test.afterAll(() => {
 const hostStates = (page: Page) =>
   page.evaluate(() => Object.fromEntries((window.__arugula?.fleet?.list ?? []).map((h) => [h.name, h.state])));
 
-const picker = (page: Page) => page.getByRole("dialog", { name: "Claude Code conversations" });
+const picker = (page: Page) => page.getByRole("dialog", { name: "Your work" });
 
 /** On geek, with every host connected, the picker from a pane's menu. */
 async function openPicker(page: Page) {
@@ -95,7 +95,7 @@ async function openPicker(page: Page) {
     .poll(() => hostStates(page), { timeout: 15_000 })
     .toEqual({ geek: "connected", "jake-mini": "connected", laptop: "connected" });
   const [term] = await panes(page);
-  await menu(page, paneEl(page, term), "Claude Code conversations…");
+  await menu(page, paneEl(page, term), "Your work…");
   await expect(picker(page)).toBeVisible();
   return picker(page);
 }
@@ -104,28 +104,30 @@ async function openPicker(page: Page) {
 const agentOn = async (url: string) =>
   ((await (await fetch(`${url}/api/panes`)).json()) as { id: number; type?: string }[]).find((p) => p.type === "agent")?.id ?? null;
 
-const row = (page: Page, host: string) => picker(page).locator(`.conv-row[data-host="${host}"][data-conversation="${conv.get(host)!.id}"]`);
+const row = (page: Page, host: string) => picker(page).locator(`.yw-row[data-host="${host}"][data-conversation="${conv.get(host)!.id}"]`);
 
 test("every host's conversations in one picker, each opened and continued on its own host", async ({ page }) => {
   const dialog = await openPicker(page);
   // Grouped by host, this one first; each host's under its heading.
-  await expect(dialog.locator(".conv-host .conv-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
+  await expect(dialog.locator(".yw-host-head .yw-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
   for (const host of ["geek", "jake-mini", "laptop"]) {
-    await expect(dialog.locator(`.conv-host[data-host="${host}"] .conv-host-state`)).toHaveText("1 conversation");
+    await expect(dialog.locator(`[data-host-head="${host}"] .yw-host-state`)).toHaveText("1 conversation");
     await expect(row(page, host)).toBeVisible();
   }
-  const order = await dialog.locator(".conv-host, .conv-row").evaluateAll((els) =>
-    els.map((e) => (e.classList.contains("conv-host") ? `#${e.getAttribute("data-host")}` : e.getAttribute("data-host"))),
+  const order = await dialog.locator(".yw-host-head, .yw-row").evaluateAll((els) =>
+    els.map((e) => (e.classList.contains("yw-host-head") ? `#${e.getAttribute("data-host-head")}` : e.getAttribute("data-host"))),
   );
   expect(order).toEqual(["#geek", "geek", "#jake-mini", "jake-mini", "#laptop", "laptop"]);
-  await expect(row(page, "jake-mini")).toContainText("About minnow");
+  await expect(row(page, "jake-mini")).toContainText("remember minnow");
   // Search runs across hosts.
-  await dialog.locator(".picker-filter").fill("minnow");
+  await dialog.locator(".yw-filter").fill("minnow");
   await expect(row(page, "geek")).toBeHidden();
   await expect(row(page, "jake-mini")).toBeVisible();
 
   // jake-mini's opens on jake-mini, and the page shows it there.
   await row(page, "jake-mini").click();
+  await row(page, "jake-mini").locator("[data-conv-more]").click();
+  await (await menuItem(page, "Open as agent block")).click();
   await expect(dialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("jake-mini");
   const mini = `http://127.0.0.1:${portOf.get("jake-mini")}`;
@@ -145,9 +147,10 @@ test("every host's conversations in one picker, each opened and continued on its
   await page.evaluate(() => window.__arugula.hosts.select("geek"));
   await expect.poll(() => page.evaluate(() => window.__arugula.client.connected)).toBe(true);
   const [term] = await panes(page);
-  await menu(page, paneEl(page, term), "Claude Code conversations…");
-  await expect(row(page, "jake-mini").locator(".chip-tag")).toHaveText(`%${block}`);
+  await menu(page, paneEl(page, term), "Your work…");
+  await expect(row(page, "jake-mini").locator("[data-live]")).toHaveText("● in a pane here");
   await row(page, "jake-mini").click();
+  await row(page, "jake-mini").locator("[data-go-to-pane]").click();
   await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("jake-mini");
   await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(block);
   expect(await agentOn(homeUrl)).toBeNull();
@@ -163,16 +166,16 @@ test("a host that stops answering is shown as such and holds nothing up", async 
   try {
     const t0 = Date.now();
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
+    await menu(page, paneEl(page, term), "Your work…");
     // The others are there at once, the laptop still being asked.
     await expect(row(page, "jake-mini")).toBeVisible();
     await expect(row(page, "geek")).toBeVisible();
     const others = Date.now() - t0;
     expect(others).toBeLessThan(2000);
-    await expect(picker(page).locator('.conv-host[data-host="laptop"]')).toHaveClass(/reading/);
+    await expect(picker(page).locator('[data-host-head="laptop"]')).toHaveClass(/reading/);
     // Then it says it isn't answering, within the per-host timeout.
-    await expect(picker(page).locator('.conv-host[data-host="laptop"]')).toHaveClass(/away/, { timeout: 7000 });
-    await expect(picker(page).locator('.conv-host[data-host="laptop"] .conv-host-state')).toContainText("not answering");
+    await expect(picker(page).locator('[data-host-head="laptop"]')).toHaveClass(/away/, { timeout: 7000 });
+    await expect(picker(page).locator('[data-host-head="laptop"] .yw-host-state')).toContainText("not answering");
     const away = Date.now() - t0;
     console.log(`fleet conversations: others in ${others} ms, the stopped host given up on at ${away} ms`);
     expect(away).toBeLessThan(7000);
@@ -187,21 +190,20 @@ test.describe("phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  test("the sheet lists every host's and opens one on its host", async ({ page }) => {
+  test("the sheet lists every host's and continues one on its host", async ({ page }) => {
     await reset(page);
     await expect.poll(() => hostStates(page), { timeout: 15_000 }).toEqual({ geek: "connected", "jake-mini": "connected", laptop: "connected" });
     await page.locator(".sheet-button").click();
     await page.locator("[data-conversations]").click();
     await expect(picker(page)).toHaveClass(/\bphone\b/);
-    await expect(picker(page).locator(".conv-host .conv-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
+    await expect(picker(page).locator(".yw-host-head .yw-host-name")).toHaveText(["geek", "jake-mini", "laptop"]);
     await row(page, "laptop").click();
+    await row(page, "laptop").locator("[data-continue-here]").click();
     await expect(picker(page)).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.__arugula.hosts.current)).toBe("laptop");
-    const there = `http://127.0.0.1:${portOf.get("laptop")}`;
-    await expect.poll(() => agentOn(there)).not.toBeNull();
-    const block = (await agentOn(there))!;
-    await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(block);
-    await expect(paneEl(page, block).locator(".agent-user").first()).toHaveText("remember lapwing");
+    // In a terminal tab named after it, on laptop: no agent block.
+    await expect.poll(() => page.evaluate(() => window.__arugula.client.tabView()?.name)).toBe("About lapwing");
+    expect(await agentOn(`http://127.0.0.1:${portOf.get("laptop")}`)).toBeNull();
     await page.evaluate(() => window.__arugula.hosts.select("geek"));
   });
 });

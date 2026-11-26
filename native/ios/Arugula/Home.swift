@@ -1,16 +1,18 @@
-// Home (Arugula #1255): the project's conversations, sorted by what needs you,
-// as the desktop's Overview reads them (web/src/app/overview.tsx). In a team's
+// The Overview (Arugula #1255; Home until #1361): the project's
+// conversations, sorted by what needs you, as the desktop's Overview reads
+// them (web/src/app/overview.tsx). In a team's
 // project the chief of staff comes first (Arugula #1279): the reader's staff
 // room and who leads it. Then Needs you, merged from every machine's panes,
 // the boards' rows and the hosted sessions, worst first; then one row per open
 // board, with its lane bar, its count, its lead and what's going on in words;
-// then the people, its channels and DMs. Home is the Overview's Project level
+// then the people, its channels and DMs. It is the zoom's Project level
 // (Arugula #1304): a board's row zooms to its Board level and a ticket there
 // to its Work level (Zoom.swift), each at an address a link or a notification
-// opens. Home is the first of the app's tabs (Arugula #1262). On an iPad home
+// opens. It is the first of the app's places (Arugula #1262). On an iPad it
 // is the left column of a split view, and what it opens sits beside it. A row of Needs you is answered where it is
-// (Answer.swift), and a session opens a peek. New tells a board or starts a
-// New idea (New.swift), whose conversations are listed under New ideas.
+// (Answer.swift), and a session opens a peek. New, in every place's heading,
+// tells a board or starts a New idea (New.swift), whose conversations are
+// listed under New ideas.
 
 import Combine
 import SwiftUI
@@ -35,24 +37,27 @@ enum Opened: Hashable {
     case issue(String)
 }
 
-/// The app's tabs, always on its bar (Arugula #1262): home first. Issues
-/// aren't a tab: a board's rows open theirs, and the project's menu opens
-/// the list.
+/// The app's places, always on its bar (Arugula #1262), as the web's rail
+/// has them (Arugula #1361): Overview, Boards and Docs lead, then Machines
+/// and Chat. Issues aren't a place: a board's rows open theirs, and the
+/// project's menu opens the list. The Inbox and the account are in every
+/// place's heading (TabHeading), or at the foot of an iPad's sidebar, not
+/// on the bar.
 enum AppTab: String, CaseIterable, Identifiable {
-    case home = "Home", boards = "Boards", chat = "Chat", machines = "Machines", you = "You"
+    case overview = "Overview", boards = "Boards", docs = "Docs", machines = "Machines", chat = "Chat"
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .home: "house"
+        case .overview: "square.grid.2x2"
         case .boards: "rectangle.split.3x1"
-        case .chat: "bubble.left.and.bubble.right"
+        case .docs: "doc.text"
         case .machines: "terminal"
-        case .you: "person.crop.circle"
+        case .chat: "bubble.left.and.bubble.right"
         }
     }
 }
 
-private struct GoHomeKey: EnvironmentKey {
+private struct GoOverviewKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
@@ -60,17 +65,49 @@ private struct ShowIssuesKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
+private struct MakeNewKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+private struct ShowInboxKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+private struct SidebarFootKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
-    /// Select the Home tab.
-    var goHome: (() -> Void)? {
-        get { self[GoHomeKey.self] }
-        set { self[GoHomeKey.self] = newValue }
+    /// Select the Overview.
+    var goOverview: (() -> Void)? {
+        get { self[GoOverviewKey.self] }
+        set { self[GoOverviewKey.self] = newValue }
     }
 
     /// Open the current project's issues, from its menu.
     var showIssues: (() -> Void)? {
         get { self[ShowIssuesKey.self] }
         set { self[ShowIssuesKey.self] = newValue }
+    }
+
+    /// New, from any place's heading: tell a board or start a New idea.
+    /// Unset, the heading has no New.
+    var makeNew: (() -> Void)? {
+        get { self[MakeNewKey.self] }
+        set { self[MakeNewKey.self] = newValue }
+    }
+
+    /// The bell in a place's heading: the Inbox. Unset, no bell.
+    var showInbox: (() -> Void)? {
+        get { self[ShowInboxKey.self] }
+        set { self[ShowInboxKey.self] = newValue }
+    }
+
+    /// The bell and your picture are at the foot of an iPad's sidebar
+    /// (Arugula #1366), so a place's heading leaves them out.
+    var sidebarFoot: Bool {
+        get { self[SidebarFootKey.self] }
+        set { self[SidebarFootKey.self] = newValue }
     }
 }
 
@@ -173,18 +210,29 @@ final class HomeModel: ObservableObject {
         } catch is CancellationError {
             return
         } catch {
+            guard self.project == project else { return }
             problem = describe(error)
         }
-        if let rooms = try? await r.rooms { self.rooms = rooms }
+        // Everything else is read first and written at once, and only while
+        // the project is still this one (Arugula #1354): a project picked
+        // meanwhile gets nothing of this one, and a cancelled read wipes
+        // nothing.
+        let rooms = try? await r.rooms
         // A hub or an account without hosted sessions has none to wait on.
-        hosted = (try? await s.sessions) ?? []
+        let hosted = (try? await s.sessions) ?? []
         var asks: [String: SessionView] = [:]
         for w in hosted where w.waiting != nil {
             if let v = try? await control.get("/api/sessions/\(w.session)", as: SessionView.self) { asks[w.session] = v }
         }
+        let ideas = ((try? await i.issues) ?? []).filter { $0.title.hasPrefix("Idea: ") }
+        var name = me
+        if name == nil { name = try? await who.me.name }
+        guard self.project == project, !Task.isCancelled else { return }
+        if let rooms { self.rooms = rooms }
+        self.hosted = hosted
         opened = asks
-        ideas = ((try? await i.issues) ?? []).filter { $0.title.hasPrefix("Idea: ") }
-        if me == nil { me = try? await who.me.name }
+        self.ideas = ideas
+        me = name
         loaded = true
         await openThreads(control)
     }
@@ -203,6 +251,11 @@ final class HomeModel: ObservableObject {
         await load(control, project: project)
     }
     private var pending = false
+
+    /// A board as a write answered it (its grant revoked, Arugula #1456).
+    func put(_ id: String, view: BoardDetail) {
+        views[id] = view
+    }
 
     /// The reader's staff room in a project, as the rooms list has it: its
     /// lead and unread count. None until it's first opened.
@@ -245,9 +298,10 @@ final class HomeModel: ObservableObject {
 
 // ---- how things stand, in the Overview's words (web/src/shell/swarm/overview.ts)
 
-/// How a card or a session stands, most urgent first.
+/// How a card or a session stands, most urgent first. `waits`: it, or its
+/// question, waits on someone else (Arugula #1392).
 enum Standing: Int, Comparable {
-    case needs, asks, failed, checksFailing, quiet, working, checksRunning, review, idle
+    case needs, asks, failed, checksFailing, waits, quiet, working, checksRunning, review, idle
 
     static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
 
@@ -258,6 +312,7 @@ enum Standing: Int, Comparable {
         case .asks: "asks you"
         case .failed: "failed"
         case .checksFailing: "checks failing"
+        case .waits: "asks someone else"
         case .quiet: "quiet"
         case .working: "working"
         case .checksRunning: "checks running"
@@ -266,13 +321,20 @@ enum Standing: Int, Comparable {
         }
     }
 
+    /// Its word, naming whom it waits on when that's someone else: `asks
+    /// Aaron`, or `asks someone` where that isn't known.
+    func word(asks who: String?) -> String {
+        guard self == .waits else { return word }
+        return "asks \((who ?? "").isEmpty ? "someone" : who!)"
+    }
+
     var tone: Tone {
         switch self {
         case .needs, .asks: .accent
         case .failed, .checksFailing: .danger
         case .quiet: .warn
         case .working: .ok
-        case .checksRunning, .review: .info
+        case .waits, .checksRunning, .review: .info
         case .idle: .muted
         }
     }
@@ -300,6 +362,17 @@ extension PaneRow {
     var isAgent: Bool { type == "agent" || work == "agent" }
 }
 
+extension MachineSession {
+    /// Whose it is when it isn't the reader's: its owner's name (Arugula #1392).
+    var owner: String? { machine.owner_name.flatMap { $0.isEmpty ? nil : $0 } }
+
+    /// How a pane stands for the reader: one on someone else's machine
+    /// that needs them waits on them, not on you (Arugula #1392).
+    func standing(of p: PaneRow) -> Standing {
+        p.standing == .needs && owner != nil ? .waits : p.standing
+    }
+}
+
 extension SessionWave.Row {
     var standing: Standing {
         if waiting != nil { return .needs }
@@ -315,7 +388,7 @@ extension BoardDetail.Row {
     /// What a row says of itself, besides its sessions.
     var says: [Standing] {
         var out: [Standing] = []
-        if ask?.mine == true { out.append(.asks) }
+        if let a = ask { if a.mine { out.append(.asks) } else if !(a.who ?? "").isEmpty { out.append(.waits) } }
         if marks?.contains(where: { $0.kind == "stalled" }) == true { out.append(.quiet) }
         let work = (attachments ?? []).filter { $0.role == "work" && $0.released != true }.compactMap(\.live)
         for l in ([live].compactMap { $0 } + work) where l.kind == "pr" {
@@ -375,7 +448,10 @@ struct BoardSession: Identifiable {
     /// The card: `#983 · Its title`.
     let card: String
     let standing: Standing
+    /// Whom it waits on, when that's someone else (`waits`).
+    var asks: String? = nil
     var id: String { peeked.id }
+    var word: String { standing == .idle ? "quiet" : standing.word(asks: asks) }
 }
 
 /// A lead, a board's (#414) or a staff room's (Arugula #1275), as its chip
@@ -390,12 +466,19 @@ struct LeadLine {
     let machine: String
     let standing: Standing?
     let peeked: Peeked?
+    /// Its session's name as people read it: a chief of staff's by its
+    /// project's (Arugula #1457).
+    let label: String
 
-    var name: String { who.map { "\($0)'s \(lead.session)" } ?? lead.session }
+    var name: String { who.map { "\($0)'s \(label)" } ?? label }
 
+    /// `shown` is the board's project: a session of another, of the same
+    /// name, isn't its lead's (Arugula #1353).
     @MainActor
-    init(_ lead: Board.Lead, fleet: HomeFleet) {
+    init(_ lead: Board.Lead, fleet: HomeFleet, in shown: Shown?) {
         self.lead = lead
+        let label = sessionLabel(lead.session, in: shown)
+        self.label = label
         let listed = fleet.directory.first { $0.id == lead.machine }
         // A team's own box has no one to name.
         who = listed.flatMap { $0.team_box == true ? nil : $0.owner_name }.flatMap { $0.isEmpty ? nil : $0 }
@@ -406,15 +489,19 @@ struct LeadLine {
             return
         }
         // The daemon names a lead by its Claude Code conversation's title (an
-        // agent block's own title), else as the web does, by its session's.
-        let tabs = Set(m.sessions.filter { $0.name == lead.session }.flatMap(\.tabs))
-        let all = m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } }
+        // agent block's own title), else as the web does, by its session's. A
+        // chief of staff's block is titled by its project's name, its session
+        // by the project's id (Arugula #1457).
+        let yours = m.machine.yours
+        let tabs = Set(m.sessions.filter { $0.name == lead.session && Shown.shows(shown, project: $0.project?.id, yours: yours) }.flatMap(\.tabs))
+        let all = (m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } })
+            .filter { Shown.shows(shown, project: $0.session_project?.id, card: $0.on_issue?.project, yours: yours) }
         let panes = all.filter { p in
             m.conversations[p.id] == lead.session
-                || (p.type == "agent" && p.title?.trimmingCharacters(in: .whitespaces) == lead.session)
+                || (p.type == "agent" && [lead.session, label].contains(p.title?.trimmingCharacters(in: .whitespaces) ?? ""))
                 || tabs.contains(p.tab)
         }
-        standing = panes.map(\.standing).min()
+        standing = panes.map { m.standing(of: $0) }.min()
         let best = panes.min { ($0.isAgent ? 0 : 1, $0.standing) < ($1.isAgent ? 0 : 1, $1.standing) }
         peeked = best.map { .pane(m, $0) }
     }
@@ -446,14 +533,13 @@ struct HomeState {
 
     @MainActor
     init(project: Projects.Project, fleet: HomeFleet, model: HomeModel) {
-        let personal = project.team == nil
-        // The project's panes: its sessions', its cards', or none's in the personal project.
+        // The project's panes: its sessions', its cards', or, in the personal
+        // project, those placed nowhere on your own machines (the core's rule).
         var panes: [(MachineSession, PaneRow)] = []
         for m in fleet.machines {
-            for p in m.panes + m.agents {
-                let mine = p.session_project?.id == project.id || p.on_issue?.project == project.id
-                    || (personal && p.session_project == nil && p.on_issue?.project == nil)
-                if mine { panes.append((m, p)) }
+            for p in m.panes + m.agents
+            where Shown.shows(project.shown, project: p.session_project?.id, card: p.on_issue?.project, yours: m.machine.yours) {
+                panes.append((m, p))
             }
         }
 
@@ -504,8 +590,8 @@ struct HomeState {
             let flight = rows.filter(\.inFlight).map { r -> Standing in
                 var all = r.says
                 for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
-                    all.append(p.standing)
-                    on.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                    all.append(m.standing(of: p))
+                    on.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: m.standing(of: p), asks: m.owner))
                 }
                 for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
                     all.append(s.standing)
@@ -518,14 +604,14 @@ struct HomeState {
             for r in rows where !(r.lane ?? "").hasSuffix("done") {
                 var mine: [BoardSession] = []
                 for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
-                    mine.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                    mine.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: m.standing(of: p), asks: m.owner))
                 }
                 for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
                     mine.append(BoardSession(peeked: .hosted(s), name: "Arugula cloud", card: r.words, standing: s.standing))
                 }
                 cards["\(b.id)/\(r.id)"] = mine.sorted { ($0.standing, $0.name) < ($1.standing, $1.name) }
             }
-            var says = [Standing.needs, .asks, .failed, .checksFailing, .quiet, .working, .checksRunning, .review]
+            var says = [Standing.needs, .asks, .failed, .checksFailing, .waits, .quiet, .working, .checksRunning, .review]
                 .map { st in (st, flight.filter { $0 == st }.count) }
                 .filter { $0.1 > 0 }
                 .map { ($0.0, "\($0.1) \($0.0.word)") }
@@ -537,7 +623,7 @@ struct HomeState {
             }
             let p = b.progress
             boards.append(BoardLine(
-                board: b, lead: b.lead.map { LeadLine($0, fleet: fleet) }, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
+                board: b, lead: b.lead.map { LeadLine($0, fleet: fleet, in: project.shown) }, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
                 standing: flight.min() ?? .idle, says: says, still: flight.isEmpty))
         }
         boards.sort { a, b in
@@ -567,8 +653,11 @@ struct PhoneHome: View {
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
+    /// What New made, from any place's heading: opened here.
+    @Binding var handed: Opened?
     @ObservedObject private var push = PushCenter.shared
     @ObservedObject private var zoomCenter = ZoomCenter.shared
+    @ObservedObject private var approvals = Approvals.shared
     @EnvironmentObject private var scope: Scope
     @Environment(\.scenePhase) private var phase
     @State private var opened: Opened?
@@ -581,7 +670,6 @@ struct PhoneHome: View {
     @State private var folded: Set<String> = []
     @State private var said: String?
     @State private var peek: Peeked?
-    @State private var making = false
     /// The Doc open (Arugula #1259): the right-hand column on an iPad, over
     /// everything on a phone.
     @State private var doc: DocRef?
@@ -626,12 +714,6 @@ struct PhoneHome: View {
         .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
-        .sheet(isPresented: $making) {
-            NewSheet(control: control, model: model, fleet: fleet, open: { opened = $0 }, toast: show) {
-                Task { await refresh() }
-            }
-                .environmentObject(scope)
-        }
         .sheet(item: $peek) { p in
             SessionPeek(
                 control: control, peeked: p,
@@ -647,6 +729,11 @@ struct PhoneHome: View {
         }
         .overlay(alignment: .bottom) {
             if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
+        }
+        .onChange(of: handed, initial: true) { _, h in
+            guard let h else { return }
+            handed = nil
+            opened = h
         }
         .onChange(of: opened) { _, _ in
             path = NavigationPath()
@@ -715,7 +802,7 @@ struct PhoneHome: View {
 
     private var sidebar: some View {
         list
-            .homeHeading { making = true }
+            .tabHeading(AppTab.overview.rawValue)
             .background(Palette.void)
     }
 
@@ -725,10 +812,10 @@ struct PhoneHome: View {
                 switch opened {
                 case .board(let b):
                     if let p = scope.current {
-                        BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, askChief: askChief(b, in: p))
+                        BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, run: runBoard(b, in: p), revoke: { revokeGrant(b) })
                     }
                 case .thread(let b):
-                    BoardThread(control: control, board: b, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
+                    BoardThread(control: control, board: b, shown: scope.current?.shown, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
                 case .work(let key):
                     if let p = scope.current {
                         WorkLevel(control: control, project: p, session: key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
@@ -737,7 +824,7 @@ struct PhoneHome: View {
                     }
                 case .room(let r): ChatRoomView(control: control, room: r, live: live)
                 case .staff(let project):
-                    StaffRoom(control: control, project: project, model: model, fleet: fleet, live: live) { peek = $0 }
+                    StaffRoom(control: control, project: project, shown: scope.current?.shown, model: model, fleet: fleet, live: live) { peek = $0 }
                 case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
                 case .idea(let room, let parent, let issue, let title):
                     IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
@@ -855,22 +942,37 @@ struct PhoneHome: View {
         }
     }
 
-    /// A board no one leads, in a team's project where the reader has a
-    /// staff room: ask the chief of staff to start a lead there, and open the
-    /// room to read the answer (Arugula #1306).
-    private func askChief(_ b: Board, in p: Projects.Project) -> (() -> Void)? {
-        guard p.team != nil, (model.boards.first { $0.id == b.id } ?? b).lead == nil,
-              let room = model.staffListed(project: p.id) else { return nil }
+    /// Run this board (Arugula #1416, #1456), on a board no one leads and
+    /// nothing is granted, in a team's project (a staff room is a team's):
+    /// its card, with the defaults filled in, goes in the reader's staff
+    /// room, under Needs you.
+    private func runBoard(_ b: Board, in p: Projects.Project) -> (() -> Void)? {
+        let line = model.boards.first { $0.id == b.id } ?? b
+        guard p.team != nil, line.lead == nil, line.closed_at == nil, model.views[b.id]?.grant == nil else { return nil }
         return {
             Task {
                 do {
-                    _ = try await control.call("POST", "/api/chat/rooms/\(room.id)/messages", body: [
-                        "text": "Please start a session to lead the board \"\(b.title)\" (\(b.id)): read its goal and open tickets, then lead it.",
-                    ])
-                    opened = .staff(project: p.id)
+                    let d = try await control.call("POST", "/api/boards/\(b.id)/run")
+                    let r = try JSONDecoder().decode(BoardRunAsked.self, from: d)
+                    show(r.again == true ? RunBoardSaid.again : RunBoardSaid.asked)
+                    await refresh()
                 } catch {
-                    show("Couldn't ask the chief of staff: \(describe(error))")
+                    show("Couldn't ask to run it: \(describe(error))")
                 }
+            }
+        }
+    }
+
+    /// Revoke the board's grant: its lead and agents run on, and nothing
+    /// more starts under it.
+    private func revokeGrant(_ b: Board) {
+        Task {
+            do {
+                let d = try await control.call("DELETE", "/api/boards/\(b.id)/grant")
+                let view = try JSONDecoder().decode(BoardDetail.self, from: d)
+                model.put(b.id, view: view)
+            } catch {
+                show("Couldn't change it: \(describe(error))")
             }
         }
     }
@@ -910,6 +1012,7 @@ struct PhoneHome: View {
 
     private func refresh(soon: Bool = false) async {
         guard let p = scope.current else { return }
+        if !soon { await approvals.load(control) }
         if soon { await model.soon(control, project: p.id) } else { await model.load(control, project: p.id) }
     }
 
@@ -946,7 +1049,7 @@ struct PhoneHome: View {
                 Section {
                     let room = model.staffListed(project: project.id)
                     NavigationLink(value: Opened.staff(project: project.id)) {
-                        StaffRow(room: room, lead: room?.lead.map { LeadLine($0, fleet: fleet) }, open: opened == .staff(project: project.id))
+                        StaffRow(room: room, lead: room?.lead.map { LeadLine($0, fleet: fleet, in: project.shown) }, open: opened == .staff(project: project.id))
                     }
                     .voidRow()
                     .accessibilityIdentifier("home-staff")
@@ -955,7 +1058,15 @@ struct PhoneHome: View {
                 }
             }
             Section {
-                if needs.isEmpty {
+                // Deploys waiting on the reader, in any project they own,
+                // first: they open over the app (#604).
+                ForEach(approvals.waiting) { d in
+                    Button { approvals.open = .deploy(d.id) } label: { DeployNeedRow(deploy: d) }
+                        .buttonStyle(.plain)
+                        .voidRow()
+                        .accessibilityIdentifier("need-deploy-\(d.id)")
+                }
+                if needs.isEmpty && approvals.waiting.isEmpty {
                     Text(model.loaded ? "Nothing needs you." : "Looking…")
                         .font(Face.ui(14)).foregroundStyle(Palette.dim)
                         .voidRow()
@@ -963,7 +1074,8 @@ struct PhoneHome: View {
                 }
                 ForEach(needs) { n in needRow(n) }
             } header: {
-                Caps(needs.isEmpty ? NEEDS_YOU : "\(NEEDS_YOU) · \(needs.count)")
+                let count = needs.count + approvals.waiting.count
+                Caps(count == 0 ? NEEDS_YOU : "\(NEEDS_YOU) · \(count)")
             }
             if !ideaLines.isEmpty {
                 Section {
@@ -1050,53 +1162,6 @@ struct PhoneHome: View {
 /// The label for what needs you, as the web's (web/src/shared/needs-you.ts).
 let NEEDS_YOU = "Needs you"
 
-/// Home's heading: the project, as a menu of every project and its issues,
-/// and New.
-struct HomeHeading: ViewModifier {
-    let new: () -> Void
-    @EnvironmentObject private var scope: Scope
-
-    func body(content: Content) -> some View {
-        content
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Menu {
-                            ProjectMenu()
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text((scope.current?.name ?? "Arugula").uppercased())
-                                    .font(Face.display(30)).foregroundStyle(Palette.fg).lineLimit(1)
-                                Image(systemName: "chevron.down").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
-                            }
-                        }
-                        .accessibilityIdentifier("project-switcher")
-                        Spacer(minLength: 8)
-                        Button("New", action: new)
-                            .buttonStyle(AnswerButton(primary: true))
-                            .accessibilityIdentifier("home-new")
-                    }
-                    if let team = scope.current?.team {
-                        Caps("\(team.name) · \(team.role)")
-                    }
-                    if let problem = scope.problem {
-                        Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal)
-                .padding(.bottom, 10)
-                .background(Palette.void)
-            }
-    }
-}
-
-extension View {
-    func homeHeading(new: @escaping () -> Void) -> some View { modifier(HomeHeading(new: new)) }
-}
-
 /// The project menu's items: every project to pick, then the current one's
 /// issues.
 struct ProjectMenu: View {
@@ -1111,10 +1176,17 @@ struct ProjectMenu: View {
                 }
             }
         }
-        if let showIssues {
-            Section {
+        Section {
+            if let showIssues {
                 Button(action: showIssues) { Label("Issues", systemImage: "smallcircle.filled.circle") }
                     .accessibilityIdentifier("project-issues")
+            }
+            // Its standing grant for runs (#604).
+            if let p = scope.current {
+                Button { Approvals.shared.open = .runs(project: p.id, name: p.name) } label: {
+                    Label("Runs", systemImage: "play.circle")
+                }
+                .accessibilityIdentifier("project-runs")
             }
         }
     }
@@ -1193,11 +1265,13 @@ struct BoardLineRow: View {
         .padding(.vertical, 4)
     }
 
-    /// Who leads it, in words: a session on a machine, or nobody.
-    static func lead(_ l: Board.Lead?) -> String {
+    /// Who leads it, in words: a session on a machine, or nobody. A chief
+    /// of staff's session reads by `shown`'s name, when it's that project's
+    /// (Arugula #1457).
+    static func lead(_ l: Board.Lead?, in shown: Shown? = nil) -> String {
         guard let l else { return "No lead" }
         let on = (l.machine_name ?? "").isEmpty ? "" : " on \(l.machine_name!)"
-        return "Led by \(l.session)\(on)"
+        return "Led by \(sessionLabel(l.session, in: shown))\(on)"
     }
 }
 
@@ -1216,7 +1290,7 @@ struct LeadChip: View {
                     + Text("Led by ").foregroundColor(Palette.dim)
                     + Text(lead.name).font(Face.mono(11, "Bold")).foregroundColor(Palette.fg)
                     + Text(lead.machine.isEmpty ? "" : " on \(lead.machine)").foregroundColor(Palette.dim)
-                    + Text(lead.standing.map { $0 == .idle ? "" : " · \($0.word)" } ?? "").foregroundColor(lead.standing?.tone.color ?? Palette.dim))
+                    + Text(lead.standing.map { $0 == .idle ? "" : " · \($0.word(asks: lead.who))" } ?? "").foregroundColor(lead.standing?.tone.color ?? Palette.dim))
             } else {
                 Text(none).foregroundColor(Palette.dim)
             }
@@ -1266,6 +1340,8 @@ struct BoardLanes: Hashable { let board: Board }
 struct BoardThread: View {
     let control: Control
     let board: Board
+    /// The board's project, where its lead's session is looked for.
+    let shown: Shown?
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
@@ -1313,7 +1389,7 @@ struct BoardThread: View {
             LaneBar(done: done, review: review, doing: doing, total: max(total, 1))
             Text("\(done) done · \(review) review · \(doing) doing · \(max(0, total - done - review - doing)) next")
                 .font(Face.mono(11)).foregroundStyle(Palette.dim)
-            LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet) }, id: "board-lead", peek: peek)
+            LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet, in: shown) }, id: "board-lead", peek: peek)
             WhoLine(text: "Talking in \(line.title)'s thread: a post goes to the board's thread, where its lead and anyone mentioned read it.")
             if !sessions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -1325,7 +1401,7 @@ struct BoardThread: View {
                                         Circle().fill(s.standing.tone.color).frame(width: 6, height: 6)
                                         Text(s.name).font(Face.ui(13, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
                                     }
-                                    Text("\(s.card) · \(s.standing == .idle ? "quiet" : s.standing.word)")
+                                    Text("\(s.card) · \(s.word)")
                                         .font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1)
                                 }
                                 .frame(maxWidth: 240, alignment: .leading)
@@ -1488,6 +1564,7 @@ struct StaffRow: View {
 struct StaffRoom: View {
     let control: Control
     let project: String
+    let shown: Shown?
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
@@ -1522,7 +1599,7 @@ struct StaffRoom: View {
         // The rooms list is the newer word on who leads it.
         let lead = (model.staffListed(project: project) ?? room)?.lead
         return VStack(alignment: .leading, spacing: 4) {
-            LeadHeading(lead: lead.map { LeadLine($0, fleet: fleet) }, id: "staff-lead", none: "Nobody leads it yet", peek: peek)
+            LeadHeading(lead: lead.map { LeadLine($0, fleet: fleet, in: shown) }, id: "staff-lead", none: "Nobody leads it yet", peek: peek)
             Text(lead == nil
                 ? "Only you and your own agents are here. What you post waits until one of your sessions takes the lead."
                 : "Only you and your own agents are here. What you post reaches the session that leads it.")
@@ -1561,4 +1638,12 @@ extension View {
     func backBesideTabs(_ title: String, back: @escaping () -> Void) -> some View {
         modifier(BackBesideTabs(title: title, back: back))
     }
+}
+
+/// What Run this board says once its card is asked for: the web's words
+/// (Arugula #1416), on the web until the phone shows the card (#1459). One
+/// place, so the phone's wording is one change.
+enum RunBoardSaid {
+    static let asked = "Run this board: approve its card in Needs you on the web."
+    static let again = "Its Run this board card is waiting in Needs you on the web."
 }

@@ -402,6 +402,17 @@ impl Call<'_> {
         Ok(self.chosen_project(project).await?.id)
     }
 
+    /// The card the caller is on, as its project and the issue as written
+    /// (`#N`, `owner/repo#N` or `IDENT-N`): the issue its block was started
+    /// on, else its pane's own (Arugula #1463's to-dos name it).
+    pub async fn my_card(&self) -> Option<(String, String)> {
+        let card = match self.my_started_issue().await.filter(|s| !s.issue.is_empty()) {
+            Some(s) => s,
+            None => self.my_session_and_repo(None).await.0?,
+        };
+        Some((card.project, card.issue))
+    }
+
     /// The issue the caller's own block was started on, and its project
     /// (`start_agent`'s `issue`, kept as its `work`).
     async fn my_started_issue(&self) -> Option<Started> {

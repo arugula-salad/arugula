@@ -7,6 +7,10 @@
 // (one passkey prompt); Revoke takes back every grant the project has under
 // its delegation, and can stop the runs going too. The platform keeps them;
 // the hosted machines check them against the account's passkey log.
+//
+// One project's is its own dialog, `#run-grant=prj_…` (Arugula #604): the
+// link from the project's settings on the platform page, and the phone
+// app's web sheet with `&app`, which goes back to the app when closed.
 
 import { useEffect, useState } from "preact/hooks";
 import { Time } from "../../shared/ui/time";
@@ -14,6 +18,8 @@ import { api, type ControlSession, type RunGrantView } from "../control";
 import type { Delegation } from "../e2e/hosted.ts";
 import { GRANT_DAYS } from "../e2e/run-grant.ts";
 import { platformFetch } from "../../shared/maintenance";
+import { Modal } from "../../shared/ui/modal";
+import { backToApp, clearHash } from "./common";
 import type { PlatformProjects } from "../../shared/proto.gen";
 
 interface Row {
@@ -27,7 +33,30 @@ interface Row {
 
 const DAYS = [30, GRANT_DAYS, 365];
 
-export function RunGrants({ s }: { s: ControlSession }) {
+/** One project's grant, as its own dialog: `#run-grant=prj_…`, and `&app`
+ * from the phone app's web sheet. */
+export const RUN_GRANT_HASH = /^#run-grant=(prj_[0-9a-f]{32})(&app)?$/;
+
+export function RunGrantPrompt({ s, project, app = false }: { s: ControlSession; project: string; app?: boolean }) {
+  const close = app ? backToApp : clearHash;
+  return (
+    <Modal close={close}>
+      <h2>Runs on cloud workspaces</h2>
+      <div data-run-grant-prompt={project}>
+        <RunGrants s={s} only={project} />
+      </div>
+      <div class="prompt-buttons">
+        <button class="secondary" data-run-grant-back onClick={close}>
+          {app ? "Back to the app" : "Close"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Each project this account owns that has a delegation, or only the
+ * project `only`. */
+export function RunGrants({ s, only }: { s: ControlSession; only?: string }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState("");
   const [stop, setStop] = useState<Record<string, boolean>>({});
@@ -37,6 +66,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
     const [d, p] = await Promise.all([s.delegations(), api<PlatformProjects>("/api/projects", undefined, platformFetch).catch(() => null)]);
     const owned = (p?.projects ?? [])
       .filter((x) => !x.team || x.team.role === "owner")
+      .filter((x) => !only || x.id === only)
       .map((x) => ({ id: x.id, name: x.name, owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
     const out: Row[] = [];
     for (const x of owned) {
@@ -47,7 +77,15 @@ export function RunGrants({ s }: { s: ControlSession }) {
     setRows(out);
   };
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
-  if (!rows?.length) return err ? <p class="control-error">{err}</p> : null;
+  if (!rows?.length) {
+    if (err) return <p class="control-error">{err}</p>;
+    // Its own dialog says why there's nothing to allow.
+    return only && rows ? (
+      <p class="dim" data-run-grant-none>
+        Nothing to allow here: you don't own this project, or it has no cloud workspaces to run on.
+      </p>
+    ) : null;
+  }
   // A passkey of this account's confirms a grant or a revoke: an account
   // with none is told how to add one; a window with no WebAuthn (the Linux
   // app's) sends you to a browser.

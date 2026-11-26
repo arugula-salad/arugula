@@ -17,6 +17,41 @@ object Core {
     /** Whether control at [url] still serves this build: throws [CoreError] with `updateApp` when it doesn't. Blocks. */
     fun checkApp(url: String) = Native.checkApp(url)
 
+    /**
+     * Whether a pane shows in the project [atId] ([atPersonal]: the reader's
+     * personal project; null: every pane shows), the web's `inShown`
+     * (Arugula #1355): its session's project is it, or the card it works on
+     * is, or it's placed nowhere on a machine that's [yours], in your
+     * personal project. A session's own: [onIssueProject] null.
+     */
+    fun shown(atId: String?, atPersonal: Boolean, sessionProject: String?, onIssueProject: String?, yours: Boolean): Boolean =
+        Native.shown(atId, atPersonal, sessionProject, onIssueProject, yours)
+
+    /**
+     * A session's name as people read it (Arugula #1457): a chief of staff's,
+     * "Chief of staff · prj_…", by [projectName] when its project is
+     * [projectId]; any other as it is. Display only: match by the name itself.
+     */
+    fun sessionLabel(session: String, projectId: String?, projectName: String?): String =
+        Native.sessionLabel(session, projectId, projectName)
+
+    /**
+     * The machines as Machines lists them, as `aru_machines` (native/core's
+     * ffi.rs): [input] is `{at, recent, hosts: [{id, name, online, owner,
+     * hosted, panes}], pins}`; the answer `{order, machines, quiet, pinned}`.
+     */
+    fun machines(input: JSONObject): JSONObject = JSONObject(Native.machines(input.toString()))
+
+    /**
+     * Where you were in [project] (Arugula #1360), from its `app.pane.<project>`
+     * pref, as the web reads it: `{machine, pane}`, or null when [path] names
+     * no pane the app can place.
+     */
+    fun keptPane(path: String, project: String): JSONObject? = Native.keptPane(path, project)?.let(::JSONObject)
+
+    /** The `app.pane.<project>` pref's value for [pane] on [machine], as the web writes it. */
+    fun panePath(project: String, machine: String, pane: Int): String = Native.panePath(project, machine, pane).orEmpty()
+
     /** Where control's page sends a sign-in's grant: `arugula://signin?ticket=…&grant=…`. */
     const val CALLBACK_SCHEME = "arugula"
 }
@@ -85,6 +120,9 @@ class Control(stored: String) : AutoCloseable {
     fun get(path: String) = call("GET", path)
 
     fun post(path: String, body: String) = call("POST", path, body)
+
+    /** A GET whose reply isn't JSON (a picture): its bytes. Throws [CoreError]. */
+    fun bytes(path: String): ByteArray = java.util.Base64.getDecoder().decode(Native.controlBytes(h, path))
 
     /** End the session at control. Forget it either way. */
     fun signOut() = Native.controlSignOut(h)

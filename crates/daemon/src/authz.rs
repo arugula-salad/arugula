@@ -125,6 +125,14 @@ fn policy(method: &Method, path: &str) -> Policy {
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
+        // aru-143: a ladder start from another of this account's machines.
+        // The handler checks its start ticket: of this account, from the
+        // machine whose channel sends it.
+        ["api", "a2a", "start"] if !get => Policy::Handler,
+        // Arugula #1438: its stop. The handler closes only a block a ladder
+        // start opened, for this account's machine that started it or the
+        // board's lead.
+        ["api", "a2a", "stop"] if !get => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
         // from where a "from now" share starts).
         ["api", "history" | "events"] if get => Policy::Handler,
@@ -220,6 +228,7 @@ mod tests {
             (&p, "/api/agents/adapters/claude/install", Policy::Owner),
             (&g, "/api/conversations", Policy::Owner),
             (&p, "/api/conversations/open", Policy::Owner),
+            (&p, "/api/conversations/continue", Policy::Owner),
             (&g, "/api/machines", Policy::Owner),
             (&p, "/api/machines/4/reset", Policy::Owner),
             (&g, "/api/push/key", Policy::Anyone),
@@ -260,6 +269,7 @@ mod tests {
             (&p, "/api/setup/tailscale", Policy::Owner),
             (&p, "/api/setup/control", Policy::Owner),
             (&p, "/api/setup/claude", Policy::Owner),
+            (&p, "/api/setup/hooks", Policy::Owner),
             (&p, "/api/setup/agents/claude", Policy::Owner),
         ] {
             assert_eq!(policy(m, path), want, "{m} {path}");

@@ -25,7 +25,7 @@ import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStan
 import type { MenuItem } from "../../shared/ui/menu";
 import { PUSH_KINDS } from "../../shared/push-kinds";
 import { CopyText } from "../../shared/ui/copy";
-import { openGettingStarted } from "./welcome";
+import { openTailscale } from "./welcome";
 import { CloseIcon, DotIcon, IconButton } from "../../shared/ui/icons";
 
 let push: PushState = "unsupported";
@@ -186,8 +186,8 @@ function switchItems(client: Client): MenuItem[] {
  * what's pushed to (and the test sent to) every device that's on. */
 export function notificationParts(client: Client): { device: MenuItem[]; everywhere: MenuItem[] } {
   const blocked = notifyBlocker();
-  // Plain http: the fix is Tailscale, a button in Getting started's phone step.
-  if (push === "insecure") return { device: [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }], everywhere: [] };
+  // Plain http: the fix is Tailscale, a button in its dialog (Settings').
+  if (push === "insecure") return { device: [{ label: `${blocked}…`, run: () => openTailscale() }], everywhere: [] };
   if (blocked) return { device: [{ label: blocked, disabled: true, run: () => {} }], everywhere: testItem(client) };
   const [device, ...kinds] = switchItems(client);
   // #468: what's wrong with this device's, said plainly (on control).

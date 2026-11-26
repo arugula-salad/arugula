@@ -115,12 +115,9 @@ start_app() {
   # The client is up once it has opened a tab and sized it.
   wait_for 60 sized_panes_at_least 1 || { echo "the window never showed a pane" >&2; exit 1; }
   sleep 1
-  # A new profile opens Getting started over everything: close it (a
-  # click on it, then Escape).
+  # Nothing opens over a new profile's first screen (Getting started waits
+  # to be asked): focus the window, and send no keys a pane would record.
   xdotool windowactivate --sync "$(window)"
-  click_terminal
-  sleep 0.3
-  xdotool key Escape
   sleep 0.5
 }
 stop_app() {
@@ -185,12 +182,13 @@ claim_titlebar() {
   wait_for 30 laid_out "$w" ||
     bad titlebar "the page didn't lay out at ${WIDTH}x$HEIGHT (its minimize button at ${BX:-?},${BY:-?})"
   # Drag the header's empty middle (.bar-fill) right and down: between
-  # the crumbs (the machine, the session, the tab) and Commands, where the
-  # page has them. Not a fixed point: the session's name is two random
-  # words, and the longest ("wandering thistle") put its menu button on
-  # the one this used, 420 (#295).
+  # the last of the header's left part (the machine's views, else its
+  # crumbs: machine, session, tab, one nav since #1443) and Commands,
+  # where the page has them. Not a fixed point: the session's name is two
+  # random words, and the longest ("wandering thistle") put its menu
+  # button on the one this used, 420 (#295).
   local left mid
-  if box "Where you are" && left=$((BX + BW)) && box Commands; then
+  if { box "Machines' views" || box "This machine"; } && left=$((BX + BW)) && box Commands; then
     mid=$(((left + BX) / 2 - X))
   else
     bad titlebar "no crumbs or Commands in the header"

@@ -53,6 +53,8 @@ void aru_signin_free(AruSignIn *s);
 
 AruControl *aru_control_open(const char *stored, char **err);
 char *aru_control_call(const AruControl *c, const char *method, const char *path, const char *body, char **err);
+// A GET whose reply isn't JSON (a picture): its bytes, as base64.
+char *aru_control_bytes(const AruControl *c, const char *path, char **err);
 void aru_control_sign_out(const AruControl *c);
 void aru_control_free(AruControl *c);
 
@@ -70,6 +72,17 @@ void aru_link_view(const AruLink *l, uint32_t tab, uint32_t pane, uint16_t cols,
 void aru_link_input(const AruLink *l, uint32_t pane, const uint8_t *data, size_t len);
 char *aru_link_request(const AruLink *l, const char *method, const char *path, const char *body, char **err);
 void aru_link_free(AruLink *l);
+
+// Which sessions show in a project (Arugula #1355): at_id NULL shows every one.
+int32_t aru_shown(const char *at_id, int32_t at_personal, const char *session_project, const char *on_issue_project, int32_t yours);
+// A session's name as people read it (Arugula #1457): a chief of staff's by project_name when its project is project_id; free it.
+char *aru_session_label(const char *session, const char *project_id, const char *project_name);
+// The machines as Machines lists them: {at, recent, hosts, pins} in, {order, machines, quiet, pinned} out.
+char *aru_machines(const char *input, char **err);
+// Where you were in a project (Arugula #1360), from its app.pane.<project>
+// pref: {machine, pane}, or NULL. And that pref's value for a pane.
+char *aru_kept_pane(const char *path, const char *project);
+char *aru_pane_path(const char *project, const char *machine, uint32_t pane);
 
 // Chat's live stream: notify fires from its thread; take events on the main one.
 AruChatLive *aru_chat_live_open(const AruControl *c, AruNotify notify, void *ctx, char **err);

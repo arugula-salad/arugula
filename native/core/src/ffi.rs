@@ -33,6 +33,7 @@ use crate::{
     chat_live::{ChatLive, Event as ChatEvent},
     control::{self, CALLBACK_SCHEME, Control, OlderControl, Refused, Session, SignIn, UpdateApp},
     link::{self, Event, Link},
+    shown,
 };
 
 /// A request to a machine waits this long.
@@ -203,6 +204,21 @@ pub unsafe extern "C" fn aru_control_call(
     unsafe { give(call(), err, to_c) }
 }
 
+/// A `GET` whose reply isn't JSON (a picture): its bytes, as base64, the
+/// one string here that isn't JSON. Blocks, as [`aru_control_call`] does.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_control_bytes(
+    c: *const Control,
+    path: *const c_char,
+    err: *mut *mut c_char,
+) -> *mut c_char {
+    use base64::Engine as _;
+    let c = unsafe { &*c };
+    let path = unsafe { text(path) };
+    let got = c.bytes(&path).map(|b| base64::engine::general_purpose::STANDARD.encode(b));
+    unsafe { give(got, err, to_c) }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_control_free(c: *mut Control) {
     if !c.is_null() {
@@ -301,7 +317,12 @@ fn summary(s: &State) -> String {
     let sessions: Vec<Value> = s
         .sessions
         .iter()
-        .map(|x| json!({ "id": x.id, "name": x.name, "project": x.project.as_ref().map(|p| &p.name), "tabs": x.tabs }))
+        // Its project whole (`{id, name}`), so an app tells projects of one
+        // name apart (Arugula #1352).
+        .map(|x| {
+            let project = x.project.as_ref().map(|p| json!({ "id": p.id, "name": p.name }));
+            json!({ "id": x.id, "name": x.name, "project": project, "tabs": x.tabs })
+        })
         .collect();
     json!({
         "panes": of(BlockType::Terminal),
@@ -424,7 +445,7 @@ pub unsafe extern "C" fn aru_link_feed(l: *mut AruLink, term: *mut AruTerm, pane
 /// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running,
 /// attention, reason, title, work, resumes, project, branch, last_ms, rect}],
 /// "tabs": [{id, name, cols, rows, cells: [{pane, kind, x, y, cols, rows}]}],
-/// "sessions": [{id, name, project, tabs}]}`,
+/// "sessions": [{id, name, project: {id, name}, tabs}]}`,
 /// or NULL before the machine's first word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_panes(l: *const AruLink) -> *mut c_char {
@@ -562,6 +583,93 @@ pub unsafe extern "C" fn aru_link_free(l: *mut AruLink) {
     if !l.is_null() {
         drop(unsafe { Box::from_raw(l) });
     }
+}
+
+// ---- which sessions show (Arugula #1355)
+
+/// Whether a pane shows in the project `at_id` (`at_personal`: the reader's
+/// personal project; NULL: every pane shows): its session's project is it
+/// (`session_project`, an id or NULL), or the card it works on is
+/// (`on_issue_project`), or it's placed nowhere, on a machine that's `yours`,
+/// in your personal project. A session's own: `on_issue_project` NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_shown(
+    at_id: *const c_char,
+    at_personal: i32,
+    session_project: *const c_char,
+    on_issue_project: *const c_char,
+    yours: i32,
+) -> i32 {
+    let opt = |p: *const c_char| (!p.is_null()).then(|| unsafe { text(p) });
+    let at = opt(at_id).map(|id| shown::At { id, personal: at_personal != 0 });
+    let (session, issue) = (opt(session_project), opt(on_issue_project));
+    shown::pane_shown(session.as_deref(), issue.as_deref(), yours != 0, at.as_ref()) as i32
+}
+
+/// A session's name as people read it (Arugula #1457): a chief of staff's,
+/// "Chief of staff · prj_…", by `project_name` when its project is
+/// `project_id`; any other, or with either NULL, as it is. Free it with
+/// `aru_string_free`. Display only: match by the name itself.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_session_label(
+    session: *const c_char,
+    project_id: *const c_char,
+    project_name: *const c_char,
+) -> *mut c_char {
+    let opt = |p: *const c_char| (!p.is_null()).then(|| unsafe { text(p) });
+    let session = opt(session).unwrap_or_default();
+    let (id, name) = (opt(project_id), opt(project_name));
+    let project = id.as_deref().zip(name.as_deref());
+    to_c(crate::chief::session_label(&session, project))
+}
+
+/// The machines as Machines lists them: `{"at": {id, personal} | null,
+/// "recent": id | null, "hosts": [{id, name, online, owner, hosted, panes}],
+/// "pins": [{machine, session}]}`, `panes` as `aru_link_panes` gives it, and
+/// `owner` set only when it's someone else's. Answers `{"order": [machine],
+/// "machines": [machine], "quiet": [machine], "pinned": [pin]}`: every one
+/// in the phone's order; those with sessions in `at`, each with its
+/// sessions (`{id, name, project, tabs: [{id, name, panes: [id]}], panes,
+/// needs_you, state}`), pinned ones out; and those with none.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_machines(input: *const c_char, err: *mut *mut c_char) -> *mut c_char {
+    #[derive(serde::Deserialize)]
+    struct In {
+        at: Option<shown::At>,
+        recent: Option<String>,
+        hosts: Vec<shown::Host>,
+        #[serde(default)]
+        pins: Vec<shown::Pin>,
+    }
+    let r = (|| -> Result<String> {
+        let i: In = serde_json::from_str(&unsafe { text(input) }).context("the machines")?;
+        let recent = i.recent.as_deref();
+        let order = shown::machine_order(&i.hosts, recent);
+        let (machines, quiet) = shown::machine_sections(&i.hosts, i.at.as_ref(), recent);
+        let (pinned, machines) = shown::pinned_cards(&machines, &i.pins);
+        Ok(json!({ "order": order, "machines": machines, "quiet": quiet, "pinned": pinned }).to_string())
+    })();
+    unsafe { give(r, err, to_c) }
+}
+
+/// Where you were in `project`, from its `app.pane.<project>` pref
+/// (Arugula #1360): `{"machine": id, "pane": n}`, or NULL when it names no
+/// pane an app can place.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_kept_pane(path: *const c_char, project: *const c_char) -> *mut c_char {
+    let (path, project) = unsafe { (text(path), text(project)) };
+    match shown::kept_pane(&path, &project) {
+        Some(k) => to_c(json!(k).to_string()),
+        None => ptr::null_mut(),
+    }
+}
+
+/// The `app.pane.<project>` pref's value for `pane` on `machine`, as the
+/// web writes it: that machine page's path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_pane_path(project: *const c_char, machine: *const c_char, pane: u32) -> *mut c_char {
+    let (project, machine) = unsafe { (text(project), text(machine)) };
+    to_c(shown::pane_path(&project, &machine, pane))
 }
 
 // ---- chat's live stream
@@ -873,7 +981,8 @@ pub unsafe extern "C" fn aru_term_render(t: *mut AruTerm, ctx: *mut c_void, row_
 
 #[cfg(test)]
 mod tests {
-    use super::{Delta, State, apply};
+    use super::{Delta, State, apply, summary};
+    use crate::shown::{At, sessions_of};
     use serde_json::json;
 
     /// A machine with one idle terminal pane.
@@ -904,5 +1013,29 @@ mod tests {
         assert!(s.panes[0].reason.is_none());
         apply(&mut s, serde_json::from_value::<Delta>(json!({ "gone": [2] })).unwrap());
         assert!(s.panes.is_empty());
+    }
+
+    #[test]
+    fn the_summary_names_a_sessions_project_by_id_and_the_rule_reads_it() {
+        let mut s = state();
+        s.tabs = vec![
+            serde_json::from_value(json!({
+                "id": 7, "name": "main", "cols": 80, "rows": 24, "owner": null, "zoom": null,
+                "root": { "type": "pane", "pane": 2 },
+                "layout": { "panes": [[2, { "x": 0, "y": 0, "cols": 80, "rows": 24 }]], "splits": [] },
+            }))
+            .expect("a tab"),
+        ];
+        s.sessions = vec![
+            serde_json::from_value(json!({
+                "id": 1, "name": "work", "tabs": [7], "project": { "id": "prj_a", "name": "Same" },
+            }))
+            .expect("a session"),
+        ];
+        let v: serde_json::Value = serde_json::from_str(&summary(&s)).unwrap();
+        assert_eq!(v["sessions"][0]["project"], json!({ "id": "prj_a", "name": "Same" }));
+        let at = |id: &str| At { id: id.into(), personal: false };
+        assert_eq!(sessions_of(&v, true, Some(&at("prj_a"))).len(), 1);
+        assert!(sessions_of(&v, true, Some(&at("prj_b"))).is_empty(), "another project of the same name");
     }
 }

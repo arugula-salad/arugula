@@ -98,7 +98,7 @@ fun BoardsScreen(api: Api) {
     val scope = LocalScope.current
     val nav = LocalNav.current
     Column(Modifier.fillMaxSize()) {
-        TabHeading("Boards", project = true)
+        TabHeading("Boards")
         val p = scope.current ?: return@Column Loading()
         Loaded(key = p.id, load = { api.get("/api/projects/${p.id}/boards").list("boards", Board::of) }) { boards, _ ->
             if (boards.isEmpty()) {
@@ -252,10 +252,12 @@ private fun repeats(note: String, title: String?) = !title.isNullOrEmpty() && no
 
 /** A native issue, by its id. */
 @Composable
-fun IssueScreen(api: Api, id: String) {
+fun IssueScreen(api: Api, id: String, project: String? = null) {
+    // A Doc's link may name an issue by its number in its project.
+    val path = if (project != null && !id.startsWith("iss_")) "/api/projects/$project/issues/$id" else "/api/issues/$id"
     Column(Modifier.fillMaxSize()) {
         DetailBar("Issue")
-        Loaded(key = id, load = { Issue.of(api.get("/api/issues/$id")) }) { issue, _ -> IssueBody(issue) }
+        Loaded(key = path, load = { Issue.of(api.get(path)) }) { issue, _ -> IssueBody(issue) }
     }
 }
 
@@ -298,27 +300,6 @@ fun IssuesScreen(api: Api) {
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun YouScreen(model: AppModel) {
-    val scope = LocalScope.current
-    Column(Modifier.fillMaxSize()) {
-        TabHeading("You")
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Caps("Signed in as")
-            scope.me?.let {
-                Text(it.name.uppercase(), style = Face.display(30.sp), color = Palette.fg)
-                Text(it.login, style = Face.mono(12.sp), color = Palette.dim)
-            }
-            Spacer(Modifier.height(18.dp))
-            AnswerButton("Sign out", Modifier.testTag("sign-out"), danger = true) { model.signOut() }
-            Text("Ends this ${AppModel.device}'s sign-in to Arugula. Sign in again to come back.", style = Face.ui(12.sp), color = Palette.dim)
-            Spacer(Modifier.height(18.dp))
-            Caps("Arugula for Android ${BuildConfig.VERSION_NAME}")
-            Text(model.url, style = Face.mono(11.sp), color = Palette.dim)
         }
     }
 }

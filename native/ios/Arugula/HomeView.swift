@@ -1,7 +1,10 @@
-// One navigation: tabs always on the bar (Arugula #1262), home (Home.swift)
-// first, then the project's boards, chat, the account's machines and the
-// account, whichever process behind control answers them. The project's
-// issues open from its menu and from a board's rows. Each tab is a list
+// One navigation: the web's five places, always on the bar (Arugula #1262,
+// #1361): Overview (Home.swift) first, then the project's boards and Docs,
+// the machines and chat, whichever process behind control answers them. On
+// an iPad the bar folds out into a sidebar, with the bell and your picture at
+// its foot (Arugula #1366). Every place is headed by the project's menu and
+// New, and on an iPhone the bell and your picture too (TabHeading); the
+// project's issues open from its menu and from a board's rows. Each place is a list
 // beside what's picked in it on an iPad, and one screen at a time on an
 // iPhone.
 
@@ -16,13 +19,25 @@ struct HomeView: View {
     @StateObject private var scope = Scope()
     @ObservedObject private var push = PushCenter.shared
     @ObservedObject private var zoom = ZoomCenter.shared
-    /// What home reads, kept while another tab is open, so coming back is at once.
+    @ObservedObject private var approvals = Approvals.shared
+    /// What the Overview reads, kept while another place is open, so coming
+    /// back is at once.
     @StateObject private var model = HomeModel()
     @StateObject private var fleet = HomeFleet()
     @StateObject private var live: LiveChat
-    @State private var tab = AppTab.home
+    @Environment(\.scenePhase) private var phase
+    /// Whether an iPad's sidebar is out, which holds the bell and your picture.
+    @State private var sidebar = false
+    @State private var tab = AppTab.overview
     /// The project's issues, from its menu.
     @State private var issues = false
+    /// New, from any place's heading, and what it made, for the Overview.
+    @State private var making = false
+    @State private var made: Opened?
+    @State private var inbox = false
+    /// The Inbox item a push opened, which the Inbox scrolls to.
+    @State private var focus: String?
+    @State private var said: String?
 
     init(control: Control) {
         self.control = control
@@ -30,57 +45,149 @@ struct HomeView: View {
     }
 
     var body: some View {
-        TabView(selection: $tab) {
-            // Home, then what's in the current project, then the account's
-            // machines and the account itself. Tabs and titles in the theme
-            // (Theme.swift).
-            PhoneHome(control: control, model: model, fleet: fleet, live: live)
-                .tabItem { Label(AppTab.home.rawValue, systemImage: AppTab.home.symbol) }
-                .tag(AppTab.home)
-            BoardsView(control: control, model: model, fleet: fleet, live: live)
-                .tabItem { Label(AppTab.boards.rawValue, systemImage: AppTab.boards.symbol) }
-                .tag(AppTab.boards)
-            ChatRoomsView(control: control, live: live)
-                .tabItem { Label(AppTab.chat.rawValue, systemImage: AppTab.chat.symbol) }
-                .tag(AppTab.chat)
-            MachinesView(control: control)
-                .tabItem { Label(AppTab.machines.rawValue, systemImage: AppTab.machines.symbol) }
-                .tag(AppTab.machines)
-            YouView(control: control)
-                .tabItem { Label(AppTab.you.rawValue, systemImage: AppTab.you.symbol) }
-                .tag(AppTab.you)
-        }
-        // A tapped notification (#1260): its tab, whose view opens the thing;
-        // an issue opens beside home. A pane's opens its Work level on home
-        // (Arugula #1304), else its machine.
+        places
+        // A tapped notification (#1260): its place, whose view opens the
+        // thing; an issue opens beside the Overview. A pane's opens its Work
+        // level on the Overview (Arugula #1304), else its machine.
         .onChange(of: push.route, initial: true) { _, route in
             switch route {
             case .pane(let machine, let pane): open(machine: machine, pane: pane)
             case .room: tab = .chat
-            case .issue: tab = .home
+            case .issue: tab = .overview
+            // A deploy waiting for approval opens over whatever's open (#604).
+            case .deploy(let id):
+                push.route = nil
+                approvals.open = .deploy(id)
+            // Anything else in the Inbox (a PR, a run): the Inbox, at it.
+            case .inbox(let item):
+                push.route = nil
+                focus = item.isEmpty ? nil : item
+                inbox = true
             case nil: break
             }
         }
-        // An address (Arugula #1304): home zooms to it.
+        // An address (Arugula #1304): the Overview zooms to it.
         .onChange(of: zoom.route, initial: true) { _, route in
-            if route != nil { tab = .home }
+            if route != nil { tab = .overview }
+        }
+        // What a passkey approves (#604): a deploy, a project's runs.
+        .sheet(item: $approvals.open) { what in
+            switch what {
+            case .deploy(let id):
+                DeploySheet(control: control, id: id) { approvals.open = nil }
+            case .runs(let project, let name):
+                RunsSheet(control: control, project: project, name: name) { approvals.open = nil }
+            }
         }
         .sheet(isPresented: $issues) {
             IssuesView(control: control) { issues = false }
                 .environmentObject(scope)
                 .environment(\.showIssues, nil)
         }
+        // New over whichever place is open; what it made opens on the
+        // Overview, which lists it.
+        .sheet(isPresented: $making) {
+            NewSheet(control: control, model: model, fleet: fleet, open: { o in
+                tab = .overview
+                made = o
+            }, toast: show) {
+                Task { if let p = scope.current { await model.load(control, project: p.id) } }
+            }
+            .environmentObject(scope)
+        }
+        .sheet(isPresented: $inbox, onDismiss: { focus = nil }) {
+            InboxSheet(control: control, live: live, fleet: fleet, model: model, focus: focus) { inbox = false }.environmentObject(scope)
+        }
+        .overlay(alignment: .bottom) {
+            if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
+        }
         .background(Palette.void)
         .environmentObject(scope)
-        .environment(\.goHome, { tab = .home })
+        .environment(\.goOverview, { tab = .overview })
         .environment(\.showIssues, { issues = true })
+        .environment(\.makeNew, { making = true })
+        .environment(\.showInbox, { inbox = true })
+        .environment(\.sidebarFoot, sidebar)
         .task { await scope.load(control) }
+        // The bell's count (Arugula #1434): the current project's, again
+        // when chat's live stream says it moved or opens anew, and when the
+        // app comes back.
+        .task(id: scope.current?.id) {
+            live.start()
+            guard let p = scope.current?.id else { return }
+            await InboxModel.shared.load(control, project: p)
+        }
+        .onChange(of: live.inbox) { _, _ in reloadInbox() }
+        .onChange(of: live.epoch) { _, _ in reloadInbox() }
+        .onChange(of: phase) { _, now in
+            if now == .active { reloadInbox() }
+        }
+    }
+
+    /// The five places: the tab bar on an iPhone, and on an iPad (iOS 18
+    /// and later) a sidebar that folds into the bar in portrait. The
+    /// sidebar's foot holds the bell and your picture (Arugula #1366); with
+    /// it folded, as in portrait, they're back in the place's heading.
+    @ViewBuilder private var places: some View {
+        if #available(iOS 18.0, *) {
+            TabView(selection: $tab) {
+                ForEach(AppTab.allCases) { t in
+                    Tab(t.rawValue, systemImage: t.symbol, value: t) {
+                        place(t).background(SidebarProbe { sidebar = $0 })
+                    }
+                }
+            }
+            .tabViewStyle(.sidebarAdaptable)
+            .tabViewSidebarBottomBar {
+                if sidebar {
+                    HStack(spacing: 12) {
+                        InboxBell { inbox = true }
+                            .accessibilityIdentifier("sidebar-inbox")
+                        Text("Inbox").font(Face.ui(15, "Medium")).foregroundStyle(Palette.fg)
+                        Spacer(minLength: 8)
+                        AccountMenu()
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                }
+            }
+        } else {
+            TabView(selection: $tab) {
+                ForEach(AppTab.allCases) { t in
+                    place(t).tabItem { Label(t.rawValue, systemImage: t.symbol) }.tag(t)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func place(_ t: AppTab) -> some View {
+        switch t {
+        case .overview: PhoneHome(control: control, model: model, fleet: fleet, live: live, handed: $made)
+        case .boards: BoardsView(control: control, model: model, fleet: fleet, live: live)
+        case .docs: DocsPlace(control: control)
+        case .machines: MachinesView(control: control, fleet: fleet)
+        case .chat: ChatRoomsView(control: control, live: live)
+        }
+    }
+
+    /// A short word of what was done, over whichever place is open.
+    private func show(_ text: String) {
+        withAnimation { said = text }
+        Task {
+            try? await Task.sleep(for: .seconds(1.8))
+            if said == text { withAnimation { said = nil } }
+        }
     }
 
     /// A notification about a pane: its card's Work level when it's on one,
     /// else its own, once the machine is reached; else Machines opens it.
+    private func reloadInbox() {
+        guard let p = scope.current?.id else { return }
+        Task { await InboxModel.shared.load(control, project: p) }
+    }
+
     private func open(machine: String, pane: UInt32) {
-        tab = .home
+        tab = .overview
         Task {
             for _ in 0..<20 {
                 if let r = route(machine: machine, pane: pane) {
@@ -106,13 +213,62 @@ struct HomeView: View {
     }
 }
 
+/// Whether the places' sidebar is out (iOS 18 and later): SwiftUI doesn't
+/// say, so its tab bar controller is asked whenever the place is laid out
+/// again, as it is when the sidebar folds or unfolds.
+struct SidebarProbe: UIViewRepresentable {
+    let shown: (Bool) -> Void
+
+    func makeUIView(context: Context) -> Probe { Probe(shown: shown) }
+    func updateUIView(_ view: Probe, context: Context) { view.shown = shown }
+
+    final class Probe: UIView {
+        var shown: (Bool) -> Void
+        private var last: Bool?
+
+        init(shown: @escaping (Bool) -> Void) {
+            self.shown = shown
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            check()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            check()
+        }
+
+        private func check() {
+            guard window != nil else { return }
+            var r: UIResponder? = self
+            while let next = r?.next, !(next is UIViewController) { r = next }
+            var out = false
+            if #available(iOS 18.0, *), let bar = (r?.next as? UIViewController)?.tabBarController {
+                out = bar.mode != .tabBar && !bar.sidebar.isHidden && traitCollection.horizontalSizeClass == .regular
+            }
+            guard out != last else { return }
+            last = out
+            // Not while laying out: SwiftUI's state changes after.
+            DispatchQueue.main.async { [shown] in shown(out) }
+        }
+    }
+}
+
 /// The project the app is in, as the web's current project (Arugula #880):
-/// Home, Boards, Chat and its issues show what's in it. Kept on this device; the
+/// Overview, Boards, Docs, Machines, Chat and its issues show what's in it. Kept on this device; the
 /// reader's personal project until they pick another.
 @MainActor
 final class Scope: ObservableObject {
     @Published var projects: [Projects.Project] = []
     @Published var current: Projects.Project?
+    /// Who's signed in, for your picture in the heading.
+    @Published var me: Projects.Me?
     @Published var problem: String?
     private static let key = "arugula.current-project"
 
@@ -120,6 +276,7 @@ final class Scope: ObservableObject {
         do {
             let p = try await control.get("/api/projects", as: Projects.self)
             projects = p.projects
+            me = p.me
             let kept = UserDefaults.standard.string(forKey: Self.key)
             current = p.projects.first { $0.id == kept } ?? p.projects.first { $0.team == nil } ?? p.projects.first
             problem = nil
@@ -141,16 +298,22 @@ final class Scope: ObservableObject {
     }
 }
 
-/// The heading at the top of a tab's list. In a project's tabs (Boards,
-/// Chat, and its Issues) it's the current project, as a pull-down menu of
-/// every project and its issues, with whose it is: there's no separate bar
-/// for something that's
-/// seldom changed, and the tab's own name is already in the tab bar. Machines
-/// and You, the account's, are headed by their name.
+/// The heading at the top of every place's list, as the web phone's top bar
+/// (Arugula #1361): the current project, as a pull-down menu of every
+/// project and its issues, with whose it is; then New, the bell (the Inbox,
+/// with its count) and your picture (Settings, Send feedback, Sign out),
+/// which an iPad's sidebar holds at its foot instead. There's no separate
+/// bar for something that's seldom changed, and the place's own name is
+/// already on the tab bar. The three buttons take 120pt, so the four fit on
+/// a 390pt phone; a long project name truncates, the buttons don't. A
+/// sheet's heading (the project's Issues) has the menu alone.
 struct TabHeading: ViewModifier {
     let title: String
-    var project = false
+    var buttons = true
     @EnvironmentObject private var scope: Scope
+    @Environment(\.makeNew) private var makeNew
+    @Environment(\.showInbox) private var showInbox
+    @Environment(\.sidebarFoot) private var sidebarFoot
 
     func body(content: Content) -> some View {
         content
@@ -158,7 +321,7 @@ struct TabHeading: ViewModifier {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
-                    if project {
+                    HStack(alignment: .center, spacing: 6) {
                         Menu {
                             ProjectMenu()
                         } label: {
@@ -169,11 +332,20 @@ struct TabHeading: ViewModifier {
                             }
                         }
                         .accessibilityIdentifier("project-switcher")
-                        if let team = scope.current?.team {
-                            Caps("\(team.name) · \(team.role)")
+                        Spacer(minLength: 8)
+                        if buttons, let makeNew {
+                            HeadingButton(symbol: "plus", label: "New", primary: true, action: makeNew)
+                                .accessibilityIdentifier("heading-new")
                         }
-                    } else {
-                        Text(title.uppercased()).font(Face.display(30)).foregroundStyle(Palette.fg)
+                        // Beside an iPad's sidebar they're at its foot (Arugula #1366).
+                        if buttons, !sidebarFoot, let showInbox {
+                            InboxBell(action: showInbox)
+                                .accessibilityIdentifier("heading-inbox")
+                        }
+                        if buttons, !sidebarFoot { AccountMenu() }
+                    }
+                    if let team = scope.current?.team {
+                        Caps("\(team.name) · \(team.role)")
                     }
                     if let problem = scope.problem {
                         Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(2)
@@ -188,8 +360,28 @@ struct TabHeading: ViewModifier {
 }
 
 extension View {
-    func tabHeading(_ title: String, project: Bool = false) -> some View {
-        modifier(TabHeading(title: title, project: project))
+    func tabHeading(_ title: String, buttons: Bool = true) -> some View {
+        modifier(TabHeading(title: title, buttons: buttons))
+    }
+}
+
+/// One of the heading's round buttons: 36pt, with its word for VoiceOver.
+struct HeadingButton: View {
+    let symbol: String
+    let label: String
+    var primary = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(primary ? Palette.void : Palette.fg)
+                .frame(width: 36, height: 36)
+                .background(primary ? Palette.accent : Palette.raised, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
@@ -317,7 +509,7 @@ struct IssuesView: View {
                     ProgressView().tint(Palette.accent)
                 }
             }
-            .tabHeading("Issues", project: true)
+            .tabHeading("Issues", buttons: false)
             .background(Palette.void)
             .toolbar {
                 if let close {
@@ -349,9 +541,10 @@ struct BoardThreadRef: Hashable { let board: Board }
 /// A lead's chip that follows its session on the fleet.
 struct LiveLeadChip: View {
     let lead: Board.Lead
+    let shown: Shown?
     @ObservedObject var fleet: HomeFleet
 
-    var body: some View { LeadChip(lead: LeadLine(lead, fleet: fleet)) }
+    var body: some View { LeadChip(lead: LeadLine(lead, fleet: fleet, in: shown)) }
 }
 
 /// A board's thread from Boards, with the sessions on its cards in flight
@@ -367,7 +560,7 @@ struct BoardsThread: View {
 
     var body: some View {
         let sessions = scope.current.map { HomeState(project: $0, fleet: fleet, model: model).sessions[board.id] ?? [] } ?? []
-        BoardThread(control: control, board: board, model: model, fleet: fleet, live: live, sessions: sessions, peek: peek)
+        BoardThread(control: control, board: board, shown: scope.current?.shown, model: model, fleet: fleet, live: live, sessions: sessions, peek: peek)
     }
 }
 
@@ -409,7 +602,7 @@ struct BoardsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.void)
-            .tabHeading("Boards", project: true)
+            .tabHeading("Boards")
             .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
             .navigationDestination(for: BoardThreadRef.self) { ref in
                 BoardsThread(control: control, board: ref.board, model: model, fleet: fleet, live: live) { peek = $0 }
@@ -466,8 +659,8 @@ struct BoardsView: View {
                 .accessibilityIdentifier("board-\(b.title)")
             HStack(spacing: 6) {
                 if let lead = b.lead {
-                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet).opening)) } label: {
-                        LiveLeadChip(lead: lead, fleet: fleet).contentShape(Rectangle())
+                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet, in: scope.current?.shown).opening)) } label: {
+                        LiveLeadChip(lead: lead, shown: scope.current?.shown, fleet: fleet).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("board-lead-\(b.title)")
@@ -835,42 +1028,5 @@ struct IssueView: View {
         }
         .background(Palette.void)
         .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
-// ---- you
-
-struct YouView: View {
-    let control: Control
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        NavigationStack {
-            Loaded(load: { try await control.get("/api/projects", as: Projects.self) }) { p in
-                List {
-                    Section {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(p.me.name.uppercased()).font(Face.display(30))
-                            Text(p.me.login).font(Face.mono(12)).foregroundStyle(Palette.dim)
-                        }
-                        .padding(.vertical, 6)
-                        .voidRow()
-                    } header: {
-                        Caps("Signed in as")
-                    }
-                    Section {
-                        Button("Sign out", role: .destructive) { model.signOut() }
-                            .voidRow()
-                            .accessibilityIdentifier("sign-out")
-                    } footer: {
-                        Text("Ends this \(device)'s sign-in to Arugula. Sign in again to come back.")
-                            .font(Face.ui(12)).foregroundStyle(Palette.dim)
-                    }
-                }
-                .voidList()
-            }
-            .tabHeading("You")
-            .background(Palette.void)
-        }
     }
 }

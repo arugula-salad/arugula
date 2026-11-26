@@ -4,7 +4,7 @@
 // signed the ones from before) and when, and what was revoked. Allowing
 // and revoking take a passkey of the account's, made for control's site,
 // so they're on control's page (here or on the phone), and this links
-// there. (Moving them here, by WebAuthn's related origins as DK5 does for
+// to the project's own dialog there (`#run-grant=`, Arugula #604). (Moving them here, by WebAuthn's related origins as DK5 does for
 // deploys, is a follow-up.) The grant
 // in place is a card: its bar ok, or warn when workspaces enrolled since
 // refuse it or it expires soon. Shown on every project, with nothing in
@@ -61,7 +61,7 @@ export function RunGrant({ project }: { project: string }) {
   if (!v) return null;
   const g = v.grant?.grant;
   const sign = (
-    <a href={controlOrigin()} data-run-grant-sign>
+    <a href={`${controlOrigin()}/#run-grant=${project}`} data-run-grant-sign>
       your machines page
     </a>
   );
@@ -118,7 +118,7 @@ export function RunGrant({ project }: { project: string }) {
       {v.role === "owner" ? (
         <p class="dim settings-note">
           {g ? (v.stale || v.renew || v.signer_gone ? "Renew it, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
-          {sign}, under Machines, on a computer or your phone: you confirm it there with a passkey.
+          {sign}, on a computer or your phone: you confirm it there with a passkey.
         </p>
       ) : (
         <p class="dim settings-note">A project owner allows runs, or revokes them, with a passkey.</p>

@@ -22,6 +22,7 @@ import { drop } from "../panes/drop";
 import { TabPeople } from "../people";
 import { ariaKeys, keyHint } from "../keys";
 import { newTabRefusal } from "./live";
+import { SidebarToggle } from "./context-header";
 import { RenameInput, type Renaming } from "./rename-input";
 import { HOSTED_LABEL } from "../../../shared/hosted";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
@@ -105,6 +106,7 @@ export function TabStrip({
   };
   return (
     <div class="tabstrip">
+      <SidebarToggle client={client} />
       <div
         ref={strip}
         class="tabbar"

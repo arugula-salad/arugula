@@ -1,0 +1,11 @@
+---
+section: Changed
+title: Agents aren't sent to issues and boards before you join
+line: On a machine that hasn't joined Arugula cloud, agents are no longer told to file Arugula issues or use boards they can't reach.
+headline: no
+---
+The MCP server's instructions name Arugula's own issues and boards only once
+the machine has joined Arugula cloud; Docs, panes and blocks are named either
+way. `capabilities` leaves control's tools and the board block out of what it
+offers until then. A machine that joins mid-session says so to its next
+session.

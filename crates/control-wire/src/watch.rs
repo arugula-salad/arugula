@@ -8,6 +8,13 @@
 //! (24 hours by default, at most 7 days) or is cancelled from elsewhere
 //! sends one last message saying it ended without firing.
 //!
+//! A standing watch (Arugula #1280) is an event watch that stays live until
+//! it expires or is cancelled: it fires at most once per gap
+//! ([`WatchCreate::every_ms`], [`EVERY_DEFAULT_MS`] when none), each time
+//! carrying every event that matched since it last fired. With
+//! [`WatchCreate::exclude_self`] it skips what the watching session caused
+//! itself: its own agent block asking or going idle, its own replies.
+//!
 //! A watch is keyed to the Claude Code session that made it, never to a
 //! pane or a name: a new conversation in the pane doesn't inherit it.
 //! Every route here is signed with the machine's key, and control acts as
@@ -29,6 +36,12 @@ pub const EXPIRES_DEFAULT_MS: u64 = 24 * 60 * 60 * 1000;
 pub const EXPIRES_MAX_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 /// The most live watches one session may have.
 pub const PER_SESSION: usize = 20;
+/// A standing watch's gap when it isn't told: 5 minutes.
+pub const EVERY_DEFAULT_MS: u64 = 5 * 60 * 1000;
+/// The shortest gap a standing watch may have: a minute.
+pub const EVERY_MIN_MS: u64 = 60 * 1000;
+/// The longest gap a standing watch may have: a day.
+pub const EVERY_MAX_MS: u64 = 24 * 60 * 60 * 1000;
 
 /// What a watch waits for: one of these happening fires it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +124,25 @@ pub struct WatchCreate {
     /// expires; at most [`NOTE_MAX`] characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Standing (Arugula #1280): an event watch, with no other target, that
+    /// stays live after it fires, until it expires or is cancelled. Left out
+    /// when false, so a watch that isn't reads as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub standing: bool,
+    /// With `standing`: the least time between two of its fires, in
+    /// milliseconds. None: [`EVERY_DEFAULT_MS`]; from [`EVERY_MIN_MS`] to
+    /// [`EVERY_MAX_MS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every_ms: Option<u64>,
+    /// Skip events the watching session caused itself: its own agent block
+    /// (`pane`) asking or going idle. Its own chat replies never fire a
+    /// watch anyway.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exclude_self: bool,
+    /// The pane the watching session runs in, as the machine names its
+    /// blocks: what `exclude_self` skips. Sent only with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<String>,
 }
 
 /// The longest [`WatchCreate::note`], in characters.
@@ -192,6 +224,10 @@ pub struct WatchRow {
     pub state: WatchState,
     pub created_ms: i64,
     pub expires_ms: i64,
+    /// A standing watch's gap (Arugula #1280), in milliseconds; none for one
+    /// that fires once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every_ms: Option<i64>,
 }
 
 /// `POST /api/daemon/watches/cancel`: one of a session's watches, or all of
@@ -401,6 +437,32 @@ pub fn expires_ms(word: &str) -> Result<u64, String> {
     }
 }
 
+/// `every`'s words, in ms: `1m`, `5m`, `2h`, from [`EVERY_MIN_MS`] to
+/// [`EVERY_MAX_MS`].
+pub fn every_ms(word: &str) -> Result<u64, String> {
+    let w = word.trim();
+    let (n, unit) = w.split_at(w.find(|c: char| !c.is_ascii_digit()).unwrap_or(w.len()));
+    let n: u64 = n.parse().map_err(|_| format!("every {w}: a number and m or h, like 5m"))?;
+    let ms = match unit.trim() {
+        "m" => n * 60_000,
+        "h" => n * 3_600_000,
+        _ => return Err(format!("every {w}: a number and m or h, like 5m")),
+    };
+    match ms {
+        ms if ms < EVERY_MIN_MS => Err(format!("every {w}: at least 1m")),
+        ms if ms > EVERY_MAX_MS => Err(format!("every {w}: at most 24h")),
+        ms => Ok(ms),
+    }
+}
+
+/// A gap as people read it: `5m`, `2h`, `90m`.
+pub fn every_word(ms: u64) -> String {
+    match ms {
+        ms if ms % 3_600_000 == 0 => format!("{}h", ms / 3_600_000),
+        ms => format!("{}m", ms.div_ceil(60_000)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -429,6 +491,34 @@ mod tests {
         let m = serde_json::json!({ "issue": "#1" }).as_object().unwrap().clone();
         let e = event_target(Watcher::Machine, None, Some(m), Some("why".into())).unwrap_err();
         assert_eq!(e, "match goes with an event");
+    }
+
+    #[test]
+    fn every_is_a_minute_to_a_day() {
+        assert_eq!(every_ms("5m"), Ok(5 * 60_000));
+        assert_eq!(every_ms(" 2h "), Ok(2 * 3_600_000));
+        assert!(every_ms("30s").unwrap_err().contains("like 5m"));
+        assert!(every_ms("0m").unwrap_err().contains("at least 1m"));
+        assert!(every_ms("25h").unwrap_err().contains("at most 24h"));
+        assert_eq!(
+            (every_word(EVERY_DEFAULT_MS), every_word(3_600_000), every_word(90 * 60_000)),
+            ("5m".into(), "1h".into(), "90m".into())
+        );
+    }
+
+    #[test]
+    fn a_watch_that_isnt_standing_reads_as_before() {
+        let w = WatchCreate { session: "c-1".into(), ..Default::default() };
+        let v = serde_json::to_value(&w).unwrap();
+        for k in ["standing", "every_ms", "exclude_self", "pane"] {
+            assert!(v.get(k).is_none(), "{k}: {v}");
+        }
+        let back: WatchCreate = serde_json::from_value(serde_json::json!({
+            "session": "c-1", "targets": [], "standing": true, "every_ms": 60_000, "exclude_self": true, "pane": "4"
+        }))
+        .unwrap();
+        assert!(back.standing && back.exclude_self);
+        assert_eq!((back.every_ms, back.pane.as_deref()), (Some(60_000), Some("4")));
     }
 
     #[test]

@@ -253,12 +253,15 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws
   -webkit-app-region: drag;
 }
 
-/* The caret that shows and hides the sessions sidebar (#378). It's in the
-   header, so it stays when the sidebar is closed. */
+/* The caret that shows and hides the sessions sidebar (#378). It's the tab
+   strip's first thing, at the sidebar's edge, so it stays when the sidebar is
+   closed. */
 .ws-sidebar-toggle {
   flex: none;
-  width: 28px;
-  height: 28px;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -274,6 +277,19 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws
   background: var(--raised);
   color: var(--fg);
 }
-.ws-wordmark + .ws-crumbs .ws-sidebar-toggle {
-  margin-left: 8px;
+
+/* The header's stack takes the Overview's crumb type (.app-path): its steps
+   are the machine menu, the session menu and the tab's name. */
+.ws-head .ws-stack {
+  padding: 0 0 0 var(--space-3);
+  gap: var(--space-1);
+}
+.ws-head .ws-stack .session-button.ws-crumb {
+  font-size: var(--text-sm);
+}
+.ws-head .ws-stack .ws-crumb-tab-name {
+  font-size: var(--text-sm);
+}
+.ws-head .ws-stack .ws-conn {
+  margin-left: var(--space-2);
 }

@@ -241,6 +241,10 @@
       "request": "MoveEntry",
       "response": "BoardView"
     },
+    "DELETE /api/boards/{id}/grant": {
+      "handler": "crates/platform/src/boards.rs#revoke_grant_route",
+      "response": "BoardView"
+    },
     "POST /api/boards/{id}/reopen": {
       "handler": "crates/platform/src/boards.rs#reopen_route",
       "response": "BoardView"
@@ -263,6 +267,10 @@
       "handler": "crates/platform/src/boards.rs#set_lane_route",
       "request": "SetLane",
       "response": "BoardView"
+    },
+    "POST /api/boards/{id}/run": {
+      "handler": "crates/platform-chat/src/chat/proposals.rs#run_route",
+      "response": "BoardRunAsked"
     },
     "GET /api/chat": {
       "handler": "crates/platform-chat/src/chat.rs#rooms",
@@ -552,10 +560,24 @@
         "response: a JSON object built in place"
       ]
     },
+    "POST /api/feedback": {
+      "handler": "crates/control/src/feedback.rs#submit",
+      "untyped": [
+        "request: FeedbackSubmit, read from the body (at most 32 KiB; the app's login sends as its account, under the account's limits, Arugula #1420)",
+        "response: FeedbackAck; refused with FeedbackRefused"
+      ]
+    },
     "GET /api/flags": {
       "handler": "crates/control/src/labs_flags.rs#list",
       "untyped": [
         "response: a JSON object built in place"
+      ]
+    },
+    "POST /api/handoff": {
+      "handler": "crates/control/src/handoff.rs#ask",
+      "untyped": [
+        "request: an empty object",
+        "response: {code, expires_in}: a one-time code for the app's web view, a minute old at most (Arugula #1420)"
       ]
     },
     "GET /api/inbox": {
@@ -605,6 +627,18 @@
         "response: a JSON object built in place"
       ]
     },
+    "GET /api/me/prefs": {
+      "handler": "crates/control/src/push.rs#prefs",
+      "untyped": [
+        "response: the account's prefs, a JSON object of strings"
+      ]
+    },
+    "POST /api/me/prefs": {
+      "handler": "crates/control/src/push.rs#set_prefs",
+      "untyped": [
+        "request and response: a JSON object of the account's prefs, a key's null removing it"
+      ]
+    },
     "POST /api/push/subscribe": {
       "handler": "crates/control/src/push.rs#subscribe",
       "untyped": [
@@ -638,6 +672,10 @@
     "GET /api/projects": {
       "handler": "crates/platform/src/projects.rs#list",
       "response": "Projects"
+    },
+    "GET /api/projects/{project}/asks": {
+      "handler": "crates/platform-chat/src/chat/proposals.rs#list",
+      "response": "ChatAsks"
     },
     "GET /api/projects/{project}/boards": {
       "handler": "crates/platform/src/boards.rs#list_route",
@@ -842,6 +880,13 @@
       "untyped": [
         "request: Redeem",
         "response: 204, the session in Set-Cookie"
+      ]
+    },
+    "POST /auth/handoff": {
+      "handler": "crates/control/src/handoff.rs#redeem",
+      "untyped": [
+        "request: a form (application/x-www-form-urlencoded), code and to (a path), posted by the app's web view, never in an address",
+        "response: 303 to that path on the platform page, a web session (an app window's) in Set-Cookie"
       ]
     },
     "POST /auth/logout": {

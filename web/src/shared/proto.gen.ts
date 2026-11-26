@@ -459,6 +459,37 @@ agent?: ChatAgent, created_at: number, };
 export type BoardEntryKind = "zone" | "row";
 
 /**
+ * A board's standing grant (Arugula #1415, #1416): what its person approved
+ * on its "Run this board" card. Its lead runs on `lead_machine`; its issue
+ * agents on that machine or `machines`, at most `cap` at once.
+ */
+export type BoardGrant = { 
+/**
+ * `grt_…`.
+ */
+id: string, 
+/**
+ * The account that gave it, and its name now.
+ */
+person: string, person_name: string, lead_machine: GrantMachine, 
+/**
+ * Every machine its issue agents may use: the lead's first.
+ */
+machines: Array<GrantMachine>, cap: number, 
+/**
+ * Its issue agents running now (and tickets not attached yet).
+ */
+running: number, created_at: number, 
+/**
+ * When it lapses; absent: when the board closes.
+ */
+lapses_at?: number, 
+/**
+ * The reader gave it, so Revoke is theirs.
+ */
+mine: boolean, };
+
+/**
  * A named, ordered section of a board that its author sets: a phase, a
  * wave, an area. A row belongs to at most one ([`Row::group`]); a group
  * holds no lane, and a row's lane is the same in any group.
@@ -870,6 +901,12 @@ branch: string,
 pr?: string, };
 
 /**
+ * [`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the
+ * person's staff room. `again`: it was open already.
+ */
+export type BoardRunAsked = { ask: string, room: string, seq: number, again: boolean, };
+
+/**
  * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
  * `completed` (when not given), `not_planned` or `duplicate`.
  */
@@ -976,7 +1013,11 @@ order?: Array<string>,
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.
  */
-said?: string, };
+said?: string, 
+/**
+ * Its live grant to start agents (Arugula #1416), if it has one.
+ */
+grant?: BoardGrant, };
 
 /**
  * One thing a row may point at.
@@ -1174,12 +1215,30 @@ mine: boolean,
 /**
  * The session its answer started, once it's answered.
  */
-session: string | null, };
+session: string | null, 
+/**
+ * What an agent session proposes (`ask:prp_…`, Arugula #1278): its
+ * choices are [`APPROVE`] and [`DENY`]. None for any other ask.
+ */
+proposal: ChatProposal | null, };
 
 /**
  * [`ASK`]'s `POST` body: the choice pressed.
  */
-export type ChatAskAnswer = { choice: string, };
+export type ChatAskAnswer = { choice: string, 
+/**
+ * A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or
+ * [`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It
+ * is kept on the to-do and never put in an event, a push or chat; one
+ * that looks like a secret is refused. Any other ask takes none.
+ */
+note?: string, };
+
+/**
+ * [`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest
+ * first. Agents' proposals for now (Arugula #1278).
+ */
+export type ChatAsks = { asks: Array<ChatAsk>, };
 
 /**
  * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
@@ -1273,7 +1332,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, by_project: { [key in string]: number }, changed: Array<string>, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -1604,6 +1663,69 @@ mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, 
 export type ChatPresent = { account: string, state: PresenceState, };
 
 /**
+ * A proposal as its card draws it ([`ChatAsk::proposal`]).
+ */
+export type ChatProposal = { 
+/**
+ * `prp_…`.
+ */
+id: string, 
+/**
+ * `start`, `close`, `run_board` or `todo`.
+ */
+action: string, 
+/**
+ * The session that proposed it, `ses_…`.
+ */
+by_session: string, 
+/**
+ * `start`: the issue.
+ */
+issue: ProposalIssue | null, 
+/**
+ * `start`: the repo it names, `owner/name`.
+ */
+repo: string | null, 
+/**
+ * `start`: what the new session is told (none: to work on the issue).
+ */
+prompt: string | null, 
+/**
+ * `close`: the sessions, as they are now.
+ */
+sessions: Array<ProposalSession>, 
+/**
+ * Why, in the agent's words.
+ */
+why: string, 
+/**
+ * `open`, `approved`, `denied` or `failed` (approved, and doing it
+ * didn't work: `outcome` says why); a to-do's `open`, `done`, `cant`
+ * or `cancelled`.
+ */
+state: string, 
+/**
+ * Who answered it, by name.
+ */
+answered_by_name: string | null, 
+/**
+ * What answering it did, in a line.
+ */
+outcome: string | null, 
+/**
+ * `start`, approved: the session it started.
+ */
+started: string | null, 
+/**
+ * `run_board`: the board, where its lead runs and what it may start.
+ */
+run?: ProposalRun, 
+/**
+ * `todo`: what to do, how, and its receipt.
+ */
+todo?: ProposalTodo, };
+
+/**
  * Why control pushed someone.
  */
 export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread" | "agent";
@@ -1748,8 +1870,9 @@ topic_writable: boolean,
  */
 staff: boolean, 
 /**
- * The session that leads a staff room: the person's posts there are
- * delivered to it, as a board thread's are to the board's lead (#414).
+ * The session that leads a staff room, or an issue's thread (Arugula
+ * #1439): the posts there are delivered to it, never its own, as a
+ * board thread's are to the board's lead (#414).
  */
 lead?: ChatRoomLead, };
 
@@ -1804,7 +1927,7 @@ can_manage: boolean,
 agents: Array<ChatRoomAgent>, };
 
 /**
- * The session leading a staff room ([`ChatRoom::lead`]): its machine, the
+ * The session leading a room ([`ChatRoom::lead`]): its machine, the
  * machine's name ("" for one that's gone) and the session's name there.
  */
 export type ChatRoomLead = { machine: string, machine_name: string, session: string, };
@@ -2200,6 +2323,45 @@ by?: string, };
  * key and the webhook secret are sealed and never come back.
  */
 export type ConnectTracker = { workspace_slug: string, project: string, api_key: string, webhook_secret: string | null, };
+
+/**
+ * `POST /api/conversations/continue`: a Claude Code or Codex conversation
+ * going on in a terminal pane, the person's own `claude --resume <id>` (or
+ * `codex resume <id>`) in its folder, in a new tab named after it: no
+ * adapter to install. The pane
+ * or block that has it already, if one of ours does.
+ */
+export type ContinueConversationRequest = { 
+/**
+ * Its id, or a unique prefix.
+ */
+id: string, 
+/**
+ * Its folder is gone: run it in home instead.
+ */
+home?: boolean | null, 
+/**
+ * The new tab's session (name or id). Default: `from_pane`'s, else
+ * the first.
+ */
+session?: string | null, from_pane?: number | null, 
+/**
+ * It's running in a terminal outside Arugula: stop it there first
+ * (Move here; SIGINT, then SIGTERM, never SIGKILL), then continue it.
+ * Refused if it won't stop or isn't the owner's.
+ */
+move_here?: boolean | null, };
+
+/**
+ * What continuing a conversation answers: the pane it goes on in
+ * (`opened`: made now, not there already), or, with none, that its folder
+ * is gone (`folder_gone`: ask again with `home`).
+ */
+export type ContinueConversationResponse = { pane?: number, opened: boolean, conversation: string, 
+/**
+ * The folder it runs in, or would have.
+ */
+cwd: string, folder_gone?: boolean, };
 
 /**
  * A machine's standing with Arugula control (#325): whether and where
@@ -3261,6 +3423,12 @@ plan_digest: string | null,
 last_release: GateRelease | null, };
 
 /**
+ * A machine a [`BoardGrant`] names: its id, and its name now (its id while
+ * it can't be told).
+ */
+export type GrantMachine = { id: string, name: string, };
+
+/**
  * An ssh invite to a pane (M65). `token`, `command` and the pinning lines
  * are only in the answer that made it; the daemon keeps a hash.
  */
@@ -3414,6 +3582,12 @@ guest_ssh?: boolean,
  */
 remote_input?: boolean, 
 /**
+ * `start_agent` starts a chief of staff here (`recipe: chief-of-staff`,
+ * Arugula #1338), through `POST /api/mcp/call`: the Overview's Start
+ * offers this machine (Arugula #1341). Absent from a daemon before it.
+ */
+chief_of_staff?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */
@@ -3454,7 +3628,50 @@ team?: string,
  */
 features?: HostFeatures, };
 
-export type Inbox = { entries: Array<InboxEntry>, };
+export type Inbox = { 
+/**
+ * Today's list, unchanged, for apps released before `items` (One
+ * Inbox, Arugula #1428): removed once the oldest supported app reads
+ * `items`.
+ */
+entries: Array<InboxEntry>, 
+/**
+ * The one count (Arugula #1430): the open items whose `counts` is
+ * true. Every client shows this number and adds nothing to it. Seen
+ * doesn't lower it: an item counts until it clears. 0 from a server
+ * before it.
+ */
+count: number, 
+/**
+ * The one list: what needs the reader or names them, ranked by group
+ * ([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first
+ * within a group. One item per thing: a mention in a thread is its
+ * `mention` item, never also the thread's `thread_news`.
+ */
+items: Array<InboxItem>, 
+/**
+ * How many asks agents are handling among themselves (Arugula #1393):
+ * the reader's agents' asks that the agent that started them answers
+ * first, for ten minutes. Shown as a line, never counted.
+ */
+handled: number, 
+/**
+ * `count`, by project (Arugula #1433): the rail's project marks. Each
+ * counted item under its subject's project; one with no project (a
+ * DM) is in `count` alone, and a project with none isn't listed.
+ * Empty from a server before it.
+ */
+by_project: { [key in string]: number }, };
+
+/**
+ * How to answer an item in place. `via` is `attention_act`,
+ * `session_action`, `card` (an `approval`), `todo`, `board_answer`,
+ * `deploy` or `chat_reply`; `options` only where the server holds them (a
+ * board ask's, an approval's and a to-do's). An approval or a to-do is
+ * answered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and
+ * a to-do's `note`), as its staff card is.
+ */
+export type InboxAnswer = { via: string, options: Array<string>, };
 
 export type InboxEntry = { 
 /**
@@ -3492,7 +3709,8 @@ author: string | null,
  */
 url: string, 
 /**
- * A native issue's or a run's project (M202, M215).
+ * A native issue's or a run's project (M202, M215); a mirrored
+ * item's, the project its repo is linked in (Arugula #1433).
  */
 project: string | null, 
 /**
@@ -3505,6 +3723,99 @@ room: string | null,
 created_at: number, updated_at: number, seen_at: number | null, done_at: number | null, };
 
 /**
+ * Who an item is from: a person, or an agent and its machine.
+ */
+export type InboxFrom = { account?: string, 
+/**
+ * A person's or a GitHub login's name, as the list shows it.
+ */
+name?: string, 
+/**
+ * An agent session's id.
+ */
+agent?: string, machine?: string, };
+
+/**
+ * One item of the one Inbox (Arugula #1430): a thing that needs the
+ * reader or names them, until its source no longer does.
+ */
+export type InboxItem = { 
+/**
+ * Stable and unique for the reader, and a push's tag: `prp_…` (an
+ * agent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`
+ * (a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula
+ * #1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's
+ * item and reason (`fi_…:review_requested`, `iss_…:mentioned`,
+ * `run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an
+ * approval or a to-do.
+ */
+id: string, 
+/**
+ * One of [`INBOX_KINDS`].
+ */
+kind: string, 
+/**
+ * One of [`INBOX_GROUPS`].
+ */
+group: string, 
+/**
+ * Whether it's in `count`: false for `turn_finished`, for an alert
+ * (`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an
+ * item `for` someone else.
+ */
+counts: boolean, 
+/**
+ * The account it waits on (Arugula #1393): the reader, or a teammate
+ * whose ask the reader sees folded ("2 asks for Jake ›"), never
+ * counted for them. `None`: the reader's, as before it. An item
+ * counts only when `counts` is true and `for` is the reader or absent.
+ */
+for?: string, 
+/**
+ * An agent's ask that another agent was to answer, and didn't within
+ * ten minutes: it reached its person, and says so (Arugula #1393).
+ */
+escalated?: boolean, 
+/**
+ * One line: the PR's title, the question, "Approve deploy v0.70.105".
+ */
+title: string, 
+/**
+ * The message, for a DM, a thread or a chat mention. Never an agent's
+ * question, which stays on its machine.
+ */
+snippet?: string, 
+/**
+ * The card's decision lines, as plain text (Arugula #1467): what its
+ * staff card says, by the same words, so a client shows the expanded
+ * row without reading the card. An `approval`'s are its terms (a Run
+ * this board's lead, its issue agents' machines, the cap, the lapse
+ * and what each machine said of its clone; a close's blocks; a start's
+ * repo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its
+ * how when it has one: its steps as written, in one line with its
+ * newlines, for the mono well. Never a secret, never a to-do's note.
+ */
+lines?: Array<string>, 
+/**
+ * Who asks or wrote. An agent's card is from its agent (`agent`, the
+ * session's id or a machine's agent's name, and `machine`); a chief of
+ * staff's `name` is `Chief of staff · <the project's name>`.
+ */
+from: InboxFrom, 
+/**
+ * What it's about, and where Open goes.
+ */
+subject: InboxSubject, 
+/**
+ * How to answer it in place, when it can be.
+ */
+answer?: InboxAnswer, 
+/**
+ * When it started waiting on the reader (ms): it ranks the list.
+ */
+since: number, seen_at?: number, done_at?: number, };
+
+/**
  * Mark an item's entries: `true` sets seen or done (now, if it wasn't),
  * `false` clears it, and one not given stays as it is.
  */
@@ -3512,13 +3823,54 @@ export type InboxMark = {
 /**
  * Only this reason's entry; all of the item's when `None`.
  */
-reason: string | null, seen: boolean | null, done: boolean | null, };
+reason: string | null, seen: boolean | null, done: boolean | null, 
+/**
+ * Answers an `approval` or a `todo` (Arugula #1467) with one of its
+ * `answer.options`, as its staff card's buttons do, and by the same
+ * path: only its person, once. `seen` and `done` are then ignored.
+ */
+choice?: string, 
+/**
+ * A to-do's answer's note: kept on the to-do for its person, never in
+ * an item, a push or a live event. One that looks like a secret is
+ * refused. Only with `choice`, and only a to-do's.
+ */
+note?: string, };
 
 export type InboxMarked = { item: string, 
 /**
  * How many entries it changed.
  */
 marked: number, };
+
+/**
+ * What an item is about. `type` is `pane`, `session`, `proposal`,
+ * `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
+ * where Open goes (a path on the platform's page, or the item on GitHub).
+ */
+export type InboxSubject = { type: string, id: string, url: string, project?: string, 
+/**
+ * The asker's machine: an agent's card's is the machine its agent
+ * asked from, never what it would act on (a close's blocks are in
+ * `lines`).
+ */
+machine?: string, 
+/**
+ * The asker's block on `machine`, as `%N`.
+ */
+pane?: string, 
+/**
+ * The chat room it's in: a proposal's card, a thread, a DM.
+ */
+room?: string, 
+/**
+ * The message in `room`: a proposal's card, the first unread.
+ */
+seq?: number, 
+/**
+ * A board ask's board.
+ */
+board?: string, };
 
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, project?: ProjectRef, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
@@ -5266,6 +5618,92 @@ export type ProjectTeam = { id: string, name: string,
 role: string, members: Array<ProjectMember>, };
 
 /**
+ * [`ChatProposal::issue`].
+ */
+export type ProposalIssue = { 
+/**
+ * `iss_…`.
+ */
+id: string, number: number, title: string, };
+
+/**
+ * A "Run this board" card's lines ([`ChatProposal::run`]).
+ */
+export type ProposalRun = { 
+/**
+ * `brd_…`, and its title now.
+ */
+board: string, board_title: string, 
+/**
+ * Where its lead runs.
+ */
+lead_machine: GrantMachine, 
+/**
+ * Where its issue agents may run: the lead's machine first.
+ */
+machines: Array<GrantMachine>, 
+/**
+ * How many issue agents at once.
+ */
+cap: number, 
+/**
+ * None: until the board closes.
+ */
+lapse_days?: number, 
+/**
+ * The board's repo (Arugula #1458): the first of the project's linked
+ * repos, the board's own first. None: the project links none, and
+ * agents start in their machine's home.
+ */
+repo?: string, 
+/**
+ * What each machine said when the card was raised: the first of the
+ * project's repos it has a clone of, or none. A machine that isn't here
+ * couldn't be asked (offline, or its Arugula is too old).
+ */
+checkouts: Array<RunCheckout>, };
+
+/**
+ * One of [`ChatProposal::sessions`].
+ */
+export type ProposalSession = { 
+/**
+ * `ses_…`.
+ */
+id: string, 
+/**
+ * What it works on: its branch's slug, or its issue's title.
+ */
+title: string, 
+/**
+ * Its state now (`working`, `done`, `stopped`, …).
+ */
+state: string, };
+
+/**
+ * A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as
+ * the agent wrote it. Its why is [`ChatProposal::why`], whom it's for the
+ * card's asker, and who answered [`ChatProposal::answered_by_name`].
+ */
+export type ProposalTodo = { what: string, 
+/**
+ * The steps, shown as written in a mono well.
+ */
+how: string, 
+/**
+ * A machine's agent's: the machine, by id, and its conversation.
+ */
+machine?: string, conversation?: TodoConversation, 
+/**
+ * When it was answered (or cancelled), ms.
+ */
+answered_at?: number, 
+/**
+ * The person's note with their answer: only they read it here.
+ */
+note?: string, };
+
+/**
  * Which forge.
  */
 export type Provider = "forgejo" | "github" | "gitlab";
@@ -5494,6 +5932,20 @@ export type Role = "viewer" | "editor" | "owner";
  * Something a run left behind (M213).
  */
 export type RunArtifactView = { name: string, size: number, digest: string, created_at: number, };
+
+/**
+ * One machine's clone, for a "Run this board" card (Arugula #1458).
+ */
+export type RunCheckout = { 
+/**
+ * The machine, by id.
+ */
+machine: string, 
+/**
+ * The first of the project's repos it has a clone of (where its agents
+ * start); none: it has none, and no agent starts there.
+ */
+repo?: string, };
 
 /**
  * The deploy a deploy's run applies (M219, UI audit #145): which, to
@@ -6431,7 +6883,14 @@ by: string,
  * The agent block whose token it came with, if any: that block may
  * drive and close it.
  */
-block?: number, };
+block?: number, 
+/**
+ * The pane the caller runs in, by its own word (`x-arugula-pane`)
+ * where it isn't an agent block: a Claude Code terminal that started
+ * an agent, so the Overview can say who did (Arugula #1441). Display
+ * only, never a credential: what may drive it is `block`'s alone.
+ */
+from?: number, };
 
 /**
  * Everything a client needs to draw: sessions in order, each tab's tree
@@ -6542,6 +7001,17 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
  * Why telemetry is on or off here.
  */
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
+
+/**
+ * The conversation a machine's agent's to-do is for (Arugula #1462): its
+ * harness and its id there, so an answer can find it again once its block
+ * is gone. The machine is the one that asked.
+ */
+export type TodoConversation = { 
+/**
+ * `claude` or `codex`.
+ */
+agent: string, id: string, };
 
 /**
  * How a tracker item is closed.
@@ -6968,6 +7438,7 @@ export const OPS = {
   "agent_can.get": { method: "GET", path: "/api/agent-can" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
+  "conversation.continue": { method: "POST", path: "/api/conversations/continue" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
@@ -7051,6 +7522,7 @@ export const OPS = {
   "setup.claude": { method: "POST", path: "/api/setup/claude" },
   "setup.control": { method: "POST", path: "/api/setup/control" },
   "setup.get": { method: "GET", path: "/api/setup" },
+  "setup.hooks": { method: "POST", path: "/api/setup/hooks" },
   "setup.tailscale": { method: "POST", path: "/api/setup/tailscale" },
   "share.mint": { method: "POST", path: "/api/shares" },
   "share.revoke": { method: "DELETE", path: "/api/shares/{id}" },

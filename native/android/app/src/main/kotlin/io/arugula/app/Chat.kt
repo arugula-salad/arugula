@@ -96,6 +96,11 @@ class LiveChat(private val api: Api) {
         private set
     var connected by mutableStateOf(false)
         private set
+    /** Moves each time the stream says the reader's Inbox changed (Arugula #1430), with its [inboxCount] then. */
+    var inbox by mutableIntStateOf(0)
+        private set
+    var inboxCount: Int? = null
+        private set
     private var live: ChatLive? = null
     private var opening = false
     private var failures = 0
@@ -161,6 +166,10 @@ class LiveChat(private val api: Api) {
                     if (type == "message") rooms++
                 }
                 "room", "read" -> rooms++
+                "inbox" -> {
+                    inboxCount = ev.int("count")
+                    inbox++
+                }
                 "closed" -> {
                     live = null
                     l.close()
@@ -189,7 +198,7 @@ fun ChatRoomsScreen(api: Api, live: LiveChat) {
     val scope = LocalScope.current
     val nav = LocalNav.current
     Column(Modifier.fillMaxSize()) {
-        TabHeading("Chat", project = true)
+        TabHeading("Chat")
         // The stream says when the list's counts move; a slow look again covers a stream that's down.
         Loaded(key = scope.current?.id, every = 60_000, trigger = live.rooms, load = { api.get("/api/chat").list("rooms", ChatRoom::of) }) { all, _ ->
             val rooms = all.filter { it.isConversation && !it.archived && scope.showsRoom(it) }

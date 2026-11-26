@@ -38,7 +38,7 @@ import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
 import { keptLine, machineMode, PERSONAL, type DocsMode } from "../../shared/docs/docs-mode";
 import type { BackLink } from "../../shared/ui/page-header";
 import type { ComponentChildren } from "preact";
-import { noImages, projectItem, shapeOf, stateOf as projectState, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
+import { projectItem, shapeOf, stateOf as projectState, useProjectDoc, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
 import { platformFetch } from "../../shared/maintenance";
 import { AppBar } from "./app-bar";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
@@ -413,6 +413,7 @@ function TeamDocs({ client, mode, me, under }: { client: Client; mode: Extract<D
 function TeamPreview({ project, doc, open, fail }: { project: string; doc: ProjectDoc; open: () => void; fail: (why: string) => void }) {
   const view = useProjectDoc(project, doc.id);
   const state = useMemo(() => (view ? projectState(view) : null), [view]);
+  const images = useProjectImages(project, doc.id);
   const reader = useRef<HTMLDivElement>(null);
   const link = view?.link ?? null;
   const copy = async (): Promise<"ok" | false> => {
@@ -440,7 +441,7 @@ function TeamPreview({ project, doc, open, fail }: { project: string; doc: Proje
       aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} reader={reader} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
-        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
+        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={images.load} cached={images.cached} />
       </div>
     </ListPreview>
   );

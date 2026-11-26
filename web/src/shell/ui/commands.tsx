@@ -15,12 +15,13 @@ import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";
-import { pickConversation } from "./conversations";
+import { openYourWork, pickConversation } from "./conversations";
 import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
 import { openPalette } from "./palette";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
-import { openGettingStarted } from "./welcome";
+import { openGettingStarted, openTailscale } from "./welcome";
+import { turnOnHooks } from "./agents-setup";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
@@ -46,6 +47,7 @@ import { openSettings } from "./settings-route";
 import { openFeedback } from "./feedback";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
+import { signInForPhone } from "./phone-offer";
 
 
 /** A pane's right-click menu. `workspace` is the directory it's in when
@@ -114,7 +116,6 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     },
     // A port where this pane runs: its machine, or this host.
     { label: mine ? "Open a port on this machine…" : "Open a port…", run: () => void openPort(client, { split: id, host: mine?.id, local: !mine }) },
-    { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
     { label: "Start a chat", run: () => void client.newChat({ split: id, from: id }) },
     // #123: the team's chat beside it, or one room of it, where chat is on.
     ...(!client.state?.roles && hasChat()
@@ -127,8 +128,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(!client.state?.roles ? [{ label: "Board…", run: () => void pinBoard(client, { from: id }) } as MenuItem] : []),
     // A Doc of this machine's, beside it (#703).
     ...(owner ? [{ label: "Doc…", run: () => void pinDoc(client, { from: id }) } as MenuItem] : []),
-    // M33: Claude Code conversations from terminals and the desktop app.
-    ...(owner ? [{ label: "Claude Code conversations…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
+    // Your work (Arugula #1396): the conversations, to continue one beside it.
+    ...(owner ? [{ label: "Your work…", run: () => pickConversation(client, { split: id, cwd: cwd ?? undefined }) } as MenuItem] : []),
     // M35: a studio app's box beside this pane.
     ...(owner && client.has("studio") ? [{ label: "Open a studio app…", run: () => pickApp(client, { split: id }) } as MenuItem] : []),
     // M36: a pull request beside it (N: in its repository).
@@ -183,6 +184,9 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),
+    // An agent beside it, on the menu itself (Arugula #1386): the docs and
+    // recordings show it there, not under Open beside.
+    { label: "Start an agent…", run: () => startAgent(client, { split: id, from: id }) },
     ...sub("Open beside", openBeside),
     ...sub("Move", [
       moveToTab,
@@ -488,15 +492,15 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "pane.attach": (client, { pane }) => void client.attachFiles(Number(pane)),
   "pane.picker": (client, { pane }) => openPicker(client, Number(pane)),
   "push.enable": (client) => notifyThisDevice(client),
+  "hooks.turn-on": (client) => void turnOnHooks(client),
+  /** The phone offer's Sign in (hints/phone): join, then a QR code. */
+  "phone.sign-in": () => void signInForPhone(),
   /** Follow someone in the session (their client). */
   "people.follow": (client, { client: them }) => client.follow(Number(them)),
   /** The team's settings: the app's, where there is one (its invite links
    * and chat are there); else control's Teams. */
   "control.teams": (_client, { team }) => (platformOrigin() && team ? openPlatform(`/settings/team/${encodeURIComponent(String(team))}`) : openPanel("teams")()),
-  "conversations.pick": (client) => {
-    const pane = client.active();
-    pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
-  },
+  "conversations.pick": (client) => openYourWork(client),
 };
 
 /** Where a menu opens under the element `selector` finds (else mid-page). */
@@ -518,6 +522,9 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     { label: "Usage and crash reports…", run: () => openMachineTelemetry(client) },
     // Native #205: a sharing setting, which was the `guest-ssh` flag.
     { label: "Guest SSH access…", run: () => openSharing(client) },
+    // Out of Getting started: the phone's way in without an account, on
+    // the daemon's own page (where its setup can be asked).
+    ...(client.e2e ? [] : [{ label: "Tailscale…", hint: "Reach this machine from your phone over your tailnet", run: () => openTailscale() }]),
     // Arugula #500: its name on control, on control's page, where the shown
     // machine has an id; control refuses anyone but its owner (or its team's).
     ...renameItems(client),

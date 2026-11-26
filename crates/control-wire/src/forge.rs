@@ -199,7 +199,8 @@ pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
 pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 
 /// The agents' op (Arugula #394) every daemon of this build knows.
-pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask"];
+pub const AGENT_OPS: &[&str] =
+    &["agents.mention", "agents.sessions", "agents.grant_ask", "agents.approved", "agents.checkouts"];
 
 /// The projects' op (Arugula #992) every daemon of this build knows.
 pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
@@ -348,6 +349,23 @@ pub enum DaemonOp {
     /// `failed` when it can't be. An older daemon answers `unknown`.
     #[serde(rename = "sessions.set_project")]
     SessionProject(SessionProjectAsk),
+    /// A person approved their agent's card (Arugula #1417): the chief of
+    /// staff on this machine asked to start an agent on an issue, or to
+    /// stop some of this machine's agent blocks, and they pressed
+    /// **Approve**. The daemon does it now, as its owner: the person's own
+    /// act, through the hub, as `sessions.set_card` is. It answers
+    /// `approved` with what it did, `failed` with why not. An older daemon
+    /// answers `unknown`, and the card says the machine's Arugula is too
+    /// old.
+    #[serde(rename = "agents.approved")]
+    AskApproved(AskApproved),
+    /// Which of a project's repos this machine has a clone of (Arugula
+    /// #1458): control asks each machine a "Run this board" card offers,
+    /// before the person approves, so the card says where agents can't
+    /// start. The daemon answers `checkout` with the first it has, found as
+    /// a ladder start finds one. An older daemon answers `unknown`.
+    #[serde(rename = "agents.checkouts")]
+    Checkouts(CheckoutsAsk),
 }
 
 impl DaemonOp {
@@ -366,6 +384,8 @@ impl DaemonOp {
             DaemonOp::DocsList(_) => "docs.list",
             DaemonOp::SessionCard(_) => "sessions.set_card",
             DaemonOp::SessionProject(_) => "sessions.set_project",
+            DaemonOp::AskApproved(_) => "agents.approved",
+            DaemonOp::Checkouts(_) => "agents.checkouts",
         }
     }
 }
@@ -459,6 +479,59 @@ pub struct SessionCardAsk {
     /// `None`: the session goes back to the card its branch gives, or to
     /// none, and a branch may give it one again.
     pub card: Option<String>,
+}
+
+/// `agents.approved`'s ask (Arugula #1417): the card's proposal, as the
+/// person approved it. The machine is the one whose agent asked: a start on
+/// another machine is #1415's start ticket's, not this op's. A `run_board`
+/// (Arugula #1416) goes to the grant's lead machine instead, which starts
+/// the lead with a start ticket of its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AskApproved {
+    /// The card, `prp_…`.
+    pub ask: String,
+    /// Its project, `prj_…`: a start's issue is in it.
+    pub project: String,
+    /// `start`, `close` or `run_board`.
+    pub action: String,
+    /// The agent that asked: its session's name and its block.
+    pub session: String,
+    pub pane: u32,
+    /// `start`: the issue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<crate::sessions::ProposalIssue>,
+    /// `start`: what the new agent is told (none: to work on the issue).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// `close`: the agent blocks to close, by pane.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<u32>,
+    /// `run_board` (Arugula #1416): the board whose lead starts here, under
+    /// the grant control wrote on Approve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    /// `run_board`: the board's title, for its lead's block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_title: Option<String>,
+    /// `run_board`: the project's repo (`owner/name`), for the lead to work
+    /// in when this machine has a clone of it: the first of `repos`, for a
+    /// machine that doesn't read them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// `run_board` (Arugula #1458): the project's linked repos, the board's
+    /// own first (the ones its rows' PRs go to). The lead starts in a clone
+    /// of the first this machine has; with none of them, it doesn't start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
+}
+
+/// `agents.checkouts`' ask (Arugula #1458): the project's repos
+/// (`owner/name`), the board's own first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct CheckoutsAsk {
+    pub repos: Vec<String>,
 }
 
 /// `sessions.set_project`'s ask (Arugula #1166).
@@ -731,6 +804,19 @@ pub enum OpAnswer {
     /// A `docs.list`'s answer (Arugula #1023): the library's Docs, last
     /// updated first.
     Docs { docs: Vec<MachineDocRow> },
+    /// An `agents.approved`'s answer (Arugula #1417): what it did, in a
+    /// line for the card, and for a start the agent block it opened.
+    Approved {
+        said: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block: Option<u32>,
+    },
+    /// An `agents.checkouts`' answer (Arugula #1458): the first of the
+    /// repos asked that this machine has a clone of; none: it has none.
+    Checkout {
+        #[serde(default)]
+        repo: Option<String>,
+    },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.
@@ -761,6 +847,53 @@ mod tests {
                 "docs": [{ "id": "0123456789abcdef", "title": "Plan", "project": null }] } })
         );
         assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+    }
+
+    /// `agents.approved` and its answer on the relay (Arugula #1417).
+    #[test]
+    fn an_approved_card_on_the_wire() {
+        let issue = crate::sessions::ProposalIssue { id: "iss_1".into(), number: 12, title: "Fix it".into() };
+        let ask = OpAsk::new(
+            "1".into(),
+            DaemonOp::AskApproved(AskApproved {
+                ask: "prp_1".into(),
+                project: "prj_1".into(),
+                action: "start".into(),
+                session: "Chief of staff".into(),
+                pane: 3,
+                issue: Some(issue),
+                ..Default::default()
+            }),
+        );
+        let v = serde_json::to_value(&ask).unwrap();
+        assert_eq!(
+            v,
+            json!({ "t": "op", "id": "1", "op": { "op": "agents.approved", "ask": "prp_1", "project": "prj_1",
+                "action": "start", "session": "Chief of staff", "pane": 3,
+                "issue": { "id": "iss_1", "number": 12, "title": "Fix it" } } })
+        );
+        assert_eq!(serde_json::from_value::<OpAsk>(v).unwrap(), ask);
+        assert!(Ops::ours().ops.contains(&ask.op.name().to_owned()));
+        let done = OpDone::new("1".into(), OpAnswer::Approved { said: "started %7".into(), block: Some(7) });
+        let v = serde_json::to_value(&done).unwrap();
+        assert_eq!(v["answer"], json!({ "answer": "approved", "said": "started %7", "block": 7 }));
+        assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+    }
+
+    /// `agents.checkouts` and its answer on the relay (Arugula #1458).
+    #[test]
+    fn a_checkouts_ask_on_the_wire() {
+        let ask = OpAsk::new("1".into(), DaemonOp::Checkouts(CheckoutsAsk { repos: vec!["acme/widgets".into()] }));
+        let v = serde_json::to_value(&ask).unwrap();
+        assert_eq!(v, json!({ "t": "op", "id": "1", "op": { "op": "agents.checkouts", "repos": ["acme/widgets"] } }));
+        assert_eq!(serde_json::from_value::<OpAsk>(v).unwrap(), ask);
+        assert!(Ops::ours().ops.contains(&ask.op.name().to_owned()));
+        let done = OpDone::new("1".into(), OpAnswer::Checkout { repo: Some("acme/widgets".into()) });
+        let v = serde_json::to_value(&done).unwrap();
+        assert_eq!(v["answer"], json!({ "answer": "checkout", "repo": "acme/widgets" }));
+        assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+        let none: OpAnswer = serde_json::from_value(json!({ "answer": "checkout" })).unwrap();
+        assert_eq!(none, OpAnswer::Checkout { repo: None });
     }
 
     /// `sessions.set_card` on the relay (Arugula #1019): a card, or `null`

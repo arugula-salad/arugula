@@ -95,10 +95,10 @@ test.describe("on a computer", () => {
     await expect(page.locator(".ws-head [data-open-attention]")).toBeVisible();
     await page.locator(".ws-head [data-machine-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-    // The sidebar says which session this is; without it, the bar does.
-    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
+    // The bar's stack says which session this is, with the sidebar open or not.
+    await expect(page.locator(".ws-head .ws-crumb-name")).toBeVisible();
     await page.locator("[data-open-sessions]").click();
-    await expect(page.locator(".ws-crumb-name")).toBeVisible();
+    await expect(page.locator(".ws-head .ws-crumb-name")).toBeVisible();
   });
 
   test("macOS reserves the native controls strip once, including with native tabs", async ({ page }) => {
@@ -147,7 +147,7 @@ test.describe("on a computer", () => {
     // The app's places (Arugula #1345). A machine on its own has no platform
     // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
     // Machines or Runs in its bar (its Docs are its bar's, Arugula #418).
-    expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["sessions-overview", "machines", "settings"]);
+    expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["mark", "machines", "settings"]);
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);
 
@@ -166,8 +166,8 @@ test.describe("on a computer", () => {
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 
-    // The header's caret is a disclosure (#378), not a place: the rail has no Sessions.
-    const caret = page.locator(".ws-head [data-open-sessions]");
+    // The tab strip's caret is a disclosure (#378), not a place: the rail has no Sessions.
+    const caret = page.locator(".ws-tabs [data-open-sessions]");
     await expect(rail.locator("[data-open-sessions]")).toHaveCount(0);
     await expect(caret).toHaveAttribute("aria-expanded", "true");
     await expect(caret).not.toHaveAttribute("aria-pressed");
@@ -394,7 +394,6 @@ test.describe("states", () => {
     // The long name: cut with an ellipsis in the row and, with the sidebar
     // closed, the crumb, whole where the pointer rests.
     await expect(row(page, long).locator(".ws-session-main")).toHaveAttribute("title", new RegExp(`^${long}`));
-    await expect(page.locator(".ws-crumb-name")).toHaveCount(0);
     await page.locator("[data-open-sessions]").click();
     const crumb = page.locator(".ws-crumb-name");
     await expect(crumb).toHaveText(long);
@@ -562,7 +561,7 @@ test.describe("on a narrow window", () => {
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
     const before = await page.locator(".main").boundingBox();
     const beta = await session(page, "narrow-beta");
-    await page.locator(".ws-head [data-open-sessions]").click();
+    await page.locator(".ws-tabs [data-open-sessions]").click();
     await expect(page.locator("[data-session-sidebar].overlay")).toBeVisible();
     // Over the panes: they keep their room.
     expect((await page.locator(".main").boundingBox())?.width).toBe(before?.width);

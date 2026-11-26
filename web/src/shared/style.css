@@ -921,6 +921,16 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   background: var(--backdrop);
 }
 
+/* A menu opened from inside a dialog (95) is over it, its sheet's
+   backdrop too. */
+.menu-backdrop.over-dialog {
+  z-index: 96;
+}
+
+.menu.over-dialog {
+  z-index: 97;
+}
+
 .menu.sheet {
   inset: auto 0 0;
   width: auto;
@@ -1017,8 +1027,12 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   top: calc(var(--bar-h) + 8px);
   right: 8px;
   z-index: 60;
+  /* A long one (what a click changed, naming a file) wraps inside the
+     window, a phone's 360px too, never wider than it. */
+  max-width: min(420px, calc(100vw - 16px));
+  overflow-wrap: anywhere;
   padding: 4px 10px;
-  border-radius: var(--chip-radius);
+  border-radius: min(var(--chip-radius), 12px);
   background: var(--raised);
   font-size: var(--text-sm);
   pointer-events: none;
@@ -1032,7 +1046,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* M182: a hosted machine's box waking, asleep, or why it didn't wake:
    its buttons take clicks. */
 #status.wake {
-  max-width: min(420px, calc(100vw - 16px));
   pointer-events: auto;
 }
 
@@ -5242,19 +5255,6 @@ button.diff-why-run {
   color: var(--teal);
 }
 
-/* ---- Claude Code conversations (M33) */
-
-.picker.conversations {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  width: min(720px, calc(100vw - 32px));
-  height: min(600px, 80vh);
-}
-
-.picker.conversations.phone {
-  width: auto;
-  height: var(--app-height);
-}
-
 /* Edit in nvim (+ Pane's Editor, Getting started): the switch, then its
    words (#1115). */
 label.edit-in-nvim {
@@ -5263,100 +5263,289 @@ label.edit-in-nvim {
   gap: 8px;
 }
 
-.picker.conversations .picker-where .check {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
+/* ---- Your work (Arugula #1396): the conversations, by repo. A page (the
+   owner's home with no session open) or a dialog's body. */
+
+.your-work-home {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.your-work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 960px;
+}
+
+.your-work.page .page-sub {
+  color: var(--dim);
+}
+
+/* The Overview's (Arugula #1400): the field's width, under its own heading. */
+.your-work.on-overview {
+  max-width: none;
+  margin-top: var(--space-1);
+}
+
+.your-work-dialog {
+  display: grid;
+  width: min(760px, calc(100vw - 32px));
+  height: min(640px, 82vh);
+  padding: var(--space-4);
+  border-radius: var(--panel-radius);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  box-sizing: border-box;
+}
+
+.your-work-dialog.phone {
+  width: auto;
+  height: var(--app-height);
+}
+
+.your-work.in-dialog {
+  max-width: none;
+  min-height: 0;
+}
+
+.yw-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.yw-dialog-head h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.yw-sub {
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.yw-filter {
+  flex: 1 0 100%;
+}
+
+.yw-close {
   margin-left: auto;
 }
 
-.picker.conversations .picker-where .check + .check {
-  margin-left: 8px;
+.your-work.in-dialog .yw-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.yw-list {
+  outline: 0;
 }
 
 /* #78: a host's heading, with how it answered. */
-.conv-host {
+.yw-host-head {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
-  padding: 10px 8px 2px;
+  padding: var(--space-3) var(--space-2) var(--space-1);
   font-weight: 600;
   border-top: 1px solid var(--line-strong);
 }
 
-.conv-host:first-child {
+.yw-host:first-child .yw-host-head {
   border-top: none;
 }
 
-.conv-host-state {
+.yw-host-state {
   font-weight: normal;
   font-size: var(--text-xs);
   color: var(--dim);
 }
 
-.conv-host.away .conv-host-state,
-.conv-host.asleep .conv-host-state {
+.yw-host-head:is(.away, .asleep) .yw-host-state {
   color: var(--warn);
 }
 
-.conv-folder {
-  padding: 8px 8px 3px;
-  font: var(--text-sm) var(--f-mono);
+.yw-repo {
+  margin: 0 0 var(--space-4);
+}
+
+.yw-repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+  margin-bottom: 2px;
+  padding: 0 var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.yw-repo-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.yw-mono {
+  min-width: 0;
+  overflow: hidden;
   color: var(--dim);
+  font: var(--text-xs) var(--f-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yw-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--space-4);
+  padding: 6px var(--space-2);
+  border-radius: var(--btn-radius);
+  cursor: pointer;
+}
+
+.yw-row:hover {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.yw-row.selected {
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
+}
+
+.yw-first,
+.yw-last {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conv-row {
-  padding-left: 16px;
-  font-family: inherit;
+.yw-first {
+  grid-column: 1;
+  font-size: var(--text-md);
 }
 
-.conv-title {
-  flex: 1;
-  min-width: 0;
-}
-
-.conv-source {
-  flex: none;
-  padding: 0 var(--space-1);
-  border-radius: var(--tag-radius);
-  font-size: var(--text-xs);
+.yw-last {
+  grid-column: 1;
   color: var(--dim);
-  border: 1px solid var(--line-strong);
+  font: var(--text-xs)/1.35 var(--f-mono);
 }
 
-.conv-source.desktop {
+.yw-last[data-folder-gone] {
+  color: var(--warn);
+}
+
+/* A question (Move here?) or why it couldn't move: on lines of its own
+   when narrow, rather than cut off. */
+.yw-last.ask {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--fg);
+  font-family: var(--f-ui);
+}
+
+.yw-last[data-move-refused] {
+  color: var(--warn);
+}
+
+.yw-meta {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--dim);
+  font-size: var(--text-xs);
+}
+
+.yw-when,
+.yw-tool {
+  white-space: nowrap;
+}
+
+.yw-live {
   color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  font-weight: 500;
 }
 
-.conv-live {
-  flex: none;
-  font-size: var(--text-xs);
-  color: var(--ok);
+/* The buttons show on the row you're at; its tool and age give way. */
+.yw-acts {
+  display: none;
+  gap: var(--space-1);
+  align-items: center;
 }
 
-/* #453: a conversation's live figures, the slim strip. */
-.conv-context {
-  flex: none;
-  display: inline-flex;
+.yw-row:is(:hover, .selected) .yw-acts {
+  display: flex;
 }
 
-.conv-cost {
-  flex: none;
-  font-size: var(--text-xs);
+.yw-row:is(:hover, .selected) :is(.yw-when, .yw-tool) {
+  display: none;
+}
+
+.yw-more {
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  background: none;
   color: var(--dim);
-  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  cursor: pointer;
 }
 
-.conv-when {
-  flex: none;
-  width: 4.75em;
-  text-align: right;
-  font-size: var(--text-xs);
-  color: var(--dim);
+.yw-more:hover {
+  color: var(--fg);
+}
+
+.yw-error {
+  margin: var(--space-2);
+}
+
+.yw-move-why code,
+.yw-move-why kbd {
+  font-family: var(--f-mono);
+}
+
+/* Narrow (a phone, a 360px window): the row's facts and buttons go under
+   its prompts, and the live mark wraps rather than squeezing them. */
+@media (max-width: 600px) {
+  .your-work-home {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .yw-row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-2);
+  }
+
+  .yw-meta {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+  }
+
+  .yw-live {
+    white-space: normal;
+  }
+
+  .yw-first {
+    font-size: var(--text-lg);
+  }
 }
 
 .agent-import {
@@ -6891,32 +7080,6 @@ html[data-scheme="light"] .doc {
   font-size: var(--text-md);
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
-}
-
-/* Arugula #1194: may people type into it from elsewhere? */
-.start-typing {
-  margin: 14px 0;
-  padding: 0;
-  border: 0;
-  max-width: 64ch;
-}
-
-.start-typing legend {
-  padding: 0;
-  margin-bottom: 6px;
-  font: 600 var(--text-md)/1.3 var(--f-ui);
-}
-
-.start-typing label {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  margin: 6px 0;
-  color: var(--subtle);
-}
-
-.start-typing label b {
-  color: var(--fg);
 }
 
 .start-said {
@@ -9533,35 +9696,7 @@ button.thread-quote:hover {
   align-items: stretch;
 }
 
-/* A terminal Claude whose hooks aren't heard: its questions could be cards. */
-.hooks-offer {
-  position: absolute;
-  z-index: 6;
-  top: 8px;
-  left: 8px;
-  max-width: calc(100% - 16px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border-radius: var(--chip-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-  font-size: var(--text-sm);
-}
-
-.hooks-offer button {
-  flex-shrink: 0;
-  padding: 3px 10px;
-}
-
-.hooks-offer button.link {
-  background: none;
-  color: var(--dim);
-  padding: 3px 6px;
-}
-
-/* Claude Code's plugin, where the hooks are offered: a line each. */
+/* Claude Code's plugin, where the hooks are offered (Getting started's Agents step): a line each. */
 .claude-plugin {
   display: grid;
   gap: 6px;
@@ -9570,24 +9705,6 @@ button.thread-quote:hover {
 
 .claude-plugin p {
   margin: 0;
-}
-
-/* Or the plugin: its lines under the chip's, the whole width. */
-.hooks-offer:has(.claude-plugin) {
-  flex-wrap: wrap;
-  padding-bottom: 8px;
-}
-
-.hooks-offer .claude-plugin {
-  flex-basis: 100%;
-  display: grid;
-  gap: 4px;
-  padding-right: 8px;
-}
-
-.hooks-offer .claude-plugin p {
-  margin: 0;
-  color: var(--dim);
 }
 
 /* #551: someone else's machine, new in the list. */
@@ -10347,7 +10464,6 @@ html[data-finish="glass"] .prompt-backdrop {
 
 .prompt-backdrop:has(.agent-dialog) { padding-top: 16px; }
 .prompt.agent-dialog { box-sizing: border-box; max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
-a.ws-ov-name, a.ws-ov-pane { text-decoration: none; }
 .tab .attention.working { opacity: 0.5; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
@@ -11481,187 +11597,8 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   font-size: var(--text-sm);
 }
 
-/* The overview: over the tab strip and the panes, which stay laid out. */
 .app.ws .ws-work {
   position: relative;
-}
-
-.ws-overview {
-  position: absolute;
-  z-index: 20;
-  inset: 0;
-  overflow-y: auto;
-  padding: 20px 24px 28px;
-  box-sizing: border-box;
-  background: var(--bg);
-}
-
-.ws-overview:focus {
-  outline: none;
-}
-
-.ws-ov-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.ws-ov-head h1 {
-  margin: 0;
-  font-size: var(--text-xl);
-}
-
-.ws-ov-sum {
-  margin: 4px 0 0;
-  color: var(--dim);
-}
-
-.ws-ov-back {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  color: var(--fg);
-}
-
-.ws-ov-back:hover {
-  background: var(--raised);
-}
-
-.ws-ov-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-  align-items: start;
-}
-
-.ws-ov-session {
-  min-width: 0;
-  padding: 10px 12px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: var(--surface);
-}
-
-.ws-ov-session.current {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.ws-ov-session.picked {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
-}
-
-.ws-ov-session[data-attention="needs_input"] {
-  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
-}
-
-.ws-ov-session-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ws-ov-name {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 2px 6px;
-  margin-left: -6px;
-  border-radius: var(--field-radius);
-  color: var(--fg);
-  font-size: var(--text-md);
-  font-weight: 600;
-}
-
-.ws-ov-name:hover {
-  background: var(--raised);
-}
-
-.ws-ov-counts {
-  margin-left: auto;
-  color: var(--dim);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-
-.ws-ov-context {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin: 2px 0 0;
-  color: var(--dim);
-  font: var(--text-sm) var(--f-mono);
-}
-
-.ws-ov-tab {
-  margin-top: 10px;
-}
-
-.ws-ov-tab-name {
-  display: block;
-  max-width: calc(100% + 6px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-  padding: 1px 6px;
-  margin-left: -6px;
-  border-radius: var(--field-radius);
-  color: var(--subtle);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.ws-ov-tab-name:hover {
-  color: var(--fg);
-  background: var(--raised);
-}
-
-.ws-ov-panes {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ws-ov-pane {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: var(--space-1) 8px;
-  border: 1px solid transparent;
-  border-radius: var(--field-radius);
-  text-align: left;
-  color: var(--fg);
-}
-
-.ws-ov-pane:hover {
-  background: var(--raised);
-}
-
-.ws-ov-pane.active {
-  border-color: var(--line);
-}
-
-.ws-ov-kind {
-  flex: none;
-  min-width: 42px;
-  color: var(--dim);
-  font-size: var(--text-xs);
-}
-
-.ws-ov-pane-name {
-  flex: 1 1 auto;
-}
-
-.ws-ov-where {
-  flex: 0 4 auto;
-  max-width: 45%;
-  color: var(--dim);
-  font: var(--text-xs) var(--f-mono);
 }
 
 /* What needs you is amber in the workspace, as #1018 has it (a phone
@@ -13494,4 +13431,19 @@ button.chat-agent-name:hover {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background: var(--surface);
   pointer-events: none;
+}
+
+/* The phone offer's QR code (shell/ui/phone-offer): Getting started's, in
+   the middle, with the address under it. */
+.phone-offer .start-qr {
+  display: block;
+  width: 168px;
+  height: 168px;
+  margin: 4px auto 8px;
+}
+.phone-offer-url {
+  margin: 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--text-sm);
 }

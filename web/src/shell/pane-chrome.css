@@ -163,14 +163,36 @@ html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pa
 @container (max-width: 420px) {
   .grid.pane-chrome .hint-header .hint-copy { display: none; }
 }
+/* Its own width, up to the window's less a margin (at left: 50% it would
+   shrink to half the window): long copy wraps onto lines of its own, and
+   the buttons keep their words, going under it when there's no room. */
 .hint-toast {
   position: fixed;
   z-index: 70;
   left: 50%;
   bottom: 40px;
   transform: translateX(-50%);
+  flex-wrap: wrap;
+  row-gap: 4px;
   padding: 6px 6px 6px 12px;
   box-shadow: var(--shadow-lg);
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+  border-radius: min(var(--chip-radius), 16px);
+}
+.hint-toast > :not(.hint-copy) {
+  flex: none;
+}
+.hint-toast .hint-copy {
+  flex: 1 1 14em;
+  min-width: 0;
+  padding: 2px 0;
+  line-height: 1.3;
+}
+.hint-toast :is(.hint-act, .hint-dismiss) {
+  flex: none;
+  white-space: nowrap;
 }
 .hint-empty {
   margin-top: 12px;

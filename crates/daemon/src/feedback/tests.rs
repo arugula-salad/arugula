@@ -185,16 +185,19 @@ async fn while_control_is_away_it_queues_and_sends_later() {
     assert_eq!(queued[0].send.who, Default::default(), "queued without an id or stamp");
     // The loop's first try finds no route yet (404), its next sends it.
     crate::task::spawn(f.clone().run());
-    for _ in 0..200 {
-        if !r.got.lock().unwrap().is_empty() {
+    // Wait for the queue to empty, not for the fake to see the send: the
+    // fake keeps it before answering, and the loop empties the queue only
+    // once the answer is back (#1389).
+    for _ in 0..1000 {
+        if !r.dir.join(QUEUE_FILE).exists() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+    assert!(!r.dir.join(QUEUE_FILE).exists());
     let got = r.got.lock().unwrap().clone();
     assert_eq!(got.len(), 1);
     assert!(got[0].0.who.stamp.is_some());
-    assert!(!r.dir.join(QUEUE_FILE).exists());
 }
 
 #[tokio::test]

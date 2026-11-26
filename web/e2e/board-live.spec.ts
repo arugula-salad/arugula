@@ -24,7 +24,7 @@ test.use({ permissions: ["local-network-access"] });
 const row = (id: string, note: string, attachments: unknown[]) => ({ id, rev: 1, pointer: { kind: "none" }, note, status: "none", lane: "doing", attachments, updated_at: 1 });
 
 /** The board: a card whose agent block is `pane` of the suite's daemon, with a PR beside it, and a card with no session; led by `lead`, if given. */
-function board(pane: number, lead?: (pane: number) => unknown) {
+function board(pane: number, lead?: (pane: number) => unknown, grant?: unknown) {
   const agent = { id: "att_agent", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(pane) }, block: { state: "working", title: "Fixer", branch: "arugula/fix", head: "abc1234", diffstat: { files: 2, added: 5, removed: 1 } } };
   const pr = { id: "att_pr", role: "work", pointer: { kind: "link", url: "https://example.com/pr/7" } };
   return {
@@ -32,16 +32,17 @@ function board(pane: number, lead?: (pane: number) => unknown) {
     zones: [{ id: "z_doing", rev: 1, title: "Doing", kind: "doing", rows: [row("r_live", "The live one", [agent, pr]), row("r_none", "Not started", [])] }],
     groups: [],
     docs: [],
+    ...(grant ? { grant } : {}),
   };
 }
 
 /** A fresh pane on the daemon, then the board in the app, led by `lead` if given. */
-async function openBoard(page: Page, lead?: (pane: number) => unknown): Promise<number> {
+async function openBoard(page: Page, lead?: (pane: number) => unknown, grant?: unknown): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
-  await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(board(pane, lead)) }));
+  await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(board(pane, lead, grant)) }));
   await page.goto(`/p/${P}/boards/${B}`);
   return pane;
 }
@@ -230,5 +231,61 @@ test.describe("on a phone", () => {
     await live.locator(".keybar").getByRole("button", { name: "Tab" }).tap();
     await send(page, pane, "");
     await expect.poll(() => text(page, pane)).toContain("got[$'\\t']");
+  });
+});
+
+test.describe("its grant (Arugula #1416)", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const GRANT = {
+    id: "grt_1",
+    person: "acct_a",
+    person_name: "Sam",
+    lead_machine: { id: "m_geek", name: "geek" },
+    machines: [
+      { id: "m_geek", name: "geek" },
+      { id: "m_mini", name: "jake-mini" },
+    ],
+    cap: 3,
+    running: 1,
+    created_at: 1,
+    mine: true,
+  };
+
+  test("the board's grant is a line under its lead, and Revoke takes it off", async ({ page }, info) => {
+    const lead = (pane: number) => ({ machine: "m_suite", machine_name: "suite-box", session: "Lead · Launch", pane, at: 1 });
+    const pane = await openBoard(page, lead, GRANT);
+    const line = page.locator(".board-head [data-board-grant]");
+    await expect(line.locator("[data-board-grant-line]")).toHaveText("Grant: lead on geek · agents on geek, jake-mini · up to 3 · until the board closes");
+    await page.screenshot({ path: info.outputPath("board-grant.png") });
+    const revoked: string[] = [];
+    await page.route(new RegExp(`/api/boards/${B}/grant$`), async (r) => {
+      revoked.push(r.request().method());
+      await r.fulfill({ json: board(pane, lead) });
+    });
+    await line.locator("[data-board-grant-revoke]").click();
+    await expect.poll(() => revoked).toEqual(["DELETE"]);
+    await expect(page.locator(".board-head [data-board-grant]")).toHaveCount(0);
+  });
+
+  test("a teammate's grant has no Revoke; a board with no lead and no grant offers Run this board, whose card goes in Needs you", async ({ page }, info) => {
+    await openBoard(page, (pane) => ({ machine: "m_team", machine_name: "jos-box", session: "Jo's lead", pane, at: 1 }), { ...GRANT, person: "acct_jo", person_name: "Jo", mine: false, lapses_at: Date.UTC(2026, 11, 3, 12) });
+    const line = page.locator(".board-head [data-board-grant]");
+    await expect(line.locator("[data-board-grant-line]")).toContainText("Grant (Jo's): lead on geek");
+    await expect(line.locator("[data-board-grant-line]")).toContainText("· up to 3 · until Dec 3");
+    await expect(line.locator("[data-board-grant-revoke]")).toHaveCount(0);
+
+    await openBoard(page);
+    const run = page.locator(".board-head [data-board-run]");
+    await expect(run).toHaveText("Run this board");
+    await page.screenshot({ path: info.outputPath("board-run.png") });
+    const asked: string[] = [];
+    await page.route(new RegExp(`/api/boards/${B}/run$`), async (r) => {
+      asked.push(r.request().method());
+      await r.fulfill({ json: { ask: "prp_run", room: "dm_cos", seq: 4, again: false } });
+    });
+    await run.click();
+    await expect.poll(() => asked).toEqual(["POST"]);
+    await expect(page.locator("[data-platform-toast]")).toContainText("approve its card in Needs you");
   });
 });

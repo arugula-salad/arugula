@@ -189,6 +189,8 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__tracker_write",
     "mcp__arugula__link",
     "mcp__arugula__watch",
+    "mcp__arugula__ask_approval",
+    "mcp__arugula__todo",
 ];
 
 #[derive(Subcommand)]

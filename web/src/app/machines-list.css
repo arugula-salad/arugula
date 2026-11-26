@@ -86,6 +86,12 @@
   padding: 0 var(--space-2);
   font: 500 var(--text-xs) var(--f-ui);
 }
+/* "+N more tabs", under a busy session's first few. */
+.platform-section .machines-more {
+  align-self: flex-start;
+  margin: var(--space-1) 0 0;
+  padding: 0 var(--space-2);
+}
 
 .panes-rows {
   margin: 0;
@@ -164,4 +170,10 @@
   .machines-machine {
     padding: var(--space-2);
   }
+}
+
+/* The machine the address names (Arugula #1349), as a selected card's edge;
+   a session's card it names is the card's own selected look. */
+.machines-machine[data-machines-picked] {
+  box-shadow: var(--selected-edge);
 }

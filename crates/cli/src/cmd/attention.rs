@@ -12,23 +12,47 @@ use serde_json::{Value, json};
 /// The longest turn summary sent, in characters.
 const SUMMARY_MAX: usize = 300;
 
-/// What a hook says, when its JSON is on stdin: a `Notification`'s
-/// `message` ("Claude needs your permission to use Bash"), or for `Stop`
-/// (#857) the turn's last assistant message, as a summary of it: Claude
-/// Code's `last_assistant_message`, or else the last one in its
-/// `transcript_path`.
-fn hook_message() -> Option<String> {
+/// The hook's JSON, when it's on stdin.
+fn read_hook() -> Option<Value> {
     use std::io::{IsTerminal, Read};
     if std::io::stdin().is_terminal() {
         return None;
     }
     let mut input = String::new();
     std::io::stdin().take(1 << 20).read_to_string(&mut input).ok()?;
-    let v: Value = serde_json::from_str(&input).ok()?;
+    serde_json::from_str(&input).ok()
+}
+
+/// What a hook says: a `Notification`'s `message` ("Claude needs your
+/// permission to use Bash"), or for `Stop` (#857) the turn's last assistant
+/// message, as a summary of it: Claude Code's `last_assistant_message`, or
+/// else the last one in its `transcript_path`.
+fn hook_message(hook: Option<&Value>) -> Option<String> {
+    let v = hook?;
     if v["hook_event_name"] == "Stop" {
-        return stop_summary(&v);
+        return stop_summary(v);
     }
     v["message"].as_str().map(str::to_owned).filter(|m| !m.is_empty())
+}
+
+/// Whether a hook is a `Notification` that isn't a new need (#1424): Claude
+/// Code's idle reminder ("Claude is waiting for your input", about a minute
+/// after a turn ends) and its sign-in notice. The turn's end already decided
+/// whether it wants you; this would turn a pane you've read back to
+/// needs-input and push it. `permission_prompt`, `elicitation_dialog`, no
+/// type and any type not known here still need you.
+fn is_no_new_need(hook: Option<&Value>) -> bool {
+    let Some(v) = hook else { return false };
+    v["hook_event_name"] == "Notification"
+        && matches!(v["notification_type"].as_str(), Some("idle_prompt" | "auth_success"))
+}
+
+/// What `attention <state>` posts for a hook, or nothing to post.
+fn attention_body(state: &str, hook: Option<&Value>) -> Option<Value> {
+    if state == "needs_input" && is_no_new_need(hook) {
+        return None;
+    }
+    Some(json!({"state": state, "why": hook_message(hook)}))
 }
 
 /// A `Stop` hook's turn summary: its last assistant message, on one line.
@@ -100,7 +124,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         Args { state: Some(state), pane } => {
             // The plugin's copy of a hook settings.json has too (#229).
             if pane.is_none() && crate::hooks::plugin_copy_stands_aside(&format!("arugula attention {state}"), None) {
-                let _ = hook_message();
+                let _ = read_hook();
                 return Ok(0);
             }
             let state = state.replace('-', "_");
@@ -114,7 +138,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
             let Ok(pane) = here(pane) else { return Ok(0) };
             // The state stays the string typed here: the daemon names the
             // ones it doesn't know, as it always did.
-            let mut body = json!({"state": state, "why": hook_message()});
+            let Some(mut body) = attention_body(&state, read_hook().as_ref()) else { return Ok(0) };
             if let Some(pid) = pid {
                 body["pid"] = pid.into();
             }
@@ -149,5 +173,36 @@ mod tests {
         let long = json!({ "hook_event_name": "Stop", "last_assistant_message": "x".repeat(1000) });
         assert_eq!(stop_summary(&long).unwrap().chars().count(), SUMMARY_MAX);
         assert_eq!(stop_summary(&json!({ "hook_event_name": "Stop", "transcript_path": "/nonexistent" })), None);
+    }
+
+    #[test]
+    fn claude_code_s_idle_reminder_is_not_a_new_need() {
+        let note = |t: Option<&str>| {
+            let mut h = json!({ "hook_event_name": "Notification", "message": "Claude is waiting for your input" });
+            if let Some(t) = t {
+                h["notification_type"] = t.into();
+            }
+            h
+        };
+        assert_eq!(attention_body("needs_input", Some(&note(Some("idle_prompt")))), None);
+        assert_eq!(attention_body("needs_input", Some(&note(Some("auth_success")))), None);
+        // A permission, a question, no type and a type not known still need you.
+        for t in [Some("permission_prompt"), Some("elicitation_dialog"), Some("new_kind"), None] {
+            let body = attention_body("needs_input", Some(&note(t))).unwrap();
+            assert_eq!(body, json!({ "state": "needs_input", "why": "Claude is waiting for your input" }));
+        }
+        let ask = json!({ "hook_event_name": "Notification", "notification_type": "permission_prompt",
+            "message": "Claude needs your permission to use Bash" });
+        assert_eq!(
+            attention_body("needs_input", Some(&ask)),
+            Some(json!({ "state": "needs_input", "why": "Claude needs your permission to use Bash" }))
+        );
+        // Only a Notification, and only needs-input, is left out.
+        let stop =
+            json!({ "hook_event_name": "Stop", "notification_type": "idle_prompt", "last_assistant_message": "Done." });
+        assert_eq!(attention_body("done", Some(&stop)), Some(json!({ "state": "done", "why": "Done." })));
+        assert!(attention_body("needs_input", Some(&stop)).is_some());
+        assert!(attention_body("done", Some(&note(Some("idle_prompt")))).is_some());
+        assert!(attention_body("needs_input", None).is_some());
     }
 }

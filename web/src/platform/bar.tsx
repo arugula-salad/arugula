@@ -138,6 +138,10 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
       // Swarm is the Overview's view (Arugula #1348): Overview › Swarm.
       crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
       crumbs.push({ label: "Swarm", data: "swarm" });
+    } else if (r.page === "issues" || r.page === "issue" || r.page === "new-issue") {
+      // The issues are Boards' (#656): Boards › Issues, each a level up (Arugula #1387).
+      crumbs.push({ label: SECTION_LABEL.boards, to: sectionPath("boards", project) ?? undefined, data: "boards" });
+      crumbs.push({ label: "Issues", to: pathOf({ page: "issues", project }, names), data: "issues" });
     } else if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
     else if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], to: sectionPath(section, project) ?? undefined, data: section });
   } else {

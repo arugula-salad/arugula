@@ -32,6 +32,14 @@ pub fn token_path(id: &str) -> String {
     format!("/api/machines/{id}/token")
 }
 
+/// `POST` here, signed as a daemon, for a token for that daemon to reach
+/// machine `id` (Arugula #1002): [`TokenRole::Agents`] or
+/// [`TokenRole::Drives`], answered [`MachineTokenResponse`]. A daemon older
+/// than these roles refuses such a token, since it can't read its role.
+pub fn machine_token_path(id: &str) -> String {
+    format!("/api/machines/{id}/machine-token")
+}
+
 /// What the token lets its holder do on the machine, as the hub saw it when
 /// it made the token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -46,6 +54,22 @@ pub enum TokenRole {
     Viewer,
     /// Anyone else signed in: they reach only sessions shared with them.
     Guest,
+    /// Another machine of a person who may call this one's agents (#399,
+    /// Arugula #1002): requests under `/api/a2a/` and nothing else, as
+    /// their account. Asked for by a daemon ([`machine_token_path`]), never
+    /// a person.
+    Agents,
+    /// Another machine of a person with full use of this hosted one (M184,
+    /// Arugula #1002): every request, as its owner. Only a hosted machine
+    /// takes it; anywhere else it's [`TokenRole::Agents`].
+    Drives,
+}
+
+impl TokenRole {
+    /// A token another machine asked for, not a person.
+    pub fn is_machine(self) -> bool {
+        matches!(self, TokenRole::Agents | TokenRole::Drives)
+    }
 }
 
 /// A machine token's claims.
@@ -68,6 +92,10 @@ pub struct MachineClaims {
     pub exp: u64,
     /// Unique to this token: a daemon takes each one once.
     pub jti: String,
+    /// The machine that asked, for a machine's token
+    /// ([`TokenRole::is_machine`]): its id, to show who called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// The hub's answer to `POST /api/machines/{id}/token`.
@@ -247,10 +275,18 @@ mod tests {
             iat: 1,
             exp: 301,
             jti: "j".into(),
+            from: None,
         };
         let v = serde_json::to_value(&c).unwrap();
         assert_eq!(v["use"], "machine");
         assert_eq!(v["role"], "editor");
-        assert_eq!(serde_json::from_value::<MachineClaims>(v).unwrap(), c);
+        assert_eq!(serde_json::from_value::<MachineClaims>(v.clone()).unwrap(), c);
+        assert!(v.get("from").is_none(), "a person's token names no machine");
+        for (r, spelt) in [(TokenRole::Agents, "agents"), (TokenRole::Drives, "drives")] {
+            assert_eq!(serde_json::to_value(r).unwrap(), spelt);
+            assert!(r.is_machine());
+        }
+        assert!(!TokenRole::Owner.is_machine() && !TokenRole::Guest.is_machine());
+        assert_eq!(machine_token_path("m1"), "/api/machines/m1/machine-token");
     }
 }

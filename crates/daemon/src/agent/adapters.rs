@@ -30,8 +30,9 @@ pub struct Adapter {
     pub bin: &'static str,
     /// `name@version`.
     pub package: &'static str,
-    /// Extra `npm install` flags (Codex's optional binaries are 100s of MB
-    /// it doesn't use).
+    /// Extra `npm install` flags. Not `--omit=optional` for Codex: its
+    /// native binary is an optional dependency, which the adapter runs when
+    /// there's no `codex` on this machine (#1447).
     pub flags: &'static str,
 }
 
@@ -52,7 +53,7 @@ pub const ADAPTERS: &[Adapter] = &[
         dir: "codex",
         bin: "codex-acp",
         package: CODEX_ACP,
-        flags: "--omit=optional ",
+        flags: "",
     },
 ];
 
@@ -392,10 +393,7 @@ mod tests {
             claude.npm("~/.local/share/arugula/agents"),
             format!("npm install --prefix ~/.local/share/arugula/agents/claude {CLAUDE_ACP}")
         );
-        assert_eq!(
-            of(Kind::Codex).unwrap().npm("~/x"),
-            format!("npm install --omit=optional --prefix ~/x/codex {CODEX_ACP}")
-        );
+        assert_eq!(of(Kind::Codex).unwrap().npm("~/x"), format!("npm install --prefix ~/x/codex {CODEX_ACP}"));
         assert!(of(Kind::Managoat).is_none());
         assert_eq!(quote("/a b/it's"), r"'/a b/it'\''s'");
     }
@@ -414,7 +412,10 @@ mod tests {
         // M255: in /opt/arugula/agents, which session users can read,
         // linked from where the daemon looks first.
         assert!(image.contains("--prefix /opt/arugula/agents/claude"));
+        // It has the `codex` CLI on PATH (the Dockerfile's `CODEX`), which
+        // the adapter runs, so it leaves out the native copy it bundles.
         assert!(image.contains("--omit=optional --prefix /opt/arugula/agents/codex"));
+        assert!(image.contains("npm install -g --no-fund --no-audit \"$CODEX\""));
         assert!(image.contains("ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents"));
         assert_eq!(major("v22.23.2"), Some(22));
         assert_eq!(major("v8.1.0"), Some(8));
@@ -594,11 +595,11 @@ mod tests {
                 .starts_with(r"$env:PATH = 'C:\mise\node' + ';' + $env:PATH; npm.cmd install ")
         );
         let codex = Status { adapter: of(Kind::Codex).unwrap(), ..s };
-        assert!(install_command_powershell(&codex, home).contains("npm.cmd install --omit=optional --prefix "));
+        let ps = install_command_powershell(&codex, home);
+        assert!(ps.contains("npm.cmd install --prefix ") && !ps.contains("--omit=optional"), "{ps}");
         // The sh one is as it was.
         assert!(
-            install_command_sh(&codex, home)
-                .starts_with("env \"PATH=C:\\mise\\node:$PATH\" npm install --omit=optional")
+            install_command_sh(&codex, home).starts_with("env \"PATH=C:\\mise\\node:$PATH\" npm install --prefix ")
         );
     }
 }

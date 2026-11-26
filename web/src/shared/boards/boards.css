@@ -587,8 +587,10 @@
   margin: 10px 0 0;
 }
 
-/* Who leads it, with Talk and Open, under when it was made. */
-.board-lead {
+/* Who leads it, with Talk and Open, under when it was made; its grant,
+   with Revoke (or Run this board), under that (#1416). */
+.board-lead,
+.board-grant {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;

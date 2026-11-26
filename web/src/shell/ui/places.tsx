@@ -12,7 +12,7 @@ import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
-import { openPlatform, platformHere, platformHref, platformOrigin } from "../platform-links";
+import { landOnPlatform, openPlatform, platformHere, platformHref, platformOrigin } from "../platform-links";
 import { machinesPath } from "../../shared/machine-paths";
 import { Count } from "../../shared/ui/state-chip";
 
@@ -102,33 +102,44 @@ export function useChatTick(client: Client) {
 
 // ---- the places: the panes, the swarm and agents
 
-/** Where a person is: the panes, the swarm or agents, or (in the new
- * workspace, M111) the overview of this machine's sessions. */
-export type Place = "panes" | "swarm" | "agents" | "docs" | "settings" | "overview";
+/** Where a person is: the panes, the swarm or agents. */
+export type Place = "panes" | "swarm" | "agents" | "docs" | "settings";
 
-/** `#overview`, or `#overview=<session>` for one session's (M111). */
-export function overviewRoute(): { session?: number } | null {
-  const m = /^#overview(?:=(\d+))?$/.exec(location.hash);
-  return m ? { session: m[1] ? Number(m[1]) : undefined } : null;
+/** The Machines page at the machine `client` shows (its id, or its name
+ * where it has none), and at `session`'s card (Arugula #1349): what M111's
+ * overview of a machine's sessions was. Null where there's no app to show
+ * it (a machine on its own). */
+export function machinesAt(client: Client, session?: number): string | null {
+  const machine = client.e2e?.daemon.id ?? directory.find(directory.current)?.id ?? (directory.current || undefined);
+  const path = machinesPath({ at: "machines", ...(machine ? { show: machine, ...(session !== undefined ? { session } : {}) } : {}) });
+  return platformHref(path) ? path : null;
 }
 
-export function openOverview(session?: number) {
+/** Opens `machinesAt`; false where there's no app to. */
+export function openMachinesAt(client: Client, session?: number): boolean {
+  const path = machinesAt(client, session);
+  if (!path) return false;
   closeThread();
-  const hash = session === undefined ? "overview" : `overview=${session}`;
-  if (location.hash !== `#${hash}`) location.hash = hash;
+  openPlatform(path);
+  return true;
 }
 
-/** Back to the panes; a hashchange, so everything that follows the route
- * hears it. */
-export function closeOverview() {
-  if (!overviewRoute()) return;
+/** An old `#overview` or `#overview=<session>` (M111's overview, retired,
+ * Arugula #1349): the Machines page at this machine, at that session's
+ * card, in its place; with no app, the panes, at that session. */
+export function landOldOverview(client: Client, show: (session: number) => void) {
+  const m = /^#overview(?:=(\d+))?$/.exec(location.hash);
+  if (!m) return;
+  const session = m[1] ? Number(m[1]) : undefined;
+  const path = machinesAt(client, session);
+  if (path) return landOnPlatform(path);
   history.replaceState(null, "", location.pathname + location.search);
   dispatchEvent(new HashChangeEvent("hashchange"));
+  if (session !== undefined && client.state?.sessions.some((s) => s.id === session)) show(session);
 }
 
 /** Where the page is now, from the route. */
 export function currentPlace(): Place {
-  if (overviewRoute()) return "overview";
   if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
   if (docsRoute()) return "docs";
@@ -142,7 +153,6 @@ export function closePlace(at: Place) {
   else if (at === "docs") closeDocsPage();
   else if (at === "settings") closeSettings();
   else if (at === "swarm") closeSwarm();
-  else if (at === "overview") closeOverview();
 }
 
 /** Panes · Swarm · Chat · Agents · Docs, in the bar every place shares
@@ -236,7 +246,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
 export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Place; onSwarm?: () => void }) {
   const owner = !client.state?.roles;
   const recipes = client.flag("agent-delegation") && owner;
-  const panes = at === "panes" || at === "overview";
+  const panes = at === "panes";
   const app = !!platformHref(MACHINES_PAGE);
   const runs = !!platformHref(RUNS_TO);
   const docs = owner && !platformHref(DOCS_TO);

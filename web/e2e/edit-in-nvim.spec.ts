@@ -5,12 +5,9 @@
 // VS Code is in editor-pref.spec.ts, whose daemon has a block listener.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, reset, openSettingsPage, closeSettingsPage } from "./helpers";
+import { closeContexts, menuItem, reset, openSettingsPage, closeSettingsPage, paletteCommand } from "./helpers";
 
 test.afterAll(closeContexts);
-
-// The app doesn't greet automation; this one pretends to be a person.
-const person = () => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
 
 const pref = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getItem("arugula.seen") ?? "{}") as Record<string, unknown>).editor ?? null);
 
@@ -31,9 +28,9 @@ test("+ Pane › Editor on a page that can't show VS Code: Edit in nvim is ticke
 
 test("Getting started: Edit in nvim sets the same preference", async ({ browser }) => {
   const ctx = await browser.newContext();
-  await ctx.addInitScript(person);
   const page = await ctx.newPage();
   await reset(page);
+  await paletteCommand(page, "Help/Getting started");
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel).toBeVisible();
   // Named once (the card's heading), and it says there's nothing to
