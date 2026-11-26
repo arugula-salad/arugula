@@ -214,16 +214,16 @@ button.ov-lead:focus-visible {
 }
 .ov-lead-dot[data-ov-lead-standing] {
   border: 0;
-  background: var(--warn);
+  background: var(--accent-fill);
 }
 .ov-lead-dot[data-ov-lead-standing="working"] {
-  background: var(--warn);
+  background: var(--accent-fill);
 }
 .ov-lead-dot[data-ov-lead-standing="quiet"] {
   background: var(--muted);
 }
 .ov-lead-dot[data-ov-lead-standing="needs"] {
-  background: var(--accent-fill);
+  background: var(--needs);
 }
 .ov-lead-dot[data-ov-lead-standing="waits"] {
   background: var(--info);

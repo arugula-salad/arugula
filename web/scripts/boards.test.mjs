@@ -127,9 +127,9 @@ test("the chip in trouble carries the problem: failed checks, waiting for you, s
   const failed = chipOf({ role: "work", pointer: pr, live: { state: "checks_failed", kind: "pr", repo: "acme/cloud", number: 16, title: "x" } });
   assert.deepEqual(failed, { label: "cloud#16", state: "checks failed", tone: "danger" });
   const block = { kind: "block", machine: "m", pane: "7" };
-  assert.deepEqual(chipOf({ role: "work", pointer: block, block: { state: "needs_input" } }), { label: "agent", state: "waiting for you", tone: "accent" });
+  assert.deepEqual(chipOf({ role: "work", pointer: block, block: { state: "needs_input" } }), { label: "agent", state: "waiting for you", tone: "warn" });
   const idle = { role: "work", pointer: block, block: { state: "idle" } };
-  assert.deepEqual(chipOf(idle, "stalled 2h"), { label: "agent", state: "stalled 2h", tone: "warn" });
+  assert.deepEqual(chipOf(idle, "stalled 2h"), { label: "agent", state: "stalled 2h", tone: "danger" });
   assert.equal(chipOf({ ...idle, released: true }, "stalled 2h").state, "idle", "an agent that was taken off the row doesn't carry it");
   assert.equal(chipOf({ ...idle, block: { state: "closed" } }, "stalled 2h").state, "closed");
 });
@@ -145,7 +145,7 @@ test("a PR's chip says it's queued, for how long, or that it left the queue and 
   assert.equal(chip(live({ state: "closed", left_queue: { reason: "MERGE_CONFLICT", at: t0 } }), t0).state, "left queue: merge conflict", "a closed PR still says why");
   assert.equal(chip(live({ left_queue: { reason: "SOMETHING_NEW", at: t0 } }), t0).state, "left queue: something new", "a reason GitHub adds reads the same way");
   // A repo with no queue, and a PR that landed, say nothing new.
-  assert.deepEqual(chip(live({}), t0), { label: "cloud#16", state: "open", tone: "accent" });
+  assert.deepEqual(chip(live({}), t0), { label: "cloud#16", state: "open", tone: "info" });
   assert.equal(chip(live({ state: "merged", queued: true, queued_since: t0 }), t0).state, "merged");
   assert.equal(chip({ state: "open", kind: "issue", repo: "acme/cloud", number: 3, title: "x", queued: true }, t0).state, "open");
 });
@@ -335,10 +335,10 @@ test("the swarm's By board groups agents by their first board, and No board goes
 });
 
 test("a card's bar is its lane's tone, the progress bar's, and a row that waits on the reader keeps it", () => {
-  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "warn", "accent", "ok"]);
-  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane, ask: { mine: true } })), ["muted", "warn", "accent", "ok"]);
-  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "accent");
-  assert.deepEqual(["open", "checks_running", "checks_failed", "merged", "closed", "other"].map(liveTone), ["accent", "warn", "danger", "ok", "muted", "muted"]);
+  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "accent", "info", "ok"]);
+  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane, ask: { mine: true } })), ["muted", "accent", "info", "ok"]);
+  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "info");
+  assert.deepEqual(["open", "checks_running", "checks_failed", "merged", "closed", "other"].map(liveTone), ["info", "accent", "danger", "ok", "muted", "muted"]);
 });
 
 test("a group moves one place, and not past either end", () => {
@@ -362,7 +362,7 @@ test("a check says its conclusion once it has one, and its tone follows", () => 
   const c = (status, conclusion = null) => ({ status, conclusion });
   assert.equal(checkWord(c("completed", "success")), "success");
   assert.equal(checkWord(c("in_progress")), "in progress");
-  assert.deepEqual([c("completed", "success"), c("completed", "failure"), c("queued"), c("completed", "skipped")].map(checkTone), ["ok", "danger", "warn", "muted"]);
+  assert.deepEqual([c("completed", "success"), c("completed", "failure"), c("queued"), c("completed", "skipped")].map(checkTone), ["ok", "danger", "accent", "muted"]);
 });
 
 test("a block's branch, pushed state and uncommitted files show only once it has stopped working", () => {
@@ -678,7 +678,7 @@ test("a row waiting on a person says who, and a stall doesn't colour it (#764)",
   // On the agent's chip, ahead of a stall and of the agent's own wait.
   const block = { role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "idle" } };
   assert.deepEqual(chipOf(block, "stalled 2h", waitingOf({ ask })), { label: "agent", state: "waiting on Sam", tone: "muted" });
-  assert.deepEqual(chipOf(block, null, waitingOf({ ask: { ...ask, mine: true } })), { label: "agent", state: "waiting for you", tone: "accent" });
+  assert.deepEqual(chipOf(block, null, waitingOf({ ask: { ...ask, mine: true } })), { label: "agent", state: "waiting for you", tone: "warn" });
   assert.equal(chipOf({ ...block, block: { state: "needs_input" } }, null, waitingOf({ ask })).state, "waiting on Sam");
   assert.equal(chipOf({ ...block, released: true }, null, waitingOf({ ask })).state, "idle", "an agent taken off the row doesn't carry it");
   assert.equal(chipOf(block, "stalled 2h", null).state, "stalled 2h");
@@ -697,12 +697,12 @@ test("a row's live session: the one that needs you first, then working, then sto
   );
   // The agent that holds the row waits with its open ask.
   const [held] = liveSessions({ attachments: [block("a1", "idle", { title: "Fixer", branch: "arugula/x", head: "abc1234", diffstat: { files: 2, added: 5, removed: 1 } })] }, { words: "waiting for you", mine: true });
-  assert.deepEqual(held, { kind: "block", key: "a1", machine: "m1", pane: "1", name: "Fixer", word: "waiting for you", tone: "accent", facts: ["arugula/x@abc1234", "2 files, +5 −1"], needs: true });
+  assert.deepEqual(held, { kind: "block", key: "a1", machine: "m1", pane: "1", name: "Fixer", word: "waiting for you", tone: "warn", facts: ["arugula/x@abc1234", "2 files, +5 −1"], needs: true });
   // A stall is said by the agent that holds the row, while it waits on no one.
   const [stalled] = liveSessions({ attachments: [block("a1", "idle")] }, null, "idle 2h");
-  assert.deepEqual([stalled.word, stalled.tone, stalled.needs], ["idle 2h", "warn", false]);
+  assert.deepEqual([stalled.word, stalled.tone, stalled.needs], ["idle 2h", "danger", false]);
   assert.equal(liveSessions({ attachments: [block("a1", "idle")] }, { words: "waiting on Sam", mine: false }, "idle 2h")[0].word, "waiting on Sam");
   const [hosted] = liveSessions({ attachments: [], sessions: [ses("s9", "needs_input")] });
-  assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", live: true, name: "s9-fix", word: "needs input", tone: "accent", facts: [], needs: true });
+  assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", live: true, name: "s9-fix", word: "needs input", tone: "warn", facts: [], needs: true });
   assert.deepEqual(liveSessions({ attachments: [] }), []);
 });

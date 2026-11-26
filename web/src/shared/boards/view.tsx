@@ -948,7 +948,7 @@ function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | 
   return (
     <div class={`board-ask${a.mine ? " mine" : ""}`} data-board-ask={a.id}>
       <div class="board-line board-ask-question">
-        <StateChip tone="accent">Asks</StateChip>
+        <StateChip tone="warn">Asks</StateChip>
         <span data-board-ask-question>{a.question}</span>
       </div>
       {a.why && (
@@ -1263,7 +1263,7 @@ function BoardItemRow({
           {(marks.notFinished || marks.cancelled || marks.after || stalledMark || waitingMark || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.notFinished && (
-                <StateChip tone="warn" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
+                <StateChip tone="muted" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
                   {notFinishedLine(marks.notFinished)}
                 </StateChip>
               )}
@@ -1278,12 +1278,12 @@ function BoardItemRow({
                 </StateChip>
               )}
               {stalledMark && (
-                <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+                <StateChip tone="danger" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
                   {stalledMark.words}
                 </StateChip>
               )}
               {waitingMark && (
-                <StateChip tone={waitingMark.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+                <StateChip tone={waitingMark.mine ? "warn" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
                   {waitingMark.words}
                 </StateChip>
               )}

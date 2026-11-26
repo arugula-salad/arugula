@@ -26,10 +26,10 @@ export function roleTone(role: string | null | undefined): Tone {
   return role === "editor" ? "info" : "muted";
 }
 
-/** A hosted workspace (M179): being made or woken waits, ready is up,
+/** A hosted workspace (M179): being made or woken is at work, ready is up,
  * failed failed, and paused or being deleted is neither. */
 export function workspaceTone(state: string, asked: string | null): Tone {
-  if (asked === "wake" || state === "creating" || state === "enrolling" || state === "waking") return "warn";
+  if (asked === "wake" || state === "creating" || state === "enrolling" || state === "waking") return "accent";
   if (state === "ready") return "ok";
   if (state === "failed") return "danger";
   return "muted";
@@ -40,7 +40,7 @@ export function workspaceTone(state: string, asked: string | null): Tone {
  * ask, changes asked of their PR wait on them, a failed check or run is a
  * failure, a mention or an assignment is news, and done is done. */
 const REASON: Record<string, Tone> = {
-  review_requested: "accent",
+  review_requested: "warn",
   changes_requested: "warn",
   checks_failed: "danger",
   run_failed: "danger",
@@ -57,16 +57,16 @@ export const reasonTone = (reason: string): Tone => REASON[reason] ?? "muted";
  * on them, a failure fails, and news is news. A kind this doesn't know
  * (a to-do, an approval) is muted. */
 const KIND: Record<string, Tone> = {
-  agent_ask: "accent",
+  agent_ask: "warn",
   permission: "warn",
   agent_failed: "danger",
-  proposal: "accent",
-  board_ask: "accent",
+  proposal: "warn",
+  board_ask: "warn",
   deploy_approval: "warn",
   checks_failed: "danger",
   run_failed: "danger",
   changes_requested: "warn",
-  review_request: "accent",
+  review_request: "warn",
   mention: "info",
   assigned: "teal",
   dm: "accent",

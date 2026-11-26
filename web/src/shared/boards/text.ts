@@ -245,12 +245,12 @@ export function liveSessions(r: Pick<BoardRow, "attachments"> & Partial<Pick<Boa
     const stall = !asks && holds && !needs && !!stalled;
     const word = asks ? waiting!.words : stall ? stalled! : b ? BLOCK_LABEL[b.state] : "not reported";
     const rank = needs ? 0 : !holds ? 3 : b!.state === "working" ? 1 : 2;
-    out.push({ kind: "block", key: a.id, machine: p.machine, pane: p.pane, name: b?.title?.trim() || pointerLabel(p, a.live), word, tone: needs ? "accent" : stall ? "warn" : "muted", facts: b ? blockFacts(b) : [], needs, rank, at });
+    out.push({ kind: "block", key: a.id, machine: p.machine, pane: p.pane, name: b?.title?.trim() || pointerLabel(p, a.live), word, tone: needs ? "warn" : stall ? "danger" : "muted", facts: b ? blockFacts(b) : [], needs, rank, at });
   });
   (r.sessions ?? []).forEach((x: BoardRowSession, i) => {
     const needs = x.live && x.state === "needs_input";
     const rank = needs ? 0 : !x.live ? 3 : x.state === "working" || x.state === "queued" ? 1 : 2;
-    out.push({ kind: "hosted", key: x.session, session: x.session, live: x.live, name: x.branch.replace(/^arugula\//, ""), word: x.state.replace(/_/g, " "), tone: needs ? "accent" : "muted", facts: [], needs, rank, at: r.attachments.length + i });
+    out.push({ kind: "hosted", key: x.session, session: x.session, live: x.live, name: x.branch.replace(/^arugula\//, ""), word: x.state.replace(/_/g, " "), tone: needs ? "warn" : "muted", facts: [], needs, rank, at: r.attachments.length + i });
   });
   return out.sort((a, b) => a.rank - b.rank || b.at - a.at).map(({ rank: _r, at: _a, ...s }) => s as LiveSession);
 }
@@ -282,9 +282,9 @@ export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "
   if (a.block) {
     const name = a.block.title?.trim() || label;
     const holds = holdsRow({ role: a.role, block: a.block, released: a.released });
-    if (waiting && holds) return { label: name, state: waiting.words, tone: waiting.mine ? "accent" : "muted" };
-    if (stalled && holds) return { label: name, state: stalled, tone: "warn" };
-    if (a.block.state === "needs_input") return { label: name, state: "waiting for you", tone: "accent" };
+    if (waiting && holds) return { label: name, state: waiting.words, tone: waiting.mine ? "warn" : "muted" };
+    if (stalled && holds) return { label: name, state: stalled, tone: "danger" };
+    if (a.block.state === "needs_input") return { label: name, state: "waiting for you", tone: "warn" };
     return { label: name, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state], tone: "muted" };
   }
   const q = a.live && queueChip(a.live, now);
@@ -514,18 +514,18 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's) (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing accent (working), Review info (in review), Done ok; amber (warn) is only what needs you. A stalled row is danger (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
 export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
   if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
-  return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";
+  return r.lane === "next" ? "muted" : r.lane === "doing" ? "accent" : r.lane === "review" ? "info" : "ok";
 }
 
-/** A live item's state chip tone, as the lists' chips take it: open and merged ok, checks running warn, failed danger, closed muted. */
+/** A live item's state chip tone, as the lists' chips take it: open in review (info), merged ok, checks running the accent (working), failed danger, closed muted. */
 export function liveTone(s: BoardLiveState): Tone {
-  if (s === "checks_running" || s === "running") return "warn";
+  if (s === "checks_running" || s === "running") return "accent";
   if (s === "checks_failed" || s === "run_failed") return "danger";
   if (s === "other" || s === "closed") return "muted";
-  return s === "open" ? "accent" : "ok";
+  return s === "open" ? "info" : "ok";
 }
 
 /** Where a group goes when it moves one place up or down, as `before` for the move route: the group it goes before, `null` for last, `undefined` when it is already at that end. */
@@ -551,9 +551,9 @@ export function checkWord(c: { status: string; conclusion: string | null }): str
   return (c.status === "completed" && c.conclusion ? c.conclusion : c.status).replace(/_/g, " ");
 }
 
-/** A check's tone: green passed, red failed, amber still going, muted the rest. */
+/** A check's tone: green passed, red failed, the accent still going, muted the rest. */
 export function checkTone(c: { status: string; conclusion: string | null }): Tone {
-  if (c.status !== "completed") return "warn";
+  if (c.status !== "completed") return "accent";
   if (c.conclusion === "success") return "ok";
   return c.conclusion === "failure" || c.conclusion === "timed_out" || c.conclusion === "cancelled" || c.conclusion === "action_required" ? "danger" : "muted";
 }

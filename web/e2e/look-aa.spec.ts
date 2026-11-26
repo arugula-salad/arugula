@@ -81,7 +81,7 @@ test("whatever the preset, theme and sliders, every word reads at 4.5:1 and need
   expect(await token("accent")).toBe("#78ce57");
   // Light starts at its own lightness, with Aaron's olive.
   await look.locator('[data-theme-choice="light"]').click();
-  await expect(look.locator('[data-look-slider="light"]')).toHaveValue("78");
-  expect(await token("accent")).toBe("#3e5a05");
+  await expect(look.locator('[data-look-slider="light"]')).toHaveValue("27");
+  expect(await token("accent")).toBe("#496904");
   await closeSettingsPage(page);
 });

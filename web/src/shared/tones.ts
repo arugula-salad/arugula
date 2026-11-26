@@ -6,11 +6,12 @@
 
 import type { Tone } from "./ui/state-chip";
 
-/** A run (S37's states): waiting for an approval or its workspace waits,
- * running goes, then how it ended. Denied, canceled and expired runs never
+/** A run (S37's states): waiting for an approval asks you (amber), waiting
+ * for its workspace is quiet, running goes, then how it ended. Denied, canceled and expired runs never
  * ran to an end of their own. */
 export function runTone(state: string): Tone {
-  if (state === "pending" || state === "approved") return "warn";
+  if (state === "pending") return "warn";
+  if (state === "approved") return "muted";
   if (state === "running") return "accent";
   if (state === "succeeded") return "ok";
   if (state === "failed") return "danger";

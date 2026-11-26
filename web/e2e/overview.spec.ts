@@ -759,7 +759,7 @@ test.describe("on a computer", () => {
     // It names its card, and the card waits on you: its board opens by itself.
     await expect(card.locator("[data-card-work]")).toHaveText("#12 · Fix the installer");
     await expect(page.locator(`[data-ov-board="${B}"]`)).toHaveAttribute("data-ov-open", "");
-    await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-says] .tone-accent`)).toHaveText("1 needs you");
+    await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-says] .tone-warn`)).toHaveText("1 needs you");
     await expect(tile(page, "row_b")).toHaveAttribute("data-ov-standing", "needs");
     await expect(tile(page, "row_b")).toHaveClass(/ov-pulse/);
     await expect(needs.locator("[data-ov-needs-count]")).toHaveText("1");
@@ -2140,16 +2140,16 @@ test.describe("on a computer", () => {
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
     await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "working");
-    // Working has the yellow (warn); quiet is the muted grey (#1445).
+    // Working has the accent (amber is only what needs you, design lift §4.4); quiet is the muted grey (#1445).
     const colour = (v: string) => page.evaluate((name) => { const e = document.createElement("i"); e.style.color = `var(${name})`; document.body.append(e); const c = getComputedStyle(e).color; e.remove(); return c; }, v);
-    const warn = await colour("--warn");
+    const accent = await colour("--accent");
     const working = tile(page, "row_c").locator("[data-ov-card-state]");
     await expect(working).toHaveText("working");
-    await expect(working).toHaveCSS("color", warn);
+    await expect(working).toHaveCSS("color", accent);
     // Its session in the preview, on no card: shows its standing word the same way.
     const quiet = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" }).locator(".ov-word");
     await expect(quiet).toHaveText("quiet");
-    await expect(quiet).not.toHaveCSS("color", warn);
+    await expect(quiet).not.toHaveCSS("color", accent);
     await expect(quiet).toHaveCSS("color", await colour("--muted"));
     // Its peek: its box is paused, so its last answer (with chat off, its history), and Stop on the platform.
     await page.route("**/api/sessions/hs_e2e", (r) =>
