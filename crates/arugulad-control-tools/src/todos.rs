@@ -40,6 +40,7 @@ use serde_json::{Value, json};
 use crate::{
     control::CloudRefused,
     mcp::tools::{Call, Kind, Out, done, parse},
+    mux::Api,
 };
 
 pub(crate) const TOOL: &str = "todo";
@@ -198,6 +199,8 @@ async fn add(c: &Call<'_>, a: AddArgs) -> Out {
         issue,
         at: now_ms(),
     };
+    // Its pane waits on it, under its what, until it's answered.
+    c.app().mux.api(|r| Api::WaitsOn(me.pane, p.ask.clone(), kept.what.clone(), r)).await;
     let dir = c.app().control.state_dir().to_owned();
     let unkept = match keep(&dir, kept) {
         Ok(()) => String::new(),
@@ -252,12 +255,14 @@ async fn cancel(c: &Call<'_>, a: CancelArgs) -> Out {
         // Answered, cancelled or gone: it's no longer open, so not listed.
         Err(CloudRefused::Said { status: 404 | 409, said, .. }) if !said.starts_with("control answered") => {
             drop_kept(&dir, id);
+            c.app().mux.api(|r| Api::WaitsSettled(id.to_owned(), r)).await;
             return Err(format!("{id} isn't open: {said}"));
         }
         Err(e) => return Err(refused(e)),
     };
     let p: ProposalCancelled = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
     drop_kept(&dir, &p.ask);
+    c.app().mux.api(|r| Api::WaitsSettled(p.ask.clone(), r)).await;
     done(format!("Cancelled to-do {}: it left Needs you.", p.ask), json!({ "todo": p.ask, "status": "cancelled" }))
 }
 

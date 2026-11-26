@@ -5755,7 +5755,8 @@ duration_ms?: number,
 /**
  * Reasons with the same key are one card on a "needs you" rail ("11
  * failed on build-03"): `failed:<machine>`, `exited:<machine>`,
- * `ask:<project>:<agent>`. `None` never bundles.
+ * `ask:<project>:<agent>`, [`WAITS_BUNDLE`]`<project>`. `None` never
+ * bundles.
  */
 bundle?: string, 
 /**
