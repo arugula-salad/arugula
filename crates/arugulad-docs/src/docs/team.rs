@@ -48,7 +48,7 @@ use serde_json::{Value, json};
 use std::sync::OnceLock;
 
 use super::{
-    ASSET_MAX, ASSETS_MAX, Changed, Entry, HEADING_MAX, SECTION_MAX, assets, embeds, hash,
+    ASSET_MAX, Changed, Entry, HEADING_MAX, SECTION_MAX, assets, embeds, hash,
     link::{self, Fail, Manifest, ManifestAsset, ManifestEntry, PART_PLAIN, Remote},
     markdown,
 };
@@ -487,9 +487,7 @@ impl Team {
                 if let Some(a) = view.assets.iter().find(|a| a.name != name && a.name.eq_ignore_ascii_case(name)) {
                     return Err(format!("the Doc has {} already: use that name to replace it", a.name));
                 }
-                if view.assets.len() >= ASSETS_MAX && !view.assets.iter().any(|a| a.name == name) {
-                    return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
-                }
+                assets::check_room(view.assets.iter().map(|a| (a.name.as_str(), a.size)), name, bytes.len() as u64)?;
             }
         }
         let size = bytes.len() as u64;
