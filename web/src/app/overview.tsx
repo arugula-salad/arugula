@@ -60,7 +60,8 @@ import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } 
 import { cleanTitle } from "../shared/titles";
 import { asksYou, boardLead, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
-import { Asks, paneOwner, useProposals } from "./overview-asks";
+import { Needs, paneOfItem, paneOwner, useProposals } from "./overview-asks";
+import { useProjectInbox } from "../platform/inbox-count";
 import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
@@ -355,17 +356,20 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   };
   const ovPanes = fleet.panes.map((p) => ovPane(fleet, p));
   const o = overviewOf(project, views ?? [], ovPanes, byCard, hostOf, machineOwner);
-  const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
-  // What needs you is yours: a teammate's ask is in Needs you under their name, not counted (#1392).
-  const paneNeeds = mine.filter((p) => needsYou(p.info) && paneOwner(fleet, p) === null).length;
-  // And what the reader's agents propose to do as them (#1278), read again as their staff room moves.
+  // Needs you is the project's Inbox (Arugula #1433): its items and its count, as the server says them, read
+  // again when the stream says it changed and on refocus.
+  const inbox = useProjectInbox(project, String(refocus));
+  const items = (inbox?.items ?? []).filter((i) => i.group !== "ready" && !i.done_at);
+  // And what the reader's agents propose to do as them (#1278), read again as their staff room moves: those the Inbox lists.
   const staffRoom = chat.rooms.find((r) => r.staff && r.project === project);
   const proposals = useProposals(project, `${staffRoom?.id}:${staffRoom?.last}:${staffRoom?.mentions}`, refocus);
-  const needs = paneNeeds + proposals.asks.length;
+  const proposed = proposals.asks.filter((a) => items.some((i) => i.id === a.proposal!.id));
+  const listed = items.filter((i) => !proposed.some((a) => a.proposal!.id === i.id) && !proposals.dropped.has(i.id));
+  const needs = inbox?.count ?? 0;
   const p = platform.project(project);
 
-  // Needs you: Swarm's rail, for this project's panes, held still under the pointer as Swarm's is.
-  const bundles = bundlesOf(mine);
+  // Needs you's panes: Swarm's rail, for the panes the Inbox lists, held still under the pointer as Swarm's is.
+  const bundles = bundlesOf(fleet.panes.filter((x) => listed.some((i) => paneOfItem(fleet, i) === x)));
   const [over, setHeld] = useState(false);
   // An open ask holds the list still too, whether or not the pointer is on it.
   const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
@@ -681,7 +685,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     api.toast(answeredLine(a));
   };
   // Nothing needs you: one quiet line, not a column.
-  const rail = railed.length === 0 && proposals.asks.length === 0 ? (
+  const rail = listed.length === 0 && railed.length === 0 && proposed.length === 0 ? (
     <section class="ov-needs ov-needs-none" aria-label={NEEDS_YOU} data-ov-needs>
       <EmptyLine data-ov-needs-none>Nothing needs you.</EmptyLine>
     </section>
@@ -691,17 +695,19 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
         <h2>{NEEDS_YOU}</h2>
         {needs > 0 && <span data-ov-needs-count>{needs}</span>}
       </header>
-      {proposals.asks.length > 0 && (
+      {proposed.length > 0 && (
         <div class="ov-proposals" data-ov-proposals>
-          {proposals.asks.map((a) => (
+          {proposed.map((a) => (
             <ProposalCard key={a.proposal!.id} a={a} project={project} answered={answered} open={chief ? () => pickChief(chief) : undefined} />
           ))}
         </div>
       )}
-      {railed.length > 0 && (
+      {(listed.length > 0 || railed.length > 0) && (
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-          <Asks
-            asks={railed}
+          <Needs
+            items={listed}
+            me={platform.me?.account}
+            railed={railed}
             fleet={fleet}
             pin={pin}
             card={(b) => {

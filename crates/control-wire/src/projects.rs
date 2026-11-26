@@ -807,6 +807,12 @@ pub struct Inbox {
     /// first, for ten minutes. Shown as a line, never counted.
     #[serde(default)]
     pub handled: u32,
+    /// `count`, by project (Arugula #1433): the rail's project marks. Each
+    /// counted item under its subject's project; one with no project (a
+    /// DM) is in `count` alone, and a project with none isn't listed.
+    /// Empty from a server before it.
+    #[serde(default)]
+    pub by_project: std::collections::BTreeMap<String, u32>,
 }
 
 /// An item's group, in the order the list shows them: `decide` (waiting
@@ -1016,7 +1022,8 @@ pub struct InboxEntry {
     /// The item on GitHub; a native issue's or a run's path on the
     /// platform page (`/issues/<id>`, `/runs/<id>`).
     pub url: String,
-    /// A native issue's or a run's project (M202, M215).
+    /// A native issue's or a run's project (M202, M215); a mirrored
+    /// item's, the project its repo is linked in (Arugula #1433).
     #[serde(default)]
     pub project: Option<String>,
     /// A `thread_mention`'s room: the thread on the item (M202).

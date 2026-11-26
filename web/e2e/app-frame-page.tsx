@@ -7,6 +7,7 @@
 // origin, so its requests and sockets reach the daemon.
 
 import { render } from "preact";
+import type { InboxItem } from "../src/shared/proto.gen";
 import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
@@ -52,10 +53,24 @@ window.fetch = async (input, init) => {
       ],
       hosted: false,
     });
-  // What wants you: three things in Arugula, and a PR of a repo's (no project's).
+  // What wants you: three things in Arugula, and one of no project's, as
+  // the one Inbox's items (Arugula #1433), or the spec's own
+  // (`window.__inbox`); with `project`, that project's alone. The count
+  // and its split by project follow the server's rule: counted, and for
+  // the reader (acct_a) or no one.
   if (url.pathname === "/api/inbox") {
-    const entry = (n: number, project: string | null) => ({ item: `iss_${n}`, reason: "assigned", repo: "acme/app", number: n, kind: "issue", state: "open", title: `Thing ${n}`, author: null, url: "", project, seen_at: null });
-    return json({ entries: [entry(1, "prj_aaaa0002"), entry(2, "prj_aaaa0002"), entry(3, "prj_aaaa0002"), entry(4, null)] });
+    const project = url.searchParams.get("project");
+    const item = (n: number, project: string | null) => ({ id: `iss_${n}:assigned`, kind: "assigned", group: "named", counts: true, title: `#${n} Thing ${n}`, from: {}, subject: { type: "issue", id: `iss_${n}`, url: "", ...(project ? { project } : {}) }, since: n });
+    const all: InboxItem[] = (window as unknown as { __inbox?: InboxItem[] }).__inbox ?? [item(1, "prj_aaaa0002"), item(2, "prj_aaaa0002"), item(3, "prj_aaaa0002"), item(4, null)];
+    const items = all.filter((i) => !project || i.subject.project === project);
+    const by_project: Record<string, number> = {};
+    let count = 0;
+    for (const i of items) {
+      if (!i.counts || (i.for && i.for !== "acct_a")) continue;
+      count++;
+      if (i.subject.project) by_project[i.subject.project] = (by_project[i.subject.project] ?? 0) + 1;
+    }
+    return json({ entries: [], items, count, by_project, handled: 0 });
   }
   if (url.pathname === "/api/deploys/waiting") return json({ deploys: [] });
   // A project's settings and its owner's defaults: none set.
@@ -69,6 +84,11 @@ window.fetch = async (input, init) => {
 
 // The spec seeds chat's rooms (the unread on Boards and Machines) through this.
 (window as unknown as { __chat: typeof chat }).__chat = chat;
+// A spec's Inbox (`/api/inbox` above), said as the stream says it changed.
+(window as unknown as { __inboxSay(items: InboxItem[]): void }).__inboxSay = (items) => {
+  (window as unknown as { __inbox: InboxItem[] }).__inbox = items;
+  (chat as unknown as { heard(ev: unknown): void }).heard({ type: "inbox", count: 0, by_project: {}, changed: [] });
+};
 
 // Who's signed in, for the shell's blocks in a machine's pane: the
 // platform's session (sam), as app/main.tsx says.

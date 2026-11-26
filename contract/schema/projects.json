@@ -899,6 +899,16 @@
     },
     "Inbox": {
       "properties": {
+        "by_project": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "description": "`count`, by project (Arugula #1433): the rail's project marks. Each\ncounted item under its subject's project; one with no project (a\nDM) is in `count` alone, and a project with none isn't listed.\nEmpty from a server before it.",
+          "type": "object"
+        },
         "count": {
           "default": 0,
           "description": "The one count (Arugula #1430): the open items whose `counts` is\ntrue. Every client shows this number and adds nothing to it. Seen\ndoesn't lower it: an item counts until it clears. 0 from a server\nbefore it.",
@@ -994,7 +1004,7 @@
         },
         "project": {
           "default": null,
-          "description": "A native issue's or a run's project (M202, M215).",
+          "description": "A native issue's or a run's project (M202, M215); a mirrored\nitem's, the project its repo is linked in (Arugula #1433).",
           "type": [
             "string",
             "null"

@@ -47,7 +47,6 @@ import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 import { deployTone } from "../swarm";
 import { cardToneClass } from "../../shared/ui/card";
 import { where } from "../where";
-import { noteWaitingDeploys } from "../inbox-count";
 
 export interface Deploy {
   id: string;
@@ -614,11 +613,7 @@ export function useWaitingDeploys(): Deploy[] | null {
   const [list, setList] = useState<Deploy[] | null>(null);
   useEffect(() => {
     get<{ deploys: Deploy[] }>("/api/deploys/waiting").then(
-      (v) => {
-        setList(v.deploys);
-        // The bar's Inbox counts them too (#468).
-        noteWaitingDeploys(v.deploys.length);
-      },
+      (v) => setList(v.deploys),
       () => setList([]),
     );
   }, []);

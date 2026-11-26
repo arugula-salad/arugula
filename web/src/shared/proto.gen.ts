@@ -1332,7 +1332,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, changed: Array<string>, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, by_project: { [key in string]: number }, changed: Array<string>, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -3654,7 +3654,14 @@ items: Array<InboxItem>,
  * the reader's agents' asks that the agent that started them answers
  * first, for ten minutes. Shown as a line, never counted.
  */
-handled: number, };
+handled: number, 
+/**
+ * `count`, by project (Arugula #1433): the rail's project marks. Each
+ * counted item under its subject's project; one with no project (a
+ * DM) is in `count` alone, and a project with none isn't listed.
+ * Empty from a server before it.
+ */
+by_project: { [key in string]: number }, };
 
 /**
  * How to answer an item in place. `via` is `attention_act`,
@@ -3702,7 +3709,8 @@ author: string | null,
  */
 url: string, 
 /**
- * A native issue's or a run's project (M202, M215).
+ * A native issue's or a run's project (M202, M215); a mirrored
+ * item's, the project its repo is linked in (Arugula #1433).
  */
 project: string | null, 
 /**
