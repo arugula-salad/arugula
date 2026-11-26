@@ -91,7 +91,20 @@ pub trait Agents: Send + Sync + 'static {
     fn conversation_titles(&self, _ids: &[String]) -> std::collections::HashMap<String, String> {
         std::collections::HashMap::new()
     }
+    /// Continue Claude Code conversation `id`, in none of our panes, as an
+    /// agent block whose first message is `prompt` (Arugula #1466): the
+    /// block, or why not. Its error never says the prompt.
+    fn continue_with<'a>(
+        &'a self,
+        _app: &'a crate::server::App,
+        _id: &'a str,
+        _prompt: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<arugula_proto::PaneId, String>> {
+        Box::pin(async { Err(NO_AGENT_BLOCK.into()) })
+    }
 }
+
+const NO_AGENT_BLOCK: &str = "this daemon has no agent block";
 
 static AGENTS: OnceLock<Box<dyn Agents>> = OnceLock::new();
 
@@ -118,6 +131,18 @@ pub(crate) fn sessions() -> Arc<dyn Conversations> {
 /// [`Agents::conversation_titles`]; none without the agent block.
 pub(crate) fn conversation_titles(ids: &[String]) -> std::collections::HashMap<String, String> {
     AGENTS.get().map(|a| a.conversation_titles(ids)).unwrap_or_default()
+}
+
+/// [`Agents::continue_with`]; refused without the agent block.
+pub(crate) async fn continue_with(
+    app: &crate::server::App,
+    id: &str,
+    prompt: &str,
+) -> Result<arugula_proto::PaneId, String> {
+    match AGENTS.get() {
+        Some(a) => a.continue_with(app, id, prompt).await,
+        None => Err(NO_AGENT_BLOCK.into()),
+    }
 }
 
 /// No conversations: a build without the agent block.

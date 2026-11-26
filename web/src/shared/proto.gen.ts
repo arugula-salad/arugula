@@ -4874,7 +4874,12 @@ id: string,
 /**
  * Then `continue` or `fork` it.
  */
-then?: string | null, session?: string | null, split?: number | null, from_pane?: number | null, };
+then?: string | null, session?: string | null, split?: number | null, from_pane?: number | null, 
+/**
+ * With `then` `continue` (Arugula #1466): the first prompt it goes on
+ * with. An older daemon ignores it and only continues.
+ */
+prompt?: string | null, };
 
 /**
  * What opening a conversation answers: its block (`opened`: made now, not

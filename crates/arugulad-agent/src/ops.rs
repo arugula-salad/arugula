@@ -268,6 +268,7 @@ impl McpOp<AgentBlock> for ConversationOpen {
             session: None,
             split: beside,
             from_pane: beside,
+            prompt: None,
         };
         Ok(((), req))
     }
@@ -428,12 +429,56 @@ async fn open_conversation_as(
             "continue" | "fork" => then,
             t => return Err(bad(format!("then: {t}? (continue or fork)"))),
         };
+        let args = match (method, req.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty())) {
+            ("continue", Some(p)) => serde_json::json!({ "text": p }),
+            ("fork", Some(_)) => return Err(bad("a first prompt goes with continue, not fork")),
+            _ => serde_json::json!({}),
+        };
         let b = app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| bad("the block went away"))?;
-        if let Err(e) = b.call(method, serde_json::json!({})).await {
+        if let Err(e) = b.call(method, args).await {
             out.error = Some(e);
         }
     }
     Ok(out)
+}
+
+/// The answer to an ask whose conversation is in none of our panes (Arugula
+/// #1466): it goes on as an agent block, a new one or the stopped block
+/// that has it, with `prompt` as its first message. Only Claude Code's: a
+/// Codex one resumes in a terminal, which takes no prompt safely (the
+/// note would be on a command line). Refused, opening nothing, for one
+/// that isn't on this machine or is open outside Arugula. Its error never
+/// says the prompt.
+pub(crate) async fn continue_with(app: &App, id: &str, prompt: &str) -> Result<PaneId, String> {
+    let pids = our_pids(app).await;
+    let ours: std::collections::HashSet<PaneId> =
+        app.mux.api(Api::Panes).await.unwrap_or_default().into_iter().map(|p| p.info.id).collect();
+    let want = id.to_owned();
+    let c = crate::task::spawn_blocking(move || {
+        let mut ix = crate::conversations::Index::global().lock().unwrap();
+        ix.set_ours(pids);
+        ix.find(&want)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    if c.agent != "claude" {
+        let name = arugula_mux::resume::name(c.agent);
+        return Err(format!("it's a {name} conversation: only Claude Code's goes on with a prompt"));
+    }
+    if let Some(l) = c.live.clone().map(|l| l.ours(|p| ours.contains(&p))) {
+        return Err(format!("it's {}", l.place));
+    }
+    let req = OpenConversationRequest {
+        id: c.id,
+        then: Some("continue".into()),
+        prompt: Some(prompt.to_owned()),
+        ..Default::default()
+    };
+    let out = open_conversation_as(app, None, req).await.map_err(|e| e.1)?;
+    match out.error {
+        Some(e) => Err(e),
+        None => Ok(out.block),
+    }
 }
 
 /// A Codex conversation opened (MCP's show kind conversation, an older

@@ -307,7 +307,14 @@ fn request_bodies_are_what_the_json_was() {
         &[],
     );
     body(
-        OpenConversationRequest { id: "abc".into(), then: None, session: None, split: None, from_pane: Some(2) },
+        OpenConversationRequest {
+            id: "abc".into(),
+            then: None,
+            session: None,
+            split: None,
+            from_pane: Some(2),
+            prompt: None,
+        },
         json!({ "id": "abc", "session": null, "split": null, "from_pane": 2 }),
         &[("then", Value::Null)],
     );

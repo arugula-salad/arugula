@@ -28,7 +28,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 
-use super::agentd::{Daemon, Mcp, PYTHON, fake};
+use super::agentd::{Daemon, Mcp, PYTHON, entries, fake};
 use super::mention_agent_block::enroll;
 
 #[derive(Clone, Default)]
@@ -516,6 +516,100 @@ fn an_agent_blocks_to_do_is_its_pane_waiting_on_you_until_the_answer_reaches_the
     });
 
     drop(mcp);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Arugula #1466, the done-when: a to-do whose Claude Code session has
+/// exited (its transcript is on this machine, in no pane) is marked Done,
+/// and its answer opens an agent block on that conversation, continued,
+/// with the note as its first message. A Can't starts nothing.
+#[test]
+fn done_on_an_ended_session_continues_its_conversation_with_the_note() {
+    const ID: &str = "66666666-2222-4333-8444-555555555555";
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-ended-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let (claude, work) = (tmp.join("claude"), tmp.join("work"));
+    std::fs::create_dir_all(claude.join("sessions")).unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    let bin = tmp.join("agents/claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // The conversation that added the to-do, and then exited.
+    let cwd = work.display().to_string();
+    let projects = claude.join("projects").join(cwd.replace(['/', '.'], "-"));
+    std::fs::create_dir_all(&projects).unwrap();
+    let line = |t: &str, uuid: &str, parent: Option<&str>, message: Value| {
+        json!({ "type": t, "uuid": uuid, "parentUuid": parent, "sessionId": ID, "cwd": cwd, "entrypoint": "cli",
+                "version": "2.1.288", "timestamp": "2026-11-26T20:00:00.000Z", "isSidechain": false,
+                "message": message })
+        .to_string()
+    };
+    let transcript = [
+        line("user", "u1", None, json!({ "role": "user", "content": "migrate the users table" })),
+        line(
+            "assistant",
+            "a1",
+            Some("u1"),
+            json!({ "id": "m1", "role": "assistant", "model": "claude-haiku-4-5-20251001",
+                    "content": [{ "type": "text", "text": "I added a to-do for you to run it." }] }),
+        ),
+    ];
+    std::fs::write(projects.join(format!("{ID}.jsonl")), transcript.join("\n") + "\n").unwrap();
+
+    let env = [
+        ("CLAUDE_CONFIG_DIR", claude.display().to_string()),
+        ("ARUGULA_AGENTS_DIR", tmp.join("agents").display().to_string()),
+    ];
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let d = Daemon::child_in(&[], &env, |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+    let panes = || d.get("/api/panes").as_array().unwrap().len();
+    let before = panes();
+    let answer = |id: &str, ask: &str, text: &str, first: Option<&str>| {
+        let mut watch = json!({ "id": ask, "session": ID });
+        if let Some(p) = first {
+            watch["first_prompt"] = json!(p);
+        }
+        json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": ask, "room_name": "answer",
+            "seq": 0, "author": "Arugula", "text": text, "watch": watch } })
+    };
+
+    // Can't: kept on its card, and the conversation isn't started again.
+    f.send(answer("m-cant", "prp_0", "Ada can't do your to-do \"Rotate the key\" (prp_0).", None));
+    d.wait_for("its answer", || f.answer("m-cant").is_some());
+    assert_eq!(f.answer("m-cant").unwrap()["routed"]["step"], "away");
+    assert_eq!(panes(), before, "nothing opened");
+
+    // Done, with a note: an agent block on the conversation, continued with
+    // the note as its first message.
+    let done = "Your to-do \"Run the migration\" (prp_1) is done: Ada did it.\nAda's note: \"14,203 rows\"";
+    f.send(answer("m-done", "prp_1", done, Some("14,203 rows")));
+    d.wait_for("its answer", || f.answer("m-done").is_some());
+    assert_eq!(f.answer("m-done").unwrap()["routed"]["step"], "named", "{:?}", f.answer("m-done"));
+    let listed = d.get("/api/conversations");
+    let row = listed["conversations"].as_array().unwrap().iter().find(|c| c["id"] == ID).cloned();
+    let block = row.and_then(|r| r["block"].as_u64()).expect("an agent block has the conversation");
+    assert_eq!(panes(), before + 1);
+    d.wait(block, "idle");
+    let s = d.state(block);
+    assert_eq!((&s["session_id"], &s["import"]["continued"]), (&json!(ID), &json!(true)), "{s}");
+    let first: Value = serde_json::from_str(&prompts(&d, block)).unwrap();
+    assert_eq!(first, json!([{ "type": "text", "text": "14,203 rows" }]), "the note alone");
+    let said: Vec<String> = entries(&s).iter().filter_map(|e| e["text"].as_str().map(str::to_owned)).collect();
+    let at = said.iter().position(|t| t == "Continued in Arugula").expect("continued");
+    assert_eq!(said[at + 1..].iter().find(|t| !t.is_empty()).map(String::as_str), Some("14,203 rows"), "{said:?}");
+
+    // Sent again (control lost the answer): it's in that block now, told once.
+    f.send(answer("m-again", "prp_1", done, Some("14,203 rows")));
+    d.wait_for("its answer", || f.answer("m-again").is_some());
+    assert_eq!(panes(), before + 1, "one block");
+    assert_eq!(entries(&d.state(block)).iter().filter(|e| e["text"] == "14,203 rows").count(), 1, "once");
+
     drop(d);
     let _ = std::fs::remove_dir_all(&tmp);
 }

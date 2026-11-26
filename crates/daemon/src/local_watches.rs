@@ -758,7 +758,7 @@ async fn deliver_all(app: &App) {
             room_name: "watch".into(),
             author: "Arugula".into(),
             text,
-            watch: Some(WatchTag { id: id.clone(), session }),
+            watch: Some(WatchTag { id: id.clone(), session, first_prompt: None }),
             ..AgentMention::default()
         };
         let answer = crate::agent_mentions::deliver(app, &m).await;

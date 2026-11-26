@@ -272,6 +272,14 @@ pub struct WatchTag {
     pub id: String,
     /// The Claude Code session's id (or an agent block's, for its harness).
     pub session: String,
+    /// With an answer (Arugula #1466): what its conversation goes on with
+    /// when it's in none of the machine's panes, its session having ended,
+    /// as its first message: a to-do's note (or a plain line saying it's
+    /// done), or a card's or board ask's answer. None when the answer
+    /// doesn't start it again (a to-do's Can't). The daemon continues a
+    /// Claude Code conversation with it; an older daemon ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_prompt: Option<String>,
 }
 
 impl WatchTag {

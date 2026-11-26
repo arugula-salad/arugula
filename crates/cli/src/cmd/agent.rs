@@ -117,6 +117,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 session,
                 split: split.map(|p| p.0),
                 from_pane: env_pane(),
+                prompt: None,
             };
             let (opened, v) = call_raw::<ConversationOpen>(&sock, &(), &body)?;
             let block = opened.block;

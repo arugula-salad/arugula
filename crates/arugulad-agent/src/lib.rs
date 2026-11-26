@@ -605,6 +605,15 @@ impl crate::agent::Agents for AgentBlock {
         let all = crate::conversations::Index::global().lock().unwrap().scan();
         all.into_iter().filter(|c| ids.contains(&c.id)).map(|c| (c.id, c.title)).collect()
     }
+
+    fn continue_with<'a>(
+        &'a self,
+        app: &'a crate::server::App,
+        id: &'a str,
+        prompt: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<arugula_proto::PaneId, String>> {
+        Box::pin(ops::continue_with(app, id, prompt))
+    }
 }
 
 /// The agent type's kind: what an agent block is given beside what every
@@ -3899,6 +3908,9 @@ impl Block for Agent {
             "cancel" => self.cancel(),
             // After a restart cut a turn off, Continue sends the agent on
             // (#680); otherwise it starts a stopped agent.
+            // Continue with a first prompt (Arugula #1466): sending it is
+            // what continues a stopped one.
+            "continue" if args["text"].as_str().is_some_and(|t| !t.trim().is_empty()) => self.send(&args, by),
             "continue" if self.cut_off() => {
                 self.inner.lock().unwrap().cut = false;
                 self.send(&json!({ "text": CUT_PROMPT }), by)
