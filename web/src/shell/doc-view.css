@@ -19,7 +19,6 @@
     /* PALETTES: latte */
     /* The page is the Doc's paper: no darker letterbox around it. */
     --well: var(--canvas);
-    --shadow-k: 0.35;
     color-scheme: light;
   }
 }

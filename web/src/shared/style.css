@@ -20,7 +20,7 @@
   --drop-fill: color-mix(in srgb, var(--accent) 10%, transparent);
   /* The menu, dialog or prompt over the page: a shadow no role covers
      yet (kit/tokens.css has the card's and a raised thing's). */
-  --shadow-lg: 0 12px 40px rgb(0 0 0 / calc(0.6 * var(--shadow-k)));
+  --shadow-lg: var(--shadow-raised);
   /* A toast's shadow on the platform's pages: black at two-thirds is a
      smudge on Latte, so it's lighter there (below). */
   --platform-shadow: #000a;

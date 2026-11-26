@@ -26,8 +26,10 @@ sizes, each with its line-height, and nothing between them:
 
 - **Tokens:** `--text-xs` … `--text-2xl`, `--text-doc`, and `--t-body` (13, 15 on
   touch) and `--t-field` (13, 16 on touch). A size that isn't a token is a bug.
-- **Faces:** the UI face is Instrument Sans everywhere (its own change, after
-  the sizes). Mono is `--f-mono`, never a literal `ui-monospace` stack. The
+- **Faces:** the brand's system stacks (design lift §4.4): `--font-sans`
+  (Helvetica Neue) everywhere, `--font-title` the same, bold. Mono is
+  `--font-mono` (SF Mono), never a literal `ui-monospace` stack; ids and meta
+  lines take `--font-id` and `--font-meta` (mono, level 3). The
   display face is for 19 and up; a caps label at 11 is the UI face, not
   display or mono.
 - **Fields are 16 on a phone**, or iOS zooms.
