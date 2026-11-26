@@ -17,6 +17,7 @@
 import type { ComponentChildren, FunctionComponent } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { apply as applyAppearance, legible, palette, PALETTES } from "../../shared/appearance";
+import { paint as paintLook } from "../../shared/kit/look";
 import { Bar, BarTitle, BarWhere } from "../../shared/ui/bar";
 import { EmptyLine, EmptyState, BlockError, BlockLoading } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
@@ -904,7 +905,7 @@ type Scheme = "slate" | "latte";
 function paint(id: Scheme) {
   const p = PALETTES.find((x) => x.id === id)!;
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(legible(p))) root.style.setProperty(`--${k}`, v);
+  for (const [k, v] of Object.entries(paintLook(p.ui, !p.light))) root.style.setProperty(`--${k}`, v);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.palette = p.id;

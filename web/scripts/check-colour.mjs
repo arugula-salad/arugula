@@ -4,11 +4,12 @@
 // it's invalid, and the declaration is dropped). Use the token, or
 // `color-mix(in srgb, var(--token) N%, transparent)` for a tint. Shadows are
 // `--shadow-sm`, `--shadow-md` and `--shadow-lg`; what dims a page is
-// `--backdrop`. The tokens are in shared/style.css and appearance.ts.
+// `--backdrop`. The tokens are in shared/kit/tokens.css (the roles, painted
+// by shared/kit/look.ts) and shared/style.css.
 //
 // What is allowed:
 //   1. The tokens' own definitions: a custom property in a `:root` or an
-//      `html[data-…]` rule in shared/style.css. A custom property set to a
+//      `html[data-…]` rule in shared/kit/tokens.css or shared/style.css. A custom property set to a
 //      raw colour anywhere else fails.
 //   2. The finish: a rule whose selectors all start with `html[data-finish`
 //      (or `[data-look`, the settings' swatch of a finish), and platform/finish.css and shared/buttons.css. There only white and
@@ -32,7 +33,7 @@ const MARK = /lint:\s*literal\s*[—–-]+\s*\S/;
 const MASK = /^(?:-webkit-)?mask(?:-[\w-]+)?$/;
 const TOKEN_SELECTOR = /^(?::root|html\[data-[^\]]+\])$/;
 const FINISH_SELECTOR = /^(?:html)?\[data-(?:finish|look)\b/;
-const TOKEN_FILE = "shared/style.css";
+const TOKEN_FILES = new Set(["shared/kit/tokens.css", "shared/style.css"]);
 const FINISH_FILES = new Set(["platform/finish.css", "shared/buttons.css"]);
 // White or black, as the base of an alpha.
 const ALPHA_HEX = /^#(?:(?:fff|000)[0-9a-f]?|(?:ffffff|000000)(?:[0-9a-f]{2})?)$/i;
@@ -64,7 +65,7 @@ export function offenders(css, file) {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
   for (const rule of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const sels = rule[1].split(",").map((s) => s.trim().replace(/^[\s\S]*;\s*/, ""));
-    const tokens = file === TOKEN_FILE && sels.every((s) => TOKEN_SELECTOR.test(s));
+    const tokens = TOKEN_FILES.has(file) && sels.every((s) => TOKEN_SELECTOR.test(s));
     const finish = FINISH_FILES.has(file) || sels.every((s) => FINISH_SELECTOR.test(s));
     const start = text.slice(0, rule.index + rule[1].length + 1).split("\n").length - 1;
     const body = rule[2];

@@ -1,24 +1,11 @@
+@import "./kit/tokens.css";
 /* The block states (shared/ui/block-states.tsx) are drawn by the Doc
    renderer too, so their styles ride in the app's stylesheet. */
 @import "./ui/block-states.css";
 
 :root {
-  --bg: #1e1e2e;
-  --fg: #cdd6f4;
-  --dim: #7f849c;
-  --surface: #181825;
-  --letterbox: #11111b;
-  --raised: #313244;
-  --raised-hover: #45475a;
-  --accent: #cba6f7;
-  --danger: #f38ba8;
-  /* Lines (UI audit #180): `--line` for a border or a rule between
-     rows, `--line-strong` for the chrome's frame and a border that has to
-     show on a raised fill. `--divider` (style.css's name since M1) and
-     frame.css's `--chrome-line` are the same two. */
-  --line: var(--raised);
-  --line-strong: color-mix(in srgb, var(--muted) 55%, var(--surface));
-  --divider: var(--line);
+  /* The palette, the faces, the shadows and the main sizes are the role
+     tokens (kit/tokens.css); these are the rest. */
   /* The selected row (#756), the same on every shape: this tint (mixed over
      transparent, so it sits on a page, a sidebar or a sheet alike), a 3px
      accent bar and a 1px accent edge, both drawn inset so a row never moves.
@@ -31,40 +18,9 @@
      every target (see `.drop-target`). */
   --drop-edge: var(--accent);
   --drop-fill: color-mix(in srgb, var(--accent) 10%, transparent);
-  /* The rest of the palette (appearance.ts sets them all for the one
-     picked): status colors, and text on a colored fill. */
-  --ok: #a6e3a1;
-  --warn: #f9e2af;
-  --info: #89b4fa;
-  --peach: #fab387;
-  --teal: #94e2d5;
-  --pink: #f5c2e7;
-  --merged: #b4befe;
-  --muted: #585b70;
-  --subtle: #a6adc8;
-  --on-color: #11111b;
-  /* One mono, `--f-mono` (shared/fonts.css's "Arugula Mono"), for code and
-     ids outside a terminal; terminals keep their own (terminal-view.ts).
-     `--mono` is the old name: an alias for one release, then it goes. */
-  --mono: var(--f-mono);
-  /* The swarm's faces (shared/fonts.css): the swarm and the platform page
-     are set in them, and control's own pages take their display face for
-     a page's title (UI audit #198: once, here). */
-  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-  /* How dark a floating thing's shadow is: 1 on a dark palette, lighter on
-     a light one (below), where black at two-thirds is a smudge (as
-     finish.css's --platform-shadow on the platform page). UI audit #152. */
-  --shadow-k: 1;
-  /* Three shadows (UI audit #180): a chip or a hover toolbar, a popover or
-     a card that floats, and a menu, dialog or prompt over the page. */
-  --shadow-sm: 0 2px 8px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
-  --shadow-md: 0 6px 24px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
+  /* The menu, dialog or prompt over the page: a shadow no role covers
+     yet (kit/tokens.css has the card's and a raised thing's). */
   --shadow-lg: 0 12px 40px rgb(0 0 0 / calc(0.6 * var(--shadow-k)));
-  /* What dims the page under a dialog, a picker, a menu sheet or a side
-     sheet (#690, #733): one value, in both schemes. Glass sets its own. */
-  --backdrop: rgb(0 0 0 / 0.4);
   /* The spacing scale (UI audit #180): padding, margin and gap in 4px
      steps. */
   --space-1: 4px;
@@ -79,24 +35,19 @@
   --icon-sm: 14px;
   --icon-md: 16px;
   --icon-lg: 18px;
-  /* The type scale (#687): seven sizes, each with its line-height. 11 is a
+  /* The type scale (#687): seven sizes (kit/tokens.css's --text-* roles
+     and --text-xl), each with its line-height. 11 is a
      caps label, a chip, an id or a time; 12 is meta and a button; 13 is
      what you read; 15 is a title; 19 is a section's h2 and a stat; 32 is a
      page's h1; 38 is the Doc's title. Components name a step, never a
      number (scripts/check-type.mjs). */
-  --text-xs: 11px;
   --lh-xs: 16px;
-  --text-sm: 12px;
   --lh-sm: 16px;
-  --text-md: 13px;
   --lh-md: 18px;
-  --text-lg: 15px;
   --lh-lg: 20px;
   --text-xl: 19px;
   --lh-xl: 1.05;
-  --text-2xl: 32px;
   --lh-2xl: 0.95;
-  --text-doc: 38px;
   --lh-doc: 1.02;
   --lh-prose: 1.45;
   /* The two sizes that change with the device (below): body text is 15 on
@@ -112,10 +63,6 @@
   --bar-h: env(titlebar-area-height, 36px);
   --app-height: 100dvh;
   color-scheme: dark;
-}
-
-html[data-scheme="light"] {
-  --shadow-k: 0.35;
 }
 
 @media (pointer: coarse), (max-width: 600px) {
@@ -4317,7 +4264,6 @@ button.agent-image {
      canvases read them from the page (swarm/field.ts's readColors). An ask
      is an agent live and waiting on you, so it takes the accent. */
   --void: var(--letterbox);
-  --ink: var(--fg);
   --mute: var(--dim);
   --panel: color-mix(in srgb, var(--bg) 86%, transparent);
   --s-ask: var(--accent);
@@ -4329,7 +4275,7 @@ button.agent-image {
 }
 
 .swarm {
-  --rail: 330px;
+  --swarm-rail: 330px;
   position: fixed;
   inset: 0;
   z-index: 20;
@@ -4367,7 +4313,7 @@ button.agent-image {
   z-index: 5;
   top: 0;
   left: 0;
-  right: var(--rail);
+  right: var(--swarm-rail);
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -4459,7 +4405,7 @@ button.agent-image {
   z-index: 5;
   left: 20px;
   bottom: 16px;
-  right: calc(var(--rail) + 20px);
+  right: calc(var(--swarm-rail) + 20px);
   pointer-events: none;
 }
 .swarm-legend {
@@ -4567,7 +4513,7 @@ button.agent-image {
   top: 0;
   right: 0;
   bottom: 0;
-  width: var(--rail);
+  width: var(--swarm-rail);
   border-left: 1px solid var(--line);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--void) 96%, transparent));
   display: flex;
@@ -4768,7 +4714,7 @@ button.agent-image {
 }
 @media (max-width: 760px) {
   .swarm {
-    --rail: 0px;
+    --swarm-rail: 0px;
   }
   .swarm-bar {
     right: 0;
@@ -4896,7 +4842,7 @@ button.agent-image {
   z-index: 8;
   top: 76px;
   left: 20px;
-  right: calc(var(--rail) + 20px);
+  right: calc(var(--swarm-rail) + 20px);
   bottom: 56px;
   display: flex;
   flex-direction: column;
@@ -10173,11 +10119,11 @@ html[data-finish="brushed"] .sized-elsewhere button {
 /* -- corners: panes become cards on the letterbox, headers on top */
 
 html[data-corners="soft"] {
-  --radius: 6px;
+  --pane-radius: 6px;
 }
 
 html[data-corners="round"] {
-  --radius: 12px;
+  --pane-radius: 12px;
 }
 
 /* Under any finish's own background (low specificity on purpose). */
@@ -10191,7 +10137,7 @@ html:not([data-corners="square"]) .app:not(.phone) .grid {
 
 html:not([data-corners="square"]) .app:not(.phone) .pane,
 html:not([data-corners="square"]) .app:not(.phone) .pane::after {
-  border-radius: var(--radius);
+  border-radius: var(--pane-radius);
 }
 
 html:not([data-corners="square"]) .app:not(.phone) .pane::after {
@@ -10200,21 +10146,21 @@ html:not([data-corners="square"]) .app:not(.phone) .pane::after {
 
 html:not([data-corners="square"]) .app:not(.phone) .grid.with-headers .pane,
 html:not([data-corners="square"]) .app:not(.phone) .grid.with-headers .pane::after {
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: 0 0 var(--pane-radius) var(--pane-radius);
 }
 
 html:not([data-corners="square"]) .pane-header {
-  border-radius: var(--radius) var(--radius) 0 0;
+  border-radius: var(--pane-radius) var(--pane-radius) 0 0;
 }
 
 html:not([data-corners="square"]) .menu {
-  border-radius: calc(var(--radius) + 2px);
+  border-radius: calc(var(--pane-radius) + 2px);
 }
 
 /* The corners of what's on the page, not only the panes' (UI audit #158):
    buttons (buttons.css), fields, cards and chips take these. Soft is the
    default.
-   Every corner takes one of these or the panes' --radius (UI audit #181):
+   Every corner takes one of these or the panes' --pane-radius (UI audit #181):
    --btn-radius a button; --field-radius a field, a row in a list, a code
    block or an image; --card-radius a card, menu or tab; --panel-radius a
    dialog, popover, prompt or sheet; --tag-radius a badge, kbd or inline
@@ -10223,9 +10169,6 @@ html:not([data-corners="square"]) .menu {
    square rule), 1-3px marks and accent bars, the aqua finish's gel pills
    and the Appearance samples, which show a setting whatever is picked. */
 :root {
-  --btn-radius: 6px;
-  --field-radius: 6px;
-  --card-radius: 8px;
   --panel-radius: 10px;
   --tag-radius: 4px;
   --chip-radius: 999px;
@@ -11633,7 +11576,7 @@ html[data-wall] .swarm[data-wall] {
   inset: 0;
 }
 .swarm[data-wall] .swarm-bar {
-  right: var(--rail);
+  right: var(--swarm-rail);
 }
 .swarm[data-wall] .swarm-bar > :not(.swarm-brand, .swarm-stats),
 .swarm[data-wall] .swarm-hint {
@@ -11643,7 +11586,7 @@ html[data-wall] .swarm[data-wall] {
   position: absolute;
   z-index: 7;
   top: 16px;
-  right: calc(var(--rail) + 20px);
+  right: calc(var(--swarm-rail) + 20px);
   transition: opacity 0.4s ease;
 }
 .swarm-wall-ctl button {

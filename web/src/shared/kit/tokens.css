@@ -1,0 +1,125 @@
+/* The role tokens (design lift §4.2): every color, face, size and shape the
+   page draws with, by what it is for, never by value. ./look.ts paints the
+   colors and the depth on the root from the theme and the Look sliders;
+   the values here are what a page that never runs it shows.
+
+   Below them, today's names (`--bg`, `--fg`, `--surface` …) as aliases of
+   the roles, so every screen keeps drawing. A screen's phase moves its
+   rules onto the roles and drops the aliases it used; after the last, only
+   the roles are left. New CSS names a role, never an alias. */
+
+:root {
+  /* Surfaces: the page, the rail, a section and a card on it, a card
+     raised off that, a Doc's paper, and the well a terminal sits in. */
+  --canvas: #1e1e2e;
+  --rail: #181825;
+  --section: #181825;
+  --card: #181825;
+  --card-raised: #313244;
+  --paper: #1e1e2e;
+  --well: #11111b;
+
+  /* Ink: words, on the surfaces and in a well, and on a colored fill. */
+  --ink: #cdd6f4;
+  --ink-dim: #7f849c;
+  --ink-faint: #585b70;
+  --well-ink: #cdd6f4;
+  --well-dim: #7f849c;
+  --on-accent: #11111b;
+  --on-needs: #11111b;
+
+  /* Lines: a rule or a border; the frame and a border on a raised fill; a
+     hovered row; the focus ring. */
+  --line: #313244;
+  --line-strong: color-mix(in srgb, var(--ink-faint) 55%, var(--section));
+  --hover: #45475a;
+  --focus: var(--accent);
+
+  /* Signal: the brand and live work; what asks or waits on you; what
+     failed; what's in review; what's done; what dims the page under a
+     sheet. */
+  --accent: #cba6f7;
+  --needs: #f9e2af;
+  --needs-tint: color-mix(in srgb, var(--needs) 14%, transparent);
+  --fail: #f38ba8;
+  --fail-tint: color-mix(in srgb, var(--fail) 14%, transparent);
+  --review: #89b4fa;
+  --done: #a6e3a1;
+  --backdrop: rgb(0 0 0 / 0.4);
+
+  /* Depth: a card's shadow, a raised thing's (a popover, a menu), a top
+     highlight, a sheen down a surface and the composer's glow. `--shadow-k`
+     is how strong the shadows are: look.ts sets it from the theme and the
+     depth slider. */
+  --shadow-k: 1;
+  --shadow-card: 0 2px 8px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
+  --shadow-raised: 0 6px 24px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
+  --highlight: inset 0 1px 0 rgb(255 255 255 / 0);
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0), transparent 90px);
+  --glow: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent);
+
+  /* Type: the faces, where mono goes (an id, a meta line: each is the sans
+     or the mono), and the sizes. */
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --font-title: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-id: var(--font-mono);
+  --font-meta: var(--font-sans);
+  --text-label: 11px;
+  --text-meta: 12px;
+  --text-body: 13px;
+  --text-title: 15px;
+  --text-hero: 32px;
+  --text-doc: 38px;
+
+  /* Shape and space: a surface's corner and a control's, the gap between
+     things, a row's height, the rail's and the agent panel's widths. */
+  --radius: 8px;
+  --radius-control: 6px;
+  --gap: 12px;
+  --row: 32px;
+  --rail-w: 56px;
+  --panel-w: 420px;
+}
+
+html[data-scheme="light"] {
+  --shadow-k: 0.35;
+}
+
+/* Today's names, on the roles. */
+:root {
+  --bg: var(--canvas);
+  --fg: var(--ink);
+  --dim: var(--ink-dim);
+  --surface: var(--section);
+  --letterbox: var(--well);
+  --raised: var(--card-raised);
+  --raised-hover: var(--hover);
+  --muted: var(--ink-faint);
+  --on-color: var(--on-accent);
+  --danger: var(--fail);
+  --ok: var(--done);
+  --warn: var(--needs);
+  --info: var(--review);
+  --divider: var(--line);
+  --shadow-sm: var(--shadow-card);
+  --shadow-md: var(--shadow-raised);
+  --f-ui: var(--font-sans);
+  --f-display: var(--font-title);
+  --f-mono: var(--font-mono);
+  --mono: var(--font-mono);
+  --text-xs: var(--text-label);
+  --text-sm: var(--text-meta);
+  --text-md: var(--text-body);
+  --text-lg: var(--text-title);
+  --text-2xl: var(--text-hero);
+  --card-radius: var(--radius);
+  --btn-radius: var(--radius-control);
+  --field-radius: var(--radius-control);
+  /* Colors no role covers yet; look.ts paints them. */
+  --subtle: #a6adc8;
+  --peach: #fab387;
+  --teal: #94e2d5;
+  --pink: #f5c2e7;
+  --merged: #b4befe;
+}

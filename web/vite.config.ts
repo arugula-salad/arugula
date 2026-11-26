@@ -30,7 +30,9 @@ function modules(): Plugin {
 function docPalette(): Plugin {
   const MARKS = { "/* PALETTES: slate */": ["slate", "dark"], "/* PALETTES: latte */": ["latte", "light"] } as const;
   type Appearance = typeof import("./src/shared/appearance.ts");
+  type Look = typeof import("./src/shared/kit/look.ts");
   let appearance: Promise<Appearance> | null = null;
+  let look: Promise<Look> | null = null;
   return {
     name: "arugula-doc-palette",
     enforce: "pre",
@@ -39,11 +41,13 @@ function docPalette(): Plugin {
       // this doesn't see, so its own stylesheet has the markers too.
       if (!/\/shell\/doc-(view|embed)\.css$/.test(id.split("?")[0])) return;
       appearance ??= runnerImport<Appearance>(resolve(import.meta.dirname, "src/shared/appearance.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
-      const { houseColours, legible, PALETTES } = await appearance;
+      look ??= runnerImport<Look>(resolve(import.meta.dirname, "src/shared/kit/look.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
+      const { houseColours, PALETTES } = await appearance;
+      const { paint } = await look;
       for (const [mark, [palette, scheme]] of Object.entries(MARKS)) {
         const p = PALETTES.find((q) => q.id === palette);
         if (!p || !code.includes(mark)) this.error(`${id}: no ${palette} palette or no \`${mark}\` to put it in`);
-        const vars = [...Object.entries(legible(p)).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
+        const vars = [...Object.entries(paint(p.ui, scheme === "dark")).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
         code = code.replace(mark, vars);
       }
       return { code, map: null };

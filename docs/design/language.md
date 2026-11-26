@@ -55,6 +55,12 @@ Colours are the palette's tokens (`--bg`, `--surface`, `--raised`, `--fg`,
 Latte is drawn as `legible()` paints it (`shared/appearance.ts`), so test
 contrast against that, not the palette as written.
 
+- **Roles (the design lift, #1477):** those names are now aliases of the role
+  tokens in `shared/kit/tokens.css` (`--canvas`, `--section`, `--card`,
+  `--ink`, `--ink-dim`, `--needs`, `--fail`, `--done` …), which
+  `shared/kit/look.ts` paints from the theme and the Look sliders. New CSS
+  names a role; each screen's phase moves its rules onto the roles.
+
 - **Accent means live:** the thing you're in, on or choosing now. The "on"
   tint, the selected row, a count that's for you, the primary button, a
   fresh fill. Links are `--info`, not accent.
