@@ -320,7 +320,7 @@ A board's lead and the issue agents it starts run Arugula's own recipes
   any agent that's done or stuck (`close {pane, to?}`), then to post once
   in the person's staff room to the chief of staff, naming the board,
   what it needs and why; the chief of staff asks the person with a new
-  **Run this board** card. An offline machine is no such case: the lead
+  **Run this board** card, and answers in the board's thread. An offline machine is no such case: the lead
   starts on an online one the refusal names.
 - **`issue-agent.md`**: an agent started on an issue leads that issue's
   thread, and a post there is its person's or its lead's word. It reports
@@ -475,3 +475,12 @@ lead refused past the grant asks the chief of staff in your staff room; it
 decides whether the need is real and, if so, asks you with a new card for
 the board. A card for a board that has a lead doesn't start another: Approve
 replaces the grant, and the lead runs on where it is.
+
+The chief of staff answers the lead in the board's thread (`post_thread`
+with the board's `brd_…` id), never in your staff room (Arugula #1461): it
+leads that room, so a post there reaches only itself. A post in the board's
+thread reaches whoever leads the board, wherever it runs. It posts there
+twice: when the card is up (or why it won't ask), and when you approve or
+deny it, so the lead starts the waiting rows without anyone prompting it.
+It keeps such cards in its notes (`for_leads`, card to board), since
+`ask.answered` doesn't name the board.

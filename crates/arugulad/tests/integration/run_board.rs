@@ -7,7 +7,9 @@
 //! a worktree of this machine's clone of the board's repo, found in its home
 //! folder; a machine with none of the project's repos says so and starts
 //! nothing, and says which it has when control asks for the card (Arugula
-//! #1458). Against a fake
+//! #1458). A wider card for a board with a lead only replaces its grant,
+//! and the chief of staff tells the lead in the board's thread, where it
+//! hears it (Arugula #1461). Against a fake
 //! control (it takes the card, plays the person's Approve on the relay
 //! socket, signs start tickets while the grant is live, and sends the
 //! board's thread to its lead) and a real daemon whose agents are the fake
@@ -84,6 +86,8 @@ struct Fake {
     granted: Arc<AtomicBool>,
     issued: Arc<Mutex<Vec<Value>>>,
     leads: Arc<Mutex<Vec<Value>>>,
+    /// Posts in a room as the owner's agent: the room, and the body.
+    posts: Arc<Mutex<Vec<(String, Value)>>>,
 }
 
 impl Fake {
@@ -153,6 +157,22 @@ async fn lead(State(f): State<Fake>, h: HeaderMap, Json(mut a): Json<Value>) -> 
     Json(json!({}))
 }
 
+/// A post in a board's thread, as control delivers one: to the board's
+/// lead, by its session's name, as a mention in the board's room.
+async fn post_message(State(f): State<Fake>, UrlPath(room): UrlPath<String>, Json(b): Json<Value>) -> Json<Value> {
+    let seq = 100 + f.posts.lock().unwrap().len();
+    f.posts.lock().unwrap().push((room.clone(), b.clone()));
+    let lead = f.leads.lock().unwrap().last().map(|l| l["session"].clone());
+    if room == BOARD
+        && let Some(session) = lead
+    {
+        f.send(json!({ "t": "op", "id": format!("post-{seq}"), "op": { "op": "agents.mention", "room": "ch_board",
+            "target": BOARD, "room_name": "Launch", "seq": seq, "author": "Jake's agent on mini",
+            "text": b["text"], "session": session } }));
+    }
+    Json(json!({ "seq": seq }))
+}
+
 async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
     up.on_upgrade(|ws| async move {
         let (mut tx, mut rx) = ws.split();
@@ -190,6 +210,7 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
             .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
             .route("/api/daemon/boards/{board}/start-ticket", post(start_ticket))
             .route("/api/daemon/boards/{board}/lead", post(lead))
+            .route("/api/daemon/chat/rooms/{room}/messages", post(post_message))
             .route("/api/relay/dial", get(dial))
             .fallback(any)
             .with_state(f.clone());
@@ -229,7 +250,8 @@ fn prompts(d: &Daemon, id: u64) -> String {
 }
 
 #[test]
-fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_grant_starts_nothing() {
+fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_its_wider_grant_and_a_revoked_grant_starts_nothing()
+{
     let f = Fake::default();
     let (_rt, url) = serve(f.clone());
     let tmp = std::env::temp_dir().join(format!("arugula-run-board-{}", std::process::id()));
@@ -361,12 +383,35 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     f.send(json!({ "t": "op", "id": "m-1", "op": { "op": "agents.mention", "room": "ch_board", "target": BOARD,
         "room_name": "Launch", "seq": 7, "author": "Jake", "text": "How far along is it?", "session": session } }));
     d.wait_for("the lead hears the board's thread", || prompts(&d, lead_block).contains("How far along is it?"));
+    d.wait(lead_block, "idle");
+
+    // Arugula #1461: the lead asked for more (in staff, which the chief of
+    // staff leads), and the chief of staff asks for a wider card. The board
+    // has a lead, so Approve only replaces its grant: nothing starts here.
+    let asked = mcp
+        .call(
+            "ask_approval",
+            json!({ "action": "run_board", "board": BOARD, "cap": 3, "machines": ["mini"],
+                "why": "the lead has 2 rows waiting", "project": "prj_1" }),
+        )
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_1", "{asked}");
+    assert_eq!(f.asked("POST /api/daemon/projects/prj_1/proposals")[1]["proposal"]["cap"], 3);
+    // The chief of staff tells the lead in the board's thread, which reaches
+    // whoever leads the board, and its next prompt carries the approval.
+    let told = "Jake approved the wider grant: 3 issue agents at once. Start the waiting rows.";
+    mcp.call("post_thread", json!({ "room": BOARD, "text": told })).unwrap();
+    let posts = f.posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    assert_eq!((posts[0].0.as_str(), &posts[0].1["session"]), (BOARD, &json!("Chief of staff")), "{posts:?}");
+    d.wait_for("the lead hears the approval", || prompts(&d, lead_block).contains(told));
+    assert_eq!(f.issued.lock().unwrap().len(), 1, "no second lead started");
 
     // Revoked: the lead's next start is refused, in control's words.
     f.granted.store(false, Ordering::SeqCst);
     let why = mcp.call("start_agent", json!({ "board": BOARD, "prompt": "Lead it again" })).unwrap_err();
     assert!(why.contains("no grant"), "{why}");
-    f.send(json!({ "t": "op", "id": "approve-2", "op": { "op": "agents.approved", "ask": "prp_1",
+    f.send(json!({ "t": "op", "id": "approve-2", "op": { "op": "agents.approved", "ask": "prp_2",
         "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD } }));
     d.wait_for("its answer", || f.answer("approve-2").is_some());
     let a = f.answer("approve-2").unwrap();
