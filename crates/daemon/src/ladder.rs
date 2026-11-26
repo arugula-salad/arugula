@@ -23,7 +23,8 @@
 //!   ladder start opened, for the machine that started it or the board's
 //!   lead as control says it, and tells control at once that it closed, so
 //!   the grant's slot is free for the next start. Here, `close` does the
-//!   same.
+//!   same, and lets the board's lead close one in another tab
+//!   ([`lead_closes`], Arugula #1471).
 //!
 //! Another account's agents still send tasks (aru-050): a ticket names the
 //! target's own account, and the target refuses any other.
@@ -32,7 +33,7 @@ use std::sync::Arc;
 
 use arugula_control_wire::{
     boards::agent_board,
-    boards::{LeadBoard, agent_board_lead},
+    boards::{BoardLead, LeadBoard, agent_board_lead},
     ladder::{
         LadderStart, LadderStarted, LadderStop, LadderStopped, Rung, START_PATH, STOP_PATH, StartClaims, StartTicket,
         StartTicketAsk, start_ticket_path,
@@ -455,8 +456,28 @@ pub async fn stop_post(
 
 /// The machine of the session that leads `board`, as control says it.
 async fn lead_machine(app: &App, board: &str) -> Option<String> {
+    lead_of(app, board).await.map(|l| l.machine)
+}
+
+/// The session that leads `board`, as control says it.
+async fn lead_of(app: &App, board: &str) -> Option<BoardLead> {
     let v = app.control.cloud(Method::GET, &agent_board(board), None).await.ok()?;
-    v.pointer("/board/lead/machine").and_then(|m| m.as_str()).map(str::to_owned)
+    serde_json::from_value(v.pointer("/board/lead")?.clone()).ok()
+}
+
+/// Whether agent block `me` here may close block `block`, in another tab
+/// (Arugula #1471): `block` is one a ladder start opened here for a board,
+/// and control says `me` leads that board, by its pane on this machine. A
+/// lead taken without its pane (an older daemon's) doesn't count: a name
+/// alone could be any session's.
+pub(crate) async fn lead_closes(app: &App, me: arugula_proto::PaneId, block: arugula_proto::PaneId) -> bool {
+    let Some(e) = app.control.enrolled() else { return false };
+    let config = app.mux.api(|r| Api::Block(block, r)).await.flatten().map(|b| b.config());
+    let ladder = config
+        .and_then(|c| c["work"].get("ladder").cloned())
+        .and_then(|l| serde_json::from_value::<crate::board_attach::LadderWork>(l).ok());
+    let Some(ladder) = ladder else { return false };
+    lead_of(app, &ladder.board).await.is_some_and(|l| l.machine == e.keys.id() && l.pane == Some(me))
 }
 
 /// A session's name for a start that gave none: its rung and its issue, or

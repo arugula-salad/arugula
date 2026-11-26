@@ -1900,6 +1900,8 @@ impl Inner {
         // #1455: when it last sent anything, for how long a turn has been
         // quiet.
         state["heard_ms"] = json!(self.heard_ms);
+        // #1473: when the running turn began, for how long it has run.
+        state["turn_started_ms"] = json!(self.prompt_id.and_then(|_| self.turns.last()).map(|t| t.started_ms));
         state
     }
 }

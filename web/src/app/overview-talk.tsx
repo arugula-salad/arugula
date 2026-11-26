@@ -13,7 +13,7 @@
 // the open tab talks to and where a message there goes; the chief of
 // staff's is its head (./agent-head.tsx, #1342): where it runs and whether
 // it's awake; while it's asleep, its tab offers to run it on another
-// machine (#1453).
+// machine (#1453), and with no lead, Start there (#1472).
 
 import type { ComponentChildren, JSX } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -297,7 +297,7 @@ function useStaffLead(room: string) {
 
 /** The staff room: its messages, which its lead session hears, and the
  * box; over them, while its chief of staff is asleep, Run it on another
- * machine (#1453). */
+ * machine (#1453), and while no session leads it, Start (#1472). */
 function StaffTab({ room, title, phone }: { room: string; title: string; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const { at, place } = useStaffLead(room);
@@ -308,7 +308,9 @@ function StaffTab({ room, title, phone }: { room: string; title: string; phone: 
     : "No session leads this room yet, so what you write waits here. Only you and your agents read it.";
   return (
     <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>
-      {at.state === "asleep" && place && r.project && <StaffMove key={at.machine} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} asleepOn={at.machine} />}
+      {(at.state === "asleep" || at.state === "none") && place && r.project && (
+        <StaffMove key={at.state === "asleep" ? at.machine : ""} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} asleepOn={at.state === "asleep" ? at.machine : undefined} />
+      )}
       <RoomBody key={r.id} room={r} phone={phone} embedded name={title} empty={{ title: "Nothing said to your chief of staff yet.", why }} />
     </div>
   );
