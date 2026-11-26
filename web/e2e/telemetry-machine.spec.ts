@@ -1,6 +1,7 @@
 // M103: the machine's web client asks its owner once whether to send usage
-// counts and crash reports, with the card in the corner, once no dialog is
-// up (Getting started's greeting comes first). Not under a test
+// counts and crash reports, with the card in the corner, but not on a
+// browser's first visit, whose first screen asks nothing: then it waits for
+// a conversation continued, or the next visit. Not under a test
 // runner unless a spec says so (this one does, `__arugulaTelemetry`), and
 // never to anyone but the owner. Put away unanswered, it asks again on the
 // next load; answered, never again. Yes and No are the daemon's
@@ -79,16 +80,17 @@ test("a guest is never asked, and can't read or answer it", async ({ browser }) 
   expect((await info()).why).toBe("not_asked");
 });
 
-test("on a first visit it waits for Getting started: one panel at a time", async ({ page }) => {
+test("on a first visit it waits: nothing stacks on the first screen, and the next visit asks", async ({ page }) => {
   rmSync(join(state, "telemetry.json"), { force: true });
-  // Getting started greets a person, not automation.
-  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false }));
+  // A first run, which a spec opts into (every other load is a later one).
+  await page.addInitScript(() => Object.assign(window, { __arugulaFirstRun: true }));
   await optIn(page);
   await load(page);
-  const greeting = page.getByRole("dialog", { name: "Getting started" });
-  await expect(greeting).toBeVisible();
+  await page.waitForTimeout(1000);
   await expect(card(page)).toHaveCount(0);
-  await greeting.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
+  // The next visit (this browser has been here): it asks.
+  await load(page);
   await expect(card(page)).toBeVisible();
   // Put away: the next test starts with nobody asked.
   await card(page).getByRole("button", { name: "Not now" }).click();

@@ -34,7 +34,7 @@ use crate::{
         Scope,
         tools::{
             Args, Call, Def, DelegateArgs, Human, Kind, ListTeamAgentsArgs, Needs, NoArgs, OpenAppArgs, Out, PAGE,
-            PAGE_MAX, PaneArg, PaneOnly, Schema, ago, confine, done, entry, line, one_line, output_schema, parse,
+            PAGE_MAX, PaneArg, PaneOnly, Schema, ago, confine, done, entry, line, one_line, output_schema, parse, span,
             table,
         },
     },
@@ -62,8 +62,62 @@ impl<'a> Deref for ToolCall<'_, 'a> {
 const TAIL_LINES: usize = 40;
 
 /// Permission modes that approve everything (Claude Code's, codex-acp's):
-/// start_agent won't start an agent in one (#163).
-const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
+/// start_agent won't start an agent in one (#163), here or for a board.
+use arugulad_base::ladder::SKIPS_CHECKS;
+
+/// A chief of staff's block's title (Arugula #1338), unless the caller
+/// names another, with the project's name after it (Arugula #1340): for
+/// people to read. Nothing goes by it: see [`chief_session`].
+const CHIEF_TITLE: &str = arugula_control_wire::sessions::CHIEF_OF_STAFF;
+
+/// [`CHIEF_TITLE`] for the project named `project`.
+fn chief_title(project: &str) -> String {
+    match project.trim() {
+        "" => CHIEF_TITLE.to_owned(),
+        p => format!("{CHIEF_TITLE} · {p}"),
+    }
+}
+
+/// A chief of staff's session's name (Arugula #1457), which leads the staff
+/// room: its posts reach the lead by it. By the project's id, not its name:
+/// two of a person's projects may share a name, and a project may be
+/// renamed. It's the block's `session`, apart from its title.
+fn chief_session(project: &str) -> String {
+    arugula_control_wire::sessions::chief_session(project)
+}
+
+/// Who led the staff room before a chief of staff was started (Arugula
+/// #1340), and what becomes of it.
+enum Before {
+    /// An agent block on another machine: it's told, and hands over its
+    /// place in the log in staff.
+    Machine { machine_name: String, session: String },
+    /// A hosted agent session (`ses_…`): it's stopped.
+    Hosted { session: String },
+    /// A block on this machine, closed before the new one opens: its
+    /// notes file is the new one's.
+    Here { session: String },
+}
+
+/// What a chief of staff is told after its standing instructions when it
+/// takes over from another session (Arugula #1340): what became of that one
+/// and where its place in the log is.
+fn handover(before: &(String, Before)) -> String {
+    match &before.1 {
+        Before::Machine { machine_name, session } => {
+            let on = if machine_name.is_empty() { "another machine" } else { machine_name };
+            format!(
+                "You take over from {session} on {on}, which led your person's staff room until now. It's told to stand down and post its place in the log in staff: see \"Taking over\"."
+            )
+        }
+        Before::Hosted { session } => format!(
+            "You take over from hosted session {session}, which led your person's staff room until now. It's stopped, and its place in the log stayed on its Cloud workspace: start from the log's head, and tell your person so (see \"Taking over\")."
+        ),
+        Before::Here { session, .. } => format!(
+            "You take over from {session}, on this machine, which led your person's staff room until now. It's closed, and its notes file is yours: carry on from its cursor."
+        ),
+    }
+}
 
 /// What `open_forge` asks the forge block's `open_config` for (a `Value` it
 /// keeps, being the block's persisted config): a PR or issue by reference,
@@ -386,9 +440,26 @@ pub struct StartAgentArgs {
     /// For acp: the agent server's command line.
     #[serde(default)]
     pub command: Option<String>,
-    /// For claude: run as this recipe, a Claude Code subagent by its name
-    /// (`.claude/agents/NAME.md` in cwd's project, or the user's), on this
-    /// host: its prompt, model, tools, skills and MCP servers.
+    /// For claude: `chief-of-staff` starts your person's chief of staff in
+    /// the project on this machine: an agent block titled "Chief of staff ·
+    /// <project>" that leads their staff room there (their posts in it are
+    /// its prompts), with its standing instructions as its first prompt and
+    /// prompt after them (it may be empty). There's one per project: one
+    /// that led before is moved here (another machine's is told to stand
+    /// down, a hosted one is stopped, this machine's is closed). It runs
+    /// here: not on an issue, in a worktree or beside another machine's
+    /// pane. Nobody watches it, so it runs as a board's lead does: in
+    /// permission_mode `auto` unless you name one, allowing `Bash`, `Read`,
+    /// `Edit`, `Write`, `Glob`, `Grep` and `WebFetch` besides your allow,
+    /// with your person's settings. `board-lead` starts the lead of the board its prompt names:
+    /// it starts an agent block per ready row, talks to them in their
+    /// issues' threads and merges their work. A Claude Code or Codex agent
+    /// on an issue is told first that it leads the issue's thread
+    /// (`issue-agent`, named or not).
+    /// With Labs agent delegation, any other name runs as that recipe, a
+    /// Claude Code subagent by its name (`.claude/agents/NAME.md` in cwd's
+    /// project, or the user's), on this host: its prompt, model, tools,
+    /// skills and MCP servers.
     #[serde(default)]
     pub recipe: Option<String>,
     /// A model to switch to (`haiku`, ...).
@@ -434,6 +505,22 @@ pub struct StartAgentArgs {
     /// The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.
     #[serde(default)]
     pub project: Option<String>,
+    /// A board it works for, under the board's grant (aru-143): with issue,
+    /// an issue agent on that issue's row; without, the board's lead. It
+    /// runs Claude Code (with recipe, wearing it), in a new worktree of that
+    /// machine's clone of cwd's repo (or your pane's), and control checks
+    /// the board's grant first (its machines, how many agents at once, not
+    /// lapsed or revoked) and that the machine is online. It opens in a tab
+    /// of its own there. A lead runs board-lead's instructions first, an
+    /// issue agent issue-agent's. Only prompt, recipe, issue, cwd, session,
+    /// to, permission_mode, allow and user_settings apply.
+    #[serde(default)]
+    pub board: Option<String>,
+    /// With board: another of your machines to start it on, by name or id.
+    /// Default: this one. One that's offline is refused, naming the grant's
+    /// machines that are online.
+    #[serde(default)]
+    pub to: Option<String>,
     /// With issue: take the row over when another machine's agent works it, or another session holds it (the one that last started an agent on it, until the issue closes or it lets go with board_write release_row). Without it, the start is refused, naming who holds it; with it, that agent is folded under "earlier agents", this session holds the row, and the session that held it is told.
     #[serde(default)]
     pub take: bool,
@@ -757,6 +844,34 @@ pub(crate) fn can_do(on: On, has: impl Fn(Needs) -> bool) -> Vec<arugula_proto::
         .collect()
 }
 
+/// What only a machine joined to Arugula cloud can use, by name as
+/// [`listed_names`] gives it (Arugula #1403): each tool whose card line
+/// needs control or a grant there, the tools that are part of one, and
+/// `show`'s board. `capabilities` leaves them out before joining, as the
+/// instructions leave out issues and boards.
+pub(crate) fn cloud_only(on: On) -> Vec<String> {
+    let all = defs(on);
+    let needs = |name: &str| {
+        all.iter().find(|d| d.name == name).and_then(|d| match &d.human {
+            Human::Line(a) => Some(a.needs),
+            Human::In(_) => None,
+        })
+    };
+    let mut out: Vec<String> = all
+        .iter()
+        .filter(|d| {
+            let n = match &d.human {
+                Human::Line(a) => Some(a.needs),
+                Human::In(of) => needs(of),
+            };
+            !matches!(n, None | Some(Needs::Nothing | Needs::Forge))
+        })
+        .map(|d| d.name.to_owned())
+        .collect();
+    out.push("show:board".into());
+    out
+}
+
 /// `show`'s blocks.
 const SHOW: &[Kind] = &[
     Kind {
@@ -886,13 +1001,14 @@ const UNLISTED: [(&str, &str, &str); 3] = [
 ];
 
 /// Arguments of listed tools that aren't listed without their flag, by
-/// tool: throwaway VMs and sandboxes, and recipes. A caller who gives one
-/// is refused where the flag is off (a new machine, a recipe: #347), except
-/// `machine`, which names one already made.
-const UNLISTED_ARGS: [(&str, &[&str], &str); 3] = [
+/// tool: throwaway VMs and sandboxes. A caller who gives one is refused
+/// where the flag is off (a new machine: #347), except `machine`, which
+/// names one already made. `start_agent`'s `recipe` is listed for
+/// Arugula's own (chief-of-staff, Arugula #1338; board-lead, Arugula
+/// #1440); any other is refused without its flag.
+const UNLISTED_ARGS: [(&str, &[&str], &str); 2] = [
     ("run", &["vm", "vm_tab", "image", "machine"], flags::SANDBOX_PROVIDERS),
     ("start_agent", &["vm"], flags::SANDBOX_PROVIDERS),
-    ("start_agent", &["recipe"], flags::AGENT_DELEGATION),
 ];
 
 /// The kinds daemon-side Managoat had (#942, `fountain_*` before the
@@ -1659,7 +1775,7 @@ impl ToolCall<'_, '_> {
                 Ok(a) => self.wait(a).await,
                 Err(e) => Err(e),
             },
-            ("close", _) => crate::mcp::ops::call::<ClosePane>(self, args).await,
+            ("close", _) => self.close(args).await,
             (crate::feedback::TOOL, _) => crate::mcp::ops::call::<FeedbackSend>(self, args).await,
             ("history", _) => match parse(args) {
                 Ok(a) => self.history_or_output(a).await,
@@ -2124,6 +2240,31 @@ impl ToolCall<'_, '_> {
                 last_lines: tail.unwrap_or_else(|| self.last_lines(pane, from, None)),
             },
         )
+    }
+
+    /// `prompt_agent` at its limit (#1455). A prompt still queued behind
+    /// the turn says so, and when the turn last showed anything: one quiet
+    /// for long may be stuck, not busy.
+    async fn turn_not_yet(&self, pane: PaneId, waited: Duration) -> Out {
+        let mut out = self.not_yet(pane, waited, Some("end of its turn")).await?;
+        let Some(b) = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten() else { return Ok(out) };
+        let s = b.state();
+        let queued = s["queued"].as_array().map_or(0, Vec::len);
+        if queued == 0 {
+            return Ok(out);
+        }
+        let waiting = if queued == 1 { "queued".to_owned() } else { format!("queued, one of {queued}") };
+        let quiet = match (s["turn_started_ms"].as_u64(), s["heard_ms"].as_u64()) {
+            (Some(start), Some(ms)) => format!("its turn has run {}, its last output was {}", span(start), ago(ms)),
+            (Some(start), None) => format!("its turn has run {} with no output", span(start)),
+            (None, Some(ms)) => format!("its last output was {}", ago(ms)),
+            (None, None) => "it has shown no output".to_owned(),
+        };
+        out["summary"] = json!(format!(
+            "%{pane} is mid-turn, so your prompt is {waiting}: it goes when the turn ends. The turn is still running after {}s; {quiet}. Wait until idle, or read_output for where it is",
+            waited.as_secs()
+        ));
+        Ok(out)
     }
 
     /// An agent block's last messages, in `read_output`'s messages form.
@@ -3303,8 +3444,15 @@ impl ToolCall<'_, '_> {
     }
 
     async fn start_agent(&self, mut a: StartAgentArgs) -> Out {
-        if a.prompt.trim().is_empty() {
+        let chief = a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::CHIEF_OF_STAFF);
+        if a.prompt.trim().is_empty() && !chief {
             return Err("give the agent a prompt".into());
+        }
+        if a.board.as_deref().is_some_and(|b| !b.trim().is_empty()) {
+            return self.start_for_board(a).await;
+        }
+        if a.to.is_some() {
+            return Err("to is for a start for a board: give board too".into());
         }
         let beside = match (a.beside.as_ref().map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
@@ -3319,13 +3467,50 @@ impl ToolCall<'_, '_> {
             Some(b) => self.readable(b).await?.info.host,
             None => None,
         };
-        let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        // Arugula's own recipes are read as the first prompt, not worn
+        // (Arugula #1440): a board's lead, or an issue agent, which every
+        // start on an issue is.
+        let lead = a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::BOARD_LEAD);
+        if a.recipe.as_deref().map(str::trim) == Some(crate::mcp::registry::ISSUE_AGENT) && a.issue.is_none() {
+            return Err("recipe issue-agent is an agent on an issue: give issue".into());
+        }
+        if lead && a.issue.is_some() {
+            return Err("a board's lead works the whole board: no issue (its prompt names the board)".into());
+        }
+        let recipe =
+            a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty() && !crate::mcp::registry::own_recipe(n));
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
         if a.chat {
             return self.start_chat(a, beside, host).await;
         }
-        if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
+        if recipe.is_some() && !flags::on(self.app.control.state_dir()).has(flags::AGENT_DELEGATION) {
+            return Err("agent recipes are in Labs: `arugulad flags agent-delegation on` turns them on here (Arugula's own, chief-of-staff and board-lead, need no flag)".into());
+        }
+        if (chief || recipe.is_some()) && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
+        }
+        // Arugula #1338: the staff room's lead is a session of the machine
+        // that asks control, so the chief of staff runs here.
+        if chief && (a.vm || host.is_some()) {
+            return Err("a chief of staff runs on the machine that starts it: call start_agent there, with no vm and beside none of another machine's panes".into());
+        }
+        if chief && (a.issue.is_some() || a.worktree.is_some()) {
+            return Err("a chief of staff works the whole project: no issue or worktree".into());
+        }
+        // Arugula #1490: nobody watches a chief of staff's terminal, so it
+        // starts as a board's lead does, whoever starts it: in mode `auto`
+        // (unless the caller names one) with the lead's tools and the
+        // person's own settings. In the default mode each tool is a card.
+        if chief {
+            if a.permission_mode.as_deref().is_none_or(|m| m.trim().is_empty()) {
+                a.permission_mode = Some("auto".into());
+            }
+            for t in arugulad_base::approvals::LEAD_ALLOW {
+                if !a.allow.iter().any(|x| x == t) {
+                    a.allow.push((*t).to_owned());
+                }
+            }
+            a.user_settings = true;
         }
         let issue = match a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
             Some(i) => {
@@ -3350,7 +3535,7 @@ impl ToolCall<'_, '_> {
             AgentKind::Acp => "acp",
         };
         // #430: the project the row is in is the issue's, not the caller's.
-        let (issue, project, inferred) = self.issue_of_start(&a, issue).await?;
+        let (issue, mut project, inferred) = self.issue_of_start(&a, issue).await?;
         a.issue = issue.clone();
         let owned = match &a.worktree {
             Some(w) => Some(self.make_worktree(&a, w, host.is_some()).await?),
@@ -3360,6 +3545,36 @@ impl ToolCall<'_, '_> {
             (None, None) => None,
             _ => project.clone().or(self.current_project(None).await.ok()),
         };
+        // Its staff room is the project's: the block's current project is
+        // that one whatever chose it, control's default included.
+        let staff = match chief {
+            true => Some(self.chosen_project(a.project.as_deref()).await?),
+            false => None,
+        };
+        let (mut before, mut closed, mut chief_name) = (None, vec![], None);
+        if let Some(p) = &staff {
+            let title = a.title.take().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+            let title = title.unwrap_or_else(|| chief_title(&p.name));
+            let session = chief_session(&p.id);
+            (before, closed) = self.chief_before(p, &session).await;
+            let prompt = match before.as_ref().map(handover) {
+                Some(h) if a.prompt.trim().is_empty() => h,
+                Some(h) => format!("{h}\n\n{}", a.prompt),
+                None => a.prompt.clone(),
+            };
+            a.prompt = crate::mcp::registry::chief_of_staff_prompt(&prompt)?;
+            a.title = Some(title);
+            chief_name = Some(session);
+            project = Some(p.id.clone());
+        }
+        // Any ACP agent server may have none of Arugula's tools, which
+        // these name.
+        let tooled = !matches!(a.agent, AgentKind::Acp);
+        if let (Some(i), true) = (&issue, tooled) {
+            a.prompt = crate::mcp::registry::issue_agent_prompt(i, None, &a.prompt);
+        } else if lead {
+            a.prompt = crate::mcp::registry::board_lead_prompt(None, &a.prompt)?;
+        }
         let mut config = json!({ "agent": agent, "prompt": a.prompt });
         if let Some(o) = &owned {
             config["cwd"] = json!(o.path);
@@ -3387,6 +3602,9 @@ impl ToolCall<'_, '_> {
         }
         if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
             config["title"] = json!(t.trim());
+        }
+        if let Some(s) = &chief_name {
+            config["session"] = json!(s);
         }
         if let Some(c) = a.cwd.as_ref().filter(|_| a.worktree.is_none()) {
             config["cwd"] = json!(c);
@@ -3465,11 +3683,245 @@ impl ToolCall<'_, '_> {
         if let Some(on) = &on {
             tail.push_str(&format!(". {}", on.said));
         }
+        let chief_of_staff = match (&staff, &chief_name) {
+            (Some(p), Some(name)) => Some(self.lead_staff(block, p, name, before, closed).await),
+            _ => None,
+        };
+        if let Some(c) = &chief_of_staff {
+            tail.push_str(&format!(". {}", c.said));
+        }
         done(
             format!(
                 "Started an agent in %{block}{tail}; wait on it (until needs_input or idle): the answer has its last message and the work it left; read_output for its transcript"
             ),
-            results::StartedAgent { block, issue: on, mcp: Some(self.started_mcp(block).await) },
+            results::StartedAgent { block, issue: on, chief_of_staff, mcp: Some(self.started_mcp(block).await) },
+        )
+    }
+
+    /// `start_agent` `recipe` chief-of-staff (Arugula #1338): the block just
+    /// started leads the person's staff room in the project, by its session's
+    /// name (`name`, by the project's id). Here, not on its first turn: its first wake then
+    /// finds itself the lead, and a person's post in staff reaches it from
+    /// the start. If control refuses, the block stays, and its recipe takes
+    /// the lead on its first wake, which says why if it can't.
+    ///
+    /// The lead it takes was another's (Arugula #1340): one on another
+    /// machine is told first, while it still leads, so control tells it; a
+    /// hosted one is stopped. One on this machine was closed before.
+    async fn lead_staff(
+        &self,
+        block: arugula_proto::PaneId,
+        project: &crate::mcp::issues::Chosen,
+        name: &str,
+        before: Option<(String, Before)>,
+        closed: Vec<arugula_proto::PaneId>,
+    ) -> results::StartedChief {
+        let session = arugulad_base::agent_mentions::session_name(self.app, block).await.unwrap_or_else(|| name.into());
+        let moved_from = match before {
+            Some((room, b)) => Some(self.stand_down(&room, b, &session).await),
+            None => None,
+        };
+        let (lead, said) = match crate::mcp::registry::lead_staff(self.app, &project.id, &session).await {
+            Ok(_) => (
+                true,
+                format!("It leads your person's staff room in {}: their posts there are its prompts", project.name),
+            ),
+            Err(e) => (
+                false,
+                format!(
+                    "It doesn't lead your person's staff room in {} ({e}): it tries again on its first turn",
+                    project.name
+                ),
+            ),
+        };
+        let mut said = match &moved_from {
+            Some(m) => format!("{said}. {}", m.said),
+            None => said,
+        };
+        if !closed.is_empty() {
+            let panes: Vec<String> = closed.iter().map(|p| format!("%{p}")).collect();
+            said.push_str(&format!(". Closed {} here, going by its name", panes.join(", ")));
+        }
+        results::StartedChief { project: project.id.clone(), session, lead, said, moved_from, closed }
+    }
+
+    /// Who leads the person's staff room in `project` now (Arugula #1340),
+    /// with the room's id: None when nobody does, or control can't say.
+    /// The lead's block, when it's on this machine, is closed here, before
+    /// the chief of staff about to start as `session` opens, and so is any
+    /// other agent block here going by `session`: posts reach a lead by its
+    /// session's name, and one name is one session. So is one of this
+    /// project's going by its name-based title, a chief of staff from before
+    /// sessions went by the project's id (Arugula #1457). Another project's
+    /// block is never closed. Answers those closed.
+    async fn chief_before(
+        &self,
+        project: &crate::mcp::issues::Chosen,
+        session: &str,
+    ) -> (Option<(String, Before)>, Vec<PaneId>) {
+        let (title, project) = (chief_title(&project.name), project.id.as_str());
+        let Ok(room) = crate::mcp::registry::staff_room(self.app, project).await else { return (None, vec![]) };
+        let Some(id) = room["id"].as_str().map(str::to_owned) else { return (None, vec![]) };
+        let lead = &room["lead"];
+        let led = lead["session"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+        let me = self.app.control.enrolled().map(|e| e.keys.id());
+        let here = led.is_some() && me.is_some() && lead["machine"].as_str() == me.as_deref();
+        let names = [Some(session), led.as_deref().filter(|_| here)];
+        let mut closed = vec![];
+        for (pane, name) in arugulad_base::agent_mentions::session_names(self.app, None).await {
+            let by_name = names.iter().flatten().any(|n| n.eq_ignore_ascii_case(&name));
+            if Some(pane) == self.own_pane() || !(by_name || name.eq_ignore_ascii_case(&title)) {
+                continue;
+            }
+            let agent = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+            let theirs = agent.as_ref().and_then(|b| b.config()["work"]["project"].as_str().map(str::to_owned));
+            // Another project's is never this one's; one with none goes by
+            // its session's name alone.
+            let ours = match theirs.as_deref().filter(|p| !p.is_empty()) {
+                Some(p) => p == project,
+                None => by_name,
+            };
+            if agent.is_some_and(|b| b.kind() == BlockType::Agent)
+                && ours
+                && crate::mcp::ops::call::<ClosePane>(self, json!({ "pane": pane })).await.is_ok()
+            {
+                closed.push(pane);
+            }
+        }
+        let Some(session) = led else { return (None, closed) };
+        let before = if here {
+            Before::Here { session }
+        } else if session.starts_with("ses_") {
+            Before::Hosted { session }
+        } else {
+            Before::Machine { machine_name: lead["machine_name"].as_str().unwrap_or_default().to_owned(), session }
+        };
+        (Some((id, before)), closed)
+    }
+
+    /// The staff room's lead before (Arugula #1340) is told it no longer
+    /// leads, by `by`, the session taking over, and said.
+    async fn stand_down(&self, room: &str, before: Before, by: &str) -> results::MovedFrom {
+        let registry = crate::mcp::registry::stand_down;
+        match before {
+            Before::Machine { machine_name, session } => {
+                let on = if machine_name.is_empty() { "another machine".to_owned() } else { machine_name.clone() };
+                let notice = format!(
+                    "Your chief of staff moves here, to {by}. {session} on {on}: you no longer lead this room. Stand down, and post your place in the log here."
+                );
+                let (how, said) = match registry(self.app, room, &session, &notice, by).await {
+                    Ok(_) => (
+                        "told",
+                        format!(
+                            "{session} on {on} led it before: it's told to stand down and hand over its place in the log in staff"
+                        ),
+                    ),
+                    Err(e) => (
+                        "not_told",
+                        format!(
+                            "{session} on {on} led it before, and couldn't be told to stand down ({e}): it stands down at its next wake, when it finds it no longer leads"
+                        ),
+                    ),
+                };
+                results::MovedFrom { machine_name, session, how: how.into(), said }
+            }
+            Before::Hosted { session } => {
+                let notice = format!("Your chief of staff moved to {by}, on one of your machines");
+                let (how, said) = match registry(self.app, room, &session, &notice, by).await {
+                    Ok(_) => ("stopped", format!("Hosted session {session} led it before: it's stopped")),
+                    Err(e) => (
+                        "not_stopped",
+                        format!(
+                            "Hosted session {session} led it before, and couldn't be stopped ({e}): stop it from its card"
+                        ),
+                    ),
+                };
+                results::MovedFrom { machine_name: String::new(), session, how: how.into(), said }
+            }
+            Before::Here { session } => {
+                let said = format!("{session} on this machine led it before: its notes file carries on");
+                results::MovedFrom { machine_name: String::new(), session, how: "here".into(), said }
+            }
+        }
+    }
+
+    /// `close`: here, or with `to` another machine's agent a ladder start
+    /// opened (Arugula #1438).
+    async fn close(&self, args: Value) -> Out {
+        let to = args.get("to").and_then(Value::as_str).unwrap_or_default().to_owned();
+        if !to.trim().is_empty() {
+            let pane = parse::<crate::mcp::tools::CloseArgs>(args.clone())?.pane.id()?;
+            if let Some(stopped) = arugulad_base::ladder::stop(self.app, &to, pane).await? {
+                return done(format!("Closed %{pane} on {}: {}", stopped.machine, stopped.said), stopped);
+            }
+        }
+        crate::mcp::ops::call::<ClosePane>(self, args).await
+    }
+
+    /// `start_agent {board}` (aru-143): a ladder start, here or on another
+    /// of the person's machines, under the board's grant.
+    async fn start_for_board(&self, a: StartAgentArgs) -> Out {
+        let others = [
+            (!matches!(a.agent, AgentKind::Claude), "agent"),
+            (a.command.is_some(), "command"),
+            (a.model.is_some(), "model"),
+            (a.title.is_some(), "title"),
+            (a.beside.is_some(), "beside"),
+            (a.vm, "vm"),
+            (a.chat, "chat"),
+            (a.worktree.is_some(), "worktree"),
+            (a.project.is_some(), "project"),
+            (a.take, "take"),
+        ];
+        let given: Vec<&str> = others.iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect();
+        if !given.is_empty() {
+            return Err(format!(
+                "a start for a board takes prompt, recipe, issue, cwd, session, to, permission_mode, allow and user_settings, not {}",
+                given.join(", ")
+            ));
+        }
+        let dir = match (&a.cwd, self.own_pane()) {
+            (Some(c), _) => Some(c.clone()),
+            (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
+            (None, None) => None,
+        };
+        let repo = match dir {
+            Some(d) => origin_repo(&d).await,
+            None => None,
+        };
+        let by_session = match self.own_pane() {
+            Some(p) => arugulad_base::agent_mentions::session_name(self.app, p).await,
+            None => None,
+        };
+        let blank = |o: Option<String>| o.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+        let ask = arugulad_base::ladder::Ask {
+            machine: blank(a.to),
+            board: a.board.unwrap_or_default().trim().to_owned(),
+            rung: None,
+            issue: blank(a.issue),
+            recipe: blank(a.recipe),
+            repo,
+            prompt: a.prompt,
+            session: blank(a.session),
+            title: None,
+            by_session,
+            permission_mode: blank(a.permission_mode),
+            allow: a.allow,
+            user_settings: a.user_settings,
+        };
+        let started = arugulad_base::ladder::start(self.app, ask).await?;
+        // Opened here, it's this caller's: it reads and closes what it
+        // started, in whatever tab (Arugula #1474). Another machine's block
+        // isn't a pane here.
+        if self.app.control.enrolled().is_some_and(|e| e.keys.id() == started.id) {
+            self.started(started.block).await;
+        }
+        done(
+            format!(
+                "Started an agent on {} in %{} (session {}, in {}): {}. Its block is that machine's: its board row shows it",
+                started.machine, started.block, started.session, started.cwd, started.said
+            ),
+            started,
         )
     }
 
@@ -3712,7 +4164,12 @@ impl ToolCall<'_, '_> {
         let block = self.open(req).await?;
         done(
             format!("Started a chat in %{block}; wait on it (until idle), then read_output for its answer"),
-            results::StartedAgent { block, issue: None, mcp: Some(self.started_mcp(block).await) },
+            results::StartedAgent {
+                block,
+                issue: None,
+                chief_of_staff: None,
+                mcp: Some(self.started_mcp(block).await),
+            },
         )
     }
 
@@ -3733,10 +4190,10 @@ impl ToolCall<'_, '_> {
         // fires first, the answer at the limit is the same.
         let r = match r {
             Some(r) => r.map_err(|e| e.http().1)?,
-            None => return self.not_yet(pane, limit, Some("end of its turn")).await,
+            None => return self.turn_not_yet(pane, limit).await,
         };
         if r == PromptResult::StillRunning {
-            return self.not_yet(pane, limit, Some("end of its turn")).await;
+            return self.turn_not_yet(pane, limit).await;
         }
         let summary = match &r {
             PromptResult::Done { turn: Some(t) } => {
@@ -4108,6 +4565,24 @@ pub mod guests;
 #[path = "whole.rs"]
 pub mod whole;
 
+/// The `owner/name` of the repository `dir` is in, from its `origin`.
+async fn origin_repo(dir: &str) -> Option<String> {
+    let o = tokio::process::Command::new("git").args(["-C", dir, "remote", "get-url", "origin"]).output().await.ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    let url = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+    if let Some((_, repo)) = arugulad_base::git_remote::parse_remote(&url) {
+        return Some(repo);
+    }
+    // A clone of a repository on disk: its last two folders.
+    let path = url.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let mut parts = path.rsplit('/').filter(|p| !p.is_empty());
+    let (name, owner) = (parts.next()?, parts.next()?);
+    Some(format!("{owner}/{name}"))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::mcp::tools::open_lands_on_machine;
@@ -4402,7 +4877,7 @@ mod tests {
     /// everyone's since M198.)
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
-        let mut prose = vec![super::super::instructions(true)];
+        let mut prose = vec![super::super::instructions(true, true)];
         prose.extend(list(Scope::Full, fl(false), true).iter().map(|t| {
             format!(
                 "{}: {} {}",
@@ -4451,11 +4926,11 @@ mod tests {
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
         assert!(!managoat, "retired direct execution is never advertised");
-        let text = super::super::instructions(true);
+        let text = super::super::instructions(true, true);
         assert!(!text.contains("thread") && !text.contains("@agent"), "{text}");
         // The feedback sentence only while the tool is listed (#1219).
         assert!(text.contains("tell the Arugula team with feedback"), "{text}");
-        let off = super::super::instructions(false);
+        let off = super::super::instructions(false, true);
         assert!(!off.contains("feedback") && off.len() < text.len(), "{off}");
         // Everyone's since Docs left Labs (native #204): the Doc sentence.
         assert!(text.contains(flags::DOCS_STEERING), "{text}");
@@ -4464,8 +4939,52 @@ mod tests {
         assert!(text.contains(flags::ISSUES_STEERING), "{text}");
         // A board row is kept current.
         assert!(text.contains(flags::BOARDS_STEERING), "{text}");
+        // Work only the person can do is a to-do, not chat alone (Arugula
+        // #1463); a merge's closing rule is issue_write's.
+        assert!(text.contains(flags::TODOS_STEERING) && text.contains("add a to-do with todo"), "{text}");
+        assert!(!text.contains("On merge"), "{text}");
         // When to show a PR (AR-7).
         assert!(text.contains("show it (kind pr)"), "{text}");
+    }
+
+    /// Before this machine joins Arugula cloud, its instructions don't send
+    /// an agent to issues or boards (Arugula #1403); Docs, panes and blocks
+    /// are said either way, in the same order.
+    #[test]
+    fn the_instructions_name_issues_and_boards_only_once_joined() {
+        let joined = super::super::instructions(true, true);
+        let alone = super::super::instructions(true, false);
+        for text in [&joined, &alone] {
+            assert!(text.contains(flags::DOCS_STEERING), "{text}");
+            assert!(text.contains("show it (kind pr)") && text.contains("arugula hooks install"), "{text}");
+            assert!(!text.contains("thread"), "{text}");
+        }
+        assert!(joined.contains(flags::ISSUES_STEERING) && joined.contains(flags::BOARDS_STEERING), "{joined}");
+        assert!(joined.contains(flags::TODOS_STEERING), "{joined}");
+        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board", "to-do"] {
+            assert!(!alone.contains(word), "{word} in: {alone}");
+        }
+        let without = joined.replace(&format!(" {}", flags::ISSUES_STEERING), "");
+        let without = without.replace(&format!(" {}", flags::TODOS_STEERING), "");
+        assert_eq!(without.replace(&format!(" {}", flags::BOARDS_STEERING), ""), alone);
+    }
+
+    /// What `capabilities` leaves out before joining is control's: every
+    /// tool whose line needs it, the tools that are part of one, and the
+    /// board block; a pane's and a Doc's tools stay.
+    #[test]
+    fn cloud_only_is_controls_tools() {
+        let cloud = cloud_only(fl(false));
+        for name in ["show", "run", "list", "read_output", "doc"] {
+            assert!(!cloud.iter().any(|n| n == name), "{name} in {cloud:?}");
+        }
+        assert!(cloud.iter().any(|n| n == "show:board"), "{cloud:?}");
+        let listed = listed_names(Scope::Full, fl(false), true);
+        if listed.iter().any(|n| n == "issue_write") {
+            for name in ["issue_write", "board_read", "board_write", "forge_read", "post_thread", "start_run"] {
+                assert!(cloud.iter().any(|n| n == name), "{name} not in {cloud:?}");
+            }
+        }
     }
 
     /// Every tool has its place on the card *What your agent can do here*:

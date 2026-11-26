@@ -11,19 +11,23 @@
 
 import type { BoardLead, BoardRow, BoardView, OnIssue } from "../../shared/proto";
 import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
+import { chiefProject, sessionLabel } from "../../shared/chief-of-staff.ts";
 
 /** How a card or a session stands, most urgent first: a session waits on
  * you, the row's question asks you, a session failed, its PR's checks fail,
- * it's quiet, it's working, its PR's checks run, it's in review; or nothing
- * says (`idle`). A session only ever needs you, failed, is quiet or works. */
-export type Standing = "needs" | "asks" | "failed" | "checks_failing" | "quiet" | "working" | "checks_running" | "review" | "idle";
-export const STANDING_ORDER: Standing[] = ["needs", "asks", "failed", "checks_failing", "quiet", "working", "checks_running", "review", "idle"];
+ * it or its question waits on someone else (`waits`, #1392), it's quiet,
+ * it's working, its PR's checks run, it's in review; or nothing says
+ * (`idle`). A session only ever needs you, failed, waits on someone else,
+ * is quiet or works. */
+export type Standing = "needs" | "asks" | "failed" | "checks_failing" | "waits" | "quiet" | "working" | "checks_running" | "review" | "idle";
+export const STANDING_ORDER: Standing[] = ["needs", "asks", "failed", "checks_failing", "waits", "quiet", "working", "checks_running", "review", "idle"];
 /** The one word a row says of how it stands; nothing for `idle`. */
 export const STATE_WORD: Record<Standing, string> = {
   needs: "needs you",
   asks: "asks you",
   failed: "failed",
   checks_failing: "checks failing",
+  waits: "asks someone else",
   quiet: "quiet",
   working: "working",
   checks_running: "checks running",
@@ -52,6 +56,10 @@ export interface OvPane {
   name: string;
   /** Whether it's an agent (it leads its session's tile). */
   agent: boolean;
+  /** Whose it is when it isn't the reader's: their name, or "" where
+   * that isn't known (#1392). Absent: the reader's. A pane of someone
+   * else's that needs them stands `waits`, not `needs`. */
+  owner?: string;
   standing: Standing;
   /** When it last printed (ms), for the order of what's quiet. */
   last: number;
@@ -71,8 +79,13 @@ export interface OvSession {
   panes: OvPane[];
   /** A cloud workspace's session, by the hub's id. */
   hosted?: string;
+  /** The hub's id for it (`ses_…`), where the hub lists it: the Work
+   * level's address takes it as well as the tile's own key (#1380). */
+  hub?: string;
   /** Its branch, where the hub says (a session the machines don't show here). */
   branch?: string | null;
+  /** Whom it waits on, when that's someone else (`waits`): their name, or "" where that isn't known. */
+  asks?: string;
 }
 
 export interface OvCard {
@@ -80,6 +93,9 @@ export interface OvCard {
   row: BoardRow;
   sessions: OvSession[];
   standing: Standing;
+  /** Whom it waits on, when that's someone else (`waits`): its question's
+   * person, else its first session's that waits; "" where that isn't known. */
+  asks?: string;
 }
 
 export interface OvBoard {
@@ -129,8 +145,11 @@ const numberOf = (issue: string): number | null => {
 
 /** The Overview for `project`: its open boards' views, the panes the
  * machines report (every machine's; only the project's are kept) and the
- * hub's sessions by card, null until it answers (or where it can't). */
-export function overviewOf(project: string, views: BoardView[], panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): Overview {
+ * hub's sessions by card, null until it answers (or where it can't).
+ * `ownerOf` says whose a machine is, for a session the hub names that no
+ * pane here shows: as `OvPane.owner`, undefined for the reader's. Without
+ * it, or for a cloud workspace's session, a session is the reader's. */
+export function overviewOf(project: string, views: BoardView[], panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined, ownerOf?: (machine: string) => string | undefined): Overview {
   const open = views.filter((v) => !v.board.closed_at);
   const rows = new Map<string, { board: string; row: BoardRow }>();
   const byIssue = new Map<string, { board: string; row: BoardRow }>();
@@ -168,6 +187,8 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
         }
   // 3. The hub's sessions by card: the panes it lists, for those not placed yet.
   const listed = new Set<string>();
+  // A pane's session as the hub names it; an agent's id is its pane, not a session's.
+  const hubOf = new Map<string, string>();
   const unseen: { card: { board: string; row: BoardRow } | null; s: ProjectSession }[] = [];
   for (const g of byCard?.groups ?? []) {
     const at = g.card ? (byIssue.get(g.card.id) ?? null) : null;
@@ -179,6 +200,7 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
       });
       for (const k of keys) {
         listed.add(k);
+        if (s.kind !== "agent" && !hubOf.has(k)) hubOf.set(k, s.id);
         if (!cardOf.has(k)) cardOf.set(k, at);
       }
       if (!keys.length) unseen.push({ card: at, s });
@@ -216,12 +238,19 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
     // Named by its agent where it has one, though the pane it opens is the one asking.
     const agent = t.panes.find((p) => p.agent);
     const name = agent ? agent.name : lead.session && t.panes.length > 1 ? lead.session.name : lead.name;
-    put(t.at, { key: k, name, where: lead.host, standing: worst(t.panes.map((p) => p.standing)), lead, panes: t.panes });
+    const hub = t.panes.map((p) => hubOf.get(p.key)).find(Boolean);
+    const standing = worst(t.panes.map(paneStanding));
+    // Whom it waits on: the first of its panes that waits.
+    const asks = standing === "waits" ? t.panes.find((p) => paneStanding(p) === "waits")!.owner : undefined;
+    put(t.at, { key: k, name, where: lead.host, standing, lead, panes: t.panes, ...(hub ? { hub } : {}), ...(asks !== undefined ? { asks } : {}) });
   }
   // The hub's sessions the machines don't show here: named, where they run, no pane.
   for (const { card, s } of unseen) {
     const where = s.on.kind === "hosted" ? "Arugula cloud" : s.on.name;
-    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}) });
+    const owner = s.on.kind === "machine" && ownerOf ? ownerOf(s.on.id) : undefined;
+    const said = hubStanding(s);
+    const standing = said === "needs" && owner !== undefined ? "waits" : said;
+    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing, panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}), ...(s.kind !== "agent" ? { hub: s.id } : {}), ...(standing === "waits" ? { asks: owner } : {}) });
   }
 
   const boards: OvBoard[] = [];
@@ -234,7 +263,10 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
           .filter((r) => r.lane === lane)
           .map((r): OvCard => {
             const sessions = sortSessions(onCard.get(`${v.board.id}/${r.id}`) ?? []);
-            return { board: v.board.id, row: r, sessions, standing: worst([...sessions.map((s) => s.standing), ...rowSays(r)]) };
+            const standing = worst([...sessions.map((s) => s.standing), ...rowSays(r)]);
+            // Whom it waits on: its question's person first, else its first session's that waits.
+            const asks = standing !== "waits" ? undefined : r.ask?.who && !r.ask.mine ? r.ask.who_name : sessions.find((s) => s.standing === "waits")?.asks;
+            return { board: v.board.id, row: r, sessions, standing, ...(asks !== undefined ? { asks } : {}) };
           }),
       );
     const doing = cards("doing");
@@ -258,37 +290,77 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   return { boards, loose: sortSessions(loose), cardOf };
 }
 
-/** A board's lead as the row names it: how it stands from its session's
- * panes on its machine, else from the hub's sessions by card. */
-function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
+/** A board's lead as the row names it, or a staff room's (#1342): how it
+ * stands from its session's panes on its machine, else from the hub's
+ * sessions by card. */
+export function boardLead(
+  l: Pick<BoardLead, "machine" | "machine_name" | "session" | "pane">,
+  panes: OvPane[],
+  byCard: SessionsByCard | null,
+  hostOf: (machine: string) => string | undefined,
+  projectName?: (id: string) => string | undefined,
+): OvLead {
+  // A chief of staff's session goes by its project's id, its block by its project's name (Arugula #1457): shown by that, and its pane found by either.
+  const shown = sessionLabel(l.session, projectName);
   // A pane whose machine has no id here (a daemon's own page) is matched by its name.
   const on = (p: OvPane) => (p.machine ? p.machine === l.machine : !!l.machine_name && p.host === l.machine_name);
+  // Two projects of one name have chiefs of staff of one title: of those, its project's, where a pane says it.
+  const chief = chiefProject(l.session);
+  const titles = panes.filter((p) => on(p) && p.session && (p.title === l.session || p.title === shown));
+  const ours = chief ? titles.filter((p) => p.project === chief) : [];
+  const called = ours.length ? ours : titles;
   // The daemon names a lead by its Claude Code conversation's title (#429), not by the session its pane sits in: a terminal's session is the tab group's own name. So a session by name, else the session of the pane with that title.
   const named = panes.filter((p) => on(p) && p.session?.name === l.session);
-  const titled = new Set(panes.filter((p) => on(p) && p.session && p.title === l.session).map((p) => `${p.host}#${p.session!.id}`));
+  const titled = new Set(called.map((p) => `${p.host}#${p.session!.id}`));
   const guessed = named.length ? named : panes.filter((p) => p.session && titled.has(`${p.host}#${p.session.id}`));
   // A lead that carries its pane (#1368) is that pane alone, standing and all: a terminal's session is its whole tab group, and the rest of it isn't the lead. Only a lead from an older daemon, or one whose pane isn't in this fleet, is guessed from the name or title, by its session.
   const pinned = l.pane === undefined ? undefined : panes.find((p) => on(p) && p.id === l.pane);
   const mine = pinned ? [pinned] : guessed;
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
-  const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
+  const standing = mine.length ? worst(mine.map(paneStanding)) : hub ? hubStanding(hub) : null;
   const machineName = l.machine_name || hostOf(l.machine) || "";
-  // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row.
+  // The hub's id for its session; an agent's id is its pane, not a session's.
+  const hubId = hub && hub.kind !== "agent" ? { hub: hub.id } : {};
+  // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row: by the hub's id where it names the session, except a lead that is one pane (#1390).
   const lead = pinned ?? (mine.length ? leadOf(mine) : undefined);
   const peek: OvSession = lead
-    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine }
+    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: shown, where: lead.host, standing: standing!, lead, panes: mine, ...(pinned ? {} : hubId) }
     : hub
-      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch }
-      : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
+      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: shown, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch, ...hubId }
+      : { key: `lead:${l.machine}:${l.session}`, name: shown, where: machineName || "its machine", standing: "idle", panes: [] };
   return { machine: l.machine, machineName, session: l.session, standing, peek };
 }
 
-/** What a row says of itself, besides its sessions: its question for you
- * (`ask.who`, the reader's), its stalled mark, its PRs' checks and review
- * (the row's own PR, and the PRs attached as its work), and its lane. */
+/** Where a lead runs and whether it's awake (#1342), for its tab's head:
+ * `awake` while a turn runs; `idle` on a machine control has online (a
+ * message wakes it); `asleep` on one that's offline, or a Cloud
+ * workspace's paused box (a message waits); `unknown` where neither its
+ * panes nor the hub tell; `none` with no lead. `host` is its machine in
+ * the page's fleet, which names it (a Cloud workspace by its own name). */
+export type LeadAwake = { state: "none" } | { state: "awake" | "idle" | "asleep" | "unknown"; machine: string };
+
+export function leadAwake(lead: Pick<OvLead, "machineName" | "standing"> | null, host: { name: string; status?: string; state: string } | undefined): LeadAwake {
+  if (!lead) return { state: "none" };
+  const machine = host?.name || lead.machineName;
+  // A machine control no longer names has left: nothing hears it.
+  if (!machine) return { state: "asleep", machine: "its machine" };
+  const offline = host ? host.status === "offline" || host.state === "asleep" || (!host.status && host.state === "offline") : false;
+  if (offline) return { state: "asleep", machine };
+  if (lead.standing === "working") return { state: "awake", machine };
+  // Its panes or the hub tell how it stands, or its machine is connected here and shows no turn running.
+  if (lead.standing !== null || host?.state === "connected" || host?.status === "online") return { state: "idle", machine };
+  return { state: "unknown", machine };
+}
+
+/** How a pane stands for the reader: one that needs someone else waits on them (#1392). */
+const paneStanding = (p: OvPane): Standing => (p.standing === "needs" && p.owner !== undefined ? "waits" : p.standing);
+
+/** What a row says of itself, besides its sessions: its question (`ask.who`)
+ * for you, or for someone else, its stalled mark, its PRs' checks and
+ * review (the row's own PR, and the PRs attached as its work), and its lane. */
 function rowSays(r: BoardRow): Standing[] {
   const says: Standing[] = [];
-  if (r.ask?.who && r.ask.mine) says.push("asks");
+  if (r.ask?.who) says.push(r.ask.mine ? "asks" : "waits");
   if (r.marks?.some((m) => m.kind === "stalled")) says.push("quiet");
   const prs = [r.live, ...r.attachments.filter((a) => a.role === "work" && !a.released).map((a) => a.live)].filter((l) => l?.kind === "pr");
   for (const l of prs) {
@@ -307,9 +379,26 @@ export function inFlight(b: Pick<OvBoard, "doing" | "review">, max = 4): { shown
   return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
 }
 
-/** The pane a session's tile opens: one that needs you, else its agent, else its first. */
+/** The pane a session's tile opens: one that needs you or someone, else its agent, else its first. */
 function leadOf(panes: OvPane[]): OvPane {
   return panes.find((p) => p.standing === "needs") ?? panes.find((p) => p.agent) ?? panes[0];
+}
+
+/** The word a ticket says on a board's level: it asks you (its question,
+ * or a session of yours on it waiting); it asks someone else, by name
+ * (#1392); else its lane's. */
+export function ticketWord(r: Pick<BoardRow, "ask" | "lane">, c?: Pick<OvCard, "standing" | "asks">): { word: string; asks: boolean } {
+  if (r.ask?.mine || c?.standing === "asks" || c?.standing === "needs") return { word: "asks you", asks: true };
+  if (r.ask?.who && !r.ask.mine) return { word: `asks ${r.ask.who_name || "someone"}`, asks: false };
+  if (c?.standing === "waits") return { word: wordOf(c), asks: false };
+  return { word: r.lane === "doing" ? "working" : r.lane === "review" ? "in review" : r.lane === "next" ? "next" : "done", asks: false };
+}
+
+/** The word a card or a session says: one waiting on someone else names
+ * them (#1392), `asks Aaron`, or says `asks someone` where that isn't
+ * known; anything else, its standing's word. */
+export function wordOf(x: { standing: Standing; asks?: string }): string {
+  return x.standing === "waits" ? `asks ${x.asks || "someone"}` : STATE_WORD[x.standing];
 }
 
 /** Cards by how they stand (`STANDING_ORDER`), the worst first; then the one that moved last. */
@@ -374,4 +463,56 @@ export function statsLine(o: Pick<Overview, "boards" | "loose">, needs: number):
   const sessions = [...o.boards.flatMap((b) => [...b.doing, ...b.review].flatMap((c) => c.sessions)), ...o.loose];
   const working = sessions.filter((s) => s.standing === "working").length;
   return `${cards} ${cards === 1 ? "card" : "cards"} in flight · ${working} ${working === 1 ? "session" : "sessions"} working · ${needs} ${needs === 1 ? "needs" : "need"} you`;
+}
+
+/** Whose conversations Your work lists on a project's Overview (Arugula
+ * #1400): on the reader's personal project, the machines they own, by name;
+ * never a teammate's, a team's own box or a hosted one, and on any other
+ * project none. */
+export function yourWorkMachines(personal: boolean, hosts: { name: string; owner?: string; teamBox?: boolean; hosted?: boolean }[]): string[] {
+  return personal ? hosts.filter((h) => !h.owner && !h.teamBox && !h.hosted).map((h) => h.name) : [];
+}
+
+/** A machine the chief of staff may start on. */
+export interface StaffSpot {
+  /** Its host's name in the fleet: what the request goes to. */
+  name: string;
+  /** Control's id for it, which a grant names; none on a daemon's own page. */
+  id?: string;
+  /** A Cloud workspace of the project's. */
+  cloud: boolean;
+  /** The machine this page is on. */
+  here: boolean;
+}
+
+/** Where the chief of staff can start: `can`, here first, then the
+ * reader's machines by name, then the project's Cloud workspaces; the
+ * default (`pick`), here if it can, else the first of the reader's own
+ * machines (never a Cloud workspace); and `cannot`, the reader's machines
+ * left out and why (Arugula #1341). `hostedIn` is the project of a Cloud
+ * workspace's machine; `features`, what a machine's daemon says it does:
+ * an older one doesn't say `chief_of_staff`. */
+export function staffSpots(
+  hosts: { name: string; id?: string; state: string; status?: string; owner?: string; teamBox?: boolean; hosted?: boolean }[],
+  o: { project: string; here: string | null; features: (name: string) => { chief_of_staff?: boolean } | null | undefined; hostedIn: (id: string | undefined) => string | undefined },
+): { can: StaffSpot[]; pick: string | null; cannot: { name: string; why: string }[] } {
+  const can: StaffSpot[] = [];
+  const cannot: { name: string; why: string }[] = [];
+  for (const h of hosts) {
+    // Yours: not a teammate's, not a team's own box; a Cloud workspace of this project's.
+    const cloud = !!h.hosted;
+    if (cloud ? o.hostedIn(h.id) !== o.project : h.owner || h.teamBox) continue;
+    // Started over this page's connection to it, so only one it reaches now.
+    const away = h.state === "asleep" ? "asleep" : h.status === "offline" || h.state === "offline" ? "offline" : h.state !== "connected" ? "not reached from here" : null;
+    const why = away ?? (o.features(h.name)?.chief_of_staff !== true ? "needs an update" : null);
+    if (why) {
+      if (!cloud) cannot.push({ name: h.name, why });
+      continue;
+    }
+    can.push({ name: h.name, id: h.id, cloud, here: !!o.here && h.name === o.here });
+  }
+  can.sort((a, b) => Number(b.here) - Number(a.here) || Number(a.cloud) - Number(b.cloud) || a.name.localeCompare(b.name));
+  cannot.sort((a, b) => a.name.localeCompare(b.name));
+  const pick = can.find((s) => s.here)?.name ?? can.find((s) => !s.cloud)?.name ?? null;
+  return { can, pick, cannot };
 }

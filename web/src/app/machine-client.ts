@@ -7,11 +7,14 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { Client, type E2ETarget } from "../shell/client";
+import { directory } from "../shell/hosts";
 import { useSubscribe } from "../shared/ui/hooks";
 import type { AppSession } from "./session";
 
 /** How the app reaches a machine by control's id for it: the session's
- * target, or a daemon's own origin (`own`, on a daemon's own page). */
+ * target, or a daemon's own origin (`own`, on a daemon's own page). A
+ * daemon's own page knows its hosts by name, not id: there, a machine
+ * `own` doesn't name is a host in its list, reached as the shell does. */
 export interface Reach {
   session: AppSession | null;
   own?: (machine: string) => string | undefined;
@@ -24,7 +27,7 @@ const started = new WeakSet<AppSession>();
 function where(machine: string, reach: Reach): { base: string; target?: E2ETarget } | "wait" | null {
   const s = reach.session;
   if (!s) {
-    const base = reach.own?.(machine);
+    const base = reach.own?.(machine) ?? (directory.names.includes(machine) ? directory.base(machine) : undefined);
     return base === undefined ? null : { base };
   }
   if (!started.has(s)) {

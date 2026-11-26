@@ -6,13 +6,17 @@
 // A tab's kind says what it shows (`TAB_KINDS`): a board's thread, or a
 // session's peek (./overview-peek.tsx, #1271); the chief of staff's room
 // (#1275) adds its own. The chief of staff's tab is pinned first, with no
-// ×, once it has a room; until then its slot is empty (`pinned` null). The
+// ×: its room once it has one, until then (with chat on) Start
+// (./overview-staff-start.tsx, #1341). The
 // tabs a reader opened are kept for the browser tab, per project, as the
 // field's open boards are. Under the tabs, the who-line (#1290) says who
-// the open tab talks to and where a message there goes.
+// the open tab talks to and where a message there goes; the chief of
+// staff's is its head (./agent-head.tsx, #1342): where it runs and whether
+// it's awake; while it's asleep, its tab offers to run it on another
+// machine (#1453), and with no lead, Start there (#1472).
 
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ChatRoom } from "../shared/proto";
 import { boards } from "../shared/boards/store";
 import { chat } from "../shared/chat-store";
@@ -20,7 +24,12 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
-import { PeekTab, PeekWho } from "./overview-peek";
+import { usePlatformApi } from "../shared/platform-api";
+import { sessionLabel } from "../shared/chief-of-staff";
+import { leadAwake } from "../shell/swarm/overview";
+import { AgentHead, starterOf } from "./agent-head";
+import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
+import { StaffMove, StaffStart } from "./overview-staff-start";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -56,21 +65,18 @@ export const TAB_KINDS = {
   staff: {
     Body: ({ tab, phone }) => <StaffTab room={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (chat.rooms.find((r) => r.id === tab.id)?.unread ?? 0) > 0,
-    Who: ({ tab }) => {
-      const lead = chat.rooms.find((r) => r.id === tab.id)?.lead;
-      return lead ? (
-        <>
-          Talking to your chief of staff, <b>{lead.session}</b>
-          {lead.machine_name ? ` on ${lead.machine_name}` : ""}: a message goes straight to it.
-        </>
-      ) : (
-        <>Talking to your chief of staff: no session leads it yet, so a message waits here.</>
-      );
-    },
+    Who: ({ tab }) => <StaffWho room={tab.id} />,
+  },
+  /** The chief of staff's tab before there is one (#1341): what it does,
+   * and Start on one of the reader's machines; by its project's id. */
+  staffStart: {
+    Body: ({ tab }) => <StaffStartTab project={tab.id} />,
+    unread: () => false,
+    Who: () => <AgentHead role="Chief of staff" at={{ state: "none" }} />,
   },
   /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
   peek: {
-    Body: ({ tab }) => <PeekTab id={tab.id} />,
+    Body: ({ tab, phone }) => <PeekTab id={tab.id} phone={phone} />,
     unread: () => false,
     Who: ({ tab }) => <PeekWho id={tab.id} title={tab.title} />,
   },
@@ -91,6 +97,21 @@ export interface Talk {
   open(t: TalkTab): void;
   close(key: string): void;
   pick(key: string): void;
+  /** A tab's key changed (a session's peek, to the hub's id for it, #1390): it keeps its place. */
+  rekey(from: string, to: TalkTab): void;
+}
+
+/** Saved tabs as they're keyed now: a peek's by the hub's id (#1390). Two
+ * that come to the same key are one. */
+function migrated(v: { tabs: TalkTab[]; active: string | null }): { tabs: TalkTab[]; active: string | null } {
+  const tabs: TalkTab[] = [];
+  for (const t of v.tabs) {
+    if (!(t.kind in TAB_KINDS)) continue;
+    const n = t.kind === "peek" ? { ...t, id: talkKeyOf(t.id) } : t;
+    if (!tabs.some((x) => keyOf(x) === keyOf(n))) tabs.push(n);
+  }
+  const active = v.active?.startsWith("peek:") ? `peek:${talkKeyOf(v.active.slice("peek:".length))}` : v.active;
+  return { tabs, active };
 }
 
 /** The panel's tabs on this project's Overview, kept for the browser tab. */
@@ -99,8 +120,8 @@ export function useTalk(project: string): Talk {
   const [s, setS] = useState<{ tabs: TalkTab[]; active: string | null }>(() => {
     try {
       const v = JSON.parse(sessionStorage.getItem(store) ?? "null") as { tabs: TalkTab[]; active: string | null } | null;
-      // A kind this page no longer has is dropped.
-      if (v) return { tabs: v.tabs.filter((t) => t.kind in TAB_KINDS), active: v.active };
+      // A kind this page no longer has is dropped, and an old key is the new one.
+      if (v) return migrated(v);
     } catch {
       // Unreadable: start empty.
     }
@@ -133,6 +154,12 @@ export function useTalk(project: string): Talk {
         return { tabs: left, active: next };
       }),
     pick: (k) => put((was) => ({ ...was, active: k })),
+    rekey: (from, to) =>
+      put(({ tabs, active }) => {
+        const k = keyOf(to);
+        const kept = tabs.some((x) => keyOf(x) === k);
+        return { tabs: tabs.flatMap((x) => (keyOf(x) !== from ? [x] : kept ? [] : [to])), active: active === from ? k : active };
+      }),
   };
 }
 
@@ -140,7 +167,8 @@ export function useTalk(project: string): Talk {
 export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: TalkTab | null; needs?: ComponentChildren; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const tabs = pinned ? [pinned, ...talk.tabs.filter((t) => keyOf(t) !== keyOf(pinned))] : talk.tabs;
-  const open = tabs.find((t) => keyOf(t) === talk.active) ?? (pinned && !talk.active ? pinned : undefined);
+  // With no tab of its own open (or the pinned one's key changed: its room came, #1341), the pinned one.
+  const open = tabs.find((t) => keyOf(t) === talk.active) ?? pinned ?? undefined;
   const Body = open && TAB_KINDS[open.kind].Body;
   const fit = useFitWindow(!!open);
   return (
@@ -236,16 +264,56 @@ export function staffTab(project: string): TalkTab | null {
   return r ? { kind: "staff", id: r.id, title: "Chief of staff" } : null;
 }
 
-/** The staff room: its messages, which its lead session hears, and the box. */
+/** The chief of staff's tab with no staff room in `project` yet (#1341):
+ * Start, while chat is on (the room is chat's). */
+export function staffStartTab(project: string): TalkTab | null {
+  return chat.on ? { kind: "staffStart", id: project, title: "Chief of staff" } : null;
+}
+
+/** Start, where the Overview gives its fleet. */
+function StaffStartTab({ project }: { project: string }) {
+  const place = useContext(PeekContext);
+  if (!place) return <p class="dim ov-talk-note">Reaching your machines…</p>;
+  return <StaffStart project={project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} />;
+}
+
+/** The staff room's head (#1342): the chief of staff, where it runs and
+ * whether a message is heard now, from its lead session's panes on its
+ * machine (or the hub's word for it) and its machine's state in the fleet;
+ * under it, its rung (#1441): the project it's for, and who started it.
+ * Its parent is the reader, whose word to it is the room itself. */
+function StaffWho({ room }: { room: string }) {
+  const { lead, at, place } = useStaffLead(room);
+  const rung = lead && place && "peek" in lead ? { line: `for ${place.project ?? "this project"}`, started: starterOf(place.fleet, lead.peek) } : undefined;
+  return <AgentHead role="Chief of staff" at={at} rung={rung} />;
+}
+
+/** The staff room's lead and how it stands (#1342), from the fleet where the Overview gives it. */
+function useStaffLead(room: string) {
+  const place = useContext(PeekContext);
+  useSubscribe((fn) => (place ? place.fleet.subscribe(fn) : () => {}));
+  const l = chat.rooms.find((r) => r.id === room)?.lead;
+  const lead = !l ? null : place ? place.lead(l) : { machineName: l.machine_name, standing: null };
+  return { lead, at: leadAwake(lead, l && place?.fleet.hostById(l.machine)), place };
+}
+
+/** The staff room: its messages, which its lead session hears, and the
+ * box; over them, while its chief of staff is asleep, Run it on another
+ * machine (#1453), and while no session leads it, Start (#1472). */
 function StaffTab({ room, title, phone }: { room: string; title: string; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
+  const { at, place } = useStaffLead(room);
+  const { projectName } = usePlatformApi();
   const r = chat.rooms.find((x) => x.id === room);
   if (!r) return <p class="dim ov-talk-note">Loading the room…</p>;
   const why = r.lead
-    ? `What you write here goes to ${r.lead.session} on ${r.lead.machine_name || "its machine"}. Only you and your agents read it.`
+    ? `What you write here goes to ${sessionLabel(r.lead.session, projectName)} on ${r.lead.machine_name || "its machine"}. Only you and your agents read it.`
     : "No session leads this room yet, so what you write waits here. Only you and your agents read it.";
   return (
     <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>
+      {(at.state === "asleep" || at.state === "none") && place && r.project && (
+        <StaffMove key={at.state === "asleep" ? at.machine : ""} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} asleepOn={at.state === "asleep" ? at.machine : undefined} />
+      )}
       <RoomBody key={r.id} room={r} phone={phone} embedded name={title} empty={{ title: "Nothing said to your chief of staff yet.", why }} />
     </div>
   );

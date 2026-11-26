@@ -50,6 +50,13 @@ export function powersFor(kind: AgentScope["kind"], role?: Role): string[] {
   return forRole(kind === "project" ? ["threads.read", "threads.post", "issues.write", "docs.write"] : ["threads.read", "threads.post"], role);
 }
 
+/** The conversation powers over the reader's DMs (their DMs switch's)
+ * `machine` hasn't been given: its chief of staff needs them to lead and
+ * talk in the reader's staff room, a DM (Arugula #1341). */
+export function dmPowersMissing(grants: Grant[], machine: string): string[] {
+  return powersFor("account").filter((p) => !grants.some((g) => g.live && g.subject.kind === "daemon" && g.subject.id === machine && g.power === p && g.scope.kind === "account"));
+}
+
 /** M218: an agent's power to plan a project's deploys and ask for their
  * approval. Its own switch, never given with the conversation ones. */
 export const DEPLOYS_PLAN = "deploys.plan";

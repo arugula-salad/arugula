@@ -78,9 +78,9 @@ pub enum Command {
         #[arg(long, value_name = "FINGERPRINT")]
         account: Option<String>,
         /// Whether people who reach this machine through control may type
-        /// here (`arugulad sharing remote-input`). On a terminal, without
-        /// it, join asks. Unanswered, a machine joining for the first time
-        /// is off; one already joined, or set before, stays as it is.
+        /// here (`arugulad sharing remote-input`). Without it, a machine
+        /// joining your account is on and a team's is off, unless it was
+        /// set before, which stands.
         #[arg(long, env = "ARUGULA_REMOTE_INPUT", value_name = "on|off", value_parser = ["on", "off"])]
         remote_input: Option<String>,
         /// The daemon's state directory [default: as the daemon's].

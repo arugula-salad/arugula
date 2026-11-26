@@ -27,10 +27,11 @@ import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet } from "../shell/fleet";
+import { directory } from "../shell/hosts";
 import { shortHost } from "../shell/swarm/model";
 import type { OvPane, OvSession, Standing } from "../shell/swarm/overview";
 import { titleOf } from "./overview-board";
-import { lastAnswer, ownFar, peekKey, Reply, yours } from "./overview-peek";
+import { lastAnswer, ownFar, peekKey, Reply, talkKey, yours } from "./overview-peek";
 import { Word } from "./overview-row";
 
 /** Most panes side by side; the rest are tabs. */
@@ -47,8 +48,8 @@ export interface WorkLevelProps {
   card: { board: string; boardTitle: string; row: BoardRow; standing: Standing } | null;
   /** The sessions working on it: the card's, or the one on no card. */
   sessions: OvSession[];
-  /** The session whose tab is in front of the talk panel, by its peek's
-   * key (`peekKey`): its pane is the one outlined. */
+  /** The session whose tab is in front of the talk panel, by its tab's
+   * key (`talkKey`): its pane is the one outlined. */
   talking: string | null;
   /** Bring a session's tab to the front of the talk panel. */
   talkTo(s: OvSession): void;
@@ -67,9 +68,15 @@ interface Item {
   p?: OvPane;
 }
 
-/** Each session's panes, its agents first. */
+/** The machine a pane is reached on: control's id for it, else, on a
+ * daemon's own page, whose hosts carry no ids, its name (./machine-client). */
+const machineOf = (p: OvPane): string | undefined => p.machine ?? (directory.home !== null ? p.host : undefined);
+
+/** Each session's panes, its agents first; a session with an agent (the
+ * card's issue agent, whose tab is in front, #1441) before its helpers. */
 function itemsOf(sessions: OvSession[]): Item[] {
-  return sessions.flatMap((s) => (s.panes.length ? [...s.panes].sort((a, b) => Number(b.agent) - Number(a.agent)).map((p) => ({ key: p.key, s, p })) : [{ key: s.key, s }]));
+  const agent = (s: OvSession) => Number(!!s.hosted || s.panes.some((p) => p.agent));
+  return [...sessions].sort((a, b) => agent(b) - agent(a)).flatMap((s) => (s.panes.length ? [...s.panes].sort((a, b) => Number(b.agent) - Number(a.agent)).map((p) => ({ key: p.key, s, p })) : [{ key: s.key, s }]));
 }
 
 /** The pane a session's Talk is with: its agent, else the one it opens. */
@@ -82,7 +89,7 @@ export function OverviewWork({ card, fleet, sessions, talking, talkTo, openPanes
   const lone = card ? null : sessions[0];
   const items = itemsOf(sessions);
   const hosted = useHostedViews(sessions.flatMap((s) => (s.hosted && !s.panes.length ? [s.hosted] : [])));
-  const talkingKey = sessions.find((s) => peekKey(s) === talking);
+  const talkingKey = sessions.find((s) => talkKey(s) === talking);
   const outlined = talkingKey ? talkPaneOf(talkingKey) : null;
 
   // Four side by side; past that, the fourth place is a tab's, the one you're talking to's when it's among them.
@@ -96,7 +103,10 @@ export function OverviewWork({ card, fleet, sessions, talking, talkTo, openPanes
 
   // Where each live pane is read from: its machine's, or a running box's block.
   const liveAt = (i: Item): { machine: string; pane: string } | null => {
-    if (i.p) return i.p.machine ? { machine: i.p.machine, pane: String(i.p.id) } : null;
+    if (i.p) {
+      const machine = machineOf(i.p);
+      return machine ? { machine, pane: String(i.p.id) } : null;
+    }
     const v = i.s.hosted ? hosted.get(i.s.hosted) : undefined;
     return v ? boxOf(fleet, v) : null;
   };
@@ -174,7 +184,7 @@ function WorkPane({ i, fleet, Live, at, hosted, outlined, talkTo, openPanes }: {
   const branch = fp?.info.branch ?? hosted?.card.branch ?? s.branch ?? null;
   // A teammate's own session is watched; a cloud workspace's, by whoever may not steer it.
   const watch = fp ? !yours(fleet, fp) : hosted ? !hosted.may : false;
-  const far = !p?.machine && !s.hosted;
+  const far = !(p && machineOf(p)) && !s.hosted;
   const kind = fp ? (fp.info.type === "agent" ? "block" : p!.agent ? "agent" : "shell") : s.hosted ? "hosted" : "far";
   let body;
   if (at && Live) body = <Live machine={at.machine} pane={at.pane} watch={watch} />;

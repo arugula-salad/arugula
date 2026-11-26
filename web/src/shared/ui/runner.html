@@ -627,7 +627,18 @@
     "window.arugula={copy:function(text){return ask('arugula.copy',{text:String(text)})}," +
     "store:{get:function(key){return ask('arugula.store.get',{key:key})}," +
     "set:function(key,value){return ask('arugula.store.set',{key:key,value:value})}," +
-    "all:function(){return ask('arugula.store.all',{})}}}})()</scr" + "ipt>";
+    "all:function(){return ask('arugula.store.all',{})}}}" +
+    // Where the page goes (#1451): the frame can't see its own address, so the
+    // parent is told, and decides whether it is another prototype of the Doc.
+    // A link, and where the Navigation API has it a write to `location`;
+    // elsewhere the load is the parent's to count, as it always was.
+    ";function go(u){parent.postMessage({type:'arugula.nav',url:String(u)},'*')}" +
+    "addEventListener('click',function(e){if(e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;" +
+    "var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||a.getAttribute('href').charAt(0)==='#')return;" +
+    "e.preventDefault();go(a.href)},true);" +
+    "if(window.navigation)navigation.addEventListener('navigate',function(e){" +
+    "if(!e.cancelable||e.hashChange||e.downloadRequest!==null||e.destination.sameDocument||e.navigationType==='traverse')return;" +
+    "e.preventDefault();go(e.destination.url)})})()</scr" + "ipt>";
   function onmessage(e) {
     // Only the parent, and only the first: after that, the page is the prototype's.
     if (e.source !== parent) return;

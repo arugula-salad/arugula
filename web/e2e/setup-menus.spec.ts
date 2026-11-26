@@ -57,6 +57,8 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     // People through control may type here until the machine says not
     // (Arugula #1194), which the machine menu shows.
     remote_input: true,
+    // The Overview's Start may start a chief of staff here (Arugula #1341).
+    chief_of_staff: true,
     flags: ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"],
   });
   const [term] = await panes(page);

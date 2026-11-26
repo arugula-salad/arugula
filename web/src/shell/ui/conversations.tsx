@@ -1,40 +1,63 @@
-// Claude Code conversations (M33): every one on the daemon's machine, from
-// a terminal, the desktop app's Code tab or VS Code, grouped by folder, newest
-// first. Picking one shows it as an agent block (stopped, its transcript
-// as it grows), or goes to the block that has it already. Opened from a
-// pane's menu, the agent dialog and the phone's sheet. On a phone it is a
+// Your work (Arugula #1396): the Claude Code and Codex conversations on the
+// daemon's machine (M33), from a terminal, the desktop app's Code tab, VS
+// Code or Codex, grouped by repo (their folder) and newest first, three a
+// repo until "N more". A row's first line is its first prompt, in the
+// person's own words, and its second the last one. Each has one button:
+// Continue here, a terminal pane in its folder running the person's own
+// `claude --resume <id>` (or `codex resume <id>`), in a new tab named after
+// it (no adapter to install); Go to pane when it's open here already. One
+// that Claude Code runs in a terminal outside Arugula on this machine asks
+// first ("Running in iTerm. Move here?"): *Move here* stops it there
+// (SIGINT, then SIGTERM: the daemon's `move_here`, Arugula #1399) and
+// continues it here; if it won't stop, the row says to quit it there. If
+// its folder is gone, the row says so and offers to run it in home. `⋯` holds *Open as agent block* (stopped, its transcript
+// as it grows) and *Fork here*; a Codex one has neither.
+//
+// `YourWork` is the one component: the owner's home on the daemon's page
+// when no session is open (ui/app.tsx), the dialog the pane menu, the
+// palette, the agent dialog and the phone's sheet open (`pickConversation`),
+// and the Overview's (Arugula #1400, `on`). On a phone the dialog is a
 // full-height sheet.
 //
-// With more than one host (#78), every host's are listed, grouped by host
-// and then folder: each host is asked over the fleet's connection (M25) at
-// once and shows up as it answers. One that's asleep isn't woken to be
-// asked, and one that doesn't answer in a few seconds says so. Opening
-// one of another host's opens it on that host and shows it there.
+// On the Overview it lists the reader's own machines' (never a teammate's),
+// each asked through the page's fleet, not control: none of them is "here",
+// so Continue here and Move here run on its machine and a pane they open
+// shows on its machine's page, as Open in Panes does. One open in a pane
+// already isn't listed: it's in Not on a card.
 //
-// A conversation whose Claude Code runs the arugula-live mod (#453) shows
-// its live figures in its row, as a terminal's header does (#450): the
-// slim strip, its popover saying "Live from Claude Code", and Claude
-// Code's own cost over the estimate. From any pane or none: VS Code, the
-// desktop app, the editor block.
+// With more than one host (#78), the dialog lists every host's, grouped by
+// host and then repo: each host is asked over the fleet's connection (M25)
+// at once and shows up as it answers. One that's asleep isn't woken to be
+// asked, and one that doesn't answer in a few seconds says so. Opening one
+// of another host's opens it on that host and shows it there. The page is
+// this machine's.
 
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
-import type { OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
+import type { ContinueConversationRequest, ContinueConversationResponse, OpenConversationRequest, OpenConversationResponse, PaneId } from "../../shared/proto";
 import { getFleet } from "./hosts";
+import type { Fleet } from "../fleet";
 import { countView } from "../../shared/telemetry";
 import { Time } from "../../shared/ui/time";
-import { CLAUDE_COST_NOTE, COST_NOTE, ContextStrip, costLabel, usd, type AgentContext, type Estimate } from "../blocks/agent-context";
-import { Chip } from "../../shared/ui/state-chip";
+import type { AgentContext, Estimate } from "../blocks/agent-context";
 import { Modal } from "../../shared/ui/modal";
+import { PageHeader } from "../../shared/ui/page-header";
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
+import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { CloseIcon, IconButton, MoreIcon } from "../../shared/ui/icons";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { conversationContinued } from "./machine-telemetry";
 
 export interface Conversation {
   id: string;
   cwd: string;
   cwd_exists: boolean;
   branch?: string;
-  source: "terminal" | "desktop" | "vscode" | "other";
+  /** Whose it is: Codex's go on in a terminal pane, not an agent block. */
+  agent?: "claude" | "codex";
+  source: "terminal" | "desktop" | "vscode" | "codex" | "other";
   title: string;
   first_prompt?: string;
   last_prompt?: string;
@@ -42,12 +65,11 @@ export interface Conversation {
   updated_ms: number;
   forked_from?: string;
   archived: boolean;
-  live?: { pid: number; pane?: PaneId; block?: PaneId; place: string; status: string };
+  live?: { pid: number; pane?: PaneId; block?: PaneId; place: string; status: string; entrypoint?: string; terminal?: string };
   /** What it and its subagents cost at API list prices (#398), once the
    *  daemon has read it. */
   estimate?: Estimate;
-  /** What Claude Code said of it from inside, live (#453): the arugula-live
-   *  mod's figures, from a pane or none. */
+  /** What Claude Code said of it from inside, live (#453). */
   context?: AgentContext;
   /** The agent block that has it open. */
   block: PaneId | null;
@@ -65,11 +87,18 @@ let open: { client: Client; where: ConversationsWhere; phone: boolean } | null =
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
-/** Show the conversations picker. */
+/** Show Your work as a dialog. */
 export function pickConversation(client: Client, where: ConversationsWhere, phone = false) {
   countView("conversations");
   open = { client, where, phone };
   changed();
+}
+
+/** Your work from the palette or the machine menu: beside the active pane,
+ * in its folder first. */
+export function openYourWork(client: Client) {
+  const pane = client.active();
+  pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
 }
 
 export function ConversationsLayer() {
@@ -83,17 +112,23 @@ export function ConversationsLayer() {
   }, []);
   if (!open) return null;
   const { client, where, phone } = open;
+  const close = () => {
+    open = null;
+    changed();
+  };
   return (
-    <Picker
-      client={client}
-      where={where}
-      phone={phone}
-      close={() => {
-        open = null;
-        changed();
-      }}
-    />
+    <Modal bare close={close} label="Your work" class={phone ? "your-work-dialog phone" : "your-work-dialog"}>
+      <YourWork client={client} where={where} phone={phone} done={close} everywhere />
+    </Modal>
   );
+}
+
+/** Whether the owner's empty home is Your work. Under a test runner
+ * (Playwright sets `navigator.webdriver`) it's the plain empty layout, as
+ * Getting started and the hints keep quiet there; a spec that wants the
+ * first screen as a person sees it opts in with `__arugulaFirstRun`. */
+export function yourWorkHome(): boolean {
+  return !navigator.webdriver || !!(window as { __arugulaFirstRun?: boolean }).__arugulaFirstRun;
 }
 
 /** `~/dev/x` for `/home/me/dev/x` (the daemon's home, guessed from paths). */
@@ -109,7 +144,10 @@ function homeOf(list: Conversation[]): string | null {
   return null;
 }
 
-const SOURCE = { terminal: "Terminal", desktop: "Desktop", vscode: "VS Code", other: "Other" } as const;
+/** A folder's name: its repo, as people call it. */
+function repoName(cwd: string): string {
+  return cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || cwd || "(no folder)";
+}
 
 /** One host's conversations, or why there are none. */
 interface HostConvs {
@@ -122,6 +160,8 @@ interface HostConvs {
 
 /** How long a host gets to answer before it's shown as not answering. */
 const HOST_MS = 5000;
+/** How many of a repo's show before "N more". */
+const PER_REPO = 3;
 
 function within<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -133,56 +173,119 @@ function within<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-type Row =
-  | { kind: "host"; h: HostConvs }
-  | { kind: "folder"; cwd: string; host: string; home: string | null }
-  | { kind: "conv"; c: Conversation; host: string };
+interface Repo {
+  host: string;
+  cwd: string;
+  home: string | null;
+  convs: Conversation[];
+}
 
-function Picker({ client, where, phone, close }: { client: Client; where: ConversationsWhere; phone: boolean; close: () => void }) {
+/** One host's repos and how it answered; `repos` by their newest
+ * conversation, the one we came from first. */
+interface HostView {
+  h: HostConvs;
+  repos: Repo[];
+}
+
+type Conv = { c: Conversation; host: string };
+
+/** Where a conversation runs that isn't here, for people: the terminal
+ * app the daemon named (iTerm, Ghostty…), else what it came from. */
+function elsewhere(c: Conversation): string {
+  if (c.live?.terminal) return c.live.terminal;
+  if (c.source === "desktop") return "the Claude desktop app";
+  if (c.source === "vscode") return "VS Code";
+  return "another terminal";
+}
+
+/** Your work on the Overview (Arugula #1400): the reader's own machines,
+ * by name, asked through `fleet`; `show` opens a pane of one, `toast` says
+ * what went wrong, and `counted` hears how many it lists (null while it
+ * reads), so the page knows whether it's empty. */
+export interface YourWorkOn {
+  fleet: Fleet;
+  hosts: string[];
+  show: (host: string, pane: PaneId) => void;
+  toast: (text: string) => void;
+  counted?: (n: number | null) => void;
+}
+
+/** The machine's conversations as Your work: a page (`done` unset) or the
+ * dialog's body (`done` closes it). `everywhere`: every host of a fleet's.
+ * `on`: the Overview's, with no client of the page's own (`client` unset). */
+export function YourWork({
+  client,
+  where = {},
+  phone = false,
+  done,
+  everywhere = false,
+  on,
+}: {
+  client?: Client;
+  where?: ConversationsWhere;
+  phone?: boolean;
+  done?: () => void;
+  everywhere?: boolean;
+  on?: YourWorkOn;
+}) {
+  useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe((fn) => on?.fleet.subscribe(fn) ?? (() => {}));
+  const dialog = !!done;
   const [hosts, setHosts] = useState<HostConvs[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [all, setAll] = useState(false);
-  const [liveOnly, setLiveOnly] = useState(false);
   const [sel, setSel] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** Repos shown in full, by `host:cwd`. */
+  const [more, setMore] = useState<Set<string>>(new Set());
+  /** The conversation whose folder is gone, as Continue here found: offer home. */
+  const [gone, setGone] = useState<{ id: string; host: string; cwd: string } | null>(null);
+  /** The one Move here couldn't stop, and what the daemon said. */
+  const [refused, setRefused] = useState<{ id: string; host: string; why: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const loads = useRef(0);
+  const close = () => done?.();
 
-  // This page's host, and with a fleet the others (#78).
-  const fleet = getFleet();
-  const here = directory.current;
-  const multi = !!fleet && fleet.list.length > 1;
+  // This page's host, and with a fleet the others (#78). On the Overview,
+  // none is here: each of its machines is asked through the fleet.
+  const fleet = on?.fleet ?? getFleet();
+  const here = on ? "" : directory.current;
+  const multi = on ? on.hosts.length > 1 : everywhere && !!fleet && fleet.list.length > 1;
+  const toast = (text: string) => (on ? on.toast(text) : client!.toast(text));
+  const show = (host: string, pane: PaneId) => (on ? on.show(host, pane) : fleet!.open(host, pane));
+  // The Overview's machines as the fleet has them: one that connects is asked again.
+  const states = on ? on.hosts.map((h) => `${h}:${fleet!.host(h)?.state ?? ""}`).join(" ") : "";
+
+  const ask = (host: string, path: string): Promise<ApiResponse> =>
+    host === here ? client!.request(OPS["conversations.list"].method, path) : fleet!.request(host, OPS["conversations.list"].method, path);
 
   const load = () => {
     const gen = ++loads.current;
     setError(null);
-    const q = new URLSearchParams({ limit: "1000" });
-    if (all) q.set("all", "1");
-    if (liveOnly) q.set("live", "1");
-    const path = `${opPath("conversations.list")}?${q}`;
-    const others = multi ? fleet!.list.filter((h) => h.name !== here) : [];
+    const path = `${opPath("conversations.list")}?limit=1000`;
+    const others = on ? on.hosts.flatMap((n) => fleet!.host(n) ?? []) : multi ? fleet!.list.filter((h) => h.name !== here) : [];
     const start: HostConvs[] = [
-      { host: here, state: "reading", list: [] },
+      ...(on ? [] : [{ host: here, state: "reading" as const, list: [] }]),
       ...others.map((h): HostConvs => {
         if (h.state === "asleep") return { host: h.name, state: "asleep", list: [], note: "asleep" };
         if (h.state === "capped") return { host: h.name, state: "away", list: [], note: "not live (too many machines)" };
+        if (on && h.state !== "connected") return { host: h.name, state: "away", list: [], note: h.state };
         return { host: h.name, state: "reading", list: [] };
       }),
     ];
-    setHosts(start);
+    // A reload keeps what's shown until the answer replaces it.
+    setHosts((cur) => start.map((h) => (h.state === "reading" && cur?.find((x) => x.host === h.host && x.state === "ok")) || h));
     const set = (h: HostConvs) => gen === loads.current && setHosts((cur) => cur && cur.map((x) => (x.host === h.host ? h : x)));
     for (const h of start) {
       if (h.state !== "reading") continue;
-      const ask: Promise<ApiResponse> = h.host === here ? client.request(OPS["conversations.list"].method, path) : fleet!.request(h.host, OPS["conversations.list"].method, path);
-      within(ask, HOST_MS)
+      within(ask(h.host, path), HOST_MS)
         .then(async (res) => {
           if (!res.ok) throw new Error(`couldn't list them (${res.status})`);
           set({ host: h.host, state: "ok", list: (await res.json<{ conversations: Conversation[] }>()).conversations });
         })
         .catch((e: Error) => {
-          if (!multi && gen === loads.current) setError(e.message);
+          if (!multi && !on && gen === loads.current) setError(e.message);
           const st = fleet?.host(h.host)?.state;
           const why = st === "stale" || st === "offline" ? `${st} · ${e.message}` : e.message;
           set({ host: h.host, state: "away", list: [], note: why });
@@ -191,26 +294,39 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
   };
   useEffect(() => {
     load();
-  }, [all, liveOnly]);
+    // Coming back to the page: what's live may have changed.
+    const back = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [here, states]);
   useLayoutEffect(() => {
-    if (!phone) input.current?.focus();
+    if (dialog && !phone) input.current?.focus();
   }, []);
 
-  // Each host's folders by their newest conversation; this host first,
-  // and in it the folder we came from.
-  const rows: Row[] = useMemo(() => {
+  /** The pane it runs in, if that's one of its host's panes. */
+  const inPane = (c: Conversation, host: string): boolean => {
+    const p = c.live?.pane;
+    if (p === undefined) return false;
+    if (host === here) return !!client!.info(p);
+    return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
+  };
+  /** Open here already: in a pane or an agent block. */
+  const openHere = (c: Conversation, host: string) => c.block !== null || inPane(c, host);
+  // Each host's repos by their newest conversation; this host first, and
+  // in it the folder we came from.
+  const view: HostView[] = useMemo(() => {
     if (!hosts) return [];
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const out: Row[] = [];
-    for (const h of hosts) {
-      if (multi) out.push({ kind: "host", h });
+    return hosts.map((h) => {
       const home = homeOf(h.list);
       const hits = h.list.filter((c) => {
+        // On the Overview, one open in a pane is in Not on a card instead.
+        if (on && openHere(c, h.host)) return false;
         const hay = `${c.title} ${c.first_prompt ?? ""} ${c.last_prompt ?? ""} ${c.cwd}`.toLowerCase();
         return words.every((w) => hay.includes(w));
       });
       const groups = new Map<string, Conversation[]>();
-      for (const c of hits) {
+      for (const c of [...hits].sort((a, b) => b.updated_ms - a.updated_ms)) {
         const g = groups.get(c.cwd) ?? [];
         g.push(c);
         groups.set(c.cwd, g);
@@ -221,54 +337,112 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
         if (near(a) !== near(b)) return near(b) - near(a);
         return groups.get(b)![0].updated_ms - groups.get(a)![0].updated_ms;
       });
-      for (const f of order) {
-        out.push({ kind: "folder", cwd: f, host: h.host, home });
-        for (const c of groups.get(f)!) out.push({ kind: "conv", c, host: h.host });
-      }
-    }
-    return out;
-  }, [hosts, query, where.cwd, here, multi]);
-  const convs = rows.filter((r): r is Extract<Row, { kind: "conv" }> => r.kind === "conv");
+      return { h, repos: order.map((f) => ({ host: h.host, cwd: f, home, convs: groups.get(f)! })) };
+    });
+  }, [hosts, query, where.cwd, here, on && fleet!.panes]);
+  /** A repo's rows as shown: three, or all of them once asked, or while searching. */
+  const shown = (r: Repo) => (query || more.has(`${r.host}:${r.cwd}`) ? r.convs : r.convs.slice(0, PER_REPO));
+  const convs: Conv[] = view.flatMap((v) => v.repos.flatMap((r) => shown(r).map((c) => ({ c, host: r.host }))));
   const reading = !!hosts && hosts.some((h) => h.state === "reading");
+  const total = hosts?.reduce((n, h) => n + h.list.length, 0) ?? 0;
+  const listed = view.reduce((n, v) => n + v.repos.reduce((m, r) => m + r.convs.length, 0), 0);
+  const counted = !hosts || (reading && listed === 0) ? null : listed;
+  useEffect(() => on?.counted?.(counted), [counted]);
 
   useEffect(() => {
-    listRef.current?.querySelector(".picker-row.selected")?.scrollIntoView({ block: "nearest" });
-  }, [sel, rows]);
+    if (sel >= convs.length && convs.length > 0) setSel(convs.length - 1);
+  }, [convs.length]);
+  useEffect(() => {
+    listRef.current?.querySelector(".yw-row.selected")?.scrollIntoView({ block: "nearest" });
+  }, [sel]);
 
-  /** The pane it runs in, if that's one of its host's panes. */
-  const inPane = (c: Conversation, host: string): boolean => {
-    const p = c.live?.pane;
-    if (p === undefined) return false;
-    if (host === here) return !!client.info(p);
-    return !!fleet?.panes.some((x) => x.host === host && x.id === p && !x.stale);
-  };
+  /** Running somewhere Arugula doesn't show: another terminal, the desktop app. */
+  const runsElsewhere = (c: Conversation, host: string) => !!c.live && !openHere(c, host);
+  /** Running at a terminal outside Arugula on this machine: Move here can
+   * stop it there and go on with it here. Never another host's, but on the
+   * Overview any of the reader's own: it goes on in a pane on that machine. */
+  const movable = (c: Conversation, host: string): boolean =>
+    (host === here || !!on) && c.agent !== "codex" && c.live?.entrypoint === "cli" && runsElsewhere(c, host);
 
-  const pick = async (c: Conversation, host: string, then?: "continue" | "fork") => {
+  /** Continue here: where it's open already, else `claude --resume` in a
+   * terminal pane on its host. `home`: its folder is gone, run it there.
+   * `move`: it's running in another terminal, stop it there first (the
+   * person said yes to Move here). */
+  const goOn = async (c: Conversation, host: string, home = false, move = false) => {
     if (busy) return;
-    if (host !== here && fleet) return pickThere(c, host, then);
-    if (c.block !== null && !then) {
-      client.focusPane(c.block);
-      close();
-      return;
-    }
-    if (c.live?.pane !== undefined && inPane(c, host) && !then) {
-      // It's running in one of our panes: that's where it goes on.
-      client.focusPane(c.live.pane);
+    // Running elsewhere: only Move here's button stops it.
+    if (runsElsewhere(c, host) && !move) return;
+    const there = host !== here && fleet;
+    if (openHere(c, host)) {
+      const p = c.block ?? c.live!.pane!;
+      if (there) show(host, p);
+      else client!.focusPane(p);
       close();
       return;
     }
     setBusy(true);
-    const block = await client.openConversation({ id: c.id, then, split: where.split, session: where.session });
+    try {
+      let v: ContinueConversationResponse | null;
+      if (move) setRefused(null);
+      if (there) {
+        // Moving waits for it to stop there, which takes as long as it takes.
+        const asked = fleet.request(host, OPS["conversation.continue"].method, opPath("conversation.continue"), { id: c.id, home, ...(move ? { move_here: true } : {}) } satisfies ContinueConversationRequest);
+        const res = await (move ? asked : within(asked, HOST_MS));
+        const body = await res.json<Partial<ContinueConversationResponse> & { error?: string }>().catch(() => null);
+        v = res.ok && typeof body?.conversation === "string" ? (body as ContinueConversationResponse) : null;
+        const why = body?.error ?? `couldn't continue it on ${host} (${res.status})`;
+        if (!v && move && res.status === 409) setRefused({ id: c.id, host, why });
+        else if (!v) toast(why);
+      } else {
+        v = await client!.continueConversation({
+          id: c.id,
+          home,
+          move,
+          from: where.split,
+          session: where.session,
+          refused: move ? (why) => setRefused({ id: c.id, host, why }) : undefined,
+        });
+      }
+      // Moving refused: it's still running there; show it as it is.
+      if (!v && move) load();
+      if (!v) return;
+      if (v.pane == null) {
+        if (v.folder_gone) setGone({ id: c.id, host, cwd: v.cwd });
+        return;
+      }
+      if (there) show(host, v.pane);
+      conversationContinued();
+      close();
+    } catch (e) {
+      toast(`couldn't continue it on ${host}: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** As an agent block (`then` unset), or forked into one. */
+  const asBlock = async (c: Conversation, host: string, then?: "fork") => {
+    if (busy) return;
+    if (host !== here && fleet) return asBlockThere(c, host, then);
+    if (c.block !== null && !then) {
+      client!.focusPane(c.block);
+      close();
+      return;
+    }
+    setBusy(true);
+    const block = await client!.openConversation({ id: c.id, then, split: where.split, session: where.session });
     setBusy(false);
-    if (block !== null) close();
+    if (block === null) return;
+    conversationContinued();
+    close();
   };
 
   // Another host's: opened there (its first session, a tab of its own),
   // then shown there, as the swarm opens a pane on its host.
-  const pickThere = async (c: Conversation, host: string, then?: "continue" | "fork") => {
+  const asBlockThere = async (c: Conversation, host: string, then?: "fork") => {
     const f = fleet!;
-    if (!then && (c.block !== null || inPane(c, host))) {
-      f.open(host, c.block ?? c.live!.pane!);
+    if (!then && c.block !== null) {
+      show(host, c.block);
       close();
       return;
     }
@@ -277,17 +451,33 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       const res = await within(f.request(host, OPS["conversation.open"].method, opPath("conversation.open"), { id: c.id, then: then ?? null } satisfies OpenConversationRequest), HOST_MS);
       const v = await res.json<Partial<OpenConversationResponse>>().catch(() => null);
       if (!res.ok || typeof v?.block !== "number") {
-        client.toast(v?.error ?? `couldn't open it on ${host} (${res.status})`);
+        toast(v?.error ?? `couldn't open it on ${host} (${res.status})`);
         return;
       }
-      if (v.error) client.toast(v.error);
-      f.open(host, v.block);
+      if (v.error) toast(v.error);
+      show(host, v.block);
+      conversationContinued();
       close();
     } catch (e) {
-      client.toast(`couldn't open it on ${host}: ${(e as Error).message}`);
+      toast(`couldn't open it on ${host}: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
+  };
+
+  /** The row's one button. */
+  const act = (r: Conv) => {
+    const move = movable(r.c, r.host);
+    if (gone?.id === r.c.id && gone.host === r.host) return void goOn(r.c, r.host, true, move);
+    void goOn(r.c, r.host, false, move);
+  };
+
+  const menu = (e: MouseEvent, r: Conv) => {
+    const { c, host } = r;
+    const items: MenuItem[] = [];
+    if (!c.live && c.block === null) items.push({ label: "Open as agent block", hint: "Stopped, showing its transcript", run: () => void asBlock(c, host) });
+    items.push({ label: "Fork here", hint: "A new conversation from this point; the original stays as it was", attrs: { "data-fork-here": "" }, run: () => void asBlock(c, host, "fork") });
+    openMenu(e, items, e.currentTarget as HTMLElement);
   };
 
   const onKey = (e: KeyboardEvent) => {
@@ -297,128 +487,195 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSel((s) => Math.max(0, s - 1));
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && !(e.target as Element).closest?.("button")) {
       e.preventDefault();
       const r = convs[sel];
-      if (r) void pick(r.c, r.host);
+      if (r) act(r);
     }
   };
 
-  const chosenRow = convs[sel];
-  const chosen = chosenRow?.c;
-  const chosenHost = chosenRow?.host ?? here;
+  const title = dialog ? null : "Your work";
+  const sub = `Claude Code and Codex conversations on ${multi ? "your machines" : (on ? on.hosts[0] : here) || "this machine"}, newest first.`;
   let i = -1;
+  const list = (
+    <div class="yw-list" ref={listRef} role="listbox" aria-label="Your work" tabIndex={dialog ? -1 : 0} onKeyDown={dialog ? undefined : onKey}>
+      {!multi && !on && !hosts?.[0]?.list.length && reading && !error && <EmptyLine role="status">Reading…</EmptyLine>}
+      {!multi && !on && hosts && !reading && !error && total === 0 && (
+        <EmptyState
+          where={dialog ? "pane" : "page"}
+          title="No conversations yet."
+          why={`When you use Claude Code or Codex on ${here || "this machine"}, each conversation shows here by its repo, ready to continue.`}
+          action={
+            !dialog && (
+              <button class="primary" data-your-work-new disabled={!client!.connected} onClick={() => client!.intent({ op: "new_session", name: null, from_pane: null })}>
+                New terminal
+              </button>
+            )
+          }
+          data-your-work-empty
+        />
+      )}
+      {!multi && hosts && !reading && total > 0 && convs.length === 0 && (!on || query) && (
+        <EmptyLine clear={() => setQuery("")}>Nothing matches.</EmptyLine>
+      )}
+      {view.map(({ h, repos }) => (
+        <div key={h.host} class="yw-host" data-host={h.host}>
+          {multi && (
+            <div class={`yw-host-head ${h.state}`} data-host-head={h.host}>
+              <span class="yw-host-name">{h.host}</span>
+              <span class="yw-host-state">{h.state === "reading" ? "reading…" : h.state === "ok" ? `${h.list.length} conversation${h.list.length === 1 ? "" : "s"}` : (h.note ?? "")}</span>
+            </div>
+          )}
+          {repos.map((r) => {
+            const rows = shown(r);
+            const left = r.convs.length - rows.length;
+            const branch = r.convs.find((c) => c.branch)?.branch;
+            return (
+              <section key={`${r.host}:${r.cwd}`} class="yw-repo" data-repo={r.cwd}>
+                <div class="yw-repo-head" title={r.cwd}>
+                  <b class="yw-repo-name">{repoName(r.cwd)}</b>
+                  <span class="yw-mono">{tilde(r.cwd, r.home)}</span>
+                  {branch && <span class="yw-mono">⎇ {branch}</span>}
+                </div>
+                <ul class="yw-rows">
+                  {rows.map((c) => {
+                    i += 1;
+                    const n = i;
+                    const row = { c, host: r.host };
+                    const isSel = n === sel;
+                    const isGone = gone?.id === c.id && gone.host === r.host;
+                    const move = movable(c, r.host);
+                    // Running where it can't be moved from (another host's,
+                    // Codex, the desktop app): go on there, or fork it.
+                    const stuck = runsElsewhere(c, r.host) && !move;
+                    const no = refused?.id === c.id && refused.host === r.host ? refused : null;
+                    const label = isGone ? "Run it in home" : openHere(c, r.host) ? "Go to pane" : move ? "Move here" : "Continue here";
+                    const codex = c.agent === "codex";
+                    return (
+                      <li
+                        key={`${r.host}:${c.id}`}
+                        role="option"
+                        aria-selected={isSel}
+                        class={`yw-row${isSel ? " selected" : ""}`}
+                        data-conversation={c.id}
+                        data-host={r.host}
+                        onClick={() => setSel(n)}
+                        onDblClick={() => act(row)}
+                      >
+                        <span class="yw-first" title={c.first_prompt ?? c.title}>
+                          {c.first_prompt ?? c.title}
+                        </span>
+                        {no ? (
+                          <span class="yw-last ask" data-move-refused>
+                            {no.why}
+                          </span>
+                        ) : move && isSel && !isGone ? (
+                          <span class="yw-last ask" data-move-ask>
+                            Running in {elsewhere(c)}. Move here?
+                          </span>
+                        ) : (
+                          <span class="yw-last" data-folder-gone={isGone ? true : undefined}>
+                            {isGone ? `${gone!.cwd} is gone. Run it in your home folder instead?` : (c.last_prompt ?? "")}
+                          </span>
+                        )}
+                        <span class="yw-meta">
+                          {(c.live || c.block !== null) && (
+                            <span class="yw-live" data-live>
+                              ● {openHere(c, r.host) ? "in a pane here" : `running in ${elsewhere(c)}`}
+                            </span>
+                          )}
+                          <span class="yw-tool">{codex ? "Codex" : "Claude Code"}</span>
+                          <Time class="yw-when" at={Math.min(c.updated_ms, Date.now())} />
+                          <span class="yw-acts">
+                            <button
+                              class="primary small"
+                              data-continue-here={label === "Continue here" ? true : undefined}
+                              data-continue-home={isGone ? true : undefined}
+                              data-go-to-pane={label === "Go to pane" ? true : undefined}
+                              data-move-here={label === "Move here" ? true : undefined}
+                              disabled={busy || stuck}
+                              title={
+                                stuck
+                                  ? `It's running in ${elsewhere(c)}: go on there${codex ? "" : ", or fork it"}`
+                                  : move
+                                    ? "Stop it there (gently, as Ctrl-C would) and continue it here"
+                                    : label === "Continue here"
+                                      ? `Your own ${codex ? "codex resume" : "claude --resume"}, in a terminal pane in its folder`
+                                      : undefined
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSel(n);
+                                act(row);
+                              }}
+                            >
+                              {label}
+                            </button>
+                            {!codex && (
+                              <IconButton
+                                label="More"
+                                class="secondary sq small"
+                                aria-haspopup="menu"
+                                data-conv-more
+                                disabled={busy}
+                                onClick={(e: MouseEvent) => {
+                                  e.stopPropagation();
+                                  setSel(n);
+                                  menu(e, row);
+                                }}
+                              >
+                                <MoreIcon size="sm" />
+                              </IconButton>
+                            )}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {left > 0 && (
+                  <button class="yw-more" data-repo-more onClick={() => setMore((m) => new Set(m).add(`${r.host}:${r.cwd}`))}>
+                    {left} more in {repoName(r.cwd)}
+                  </button>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      ))}
+      {error && <p class="error yw-error">{error}</p>}
+    </div>
+  );
   return (
-    <Modal bare close={close} label="Claude Code conversations" class={phone ? "picker conversations phone" : "picker conversations"} root={{ onKeyDown: onKey }}>
-      <div class="picker-where">
-        <span class="picker-host">Claude Code conversations</span>
-        <label class="check">
-          <input type="checkbox" role="switch" class="sw-switch" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
-          Open now
-        </label>
-        <label class="check" title="claude -p and SDK runs, archived ones, ones whose folder is gone">
-          <input type="checkbox" role="switch" class="sw-switch" checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
-          All
-        </label>
-      </div>
-      <input
-        ref={input}
-        class="picker-filter"
-        placeholder="Search titles, prompts and folders"
-        value={query}
-        autocomplete="off"
-        autocapitalize="off"
-        spellcheck={false}
-        onInput={(e) => {
-          setQuery(e.currentTarget.value);
-          setSel(0);
-        }}
-      />
-      <ul class="picker-list" role="listbox" ref={listRef}>
-        {!multi && reading && !error && <li class="picker-empty">Reading…</li>}
-        {!multi && hosts && !reading && convs.length === 0 && <li class="picker-empty">{query ? "Nothing matches" : "No conversations here"}</li>}
-        {rows.map((r) => {
-          if (r.kind === "host") {
-            const h = r.h;
-            const n = h.list.length;
-            const what = h.state === "reading" ? "reading…" : h.state === "ok" ? `${n} conversation${n === 1 ? "" : "s"}` : (h.note ?? "");
-            return (
-              <li key={`h:${h.host}`} class={`conv-host ${h.state}`} data-host={h.host}>
-                <span class="conv-host-name">{h.host}</span>
-                <span class="conv-host-state">{what}</span>
-              </li>
-            );
-          }
-          if (r.kind === "folder") {
-            return (
-              <li key={`f:${r.host}:${r.cwd}`} class="conv-folder" title={r.cwd}>
-                {tilde(r.cwd, r.home) || "(no folder)"}
-              </li>
-            );
-          }
-          const { c, host } = r;
-          i += 1;
-          const n = i;
-          return (
-            <li
-              key={`${host}:${c.id}`}
-              role="option"
-              aria-selected={n === sel}
-              class={`picker-row conv-row${n === sel ? " selected" : ""}`}
-              data-conversation={c.id}
-              data-host={host}
-              onClick={() => {
-                setSel(n);
-                void pick(c, host);
-              }}
-              title={c.first_prompt ?? c.title}
-            >
-              <span class={`conv-source ${c.source}`}>{SOURCE[c.source]}</span>
-              <span class="picker-label conv-title">{c.title}</span>
-              {c.live && <span class="conv-live" title={c.live.place}>● {c.live.pane !== undefined ? `%${c.live.pane}` : "open"}</span>}
-              {c.block !== null && <Chip kind="tag" tone="info">%{c.block}</Chip>}
-              {c.context && (
-                // Its popover, not the row: a click on the strip opens that.
-                <span class="conv-context" data-conv-context onClick={(e) => e.stopPropagation()}>
-                  <ContextStrip c={c.context} slim />
-                </span>
-              )}
-              {c.context?.cost_usd != null ? (
-                <span class="conv-cost" data-cost={c.context.cost_usd} data-cost-from="claude" title={CLAUDE_COST_NOTE}>
-                  {usd(c.context.cost_usd)}
-                </span>
-              ) : (
-                c.estimate && (
-                  <span class="conv-cost" data-cost={c.estimate.usd ?? ""} title={`${COST_NOTE}${c.estimate.subagents.length ? ` With its subagents.` : ""}`}>
-                    {costLabel(c.estimate)}
-                  </span>
-                )
-              )}
-              <Time class="conv-when" at={Math.min(c.updated_ms, Date.now())} />
-            </li>
-          );
-        })}
-      </ul>
-      {error && <p class="error picker-error">{error}</p>}
-      <div class="picker-actions">
-        <span class="picker-target" title={chosen?.live?.place ?? chosen?.cwd}>
-          {chosen ? (chosen.live ? chosen.live.place : (chosen.last_prompt ?? chosen.first_prompt ?? "")) : ""}
-        </span>
-        <button class="primary" disabled={!chosen || busy} onClick={() => chosen && void pick(chosen, chosenHost)}>
-          {chosen?.block != null ? "Go to it" : chosen && inPane(chosen, chosenHost) ? "Go to pane" : "Open"}
-        </button>
-        <button
-          disabled={!chosen || busy || !!chosen.live || chosen.block !== null}
-          title={chosen?.live ? `It's ${chosen.live.place}: fork it instead` : undefined}
-          onClick={() => chosen && void pick(chosen, chosenHost, "continue")}
-        >
-          Continue
-        </button>
-        <button disabled={!chosen || busy} title="A new session with its history; the original is left alone" onClick={() => chosen && void pick(chosen, chosenHost, "fork")}>
-          Fork
-        </button>
-        <button onClick={close}>Cancel</button>
-      </div>
-    </Modal>
+    <div class={dialog ? "your-work in-dialog" : on ? "your-work on-overview" : phone ? "your-work page phone" : "your-work page"} data-your-work onKeyDown={dialog ? onKey : undefined}>
+      {/* The Overview heads it as it heads Not on a card. */}
+      {on ? null : dialog ? (
+        <div class="yw-dialog-head">
+          <h2>Your work</h2>
+          <span class="yw-sub">{sub}</span>
+          {/* A phone has no Escape: × closes it. */}
+          <IconButton label="Close" title="Close" class="yw-close" data-your-work-close onClick={close}>
+            <CloseIcon size="md" />
+          </IconButton>
+          <input
+            ref={input}
+            class="yw-filter"
+            placeholder="Search prompts and folders"
+            aria-label="Search prompts and folders"
+            value={query}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck={false}
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              setSel(0);
+            }}
+          />
+        </div>
+      ) : (
+        <PageHeader title={title} sub={sub} />
+      )}
+      {list}
+    </div>
   );
 }

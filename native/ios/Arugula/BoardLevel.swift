@@ -1,6 +1,7 @@
 // The Board level (Arugula #1306, the web's #1288): a board zoomed to from
-// Home. Its goal and progress; a card for its lead, with Talk to the lead
-// (that agent) and Board thread as two buttons; and its open tickets as the
+// the Overview. Its goal and progress; a card for its lead, with Talk to the lead
+// (that agent) and Board thread as two buttons, and its grant with Revoke or
+// Run this board (Arugula #1456, the web's #1416); and its open tickets as the
 // board groups them, each with its PR or checks, a word for how it stands
 // and the agents on it, whose names open them. A ticket zooms to its Work
 // level. Done tickets fold into one line.
@@ -13,9 +14,11 @@ struct BoardLevel: View {
     let board: Board
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
-    /// Ask the chief of staff to start a lead for this board: on a board with
-    /// none, in a team's project, once the reader has a staff room.
-    var askChief: (() -> Void)?
+    /// Run this board: on a board with no lead and no grant, in a team's
+    /// project. Its card goes in the reader's Needs you on the web (#1459).
+    var run: (() -> Void)?
+    /// Revoke the board's grant, when the reader gave it.
+    var revoke: (() -> Void)?
     @Environment(\.zoom) private var zoom
     @Environment(\.talkTo) private var talkTo
     @State private var allDone = false
@@ -27,11 +30,13 @@ struct BoardLevel: View {
             VStack(alignment: .leading, spacing: 18) {
                 head(line)
                 LeadCard(
-                    lead: line.lead.map { LeadLine($0, fleet: fleet) },
+                    lead: line.lead.map { LeadLine($0, fleet: fleet, in: project.shown) },
                     leads: line.lead.map { l in model.boards.filter { $0.lead?.machine == l.machine && $0.lead?.session == l.session }.count } ?? 0,
-                    talk: line.lead.map { l in { talk(LeadLine(l, fleet: fleet).key) } },
+                    talk: line.lead.map { l in { talk(LeadLine(l, fleet: fleet, in: project.shown).key) } },
                     thread: BoardThreadRef(board: line),
-                    askChief: askChief)
+                    grant: model.views[board.id]?.grant,
+                    run: run,
+                    revoke: revoke)
                 if let view = model.views[board.id] {
                     tickets(view, state: state)
                 } else {
@@ -151,14 +156,17 @@ struct BoardLevel: View {
 /// Who leads a board, as a card: its name, how its session stands, its
 /// machine and how many boards it leads, with Talk to the lead (that agent)
 /// and Board thread (where its lead and anyone mentioned read a post) as two
-/// buttons. With no lead, it says so, and offers to ask the chief of staff to
-/// start one.
+/// buttons. With no lead, it says so. Under it, the board's grant to start
+/// agents, with Revoke for the person who gave it; a board with neither
+/// offers Run this board (Arugula #1456).
 struct LeadCard: View {
     let lead: LeadLine?
     let leads: Int
     let talk: (() -> Void)?
     let thread: BoardThreadRef
-    let askChief: (() -> Void)?
+    var grant: BoardDetail.Grant?
+    var run: (() -> Void)?
+    var revoke: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -176,15 +184,26 @@ struct LeadCard: View {
                 Text("Nobody leads this board: a post in its thread waits for one.")
                     .font(Face.ui(12)).foregroundStyle(Palette.dim)
             }
+            if let grant {
+                Text(grant.line).font(Face.mono(11)).foregroundStyle(Palette.subtle).lineLimit(3)
+                    .accessibilityIdentifier("board-grant-line")
+            }
             FlowRow(spacing: 8) {
                 if let talk {
                     Button("Talk to the lead", action: talk)
                         .buttonStyle(AnswerButton(primary: true))
                         .accessibilityIdentifier("lead-talk")
-                } else if let askChief {
-                    Button("Ask chief of staff to start one", action: askChief)
+                } else if grant == nil, let run {
+                    Button("Run this board", action: run)
                         .buttonStyle(AnswerButton(primary: true))
-                        .accessibilityIdentifier("lead-ask-chief")
+                        .accessibilityHint("Its card goes in your Needs you on the web: Approve starts its lead and grants it agents")
+                        .accessibilityIdentifier("board-run")
+                }
+                if grant?.mine == true, let revoke {
+                    Button("Revoke", action: revoke)
+                        .buttonStyle(AnswerButton())
+                        .accessibilityHint("Nothing more starts under it; its lead and agents run on")
+                        .accessibilityIdentifier("board-grant-revoke")
                 }
                 NavigationLink(value: thread) {
                     Text("Board thread")
@@ -203,7 +222,7 @@ struct LeadCard: View {
     private func facts(_ l: LeadLine) -> String {
         var bits: [String] = []
         if !l.machine.isEmpty { bits.append("on \(l.machine)") }
-        if let s = l.standing { bits.append(s == .idle ? "quiet" : s.word) } else { bits.append("not reached from here") }
+        if let s = l.standing { bits.append(s == .idle ? "quiet" : s.word(asks: l.who)) } else { bits.append("not reached from here") }
         if leads > 1 { bits.append("leads \(leads) boards") }
         return bits.joined(separator: " · ")
     }
@@ -261,10 +280,12 @@ struct TicketCard: View {
         .card(tone, glow: tone == .accent)
     }
 
-    /// Its word: asks you (its ask, or an agent on it waiting), working, in
-    /// review or next.
+    /// Its word: asks you (its ask, or an agent of yours on it waiting); asks
+    /// someone else by name (Arugula #1392); working, in review or next.
     private var standing: (String, Tone) {
         if row.ask?.mine == true || agents.contains(where: { $0.standing == .needs }) { return ("asks you", .accent) }
+        if let a = row.ask, !(a.who ?? "").isEmpty { return (Standing.waits.word(asks: a.who_name), .info) }
+        if let a = agents.first(where: { $0.standing == .waits }) { return (a.word, .info) }
         switch row.lane ?? "" {
         case "lane_doing", "doing": return ("working", .warn)
         case "lane_review", "review": return ("in review", .info)

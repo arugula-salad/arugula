@@ -11,7 +11,7 @@ decisions: ["aru-116", "aru-122", "aru-123", "aru-124", "aru-125"]
 # Boards
 
 ## What a person can do
-A project's board is an ordered list of rows, each one piece of work, shown in four lanes (Next, Doing, Review, Done) worked out from the state of that work. People and agents put rows in named groups, attach work and proof to them, link Docs and ask questions on them. A person can also move a row to another lane by hand.
+A project's board is an ordered list of rows, each one piece of work, shown in four lanes (Next, Doing, Review, Done) worked out from the state of that work. People and agents put rows in named groups, attach work and proof to them, link Docs and ask questions on them. Nobody sets a row's lane by hand.
 
 Boards are behind the `boards` Labs flag, resolved by `flag_on`: the account's own setting, else on if any of its teams turned it on. With it off, every board route answers 404.
 

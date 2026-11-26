@@ -88,8 +88,22 @@ fn push_reason(r: &Reason) -> serde_json::Value {
     v
 }
 
-/// What a notification about a reason is titled.
-fn push_title(state: Attention, reason: Option<&Reason>) -> &'static str {
+/// Whether a notification only says something finished (a turn, a
+/// command): a lighter one (Arugula #1432, #1426), with no sound, Open and
+/// Dismiss. It's no ask, so the Inbox doesn't count it.
+fn finished(state: Attention, reason: Option<&Reason>) -> bool {
+    match reason.map(|r| r.kind) {
+        Some(k) => k == ReasonKind::Done,
+        None => state == Attention::Done,
+    }
+}
+
+/// What a notification about a reason is titled; an agent's that
+/// [`finished`] is "Turn finished" (#1426).
+fn push_title(state: Attention, reason: Option<&Reason>, agent: bool) -> &'static str {
+    if agent && finished(state, reason) {
+        return "Turn finished";
+    }
     match reason.map(|r| r.kind) {
         Some(ReasonKind::Failed) => "Failed",
         Some(ReasonKind::Exited) => "Exited",
@@ -168,8 +182,12 @@ impl Daemon {
         };
         let reason = self.live_reason(pane);
         self.emit(Some(pane), EventKind::Attention { state, reason: reason.clone() });
+        if push && matches!(state, Attention::NeedsInput | Attention::Done) && self.focused(pane) {
+            info!(pane, "not pushed: a screen is on it");
+        }
         if push && matches!(state, Attention::NeedsInput | Attention::Done) && !self.focused(pane) {
-            let title = push_title(state, reason.as_ref());
+            let agent = self.blocks.contains_key(&pane) || self.watching.contains_key(&pane);
+            let title = push_title(state, reason.as_ref(), agent);
             let body = reason.as_ref().map_or(why, |r| r.headline.as_str()).to_owned();
             // What lets a notification answer it from its buttons: an
             // approval (an agent block's, or a terminal's permission card,
@@ -184,6 +202,11 @@ impl Daemon {
             if let Some(r) = &reason {
                 let x = extra.get_or_insert_with(|| serde_json::json!({}));
                 x["reason"] = push_reason(r);
+            }
+            // Lighter (Arugula #1432): no sound, and pushed at `normal`
+            // urgency, so the phone doesn't ring for it.
+            if finished(state, reason.as_ref()) {
+                extra.get_or_insert_with(|| serde_json::json!({}))["quiet"] = true.into();
             }
             // An agent's invite (#234) is for the owner alone, and opens at
             // its card: no buttons to send it from.
@@ -587,15 +610,14 @@ impl Daemon {
             .ok_or_else(|| format!("no open question in %{pane} (it was answered, or withdrawn)"))?;
         // An agent's invite (#234) is the owner's to answer, by whatever
         // route: editors may answer other cards, an agent none of these.
-        if self.is_invite(pane) && !by.as_ref().is_some_and(|b| b.who == "owner") {
-            return Err(super::OWNER_ONLY.into());
-        }
-        // ...and so is a Doc's share card (#1067): an agent's answer would
-        // publish.
-        if self.blocks.get(&pane).is_some_and(|b| b.kind() == BlockType::Doc)
-            && !by.as_ref().is_some_and(|b| b.who == "owner")
-        {
-            return Err(super::DOC_OWNER_ONLY.into());
+        // So is a Doc's share card (#1067): an agent's answer would publish.
+        let kind = self.blocks.get(&pane).map(|b| b.kind());
+        if kind.is_some_and(BlockType::owner_answers) && !by.as_ref().is_some_and(|b| b.who == "owner") {
+            return Err(match kind {
+                Some(BlockType::Doc) => super::DOC_OWNER_ONLY,
+                _ => super::OWNER_ONLY,
+            }
+            .into());
         }
         let ask = a.ask.clone();
         let permission = ask.kind == AskKind::Permission;
@@ -1243,7 +1265,7 @@ mod tests {
             why: None,
         };
         let r = reason(std::slice::from_ref(&q)).unwrap();
-        assert_eq!(super::push_title(arugula_proto::Attention::NeedsInput, Some(&r)), "A decision waits on you");
+        assert_eq!(super::push_title(arugula_proto::Attention::NeedsInput, Some(&r), true), "A decision waits on you");
         let v = push_reason(&r);
         assert_eq!(v["actions"], serde_json::json!(["answer", "dismiss"]));
         assert_eq!(v["gate"]["id"], "/ship-skip/ship-skip-1724faf3af79");
@@ -1257,5 +1279,23 @@ mod tests {
             choices.push(choice("maybe", "maybe"));
         }
         assert!(push_reason(&reason(&[q]).unwrap())["gate"].get("choices").is_none());
+    }
+
+    /// Arugula #1432: an agent's finished turn is "Turn finished", and a
+    /// finished turn or command is lighter; a failure or an ask isn't.
+    #[test]
+    fn a_finished_turn_is_lighter() {
+        use arugula_proto::Attention;
+        let done = super::plain_reason(super::ReasonKind::Done, "Claude finished its turn");
+        assert_eq!(super::push_title(Attention::Done, Some(&done), true), "Turn finished");
+        assert_eq!(super::push_title(Attention::Done, Some(&done), false), "Done", "a command's");
+        assert_eq!(super::push_title(Attention::Done, None, true), "Turn finished");
+        assert!(super::finished(Attention::Done, Some(&done)) && super::finished(Attention::Done, None));
+        let failed = super::plain_reason(super::ReasonKind::Failed, "exited 1");
+        assert_eq!(super::push_title(Attention::Done, Some(&failed), true), "Failed");
+        assert!(!super::finished(Attention::Done, Some(&failed)));
+        let ask = super::plain_reason(super::ReasonKind::Input, "Run the tests?");
+        assert_eq!(super::push_title(Attention::NeedsInput, Some(&ask), true), "Needs you");
+        assert!(!super::finished(Attention::NeedsInput, Some(&ask)) && !super::finished(Attention::NeedsInput, None));
     }
 }

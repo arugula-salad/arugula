@@ -21,7 +21,7 @@ use jni::{
     jni_sig, jni_str,
     objects::{Global, JByteArray, JClass, JIntArray, JLongArray, JObject, JString},
     strings::JNIString,
-    sys::{jbyteArray, jint, jlong, jstring},
+    sys::{jboolean, jbyteArray, jint, jlong, jstring},
 };
 use serde_json::json;
 
@@ -292,8 +292,104 @@ pub extern "system" fn Java_io_arugula_core_Native_controlCall<'l>(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_controlBytes<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    h: jlong,
+    path: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let path = c(&text(env, &path)?);
+        let mut err = ptr::null_mut();
+        let got = unsafe { ffi::aru_control_bytes(h as *const Control, path.as_ptr(), &mut err) };
+        answer(env, got, err)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_io_arugula_core_Native_controlFree<'l>(_: EnvUnowned<'l>, _: JClass<'l>, h: jlong) {
     unsafe { ffi::aru_control_free(h as *mut Control) }
+}
+
+// ---- which sessions show (Arugula #1355)
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_shown<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    at_id: JString<'l>,
+    at_personal: jboolean,
+    session_project: JString<'l>,
+    on_issue_project: JString<'l>,
+    yours: jboolean,
+) -> jboolean {
+    run(env, |env| {
+        let at = text_or_null(env, &at_id)?.map(|s| c(&s));
+        let session = text_or_null(env, &session_project)?.map(|s| c(&s));
+        let issue = text_or_null(env, &on_issue_project)?.map(|s| c(&s));
+        let p = |s: &Option<CString>| s.as_ref().map_or(ptr::null(), |s| s.as_ptr());
+        let got = unsafe { ffi::aru_shown(p(&at), at_personal as i32, p(&session), p(&issue), yours as i32) };
+        Ok((got != 0) as jboolean)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_sessionLabel<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    session: JString<'l>,
+    project_id: JString<'l>,
+    project_name: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let session = c(&text_or_null(env, &session)?.unwrap_or_default());
+        let id = text_or_null(env, &project_id)?.map(|s| c(&s));
+        let name = text_or_null(env, &project_name)?.map(|s| c(&s));
+        let p = |s: &Option<CString>| s.as_ref().map_or(ptr::null(), |s| s.as_ptr());
+        let got = unsafe { ffi::aru_session_label(session.as_ptr(), p(&id), p(&name)) };
+        taken(env, got)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_machines<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    input: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let input = c(&text(env, &input)?);
+        let mut err = ptr::null_mut();
+        let got = unsafe { ffi::aru_machines(input.as_ptr(), &mut err) };
+        answer(env, got, err)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_keptPane<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    path: JString<'l>,
+    project: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let (path, project) = (c(&text(env, &path)?), c(&text(env, &project)?));
+        taken(env, unsafe { ffi::aru_kept_pane(path.as_ptr(), project.as_ptr()) })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_panePath<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    project: JString<'l>,
+    machine: JString<'l>,
+    pane: jint,
+) -> jstring {
+    run(env, |env| {
+        let (project, machine) = (c(&text(env, &project)?), c(&text(env, &machine)?));
+        taken(env, unsafe { ffi::aru_pane_path(project.as_ptr(), machine.as_ptr(), pane as u32) })
+    })
 }
 
 // ---- a machine

@@ -168,17 +168,22 @@ signed-in session.
   `remote-sessions.jsonl` in the state directory
   (`crates/daemon/src/remote_log.rs`). The machine's Settings page shows
   it under Remote sessions, to its owner only (`GET /api/remote-sessions`),
-  and `arugulad sharing log` prints it on the machine.
+  and `arugulad sharing log` prints it on the machine. An agent another of
+  your machines started here for a board (aru-143) is an `agent` line in
+  the same file: which machine, which board and issue, which block.
+- **Agents started here for a board** need a start ticket control signs
+  within the board's grant, checked here as a token is, and of this
+  machine's own account (`crates/daemon/src/ladder.rs`).
 - **What only the machine can turn off:** typing through control.
   `arugulad sharing remote-input off`, run on the machine, makes everyone
   who comes with a machine token a viewer, a session shared with them
   included, and other people's devices too
   (`crates/proto/src/sharing.rs`, `remote_input`). Its owner still watches
   every session on it from other devices, and types into none. Nothing through control
-  can turn it back on. Joining asks (`arugulad join` on a terminal, or
-  `--remote-input on|off`; Getting started on the machine's own page), and
-  the machine menu says which it is. Unanswered, a machine joining for the
-  first time is off; one already joined keeps what it has.
+  can turn it back on. A machine joining your own account is on, so you can
+  type into your panes from your phone; one joining a team, or moved into
+  one later, is off until you turn it on there. `arugulad join --remote-input on|off` picks either way,
+  one set before keeps what it has, and the machine menu says which it is.
 - **A CLI's sign-in is a file on its machine:** `arugula login` keeps a
   session of your account in `cli-session.json` in the config dir
   (`crates/cli/src/control.rs`), readable by your user, and so by any agent

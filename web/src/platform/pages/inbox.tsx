@@ -1,144 +1,85 @@
-// `/inbox`: the reader's inbox (M171): the PRs and issues on linked repos
-// that want something of them, worked out by the platform for the same
-// reasons a forge block asks for attention, grouped by reason; and the
-// drafts waiting for them to send (M170's list). Mentions and assignments
-// on native issues, and mentions in a mirrored item's thread, are entries
-// too (M202), and runs that failed (M215). Each entry opens the item (on
-// GitHub; a native issue or a run on its page; a thread's mention in the
-// thread), and can be marked seen or dismissed (Dismiss, as control's
-// cards say it: UI audit #172).
-// New in threads: the threads on issues, runs and the other objects (M196)
-// with posts the reader hasn't read, which chat doesn't list and its button
-// doesn't count (shared/chat/unread). They're chat's read marks, not
-// entries: the page makes them from chat's rooms, live over its stream, and
-// Dismiss reads the thread, so the issue's or run's row in its list agrees.
-// Read through the viewer check: a private repo's items show only to those
-// GitHub lets read it, and a native issue's to its project's members.
-// Deploys waiting for the reader's approval (M218) come first, as cards.
+// `/inbox`: the reader's one Inbox (Arugula #1430, #1433), as the server
+// lists it: `GET /api/inbox`'s `items`, in its order and groups (Decide,
+// then Names you, then Chat), and its `count`, shown as it is. Each item
+// opens where its subject is (on GitHub, or here: a native issue or a run
+// on its page, a thread or a DM in chat), which marks it seen, and can be
+// dismissed (Dismiss, as control's cards say it: UI audit #172), which
+// marks it done; a thread's or a DM's done reads it. An item that waits on
+// a teammate (`for` them, Arugula #1393) is folded under "N asks for Jo ›",
+// never counted. A kind the page doesn't know shows by its title.
+// Deploys waiting for the reader's approval (M218) come first, as their
+// cards, so they're answered here; and the drafts waiting for the reader
+// to send (M170's list) last.
 
 import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
-import type { ChatRoom, Inbox, InboxEntry } from "../../shared/proto.gen";
-import { chat, chatStore } from "../../shared/chat-store";
-import { counted, threadNews } from "../../shared/chat/unread";
-import { issues } from "../../shared/issues/store";
-import { platformFetch, refusalOf } from "../../shared/maintenance";
+import type { Inbox, InboxItem } from "../../shared/proto.gen";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
-import { StateChip, type Tone } from "../../shared/ui/state-chip";
+import { chat } from "../../shared/chat-store";
 import { DraftList, useMyDrafts } from "../drafts";
-import { isSeen, noteInbox } from "../inbox-count";
+import { asksFor, byTeammate, forTeammate, kindWords, markItem, memberName, noteInbox, readInbox } from "../inbox-count";
 import { currentProject, onCurrentProject } from "../current-project";
-import { inboxPath, scopeOf } from "../scope";
+import { scopeOf } from "../scope";
 import { ScopeToggle } from "../scope-toggle";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
-import { names, roomPath } from "../links";
-import { follow, pathOf } from "../router";
-import { runs } from "../runs";
-import { STATES as RUN_STATES, runTitle } from "../runs-text";
+import { follow } from "../router";
 import { session } from "../session";
-import { issueTone, reasonTone, roomTone, runTone } from "../swarm";
+import { itemTone } from "../swarm";
 import { toast } from "../toast";
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const r = await platformFetch(path, {
-    method,
-    credentials: "same-origin",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const v = (await r.json().catch(() => ({}))) as T & { error?: string; reason?: string };
-  if (!r.ok) throw new Error(refusalOf(r.status, v));
-  return v;
-}
-
-/** The reasons, most pressing first, as headings. `threads` is New in
- * threads, from chat's rooms (`ThreadGroup`); drafts are their own list
- * below. */
-const GROUPS: [string, string[], string][] = [
-  ["review_requested", ["review_requested"], "Reviews requested"],
-  ["changes_requested", ["changes_requested"], "Changes requested"],
-  ["checks_failed", ["checks_failed"], "Checks failed"],
-  ["run_failed", ["run_failed"], "Runs failed"],
-  ["mentioned", ["mentioned", "thread_mention"], "Mentions"],
-  ["assigned", ["assigned"], "Assigned to you"],
-  ["threads", [], "New in threads"],
-  ["done", ["done"], "Ready, merged or closed"],
+/** The server's groups, in its order, as headings. `ready` (a finished
+ * turn, never counted) isn't listed. */
+const GROUPS: [string, string][] = [
+  ["decide", "Decide"],
+  ["named", "Names you"],
+  ["chat", "Chat"],
 ];
 
-/** Where an entry opens: a native issue on its page, a thread's mention in
- * the thread (both here), anything else on GitHub. */
-function linkOf(e: InboxEntry): { href: string; here: boolean } {
-  if (e.project && e.item.startsWith("iss_")) return { href: pathOf({ page: "issue", project: e.project, issue: e.item }, names), here: true };
-  if (e.project && e.item.startsWith("run_")) return { href: pathOf({ page: "run", project: e.project, run: e.item }, names), here: true };
-  if (e.reason === "thread_mention" && e.room) return { href: pathOf({ page: "find", what: "chat", room: e.room }), here: true };
-  return { href: e.url, here: false };
+/** An item's title, its reference apart where it starts with one
+ * (`acme/app#7 Retry…`, `#12 Flaky…`), as the list has always shown it. */
+function titled(title: string): { ref: string | null; title: string } {
+  const m = /^(\S*#\d+) (.+)$/.exec(title);
+  return m ? { ref: m[1], title: m[2] } : { ref: null, title };
 }
 
-const STATE: Record<string, string> = { open: "Open", closed: "Closed", merged: "Merged" };
-
-/** An entry's state as its chip, in the words and tone its own page gives
- * it (UI audit #183): a run's as the run's page says it, a native issue's
- * as its page does; a PR or issue on GitHub open, merged or closed, and
- * an open PR that's "done" is ready (UI audit #167). */
-function entryState(e: InboxEntry): { word: string; tone: Tone } {
-  let word: string;
-  let tone: Tone;
-  if (e.kind === "run") {
-    word = RUN_STATES[e.state] ?? e.state;
-    tone = runTone(e.state);
-  } else if (e.reason === "done" && e.state === "open") {
-    word = "Ready";
-    tone = "ok";
-  } else {
-    word = STATE[e.state] ?? e.state;
-    tone = e.state === "merged" ? "accent" : issueTone(e.state);
-  }
-  return { word, tone };
-}
-
-function EntryState({ e }: { e: InboxEntry }) {
-  const { word, tone } = entryState(e);
-  return (
-    <StateChip tone={tone} data-inbox-state={e.state}>
-      {word}
-    </StateChip>
-  );
-}
-
-/** The groups whose heading already says what the card is and its state
- * (a PR wanting review, a run that failed), so the card doesn't. */
-const HEADING_SAYS = new Set(["review_requested", "changes_requested", "checks_failed", "run_failed"]);
+/** Where an item opens: a path on this page, or away (GitHub). */
+const here = (url: string) => url.startsWith("/");
 
 export function InboxPage({ all }: { all?: boolean }) {
-  const [entries, setEntries] = useState<InboxEntry[] | null>(null);
+  const [inbox, setInbox] = useState<Inbox | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const mine = useMyDrafts();
   const deploys = useWaitingDeploys();
-  useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
+  // The stream says when the Inbox changed: read it again then.
+  useSubscribe((fn) => chat.subscribe(fn));
+  const said = chat.inbox?.heard ?? 0;
   // The current project's, unless All (Arugula #881): the platform filters.
   const scope = scopeOf({ page: "inbox", all: all || undefined }, currentProject(), (id) => !!session.project(id));
   const load = () =>
-    call<Inbox>("GET", inboxPath(scope)).then(
+    readInbox(scope).then(
       (v) => {
-        setEntries(v.entries);
+        setInbox(v);
         // The bar's count says the same (UI audit #170).
-        noteInbox(v.entries);
+        noteInbox(v, scope);
         setError("");
       },
       (e: Error) => setError(e.message),
     );
   useEffect(() => {
-    setEntries(null);
-    void load();
+    setInbox(null);
   }, [scope]);
-  const mark = async (e: InboxEntry, what: { seen?: boolean; done?: boolean }) => {
-    setBusy(`${e.item} ${e.reason}`);
+  useEffect(() => {
+    void load();
+  }, [scope, said]);
+  const mark = async (i: InboxItem, what: { seen?: boolean; done?: boolean }) => {
+    setBusy(i.id);
     try {
-      await call("POST", `/api/inbox/${encodeURIComponent(e.item)}`, { reason: e.reason, ...what });
+      await markItem(i.id, what);
       if (what.done) toast("Dismissed");
       await load();
     } catch (err) {
@@ -147,33 +88,62 @@ export function InboxPage({ all }: { all?: boolean }) {
       setBusy(null);
     }
   };
-  const shown = (entries ?? []).filter((e) => e.reason !== "draft");
-  // Once the entries are in, so a mention's thread isn't here meanwhile.
-  const threads = entries !== null && chatStore() ? threadNews(chat.rooms, shown) : [];
+  const me = session.me?.account;
+  const items = (inbox?.items ?? []).filter((i) => i.group !== "ready" && !i.done_at);
+  // A deploy the list names is its card, answered here, not a row too.
+  const cards = (deploys ?? []).filter((d) => items.some((i) => i.kind === "deploy_approval" && i.subject.id === d.id));
+  const rows = items.filter((i) => !(i.kind === "deploy_approval" && cards.some((d) => d.id === i.subject.id)));
   const drafts = mine.drafts ?? [];
-  const empty =
-    entries !== null && mine.drafts !== null && deploys !== null && shown.length === 0 && threads.length === 0 && drafts.length === 0 && deploys.length === 0;
-  const unseen = shown.filter((e) => !isSeen(e)).length + threads.length;
+  const empty = inbox !== null && mine.drafts !== null && items.length === 0 && drafts.length === 0;
+  const count = inbox?.count ?? 0;
+  const row = (i: InboxItem) => {
+    const seen = !!i.seen_at;
+    const { ref, title } = titled(i.title);
+    const at = here(i.subject.url);
+    const open = (ev: MouseEvent) => {
+      if (!seen) void mark(i, { seen: true });
+      if (at) follow(ev, i.subject.url);
+    };
+    const away = at ? {} : { target: "_blank", rel: "noopener noreferrer" };
+    const thread = i.kind === "thread_news" ? i.subject.room : undefined;
+    const meta = [kindWords[i.kind], i.from.name ? `from ${i.from.name}` : "", i.escalated ? "no agent answered it" : ""].filter(Boolean).join(" · ");
+    return (
+      // A card in the swarm's language (../swarm.css): its bar is what it
+      // wants of the reader, full while it's unseen.
+      <Card as="li" key={i.id} tone={itemTone(i.kind)} seen={seen} class={seen ? undefined : "unseen"} data-inbox-item={i.id} data-inbox-kind={i.kind} data-inbox-entry={i.subject.id} data-inbox-thread={thread}>
+        <a class="platform-inbox-item" href={i.subject.url} {...away} onClick={open}>
+          {ref && <span class="platform-inbox-ref">{ref}</span>} <span class="platform-inbox-title">{title}</span>
+        </a>
+        {(meta || i.snippet) && (
+          <div class="dim platform-inbox-meta">
+            {meta}
+            {meta && i.snippet ? ": " : ""}
+            {i.snippet}
+          </div>
+        )}
+        <div class="platform-inbox-actions">
+          <button class="secondary small" data-inbox-done={i.id} data-inbox-thread-done={thread} disabled={busy === i.id} onClick={() => void mark(i, { done: true })}>
+            Dismiss
+          </button>
+        </div>
+      </Card>
+    );
+  };
   return (
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
       <PageHeader
         title="Inbox"
         actions={<ScopeToggle r={{ page: "inbox" }} scoped={!!scope} all={!!all} />}
         stats={
-          entries !== null &&
+          inbox !== null &&
           !empty && (
             <div class="sw-stats" data-inbox-stats>
-              <span class={unseen ? "needs" : undefined}>
-                <b>{unseen}</b> unseen
+              <span class={count ? "needs" : undefined} data-inbox-count={count}>
+                <b>{count}</b> {count === 1 ? "needs" : "need"} you
               </span>
               <span>
-                <b>{shown.length + threads.length}</b> {shown.length + threads.length === 1 ? "item" : "items"}
+                <b>{items.length}</b> {items.length === 1 ? "item" : "items"}
               </span>
-              {!!deploys?.length && (
-                <span>
-                  <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
-                </span>
-              )}
               {drafts.length > 0 && (
                 <span>
                   <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
@@ -184,60 +154,34 @@ export function InboxPage({ all }: { all?: boolean }) {
         }
       />
       {error && <p class="control-error">{error}</p>}
-      {entries === null && !error && <p class="dim">Loading…</p>}
+      {inbox === null && !error && <p class="dim">Loading…</p>}
       {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
-      <WaitingDeploys list={deploys} />
-      {GROUPS.map(([reason, reasons, heading]) => {
-        if (reason === "threads") return <ThreadGroup key={reason} heading={heading} rooms={threads} />;
-        const group = shown.filter((e) => reasons.includes(e.reason));
-        if (group.length === 0) return null;
+      <WaitingDeploys list={cards} />
+      {GROUPS.map(([group, heading]) => {
+        const list = rows.filter((i) => i.group === group);
+        const yours = list.filter((i) => !forTeammate(i, me));
+        const folds = byTeammate(list, me);
+        if (list.length === 0) return null;
         return (
-          <div key={reason} data-inbox-group={reason}>
+          <div key={group} data-inbox-group={group}>
             <h2>
-              {heading} <span class="dim">{group.length}</span>
+              {heading} <span class="dim">{yours.length}</span>
             </h2>
-            <ul class="platform-list platform-inbox-list card-list">
-              {group.map((e) => {
-                const key = `${e.item} ${e.reason}`;
-                const link = linkOf(e);
-                const seen = isSeen(e);
-                const open = (ev: MouseEvent) => {
-                  if (!seen) void mark(e, { seen: true });
-                  if (link.here) follow(ev, link.href);
-                };
-                const said = HEADING_SAYS.has(e.reason);
-                const away = link.here ? {} : { target: "_blank", rel: "noopener noreferrer" };
-                return (
-                  // A card in the swarm's language (../swarm.css): its bar is
-                  // why it wants the reader, full while it's unseen (a done
-                  // one never is: UI audit #192).
-                  <Card as="li" key={key} tone={reasonTone(e.reason)} seen={seen} class={seen ? undefined : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason} aria-label={said ? `${e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"}, ${entryState(e).word}: ${e.title}` : undefined}>
-                    <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
-                      <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo} ·` : `${e.repo}#${e.number}`}</span>{" "}
-                      <span class="platform-inbox-title">{e.title}</span>
-                    </a>
-                    {(!said || e.author) && (
-                      <div class="dim platform-inbox-meta">
-                        {said ? (
-                          `${e.kind === "run" ? "started by" : "by"} ${e.author}`
-                        ) : (
-                          <>
-                            {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · <EntryState e={e} />
-                            {e.reason === "thread_mention" ? " · in its thread" : ""}
-                            {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
-                          </>
-                        )}
-                      </div>
-                    )}
-                    <div class="platform-inbox-actions">
-                      <button class="secondary small" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
-                        Dismiss
-                      </button>
-                    </div>
-                  </Card>
-                );
-              })}
-            </ul>
+            {yours.length > 0 && <ul class="platform-list platform-inbox-list card-list">{yours.map(row)}</ul>}
+            {folds.map(([who, theirs]) => {
+              const key = `${group} ${who}`;
+              const open = unfolded.has(key);
+              return (
+                <div key={key} data-inbox-for={who}>
+                  <p>
+                    <button type="button" class="link" aria-expanded={open} onClick={() => setUnfolded((s) => (open ? new Set([...s].filter((k) => k !== key)) : new Set([...s, key])))}>
+                      {asksFor(theirs.length, memberName(who))}
+                    </button>
+                  </p>
+                  {open && <ul class="platform-list platform-inbox-list card-list">{theirs.map(row)}</ul>}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -251,69 +195,5 @@ export function InboxPage({ all }: { all?: boolean }) {
         </div>
       )}
     </section>
-  );
-}
-
-/** How many titles the page asks for at once, for threads it hasn't read
- * the issue or run of. The rest say their room's name. */
-const TITLES = 25;
-const asked = new Set<string>();
-
-/** New in threads: a card per object whose thread has something unread,
- * opening the object (an issue or a run on its page, anything else in
- * chat), whose page reads the thread. Dismiss reads it from here. */
-function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] }) {
-  useSubscribe((fn) => issues.subscribe(fn));
-  useSubscribe((fn) => runs.subscribe(fn));
-  useSubscribe((fn) => session.subscribe(fn));
-  useEffect(() => {
-    let n = 0;
-    for (const r of rooms) {
-      const t = r.target ?? "";
-      if (asked.has(t) || n >= TITLES) continue;
-      if (t.startsWith("iss_") && !issues.known(t)) void issues.get(t).catch(() => {});
-      else if (t.startsWith("run_") && !runs.known(t)) void runs.get(t).catch(() => {});
-      else continue;
-      asked.add(t);
-      n++;
-    }
-  }, [rooms.map((r) => r.id).join()]);
-  if (rooms.length === 0) return null;
-  return (
-    <div data-inbox-group="threads">
-      <h2>
-        {heading} <span class="dim">{rooms.length}</span>
-      </h2>
-      <ul class="platform-list platform-inbox-list card-list">
-        {rooms.map((r) => {
-          const t = r.target ?? "";
-          const href = roomPath(r.id);
-          const project = session.project(r.project)?.name ?? "";
-          const issue = t.startsWith("iss_") ? issues.known(t) : undefined;
-          const run = t.startsWith("run_") ? runs.known(t) : undefined;
-          // One separator (UI audit #167): an issue by its number, anything
-          // else "Project · its title".
-          const ref = issue ? `${project}#${issue.number}` : project ? `${project} ·` : "";
-          const title = issue?.title ?? (run ? runTitle(run.op, null, run.deploy) : r.name);
-          const n = counted(r);
-          return (
-            // As an entry's card: its bar is chat's colour for the room.
-            <Card as="li" key={r.id} tone={roomTone(n, r.mentions)} class="unseen" data-inbox-entry={t} data-inbox-reason="thread" data-inbox-thread={r.id}>
-              <a class="platform-inbox-item" href={href} onClick={(ev) => follow(ev, href)}>
-                {ref && <span class="platform-inbox-ref">{ref}</span>} <span class="platform-inbox-title">{title}</span>
-              </a>
-              <div class="dim platform-inbox-meta">
-                {n} new{r.mentions ? " · mentions you" : ""}
-              </div>
-              <div class="platform-inbox-actions">
-                <button class="secondary small" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
-                  Dismiss
-                </button>
-              </div>
-            </Card>
-          );
-        })}
-      </ul>
-    </div>
   );
 }

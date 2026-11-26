@@ -22,6 +22,7 @@ import {
   machinesOf,
   matrixOf,
   powersFor,
+  dmPowersMissing,
   reaching,
   RUN_POWERS,
   SINGLE,
@@ -440,4 +441,16 @@ test("the Boards page names the machines whose agents can't see a project's boar
   assert.equal(blindLine(["a", "b"]), "Agents on a and b can't see these boards.");
   assert.equal(blindLine(["a", "b", "c"]), "Agents on a, b and c can't see these boards.");
   assert.equal(blindLine(["a", "b", "c", "d"]), "Agents on a, b and 2 more can't see these boards.");
+});
+
+// Arugula #1341: what a machine is missing to lead your staff room, a DM:
+// threads.read and threads.post over your DMs, live, its own.
+test("a machine's missing DM powers are the DMs switch's it isn't given, live, over your DMs", () => {
+  const g = (power, more = {}) => ({ id: `g_${power}`, subject: { kind: "daemon", id: "m_geek", name: "geek" }, power, scope: { kind: "account", id: "acct_a" }, live: true, ...more });
+  assert.deepEqual(dmPowersMissing([], "m_geek"), ["threads.read", "threads.post"]);
+  assert.deepEqual(dmPowersMissing([g("threads.read"), g("threads.post")], "m_geek"), []);
+  // Over a project, revoked, or another machine's: still missing.
+  assert.deepEqual(dmPowersMissing([g("threads.read", { scope: { kind: "project", id: "prj_1" } }), g("threads.post", { live: false })], "m_geek"), ["threads.read", "threads.post"]);
+  assert.deepEqual(dmPowersMissing([g("threads.read")], "m_mini"), ["threads.read", "threads.post"]);
+  assert.deepEqual(dmPowersMissing([g("threads.post")], "m_geek"), ["threads.read"]);
 });

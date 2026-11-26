@@ -19,9 +19,9 @@ pub struct Args {
     /// Add too: added to another account, it doesn't join.
     #[arg(long, value_name = "FINGERPRINT")]
     account: Option<String>,
-    /// Whether people who reach it through control may type there. On a
-    /// terminal, without it, join asks; unanswered, a machine joining for
-    /// the first time is off.
+    /// Whether people who reach it through control may type there.
+    /// Without it, a machine joining your account is on and a team's is
+    /// off, unless it was set before, which stands.
     #[arg(long, value_name = "on|off", value_parser = ["on", "off"])]
     remote_input: Option<String>,
 }

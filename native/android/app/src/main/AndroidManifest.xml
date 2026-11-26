@@ -30,6 +30,19 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="arugula" android:host="signin" />
             </intent-filter>
+            <!-- Links into the app (Arugula #1365): the Inbox, an entry in it, a place. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="arugula" />
+                <data android:host="inbox" />
+                <data android:host="overview" />
+                <data android:host="boards" />
+                <data android:host="docs" />
+                <data android:host="machines" />
+                <data android:host="chat" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

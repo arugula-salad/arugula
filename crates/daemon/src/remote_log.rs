@@ -55,6 +55,34 @@ pub fn append(dir: &Path, e: &Entry) {
     }
 }
 
+/// An agent a ladder start opened here (aru-143): who asked, from which
+/// machine, for which board and issue, wearing what, in which block. Read
+/// back by nothing yet; [`sessions`] passes over it.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentStarted<'a> {
+    /// Always `agent`.
+    pub event: &'static str,
+    pub at: u64,
+    pub account: &'a str,
+    /// The machine that asked, by name.
+    pub from: &'a str,
+    pub board: &'a str,
+    /// `lead` or `issue`.
+    pub rung: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<&'a str>,
+    pub block: u32,
+}
+
+/// Adds `e` to the log in `dir`, as [`append`] does.
+pub fn agent_started(dir: &Path, e: &AgentStarted) {
+    if let Err(err) = try_append(dir, e) {
+        warn!(error = %err, "couldn't write the remote sessions log");
+    }
+}
+
 /// At the daemon's start: a `start` line, where the log has any, so a
 /// session still open in it is read as ended (a daemon that stopped hard
 /// wrote no close).

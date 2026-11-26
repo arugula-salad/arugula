@@ -186,6 +186,21 @@ test.describe("on a computer", () => {
     await expect(rail(page, "chat").locator(".ws-rail-count")).toHaveText("2");
   });
 
+  test("the Issues page's path is Boards › Issues, Boards a link up; an issue's, Issues a link up too (Arugula #1387)", async ({ page }) => {
+    await openApp(page, () => `/p/${P}/issues`);
+    await onlyLit(page, "boards");
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards\s*Issues$/);
+    await expect(page.locator("[data-app-path] [data-path=boards]")).toHaveAttribute("href", new RegExp(`^/p/${P}[^/]*/boards$`));
+    await expect(page.locator("[data-app-path] [data-path=issues]")).toHaveAttribute("aria-current", "page");
+    await page.goto(`/p/${P}/issues/iss_0001`);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards\s*Issues$/);
+    await page.locator("[data-app-path] [data-path=issues]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues$`));
+    await page.locator("[data-app-path] [data-path=boards]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards$/);
+  });
+
   test("a team's defaults are a click from a project's setting that follows them (Arugula #1323)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     // The rail's Settings is Settings' Project scope, at the project you're in (Arugula #1104).

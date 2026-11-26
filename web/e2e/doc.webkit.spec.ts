@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { expect, test, type BrowserContext } from "@playwright/test";
-import { attacker, bring, brokenEmbeds, protoLeavesAfterMove, protoOpenBeforeLoad, fill, fillEmbeds, prototype, prototypeRan, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
+import { attacker, bring, brokenEmbeds, protoLeavesAfterMove, protoNavigates, protoOpenBeforeLoad, fill, fillEmbeds, prototype, prototypeRan, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
 import { open, panes, ready, reset } from "./helpers";
 import { daemon, iphone } from "./phones";
 
@@ -78,6 +78,14 @@ test("a prototype runs its script in WebKit and gets out of nowhere", async ({ p
   } finally {
     a.close();
   }
+});
+
+// Arugula #1451: a prototype goes to another of its Doc's by file name.
+test("a prototype goes to another of its Doc's by file name, and only to those", async ({ page }) => {
+  await open(page);
+  const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+  await ready(page, term);
+  await protoNavigates(page, post, term);
 });
 
 // Arugula #869: a Doc with its prototype there before the page loads, switched

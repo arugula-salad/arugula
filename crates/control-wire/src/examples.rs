@@ -40,6 +40,7 @@ macro_rules! types {
 fn types() -> BTreeMap<&'static str, Again> {
     types! {
         "activity.Activity" => activity::Activity,
+        "boards.PaneAsksReport" => boards::PaneAsksReport,
         "forge.Poke" => forge::Poke,
         "join.JoinPoll" => join::JoinPoll,
         "join.JoinRequest" => join::JoinRequest,

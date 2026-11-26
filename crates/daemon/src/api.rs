@@ -56,6 +56,12 @@ pub fn routes() -> Router<Arc<App>> {
     let r = Router::new()
         .op::<ListPanes>()
         .route("/api/run", post(run))
+        // A ladder start (aru-143): under /api/a2a/, which another machine's
+        // `agents` token reaches, and not behind a Labs flag: the board's
+        // grant is the gate.
+        .route("/api/a2a/start", post(crate::ladder::start_post))
+        // And its stop (Arugula #1438): only a block a ladder start opened.
+        .route("/api/a2a/stop", post(crate::ladder::stop_post))
         .op::<PaneSend>()
         .op::<PanePrompt>()
         .op::<PaneKeys>()

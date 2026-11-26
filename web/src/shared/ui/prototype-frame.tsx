@@ -20,8 +20,9 @@ import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
-import { ProtoScope, useBridge } from "./prototype-bridge";
-import { escapeFrom, htmlMessage, readyFrom, schemeMessage } from "./prototype-messages";
+import { ProtoFiles, ProtoScope, useBridge } from "./prototype-bridge";
+import { protoTarget, type ProtoFile } from "./prototype-files";
+import { escapeFrom, htmlMessage, navFrom, readyFrom, schemeMessage } from "./prototype-messages";
 import runner from "./runner.html?raw";
 import { CloseIcon, ExpandIcon } from "./icons";
 
@@ -71,6 +72,9 @@ function useMode(): Mode {
  * not the runner's. */
 export const OWN_LOADS = 1;
 
+/** How long a load past the runner's own waits to say where it went. */
+const LEAVE_GRACE_MS = 600;
+
 /** Full window rides on the top layer (#507): the box itself is a manual
  * popover, so the same iframe is drawn over the window without moving in the
  * DOM, which would reload it and lose its state. `position: fixed` wouldn't do:
@@ -85,7 +89,7 @@ export const ProtoFill = createContext(false);
  * version of the section (#509) doesn't ask again. */
 const armedKeys = new Set<string>();
 
-export function Prototype({ html, alt }: { html: string; alt: string }) {
+export function Prototype({ html: own, alt }: { html: string; alt: string }) {
   const { origin, click } = useMode();
   const scheme = useScheme();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -106,14 +110,25 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
     if (on && armKey !== null) armedKeys.add(armKey);
     arm(on);
   };
+  const files = useContext(ProtoFiles);
+  const filesNow = useRef(files);
+  filesNow.current = files;
+  // Another of the Doc's prototypes this one went to (#1451), until its own
+  // text changes.
+  const [went, setWent] = useState<{ from: string; to: ProtoFile } | null>(null);
+  const swapped = went && went.from === own ? went.to : null;
+  const html = swapped?.html ?? own;
+  /** A load past the runner's own, until the page says where it went. */
+  const leaving = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [left, setLeft] = useState(false);
   const [round, setRound] = useState(0);
   const [full, setFull] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const { title, height } = prototypeInfo(alt);
+  const { title: ownTitle, height } = prototypeInfo(alt);
+  const title = swapped?.title ?? ownTitle;
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
-  const copied = useBridge(frame, live);
+  const copied = useBridge(frame, live, swapped?.section);
   // A layout effect: the listener is there before the frame loads, after
   // which the runner says it is ready.
   useLayoutEffect(() => {
@@ -138,6 +153,27 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
     addEventListener("message", on);
     return () => removeEventListener("message", on);
   }, [live, html, origin, round]);
+  // Where the page says it is going (a link, `location`): another of the
+  // Doc's prototypes is shown here instead; anything else is leaving.
+  useEffect(() => {
+    if (!live) return;
+    const on = (e: MessageEvent) => {
+      const url = navFrom(e, frame.current?.contentWindow);
+      if (url === null) return;
+      clearTimeout(leaving.current);
+      const to = protoTarget(url, filesNow.current);
+      if (to) setWent({ from: own, to });
+      else {
+        setFull(false);
+        setLeft(true);
+      }
+    };
+    addEventListener("message", on);
+    return () => {
+      removeEventListener("message", on);
+      clearTimeout(leaving.current);
+    };
+  }, [live, own]);
   // A light/dark switch after the page was handed over reaches it without a reload.
   const first = useRef(true);
   useEffect(() => {
@@ -244,9 +280,15 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
           const win = frame.current?.contentWindow;
           if (!win) return;
           if (win === handed.current) {
+            // A write to `location` can't be caught in the frame: what it
+            // loads from the daemon's own origin says where it went (#1451).
+            // Given a moment to; a page that says nothing has left.
             if (++loads.current > OWN_LOADS) {
-              setFull(false);
-              setLeft(true);
+              clearTimeout(leaving.current);
+              leaving.current = setTimeout(() => {
+                setFull(false);
+                setLeft(true);
+              }, LEAVE_GRACE_MS);
             }
             return;
           }

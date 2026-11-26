@@ -505,6 +505,61 @@ fn a_woken_cycle_holds_what_is_queued_until_it_ends() {
     assert_eq!(g.turns.last().and_then(|t| t.ended_ms), Some(2400));
 }
 
+#[test]
+fn a_turn_whose_result_came_as_a_task_notifications_is_let_go() {
+    // #1455: after background shells, claude-agent-acp took the turn's
+    // result for a task notification's and never answered the prompt. Quiet
+    // after such a result, the turn is let go; its `cancelled` is its end.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.live = true;
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let notified = u(json!({ "sessionUpdate": "usage_update", "cost": { "amount": 1.0 },
+        "_meta": { "_claude/origin": { "kind": "task-notification" } } }));
+    // The log's command ran.
+    g.on_in(&u(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed" })), 1900);
+    g.on_in(&notified, 2000);
+    assert!(g.stray_at.is_some());
+    assert_eq!(g.heard_ms, Some(2000));
+    // More work: the turn goes on.
+    let read = json!({ "sessionUpdate": "tool_call", "toolCallId": "t9", "title": "Read", "status": "completed" });
+    g.on_in(&u(read), 2100);
+    assert!(g.stray_at.is_none());
+    g.on_in(&notified, 2200);
+    // A title isn't work.
+    g.on_in(&u(json!({ "sessionUpdate": "session_info_update", "title": "x" })), 2300);
+    assert!(g.stray_at.is_some());
+    assert_eq!(g.attention().0, Attention::Working);
+    assert!(let_go(&mut g));
+    assert!(g.let_go);
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "cancelled" } }), 2400);
+    assert_eq!(g.last_stop.as_deref(), Some("end_turn"));
+    assert_eq!(g.attention().0, Attention::Done);
+    assert!(!g.let_go);
+    // Busy and quiet: a tool call that started before the result and
+    // hasn't finished (a long build) holds it.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.live = true;
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&u(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed" })), 1900);
+    let build = json!({ "sessionUpdate": "tool_call", "toolCallId": "b1", "title": "just test", "kind": "execute", "status": "in_progress" });
+    g.on_in(&u(build), 2000);
+    g.on_in(&notified, 2100);
+    assert!(g.tool_in_flight());
+    assert!(!let_go(&mut g), "a tool call runs");
+    g.on_in(&u(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "b1", "status": "completed" })), 2200);
+    assert!(!g.tool_in_flight());
+    assert!(g.stray_at.is_none(), "its end is work");
+    // Not with a card open, or with the prompt's own result in (#606).
+    let mut g = rebuilt();
+    assert!(!let_go(&mut g), "a permission card is open");
+    g.pending.clear();
+    g.result_in = true;
+    assert!(!let_go(&mut g));
+}
+
 /// M255: a follow-up is credited as it's sent, not as it's queued. Two
 /// queued behind a turn are each named just before their own prompt (not
 /// both at once, ahead of the turn they waited behind), and whose each is
@@ -609,6 +664,46 @@ fn replies_of_one_thread_in_the_queue_are_one_prompt_with_every_tag() {
     g.send_prompt(&next, vec![json!({ "type": "text", "text": next.text })]);
     assert_eq!(g.queue.len(), 1);
     assert_eq!(seqs(&g.queue[0]), [21]);
+}
+
+/// Arugula #1339: a wake's prompt carries the tags of several threads. It
+/// waits as one, a restart rebuilds it from the log with every tag, and a
+/// reply to one of its threads waits apart rather than rewriting it.
+#[test]
+fn a_wakes_prompt_keeps_every_tag_and_no_reply_joins_it() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let tag = |room: &str, seq: i64| {
+        let thread = agent_mentions::MentionThread {
+            root: seq,
+            head: format!("Thread {seq}:"),
+            line: format!("ada: {seq}"),
+            tail: "(tail)".into(),
+        };
+        MentionTag { room: room.into(), seq, headline: String::new(), thread: Some(thread), watch: None }
+    };
+    let wake = Queued {
+        text: "2 messages came for you".into(),
+        images: vec![],
+        by: Some("Jake, Arugula".into()),
+        mention: vec![tag("dm_staff", 5), tag("wch_red", 0)],
+    };
+    g.enqueue(&wake, false);
+    let reply = Queued { text: "framed 6".into(), images: vec![], by: None, mention: vec![tag("dm_staff", 5)] };
+    g.enqueue(&reply, false);
+    assert_eq!(g.queue, [wake.clone(), reply], "the reply waits apart");
+
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    let all: Vec<Value> = wake.mention.iter().map(MentionTag::to_json).collect();
+    let logged =
+        json!({ "e": "queue", "text": wake.text, "images": [], "front": false, "by": wake.by, "mentions": all });
+    again.rebuild_line(&frame("note", logged));
+    assert_eq!(again.queue.front(), Some(&wake), "rebuilt with every tag");
 }
 
 /// Arugula #215: a turn's result is its final message, exactly, though the

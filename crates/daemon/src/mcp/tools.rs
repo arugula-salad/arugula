@@ -83,6 +83,17 @@ pub struct PaneOnly {
     pub pane: PaneArg,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CloseArgs {
+    pub pane: PaneArg,
+    /// Another of your machines, by name or id, where the pane is: only an
+    /// agent a board's start opened there (start_agent with board and to),
+    /// which this machine started or whose board it leads. Default: this
+    /// one.
+    #[serde(default)]
+    pub to: Option<String>,
+}
+
 #[derive(Deserialize, JsonSchema, Default)]
 pub struct ListArgs {}
 
@@ -440,7 +451,8 @@ impl<'a> Call<'a> {
         self.caller.scope.block()
     }
 
-    /// An open pane or block, if this caller may see it.
+    /// An open pane or block, if this caller may see it: for an agent
+    /// block's token, one in its own tab or one it started.
     pub async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let panes = self.panes().await;
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
@@ -448,7 +460,10 @@ impl<'a> Call<'a> {
         };
         if let Some(me) = self.me() {
             let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
-            if tab != Some(p.tab) {
+            // What it started is its own, in whatever tab it opened (a
+            // board lead's issue agents, Arugula #1474).
+            let started = p.info.started_by.as_ref().and_then(|s| s.block) == Some(me);
+            if tab != Some(p.tab) && !started {
                 return Err(format!("%{pane} is in another tab: this agent's token reaches its own tab only"));
             }
         }
@@ -528,7 +543,8 @@ impl<'a> Call<'a> {
     }
 
     pub async fn started(&self, pane: PaneId) {
-        let by = StartedBy { by: self.by(), block: self.me() };
+        let from = if self.me().is_none() { self.own_pane() } else { None };
+        let by = StartedBy { by: self.by(), block: self.me(), from };
         self.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(pane, by)));
     }
 
@@ -655,12 +671,17 @@ pub fn one_line(s: &str, max: usize) -> String {
 }
 
 pub fn ago(ms: u64) -> String {
+    format!("{} ago", span(ms))
+}
+
+/// How long since `ms`: `45s`, `12m`, `3h`, `2d`.
+pub fn span(ms: u64) -> String {
     let secs = now_ms().saturating_sub(ms) / 1000;
     match secs {
-        0..60 => format!("{secs}s ago"),
-        60..3600 => format!("{}m ago", secs / 60),
-        3600..86400 => format!("{}h ago", secs / 3600),
-        _ => format!("{}d ago", secs / 86400),
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m", secs / 60),
+        3600..86400 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86400),
     }
 }
 

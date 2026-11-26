@@ -101,9 +101,10 @@
 //!   fails), what its pushes left and everything in its user's home go
 //!   (its checkout, its agent's config and conversations, dotfiles), and
 //!   its user's files in the temporary directories, so the next session in
-//!   that slot starts with nothing of it. Its build caches stay for the
-//!   slot's next session only when that's the same asker's; another
-//!   asker's session finds an empty home ([`fresh_home`]).
+//!   that slot starts with nothing of it. Its build dirs (cargo's target)
+//!   go with it; sccache and the registry stay for the slot's next session
+//!   only when that's the same asker's; another asker's session finds an
+//!   empty home ([`fresh_home`]).
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -2166,7 +2167,22 @@ if [ -d /etc/skel ]; then cp -R /etc/skel/. "$home"/ 2>/dev/null || true; fi
 /// slot's next session is another asker's ([`take`]).
 pub async fn clean_slot(dir: &Path, l: &AgentSessionLedger) {
     push::clean(dir, l).await;
-    match fresh_home(&l.user, true).await {
+    // Its build dirs go whoever's next (#1410): they're gigabytes, and
+    // `fresh_home` keeps `~/.cache`. sccache and the registry stay. Beside
+    // `fresh_home`, so the slot is freed no later than it was, and bounded:
+    // a drop that hangs is given up on, and the sweep takes what's left.
+    let drop_builds = async {
+        #[cfg(unix)]
+        match tokio::time::timeout(SWEEP_MAX, crate::build_dirs::drop_user(&l.user, false)).await {
+            Ok(Ok(gone)) => {
+                info!(session = l.session, dirs = gone.len(), "hosted: dropped an ended session's build dirs")
+            }
+            Ok(Err(e)) => warn!(session = l.session, error = e, "hosted: can't drop an ended session's build dirs"),
+            Err(_) => warn!(session = l.session, "hosted: dropping an ended session's build dirs ran out of time"),
+        }
+    };
+    let (fresh, ()) = tokio::join!(fresh_home(&l.user, true), drop_builds);
+    match fresh {
         Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
         Err(e) => {
             warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")

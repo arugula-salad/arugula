@@ -32,8 +32,9 @@ test("each of control's page addresses has its place in the app, project-less", 
     ["#pop=9", "", "/machines?pane=9&pop"],
     [`#project=${P}`, "", `/p/${P}`],
     ["#docs", "", "/docs"],
-    ["#overview", "", "/machines#overview"],
-    ["#overview=3", "", "/machines#overview=3"],
+    // The sessions overlay went for the Machines page (Arugula #1349).
+    ["#overview", "", "/machines"],
+    ["#overview=3", "", "/machines"],
     ["#agents", "", "/machines#agents"],
     ["#agents=team", "", "/machines#agents=team"],
     ["#settings=machine", "", "/machines#settings=machine"],
@@ -58,7 +59,7 @@ test("what stays on control's page never moves: secrets, signing in, passkeys, a
 });
 
 test("the app's places go back to control's page as the same address", () => {
-  for (const hash of [`pane=${D}.12`, `pane=${D}.12&share`, `pane=${D}.12&follow=sam`, "pane=7", `machine=${D}`, `machine=${D}&agent`, "swarm", `swarm=${D}.4`, "swarm=4", `swarm=board:${B}`, `pop=${D}.9`, "overview", "settings=machine"]) {
+  for (const hash of [`pane=${D}.12`, `pane=${D}.12&share`, `pane=${D}.12&follow=sam`, "pane=7", `machine=${D}`, `machine=${D}&agent`, "swarm", `swarm=${D}.4`, "swarm=4", `swarm=board:${B}`, `pop=${D}.9`, "settings=machine"]) {
     const path = fromControl(`#${hash}`);
     const url = new URL(path, "https://app.arugula.io");
     const r = parse(url.pathname, url.search);
@@ -67,6 +68,27 @@ test("the app's places go back to control's page as the same address", () => {
     assert.equal(controlHash(at), hash, path);
   }
   assert.equal(controlHash({ at: "machines" }), "");
+});
+
+// Arugula #1349: the palette, the rail's mark and the session crumb open
+// the Machines page at a machine, and at a session's card.
+test("the Machines page at a machine, and at its session's card", () => {
+  assert.equal(machinesPath({ at: "machines", show: D }), `/machines?show=${D}`);
+  assert.equal(machinesPath({ at: "machines", show: D, session: 4 }), `/machines?show=${D}&session=4`);
+  assert.equal(machinesPath({ at: "machines", show: "Aarons-Mac-mini", session: 0 }), "/machines?show=Aarons-Mac-mini&session=0");
+  for (const at of [{ at: "machines", show: D }, { at: "machines", show: D, session: 4 }, { at: "machines", show: "Aarons-Mac-mini" }]) {
+    const url = new URL(machinesPath(at), "https://app.arugula.io");
+    assert.deepEqual(parseMachines([], url.searchParams), at);
+  }
+  // A session needs its machine; a bad name is no machine; a pane or a name is a machine's page.
+  assert.deepEqual(parseMachines([], new URLSearchParams("session=4")), { at: "machines" });
+  assert.deepEqual(parseMachines([], new URLSearchParams("show=../x&session=4")), { at: "machines" });
+  assert.deepEqual(parseMachines([], new URLSearchParams(`pane=3&show=${D}`)), { at: "machines", pane: 3 });
+  // Control's page shows that machine.
+  assert.equal(controlHash({ at: "machines", show: D, session: 4 }), `machine=${D}`);
+  assert.equal(controlHash({ at: "machines", show: "Aarons-Mac-mini" }), "");
+  // The old overlay's fragment over the list is no place of its own now.
+  assert.deepEqual(parseMachines([], new URLSearchParams(), "#overview=2"), { at: "machines" });
 });
 
 test("the machines live in the project: list, a machine's page with its slug, Swarm", () => {

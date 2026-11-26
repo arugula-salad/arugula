@@ -52,6 +52,29 @@ const REASON: Record<string, Tone> = {
 
 export const reasonTone = (reason: string): Tone => REASON[reason] ?? "muted";
 
+/** An Inbox item (Arugula #1430), by its kind, in the same colors: what
+ * waits on the reader is the swarm's ask, a permission or a deploy waits
+ * on them, a failure fails, and news is news. A kind this doesn't know
+ * (a to-do, an approval) is muted. */
+const KIND: Record<string, Tone> = {
+  agent_ask: "accent",
+  permission: "warn",
+  agent_failed: "danger",
+  proposal: "accent",
+  board_ask: "accent",
+  deploy_approval: "warn",
+  checks_failed: "danger",
+  run_failed: "danger",
+  changes_requested: "warn",
+  review_request: "accent",
+  mention: "info",
+  assigned: "teal",
+  dm: "accent",
+  thread_news: "accent",
+};
+
+export const itemTone = (kind: string): Tone => KIND[kind] ?? "muted";
+
 /** A chat room: a mention, unread messages, or nothing to say (the same
  * colors as its count's, `.count`). */
 export function roomTone(unread: number, mentions: number): Tone | null {

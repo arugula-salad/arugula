@@ -220,6 +220,29 @@ async fn a_token_lets_in_its_role_and_nothing_more() {
     assert_eq!(ask(&mut ws, &ch, 1, "GET", "/api/links").await, 403);
 }
 
+/// Arugula #1002: another machine's token reaches the agents here and
+/// nothing else, as a daemon's device key did (#399); `drives` is that too
+/// on a machine that isn't hosted. Its calls name the machine that asked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_machines_token_reaches_only_the_agents() {
+    let r = rig().await;
+    let k = issuer();
+    for (i, role) in ["agents", "drives"].into_iter().enumerate() {
+        let jti = format!("m{i}");
+        let (mut ws, ch, said) = open(&r, token(&r, role, &jti, &k, |c| c["from"] = json!("caller-machine"))).await;
+        assert!(refused(&said).is_none(), "{role} wasn't let in");
+        for (id, path) in [(1, "/api/links"), (2, "/api/panes"), (3, "/api/host")] {
+            let (status, body) = ask_json(&mut ws, &ch, id, "GET", path).await;
+            assert_eq!(status, 403, "{role} reached {path}");
+            assert!(body["error"].as_str().unwrap_or_default().contains("/api/a2a/"), "{body}");
+        }
+        // The agent catalog answers (off in Labs here: its own 404, not
+        // the channel's refusal).
+        let (status, body) = ask_json(&mut ws, &ch, 4, "GET", "/api/a2a/agents").await;
+        assert_ne!(status, 403, "{role} didn't reach the agents: {body}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bad_token_is_refused_and_says_why() {
     let r = rig().await;

@@ -136,6 +136,16 @@
           "const": "guest",
           "description": "Anyone else signed in: they reach only sessions shared with them.",
           "type": "string"
+        },
+        {
+          "const": "agents",
+          "description": "Another machine of a person who may call this one's agents (#399,\nArugula #1002): requests under `/api/a2a/` and nothing else, as\ntheir account. Asked for by a daemon ([`machine_token_path`]), never\na person.",
+          "type": "string"
+        },
+        {
+          "const": "drives",
+          "description": "Another machine of a person with full use of this hosted one (M184,\nArugula #1002): every request, as its owner. Only a hosted machine\ntakes it; anywhere else it's [`TokenRole::Agents`].",
+          "type": "string"
         }
       ]
     }

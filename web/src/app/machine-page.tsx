@@ -277,7 +277,14 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     return (
       // In the panel the project's other pages sit in.
       <main class="platform-main">
-        <MachinesList project={project} fleet={machines.fleet} agents={(at.at === "machines" || at.at === "panes") && !!at.agents} session={session} />
+        <MachinesList
+          project={project}
+          fleet={machines.fleet}
+          agents={(at.at === "machines" || at.at === "panes") && !!at.agents}
+          show={at.at === "machines" ? at.show : undefined}
+          card={at.at === "machines" ? at.session : undefined}
+          session={session}
+        />
       </main>
     );
   const client = machines.client;

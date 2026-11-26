@@ -22,6 +22,7 @@
 //! only through `mcp::registry`.
 
 mod agent_sessions;
+mod approvals;
 mod boards;
 mod cloud;
 mod deploys;
@@ -33,6 +34,7 @@ mod repos;
 mod runs;
 mod splits;
 mod threads;
+mod todos;
 mod trackers;
 mod watches;
 
@@ -56,13 +58,34 @@ use crate::{
     server::App,
 };
 
+/// The chief of staff's first prompt as an agent block on one of the
+/// person's machines (Arugula #1337): its standing instructions, then
+/// `prompt`. Every tool it names is an agent block's (the binary's
+/// `whole_tests`).
+pub fn chief_of_staff_on_a_machine(prompt: Option<&str>) -> String {
+    agent_sessions::recipe_prompt(agent_sessions::CHIEF_OF_STAFF_ON_A_MACHINE, prompt)
+}
+
+/// A board lead's first prompt as an agent block (Arugula #1440): its
+/// standing instructions, then `prompt`. Every tool it names is an agent
+/// block's (the binary's `whole_tests`).
+pub fn board_lead_on_a_machine(prompt: Option<&str>) -> String {
+    agent_sessions::recipe_prompt(agent_sessions::BOARD_LEAD_ON_A_MACHINE, prompt)
+}
+
+/// The first prompt of an agent started on an issue (Arugula #1440): it
+/// leads the issue's thread. Its standing instructions, then `prompt`.
+pub fn issue_agent_on_a_machine(prompt: Option<&str>) -> String {
+    agent_sessions::recipe_prompt(agent_sessions::ISSUE_AGENT_ON_A_MACHINE, prompt)
+}
+
 /// Lists the tools where they were: `forge_read` and `forge_draft` after
 /// `draft`, the rest after `device_call`, and `list`'s kinds after
 /// `agents`. Before any other crate that lists a tool after one of these.
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 23] = [
+    let tools: [Listed; 25] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -86,6 +109,8 @@ pub fn register() {
         (trackers::WRITE_TOOL, link_def, run_link),
         (links::TOOL, project_split_def, run_project_split),
         (splits::TOOL, watch_def, run_watch),
+        (watches::TOOL, ask_approval_def, run_ask_approval),
+        (approvals::TOOL, todo_def, run_todo),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -143,6 +168,37 @@ impl ControlTools for Reach {
         limit: Duration,
     ) -> BoxFuture<'a, Out> {
         Box::pin(watches::wait_event(call, event, matches, limit))
+    }
+
+    fn chief_of_staff_prompt(&self, prompt: &str) -> String {
+        chief_of_staff_on_a_machine(Some(prompt))
+    }
+
+    fn board_lead_prompt(&self, prompt: &str) -> String {
+        board_lead_on_a_machine(Some(prompt))
+    }
+
+    fn issue_agent_prompt(&self, prompt: &str) -> String {
+        issue_agent_on_a_machine(Some(prompt))
+    }
+
+    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out> {
+        Box::pin(threads::lead_staff(app, project, session))
+    }
+
+    fn staff_room<'a>(&'a self, app: &'a App, project: &'a str) -> BoxFuture<'a, Out> {
+        Box::pin(threads::staff_room(app, project))
+    }
+
+    fn stand_down<'a>(
+        &'a self,
+        app: &'a App,
+        room: &'a str,
+        session: &'a str,
+        notice: &'a str,
+        by: &'a str,
+    ) -> BoxFuture<'a, Out> {
+        Box::pin(threads::stand_down(app, room, session, notice, by))
     }
 }
 
@@ -203,6 +259,8 @@ grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::trac
 one!(run_link, links::link);
 grouped!(run_watch, watches::TOOL, |c, kind, args| watches::watch(c, kind, args));
 one!(run_project_split, splits::project_split);
+one!(run_ask_approval, approvals::ask_approval);
+grouped!(run_todo, todos::TOOL, |c, kind, args| todos::todo(c, kind, args));
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -475,6 +533,50 @@ fn watch_def() -> Def {
             "wake your agent when a PR merges, closes, finishes its checks or is ready, or another agent here finishes its turn, after it has stopped, without it polling",
             "Watch acme/app#7 and tell me when it merges.",
             Needs::Nothing,
+        ),
+    }
+}
+
+// Arugula #1417: the chief of staff on a machine asks its person to approve
+// a start or a close here, on a card in their staff room.
+fn ask_approval_def() -> Def {
+    Def {
+        name: approvals::TOOL,
+        title: "Ask your person to approve",
+        description: approvals::DESCRIPTION,
+        args: Args::One(schema_for_type::<approvals::AskApprovalArgs>),
+        read_only: false,
+        destructive: false,
+        idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "ask you on a card in your staff room to start an agent on an issue, or close agent blocks, on this machine: your Approve does it, never the agent",
+            "Ask me to approve an agent on #12.",
+            Needs::Control,
+        ),
+    }
+}
+
+// Arugula #1463: an agent hands its person work only they can do, as a
+// to-do on the approval card's path.
+fn todo_def() -> Def {
+    Def {
+        name: todos::TOOL,
+        title: "Hand your person a to-do",
+        description: todos::DESCRIPTION,
+        args: Args::Kinds { kinds: table(todos::KINDS), default: None },
+        read_only: false,
+        destructive: false,
+        idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "hand you a to-do it can't do itself (an approval, a script with your credentials, a secret), under Needs you until you mark it Done or Can't",
+            "If you need me to approve the deploy, add a to-do.",
+            Needs::Threads,
         ),
     }
 }

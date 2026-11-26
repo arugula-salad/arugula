@@ -13,7 +13,12 @@
 // project, its cards naming their card; and below it the conversations
 // the field opens: a board's thread, from its row, and a session's peek
 // (./overview-peek.tsx, #1271), from a card's row or a session's on no
-// card. The old home's lists aren't here (#1088): only where there is no
+// card. On the reader's personal project, Your work follows Not on a card
+// (Arugula #1400): the Claude Code and Codex conversations on their own
+// machines, the daemon page's list (../shell/ui/conversations.tsx), each
+// asked through the page's fleet; Continue here opens its pane on its
+// machine's page, as Open in Panes does, and one open in a pane is in Not
+// on a card instead. The old home's lists aren't here (#1088): only where there is no
 // Overview (./machines.tsx). A card with no session opens the board's own
 // drawer over the page (its address names it, so the path and Esc climb
 // back), as its peek's card link does; Open in Panes opens a session on
@@ -29,11 +34,15 @@
 // The talk panel's tabs stay as you zoom: each level brings its own to
 // the front, the chief of staff's at Project, the lead's at Board, the
 // card's agent's at Work. A Needs you card zooms to the work that asks.
+// Each agent's tab knows its rung on the agent ladder (#1441): a board's
+// lead is "lead of" its boards, under the chief of staff; an agent on an
+// issue's card is "on #N for" its board, under the board's lead, and its
+// tab is its issue's thread over its peek.
 
 import "./overview.css";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardRow, BoardView } from "../shared/proto";
+import type { BoardRow, BoardView, ChatAsk } from "../shared/proto";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
@@ -43,14 +52,17 @@ import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
+import { OverviewSplit, useColumn } from "./overview-split";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
-import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, STATE_WORD } from "../shell/swarm/overview";
+import { asksYou, boardLead, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
 import { bundlesOf, type Bundle } from "../shell/swarm/view";
-import { Asks } from "./overview-asks";
+import { Needs, paneOfItem, paneOwner, useProposals } from "./overview-asks";
+import { useProjectInbox } from "../platform/inbox-count";
+import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
 import { useBoards } from "../platform/pages/boards";
@@ -58,12 +70,14 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
+import { YourWork } from "../shell/ui/conversations";
+import { ownerKey, PERSONAL } from "../platform/owners";
 import { BriefingLine, useBriefing } from "./overview-briefing";
 import { OverviewBoard } from "./overview-board";
 import { CardRow, SessionRow, Word } from "./overview-row";
 import { OverviewWork } from "./overview-work";
-import { PeekContext, peekKey, type PeekPlace } from "./overview-peek";
-import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
+import { PeekContext, peekKey, type PeekPlace, talkKey } from "./overview-peek";
+import { staffStartTab, staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
 export function OverviewPlace({ project, board, card, zoom, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; session: AppSession | null }) {
@@ -79,7 +93,7 @@ export function OverviewPlace({ project, board, card, zoom, session }: { project
         Reaching your machines…
       </p>
     );
-  return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} />;
+  return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} session={session} />;
 }
 
 /** The Overview's levels, outermost first (Arugula #1287). */
@@ -91,10 +105,12 @@ const levelOf = (zoom?: OverviewZoom): Level => (!zoom ? 0 : "session" in zoom |
 const outOf = (zoom: OverviewZoom, to: Level = (levelOf(zoom) - 1) as Level): OverviewZoom | undefined => (to === 1 && "board" in zoom ? { board: zoom.board } : undefined);
 const zoomKey = (zoom?: OverviewZoom) => (!zoom ? "" : "session" in zoom ? `s:${zoom.session}` : `b:${zoom.board}/${zoom.card ?? ""}`);
 /** A session's peek, as a tab. */
-const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: peekKey(s), title: s.name });
+// Keyed by the hub's id where it has one, so a reload or a daemon restart finds it again (#1390).
+const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: talkKey(s), title: s.name });
 
 /** A pane as the Overview groups it. */
 function ovPane(fleet: Fleet, p: FleetPane): OvPane {
+  const owner = paneOwner(fleet, p);
   return {
     key: p.key,
     host: p.host,
@@ -106,6 +122,7 @@ function ovPane(fleet: Fleet, p: FleetPane): OvPane {
     title: cleanTitle(p.info.title ?? ""),
     name: sessionName(p),
     agent: kindOf(p) === "agent",
+    ...(owner !== null ? { owner } : {}),
     standing: standingOf(p),
     last: p.info.activity?.last_ms ?? 0,
   };
@@ -272,15 +289,16 @@ function BoardsSkeleton() {
 }
 
 /** The hub's sessions by card, read again a minute later; null where the
- * hub has no such route yet, or it couldn't answer. */
-function useByCard(project: string): SessionsByCard | null {
-  const [v, setV] = useState<SessionsByCard | null>(null);
+ * hub has no such route yet, or it couldn't answer, and undefined until
+ * it first answers (or doesn't). */
+function useByCard(project: string): SessionsByCard | null | undefined {
+  const [v, setV] = useState<SessionsByCard | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
     const read = () =>
       sessionsByCard(project).then(
         (x) => live && setV(x),
-        () => {},
+        () => live && setV((was) => was ?? null),
       );
     void read();
     const t = setInterval(() => document.visibilityState === "visible" && void read(), BY_CARD_EVERY_MS);
@@ -315,25 +333,43 @@ function useOpened(project: string): [Map<string, boolean>, (board: string, open
   return [m, set];
 }
 
-function OverviewBody({ project, board, card, zoom, fleet }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet }) {
+function OverviewBody({ project, board, card, zoom, fleet, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
   // The chief of staff's room shows as the talk panel's first tab once chat lists it.
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
+  const column = useColumn();
   const refocus = useRefocus();
   const { views, put } = useBoardViews(project, refocus);
-  const byCard = useByCard(project);
+  const byCardRead = useByCard(project);
+  const byCard = byCardRead ?? null;
   const briefing = useBriefing(project, byCard, refocus);
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
-  const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf);
-  const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
-  const needs = mine.filter((p) => needsYou(p.info)).length;
+  // Whose a machine is, for a session the hub names that no pane here shows: "" for one this page doesn't know.
+  const machineOwner = (m: string) => {
+    const h = fleet.hostById(m);
+    if (!h) return "";
+    const who = fleet.personOf(h);
+    return who.kind === "me" || who.name === fleet.me ? undefined : who.name;
+  };
+  const ovPanes = fleet.panes.map((p) => ovPane(fleet, p));
+  const o = overviewOf(project, views ?? [], ovPanes, byCard, hostOf, machineOwner);
+  // Needs you is the project's Inbox (Arugula #1433): its items and its count, as the server says them, read
+  // again when the stream says it changed and on refocus.
+  const inbox = useProjectInbox(project, String(refocus));
+  const items = (inbox?.items ?? []).filter((i) => i.group !== "ready" && !i.done_at);
+  // And what the reader's agents propose to do as them (#1278), read again as their staff room moves: those the Inbox lists.
+  const staffRoom = chat.rooms.find((r) => r.staff && r.project === project);
+  const proposals = useProposals(project, `${staffRoom?.id}:${staffRoom?.last}:${staffRoom?.mentions}`, refocus);
+  const proposed = proposals.asks.filter((a) => items.some((i) => i.id === a.proposal!.id));
+  const listed = items.filter((i) => !proposed.some((a) => a.proposal!.id === i.id) && !proposals.dropped.has(i.id));
+  const needs = inbox?.count ?? 0;
   const p = platform.project(project);
 
-  // Needs you: Swarm's rail, for this project's panes, held still under the pointer as Swarm's is.
-  const bundles = bundlesOf(mine);
+  // Needs you's panes: Swarm's rail, for the panes the Inbox lists, held still under the pointer as Swarm's is.
+  const bundles = bundlesOf(fleet.panes.filter((x) => listed.some((i) => paneOfItem(fleet, i) === x)));
   const [over, setHeld] = useState(false);
   // An open ask holds the list still too, whether or not the pointer is on it.
   const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
@@ -410,19 +446,47 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };
   // A card's row, or a session's, opens its peek there (#1271); a card with no session, its drawer.
-  const openSession = (s: OvSession) => talkTo({ kind: "peek", id: peekKey(s), title: s.name });
+  const openSession = (s: OvSession) => talkTo(peekTab(s));
   const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
   const peeks: PeekPlace = {
     fleet,
     find: (key) => {
-      for (const c of ovCards) for (const s of c.sessions) if (peekKey(s) === key) return { s, card: c };
-      const s = o.loose.find((x) => peekKey(x) === key) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
+      // A session by its tile's key, or by the hub's id for it (`/work/ses_…`, #1380).
+      const is = (s: OvSession) => peekKey(s) === key || s.hub === key;
+      for (const c of ovCards) for (const s of c.sessions) if (is(s)) return { s, card: c };
+      const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && is(b.lead.peek))?.lead?.peek;
       return s && { s, card: null };
     },
+    lead: (l) => boardLead(l, ovPanes, byCard, hostOf, (id) => platform.project(id)?.name),
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
+    project: p?.name ?? "this project",
+    rung: (s, c) => {
+      // A board's lead, by its tab: under the reader's chief of staff, who writes to it in its boards' threads.
+      const led = o.boards.filter((b) => b.lead && talkKey(b.lead.peek) === talkKey(s));
+      if (led.length) {
+        const cos = staffRoom?.lead;
+        return { line: `lead of ${led.map((b) => b.title).join(", ")}`, parent: cos ? { machine: cos.machine, session: cos.session, who: "the chief of staff" } : null, rooms: led.map((b) => b.id) };
+      }
+      // An agent on an issue's card: under its board's lead, who writes to it in the issue's thread.
+      if (!c || c.row.pointer.kind !== "issue" || !(s.hosted || s.panes.some((x) => x.agent))) return null;
+      const b = o.boards.find((x) => x.id === c.board);
+      const label = pointerLabel(c.row.pointer, c.row.live) || "its issue";
+      const l = b?.lead;
+      return { line: `on ${label} for ${b?.title ?? "its board"}`, parent: l ? { machine: l.machine, session: l.session, who: `its lead, ${l.session}` } : null, rooms: [c.row.pointer.id], issue: { id: c.row.pointer.id, label } };
+    },
+    hostedIn: (id) => (id ? session?.daemons.find((d) => d.id === id)?.hosted?.project : undefined),
   };
+
+  // A peek tab saved under its tile's key (`host#N`) takes the hub's id for its session once the page knows it (#1390).
+  const stale = talk.tabs.flatMap((t) => {
+    const s = t.kind === "peek" ? peeks.find(t.id)?.s : undefined;
+    return s && talkKey(s) !== t.id ? [{ from: `peek:${t.id}`, to: { ...t, id: talkKey(s) } }] : [];
+  });
+  useEffect(() => {
+    for (const { from, to } of stale) talk.rekey(from, to);
+  }, [stale.map((x) => `${x.from}>${x.to.id}`).join(" ")]);
 
   // Zooming (Arugula #1287): where the address is, and the way in and out.
   const level = levelOf(zoom);
@@ -469,8 +533,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     return h && !h.team ? h.owner : undefined;
   };
 
-  // The chief of staff's tab, pinned first, once it has a room (#1275).
+  // The chief of staff's tab, pinned first, once it has a room (#1275); until then, Start (#1341).
   const chief: TalkTab | null = staffTab(project);
+  const chiefTab = chief ?? staffStartTab(project);
 
   // Its pinned tab is picked, not opened, so it never takes one of the tabs' places.
   const pickChief = (t: TalkTab) => {
@@ -490,13 +555,14 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     if (front === chief) talk.pick(`${front.kind}:${front.id}`);
     else talk.open(front);
   }, [zkey, front && `${front.kind}:${front.id}`]);
-  // A board no one leads: ask the chief of staff for one, in the staff room, and bring its tab up to read the answer.
-  async function askChief(t: TalkTab, b: OvBoard) {
+  // A board no one leads: Run this board (#1416) puts its card in the staff room, under Needs you, and brings that tab up.
+  async function runBoard(b: OvBoard) {
     try {
-      await chat.post(t.id, `Please start a session to lead the board "${b.title}" (${b.id}): read its goal and open tickets, then lead it.`);
-      pickChief(t);
+      const r = await boards.run(b.id);
+      api.toast(r.again ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.");
+      if (chief) pickChief(chief);
     } catch (e) {
-      api.toast(`Couldn't ask the chief of staff: ${(e as Error).message}`);
+      api.toast(`Couldn't ask to run it: ${(e as Error).message}`);
     }
   }
   // The lead's tab: its session's peek, as its chip opens it (#1290); a board no one leads, its thread.
@@ -511,16 +577,20 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     return t ? () => talkTo(t) : undefined;
   };
 
-  const any = o.boards.length > 0 || o.loose.length > 0;
+  // Your work, on the reader's personal project: their own machines' conversations, never a teammate's.
+  const own = yourWorkMachines(!!p && ownerKey(p) === PERSONAL, fleet.list);
+  const [convs, setConvs] = useState<number | null>(null);
+  const any = o.boards.length > 0 || o.loose.length > 0 || !!convs;
   const projectLevel = (
     <>
-      <p class="dim ov-stats" data-ov-stats>
-        {statsLine(o, needs)}
+      {/* Counted once the boards land: before that it would say 0 in flight (#1380). */}
+      <p class="dim ov-stats" data-ov-stats aria-busy={views === null || undefined}>
+        {views === null ? "Reading the boards…" : statsLine(o, needs)}
       </p>
       {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
       <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
       {views === null && <BoardsSkeleton />}
-      {views !== null && !any && (
+      {views !== null && !any && (own.length === 0 || convs === 0) && (
         <EmptyState
           where="page"
           data-ov-empty
@@ -553,12 +623,21 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
           </ul>
         </section>
       )}
+      {own.length > 0 && (
+        <section class="ov-loose ov-your-work" data-ov-your-work hidden={!convs}>
+          <header class="ov-loose-head">
+            <b>Your work</b>
+            <span class="dim">Claude Code and Codex conversations on {own.length > 1 ? "your machines" : own[0]}, newest first</span>
+          </header>
+          <YourWork phone={phone} on={{ fleet, hosts: own, show: (host, pane) => paneAt({ host, id: pane }), toast: (t) => api.toast(t), counted: setConvs }} />
+        </section>
+      )}
     </>
   );
   // Zoomed in, the field is that level's; at Project, the rows above.
   const talkingPeek = talk.active?.startsWith("peek:") ? talk.active.slice("peek:".length) : null;
   const levelView =
-    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && fleet.panes.length === 0) ? (
+    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && (fleet.panes.length === 0 || byCardRead === undefined)) ? (
       <p class="dim">Loading…</p>
     ) : level === 1 || zoomCard ? (
       !zoomedBoard || !zoomedView ? (
@@ -574,7 +653,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
           leadWho={zoomedBoard.lead && teammateOf(zoomedBoard.lead.machine)}
           leads={zoomedBoard.lead ? o.boards.filter((x) => x.lead?.machine === zoomedBoard.lead!.machine && x.lead.session === zoomedBoard.lead!.session).length : 0}
           thread={chat.on ? () => talkTo({ kind: "thread", id: zoomedBoard.id, title: zoomedBoard.title }) : undefined}
-          askChief={chief ? () => void askChief(chief, zoomedBoard) : undefined}
+          run={() => void runBoard(zoomedBoard)}
         />
       ) : !zoomedRow ? (
         <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>
@@ -592,8 +671,14 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       </Stage>
     </div>
   );
+  // Answered here, a proposal leaves Needs you, and a toast says what came of it.
+  const answered = (a: ChatAsk) => {
+    if (a.proposal?.state === "open") return;
+    proposals.drop(a);
+    api.toast(answeredLine(a));
+  };
   // Nothing needs you: one quiet line, not a column.
-  const rail = railed.length === 0 ? (
+  const rail = listed.length === 0 && railed.length === 0 && proposed.length === 0 ? (
     <section class="ov-needs ov-needs-none" aria-label={NEEDS_YOU} data-ov-needs>
       <EmptyLine data-ov-needs-none>Nothing needs you.</EmptyLine>
     </section>
@@ -603,32 +688,43 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
         <h2>{NEEDS_YOU}</h2>
         {needs > 0 && <span data-ov-needs-count>{needs}</span>}
       </header>
-      <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-        <Asks
-          asks={railed}
-          fleet={fleet}
-          pin={pin}
-          card={(b) => {
-            const first = b.panes[0];
-            const at = o.cardOf.get(first.key);
-            return {
-              work: at ? cardWords(at.row) : "Not on a card",
-              show: () => zoomToWork(first.key),
-              open: () => paneAt(first),
-              share: () => paneAt(first, true),
-              follow: () => paneAt(first),
-              acted: () => acted.current.add(b.key),
-              back: () => {},
-            };
-          }}
-        />
-      </div>
+      {proposed.length > 0 && (
+        <div class="ov-proposals" data-ov-proposals>
+          {proposed.map((a) => (
+            <ProposalCard key={a.proposal!.id} a={a} project={project} answered={answered} open={chief ? () => pickChief(chief) : undefined} />
+          ))}
+        </div>
+      )}
+      {(listed.length > 0 || railed.length > 0) && (
+        <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
+          <Needs
+            items={listed}
+            me={platform.me?.account}
+            railed={railed}
+            fleet={fleet}
+            pin={pin}
+            card={(b) => {
+              const first = b.panes[0];
+              const at = o.cardOf.get(first.key);
+              return {
+                work: at ? cardWords(at.row) : "Not on a card",
+                show: () => zoomToWork(first.key),
+                open: () => paneAt(first),
+                share: () => paneAt(first, true),
+                follow: () => paneAt(first),
+                acted: () => acted.current.add(b.key),
+                back: () => {},
+              };
+            }}
+          />
+        </div>
+      )}
     </section>
   );
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
+    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px`, "--ov-col": `${column * 100}%` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chief) && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}</PeekContext.Provider>
+      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chiefTab) && <TalkPanel talk={talk} pinned={chiefTab} phone />] : [field, <OverviewSplit key="split" />, <TalkPanel talk={talk} pinned={chiefTab} needs={rail} phone={false} />]}</PeekContext.Provider>
       {opened && shownView && (
         <Drawer
           r={opened}
@@ -651,7 +747,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
  * thread, which is the row's own button. */
 function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk: () => void }) {
   const name = who ? `${who}'s ${lead.session}` : lead.session;
-  const says = lead.standing ? STATE_WORD[lead.standing] : "";
+  const says = lead.standing ? wordOf({ standing: lead.standing, asks: who }) : "";
   const title = `Led by ${name}${lead.machineName ? ` on ${lead.machineName}` : ""}${says ? `, ${says}` : ""}`;
   const inner = (
     <>

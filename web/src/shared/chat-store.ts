@@ -154,6 +154,10 @@ export class ChatStore {
   /** Unread replies in the threads I follow, and how many mention me: the
    * Threads view's badge. Not counted in `unread()`: Activity's is apart. */
   threadsUnread = { n: 0, mentions: 0 };
+  /** The reader's Inbox as the stream last said it (Arugula #1430,
+   * #1433): its one count, that count by project, and how many times it's
+   * been said, so what lists its items reads them again. */
+  inbox: { count: number; by_project: Record<string, number>; heard: number } | null = null;
 
   /** Whether control has signed this page in (so chat is only off). */
   get signedIn(): boolean {
@@ -404,6 +408,10 @@ export class ChatStore {
         return;
       case "saved":
         void this.loadSaved();
+        return;
+      case "inbox":
+        this.inbox = { count: ev.count, by_project: ev.by_project ?? {}, heard: (this.inbox?.heard ?? 0) + 1 };
+        this.emit();
         return;
       case "github":
         this.toGithub.set(`${ev.room} ${ev.seq}`, ev.github);

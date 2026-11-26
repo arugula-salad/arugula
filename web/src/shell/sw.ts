@@ -22,7 +22,7 @@ import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
 import { controlTokens, gatedTokens } from "./e2e/machine-token.ts";
-import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
+import { chatTap, platformOf, platformTap, shareUrl, tapUrl, turnActions, withShare } from "./tap.ts";
 
 /** One for the worker, so a 429 holds back all its asks. */
 const workerTokens = gatedTokens(controlTokens());
@@ -105,6 +105,9 @@ interface Msg {
   reason?: { kind: string; actions: string[]; gate?: { id: string; title?: string; choices?: { value: string; label: string }[] } };
   /** Control's own (#104): a device or a person waits for approval. */
   control?: boolean;
+  /** Arugula #1432: lighter, as a finished turn is: no sound, Open and
+   * Dismiss. */
+  quiet?: boolean;
   /** M123: control's chat: the room and message a push is about. */
   chat?: { room: string; seq: number; parent?: number };
   /** The platform's: an inbox item (M171), a deploy (M218), a hosted
@@ -152,12 +155,15 @@ sw.addEventListener("push", (event: PushEvent) => {
         : reason && reason.actions.includes("dismiss")
           ? [{ action: "dismiss", title: "Dismiss" }]
           : [];
-  const actions = withShare(offered, { pane: msg.pane, reason });
+  const quiet = msg.quiet === true;
+  const actions = quiet && reason && reason.actions.includes("dismiss") ? turnActions : withShare(offered, { pane: msg.pane, reason });
   event.waitUntil(
     sw.registration.showNotification(msg.title || "Arugula", {
       body: msg.body || "",
       tag: msg.tag || "arugula",
-      renotify: true,
+      // A browser refuses renotify on a silent one.
+      renotify: !quiet,
+      silent: quiet,
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point),
       actions,

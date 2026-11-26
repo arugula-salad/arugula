@@ -478,6 +478,12 @@ Object.assign(window, {
     },
     hosts: directory,
     control: session,
+    /** A platform page for this one (control's `/control.json` says it),
+     * so the rail's mark has a Machines page to open (machines-at.spec). */
+    platform: (origin: string) => {
+      setPlatformOrigin(origin);
+      machines.client.emit();
+    },
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
     fleet: machines.fleet,

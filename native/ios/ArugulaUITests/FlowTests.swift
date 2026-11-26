@@ -1,9 +1,10 @@
 // The app as a person takes it, on a simulator against a real control
 // (native/ios/test-sim.sh): sign in, the tab bar, home, the project's issues,
 // the zoom to a board and a card's work and back, by taps and by address,
-// a board's thread and its lanes,
-// an agent's permission prompt and question answered from home, projects,
-// a Doc in a room, chat, a terminal. The script
+// a board's thread and its lanes, a board's grant revoked and Run this board
+// pressed (Arugula #1456), an agent's permission prompt and question answered from home, projects,
+// a Doc in a room, chat, a terminal, a deploy approved and a project's runs
+// (Arugula #604). The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -121,6 +122,24 @@ final class FlowTests: XCTestCase {
         _ = app.wait(for: .runningForeground, timeout: 10)
     }
 
+    /// A notification that says `said`, tapped as a person taps one: the
+    /// app closed, and the banner on the home screen. The script delivers it
+    /// (`simctl push`, from HANDOFF/push.json), with `said` as the
+    /// Notification Service Extension leaves it for the app.
+    private func tapPush(_ app: XCUIApplication, said: [String: Any], title: String, body: String) {
+        app.terminate()
+        var said = said
+        said["title"] = title
+        said["body"] = body
+        let data = try! JSONSerialization.data(withJSONObject: said)
+        try! data.write(to: handoff.appendingPathComponent("push.json"))
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let banner = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", body)).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 30), "no notification: \(springboard.debugDescription)")
+        banner.tap()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15), "the tap didn't open the app")
+    }
+
     /// Peek at the lead over the open thread: its session's last lines say
     /// the stand-in is ready. Then close the peek.
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
@@ -153,6 +172,7 @@ final class FlowTests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["ARUGULA_RESET"] = "1"
         app.launchEnvironment["ARUGULA_SIGNIN_BY_HAND"] = "1"
+        app.launchEnvironment["ARUGULA_APPROVE_BY_HAND"] = "1"
         app.launchEnvironment["ARUGULA_CONTROL_URL"] = env["ARUGULA_CONTROL_URL"] ?? ""
         app.launch()
 
@@ -192,12 +212,43 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(switcher.label.lowercased().contains("default"), "not in the Default project: \(switcher.label)")
         shot(app, "2-projects")
 
-        // The tab bar is there from the start, Home first (Arugula #1262), and
-        // the project's issues open from its menu.
-        for name in ["Home", "Boards", "Chat", "Machines", "You"] {
+        // The web's five places are there from the start, Overview first
+        // (Arugula #1262, #1361); the bell and your picture are in the
+        // heading, not tabs, and the project's issues open from its menu.
+        for name in ["Overview", "Boards", "Docs", "Machines", "Chat"] {
             XCTAssertTrue(tab(app, name).shows(within: 10), "no \(name) on the tab bar")
         }
-        XCTAssertFalse(tab(app, "Issues").exists, "Issues is still a tab")
+        for gone in ["Home", "You", "Issues"] {
+            XCTAssertFalse(tab(app, gone).exists, "\(gone) is still a tab")
+        }
+        // On an iPad they're at the sidebar's foot instead (Arugula #1366).
+        let bell = app.buttons[iPad ? "sidebar-inbox" : "heading-inbox"].firstMatch
+        XCTAssertTrue(bell.shows(within: 10), "no bell in the \(iPad ? "sidebar" : "heading")")
+        XCTAssertTrue(app.buttons["account"].firstMatch.shows(within: 10), "no picture in the \(iPad ? "sidebar" : "heading")")
+        if iPad { XCTAssertFalse(app.buttons["heading-inbox"].exists, "the bell is in the heading beside the sidebar too") }
+
+        // The bell opens the Inbox (Arugula #1365): what wants you, counted, or
+        // a word that nothing does.
+        bell.tap()
+        let stats = app.descendants(matching: .any)["inbox-stats"].firstMatch
+        let nothing = app.descendants(matching: .any)["inbox-empty"].firstMatch
+        let deadlineInbox = Date().addingTimeInterval(30)
+        while !stats.exists && !nothing.exists && Date() < deadlineInbox { sleep(1) }
+        shot(app, "2-inbox")
+        XCTAssertTrue(stats.exists, "the Inbox didn't load: \(app.debugDescription)")
+        app.buttons["inbox-done"].tap()
+
+        // Docs (Arugula #1363): the project's Docs, newest first, or a plain
+        // word that it has none yet.
+        tab(app, "Docs").tap()
+        let docRow = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'doc-row-'")).firstMatch
+        let noDocs = app.descendants(matching: .any)["docs-none"].firstMatch
+        let deadlineDocs = Date().addingTimeInterval(30)
+        while !docRow.exists && !noDocs.exists && Date() < deadlineDocs { sleep(1) }
+        shot(app, "2-docs")
+        XCTAssertTrue(docRow.exists || noDocs.exists, "Docs listed nothing and said nothing: \(app.debugDescription)")
+        tab(app, "Overview").tap()
+        XCTAssertTrue(switcher.shows(within: 10), "not back on the Overview from Docs")
         switcher.tap()
         let issuesItem = app.buttons["project-issues"]
         XCTAssertTrue(issuesItem.shows(within: 10), "no Issues in the project's menu")
@@ -206,6 +257,63 @@ final class FlowTests: XCTestCase {
         shot(app, "2-issues")
         app.buttons["issues-done"].tap()
         XCTAssertTrue(switcher.shows(within: 10), "not back home from the issues")
+
+        // What a passkey approves (Arugula #604). A deploy waiting on this
+        // account is first under Needs you, and opens over the app; Approve
+        // would open control's dialog in a web sheet, where the passkey is:
+        // here the app shows that address, the script approves the deploy
+        // with the account's passkey as the dialog would, and Done stands in
+        // for the sheet coming back. The app reads it again: approved. Then
+        // the project's Runs, from its menu, shows its grant.
+        if let deploy = env["ARUGULA_DEPLOY"], !deploy.isEmpty {
+            let row = app.buttons["need-deploy-\(deploy)"]
+            XCTAssertTrue(row.shows(within: 30), "the waiting deploy isn't under Needs you: \(app.debugDescription)")
+            shot(app, "2-deploy-need")
+            row.tap()
+            let state = app.staticTexts["deploy-state"]
+            XCTAssertTrue(state.shows(within: 20), "the deploy didn't open")
+            XCTAssertEqual(state.value as? String, "pending")
+            let approve = app.buttons["deploy-approve"]
+            XCTAssertTrue(approve.shows(within: 10), "no Approve on a deploy waiting for this owner")
+            shot(app, "2-deploy-sheet")
+            approve.tap()
+            let link = app.staticTexts["approve-link"]
+            XCTAssertTrue(link.shows(within: 10), "Approve opened nothing")
+            XCTAssertTrue(link.label.hasSuffix("/#deploy=\(deploy)&app"), "Approve opens \(link.label)")
+            let approved = handoff.appendingPathComponent("approved")
+            try? FileManager.default.removeItem(at: approved)
+            try link.label.write(to: handoff.appendingPathComponent("approve"), atomically: true, encoding: .utf8)
+            let approveBy = Date().addingTimeInterval(120)
+            while !FileManager.default.fileExists(atPath: approved.path) && Date() < approveBy { sleep(1) }
+            XCTAssertTrue(FileManager.default.fileExists(atPath: approved.path), "nobody approved the deploy")
+            app.buttons["approve-done"].tap()
+            let decidedBy = Date().addingTimeInterval(20)
+            while state.value as? String == "pending" && Date() < decidedBy { sleep(1) }
+            shot(app, "2-deploy-approved")
+            // Approved, and maybe gone on from there (testnet's driver makes
+            // its box, or fails to): read again, not waiting any more.
+            let after = state.value as? String ?? ""
+            XCTAssertTrue(!["pending", "denied", ""].contains(after), "the deploy reads \(after) after")
+            XCTAssertFalse(app.buttons["deploy-approve"].exists, "an approved deploy still offers Approve")
+            app.buttons["deploy-close"].tap()
+            let goneBy = Date().addingTimeInterval(15)
+            while row.exists && Date() < goneBy { sleep(1) }
+            XCTAssertFalse(row.exists, "the approved deploy is still under Needs you")
+
+            switcher.tap()
+            let runs = app.buttons["project-runs"]
+            XCTAssertTrue(runs.shows(within: 10), "no Runs in the project's menu")
+            runs.tap()
+            let grant = app.staticTexts["runs-grant"]
+            XCTAssertTrue(grant.shows(within: 20), "the project's runs didn't open")
+            shot(app, "2-runs")
+            // Testnet's project has no cloud workspaces: nothing to allow, so
+            // no button to control's dialog (which would say the same).
+            XCTAssertEqual(grant.value as? String, "no")
+            XCTAssertFalse(app.buttons["runs-change"].exists, "Allow runs offered with no cloud workspaces")
+            app.buttons["runs-close"].tap()
+            XCTAssertTrue(switcher.shows(within: 10), "not back home from the runs")
+        }
 
         // A Doc in a conversation (Arugula #1259): its card opens the Doc's page
         // in a web view, signed in as the app; on an iPad in the right-hand
@@ -268,11 +376,13 @@ final class FlowTests: XCTestCase {
         // stand-in session; ask it something there and peek at its session.
         // Then Boards: the board it leads, whose lead opens the board's
         // thread, and a peek from there. Then back to Default.
+        // The staff room's id, for a notification about it.
+        var staffRoom: String?
         if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
             let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
-            go(app, "Home")
+            go(app, "Overview")
             pick(app, team)
-            // Home and Boards in the team's project as they look, before
+            // Overview and Boards in the team's project as they look, before
             // anything is asked of them: on main's app, the Before shots.
             let boardShown = app.buttons["board-\(led)"]
             _ = app.buttons["home-board-\(led)"].shows(within: 45)
@@ -282,7 +392,7 @@ final class FlowTests: XCTestCase {
             _ = boardShown.shows(within: 45)
             sleep(2)
             shot(app, "5-team-boards")
-            go(app, "Home")
+            go(app, "Overview")
             // A lead's name on home opens that agent, not its board's thread
             // (Arugula #1305); the thread is a button of its own.
             let homeLead = app.buttons["home-lead-\(led)"]
@@ -314,6 +424,23 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(leadCard.exists, "no lead card on the led board: \(app.debugDescription)")
             XCTAssertTrue(leadCard.label.contains(lead), "the lead card says: \(leadCard.label)")
             shot(app, "5-board-level-led")
+            // Its grant (Arugula #1456): the script approved a Run this
+            // board card for it, so the lead card says where its lead and
+            // agents run, with Revoke, which takes the line away.
+            if env["ARUGULA_GRANT_BOARD"] == led {
+                let grant = app.staticTexts["board-grant-line"]
+                XCTAssertTrue(grant.shows(within: 15), "no grant on the led board: \(app.debugDescription)")
+                XCTAssertTrue(grant.label.hasPrefix("Grant: lead on "), "the grant line says: \(grant.label)")
+                shot(app, "5-board-grant")
+                let revoke = app.buttons["board-grant-revoke"]
+                XCTAssertTrue(revoke.shows(within: 5), "no Revoke on your grant")
+                clearAlerts()
+                revoke.tap()
+                let by = Date().addingTimeInterval(15)
+                while grant.exists && Date() < by { sleep(1) }
+                XCTAssertFalse(grant.exists, "Revoke left the grant: \(grant.label)")
+                shot(app, "5-board-revoked")
+            }
             app.buttons["lead-talk"].tap()
             XCTAssertTrue(leadNamed.shows(within: 30), "Talk to the lead didn't open the lead: \(app.debugDescription)")
             shot(app, "5-lead-talk")
@@ -328,7 +455,7 @@ final class FlowTests: XCTestCase {
                 _ = homeThread.shows(within: 10)
             }
             XCTAssertTrue(homeThread.exists, "no Board thread on home's row: \(app.debugDescription)")
-            // Home slides back in: a tap as it settles opens nothing, so again.
+            // The Overview slides back in: a tap as it settles opens nothing, so again.
             let homeThreadLead = app.descendants(matching: .any)["board-lead"]
             for _ in 0..<3 where !homeThreadLead.exists {
                 _ = homeThread.waitFor(hittable: true, timeout: 5)
@@ -367,6 +494,7 @@ final class FlowTests: XCTestCase {
             draft.typeText(ask)
             send(app)
             XCTAssertTrue(app.staticTexts[ask].shows(within: 20), "the staff room didn't take the ask")
+            staffRoom = app.staticTexts["chat-live"].value as? String
             try ask.write(to: handoff.appendingPathComponent("staff"), atomically: true, encoding: .utf8)
             shot(app, "5-staff-room")
             peekAtLead(app, "5-staff-peek")
@@ -419,11 +547,37 @@ final class FlowTests: XCTestCase {
                 _ = chip.shows(within: 5)
             }
             XCTAssertTrue(chip.shows(within: 10), "not back on Boards: \(app.debugDescription)")
+            // Run this board (Arugula #1456): a board in the team's project
+            // with no lead and no grant offers it on its lead card, and its
+            // card goes in the reader's Needs you.
+            if let unled = env["ARUGULA_RUN_BOARD"], !unled.isEmpty {
+                go(app, "Overview")
+                let row = app.buttons["home-board-\(unled)"]
+                let run = app.buttons["board-run"]
+                for _ in 0..<3 where !run.exists {
+                    guard row.shows(within: 30) else { break }
+                    _ = row.waitFor(hittable: true, timeout: 5)
+                    clearAlerts()
+                    row.tap()
+                    _ = run.shows(within: 10)
+                }
+                if !run.exists { shot(app, "fail-board-run") }
+                XCTAssertTrue(run.exists, "no Run this board on \(unled): \(app.debugDescription)")
+                XCTAssertEqual(run.label, "Run this board")
+                XCTAssertFalse(app.staticTexts["board-grant-line"].exists, "a board with no grant shows one")
+                shot(app, "5-board-run")
+                run.tap()
+                let asked = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "in Needs you")).firstMatch
+                XCTAssertTrue(asked.shows(within: 10), "Run this board didn't say where its card went: \(app.debugDescription)")
+                shot(app, "5-board-run-asked")
+                try "asked".write(to: handoff.appendingPathComponent("run-board"), atomically: true, encoding: .utf8)
+                if app.buttons["zoom-path-overview"].exists { app.buttons["zoom-path-overview"].tap() }
+            }
             pick(app, "Default")
-            go(app, "Home")
+            go(app, "Overview")
         }
 
-        // Home (Arugula #1255) and the zoom (Arugula #1304): the board the
+        // The Overview (Arugula #1255) and the zoom (Arugula #1304): the board the
         // script made, its row's question under Needs you. Its row zooms to
         // the Board level, a ticket there to its Work level, and the path bar
         // zooms back out. The board's thread and lanes are a tap away from
@@ -438,7 +592,7 @@ final class FlowTests: XCTestCase {
             }
             clearAlerts()
             shot(app, "2-home")
-            // Home reloads its list after the project switch above: a tap as
+            // The Overview reloads its list after the project switch above: a tap as
             // it does opens nothing, so tap again until the board is there.
             let level = app.descendants(matching: .any)["board-level"]
             var zoomed = false
@@ -621,8 +775,8 @@ final class FlowTests: XCTestCase {
         // which has no hosted sessions, a machine's: box-systemd's), whose
         // conversation opens and is listed under New ideas.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
-            let new = app.buttons["home-new"]
-            XCTAssertTrue(new.shows(within: 15), "no New on home")
+            let new = app.buttons["heading-new"].firstMatch
+            XCTAssertTrue(new.shows(within: 15), "no New in the Overview's heading")
             new.tap()
             XCTAssertTrue(app.buttons["new-board"].shows(within: 10), "no Tell a board")
             app.buttons["new-board"].tap()
@@ -641,7 +795,7 @@ final class FlowTests: XCTestCase {
             if !iPad { goBack(app) }
 
             XCTAssertTrue(new.shows(within: 15), "not back home")
-            // Home slides back in: a tap before it settles opens nothing, so
+            // The Overview slides back in: a tap before it settles opens nothing, so
             // wait for New to take taps, and tap again if its menu didn't come.
             for _ in 0..<3 where !app.buttons["new-idea"].exists {
                 _ = new.waitFor(hittable: true, timeout: 5)
@@ -697,11 +851,13 @@ final class FlowTests: XCTestCase {
         // beside the list, so the tabs stay in reach.
         if !iPad { app.navigationBars.buttons.firstMatch.tap() }
         go(app, "Machines")
-        let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
-        XCTAssertTrue(machine.shows(within: 30), "machine not listed")
-        machine.tap()
-        let new = app.buttons["new-terminal"]
-        XCTAssertTrue(new.shows(within: 30))
+        // One page of machines (Arugula #1357): New terminal is on the
+        // machine's heading, or in the fold of machines with nothing here.
+        let name = env["ARUGULA_MACHINE"] ?? "box-systemd"
+        let machine = app.descendants(matching: .any)["machine-\(name)"]
+        let new = app.buttons["new-terminal-\(name)"]
+        if !new.shows(within: 30), app.buttons["machines-quiet"].exists { app.buttons["machines-quiet"].tap() }
+        XCTAssertTrue(new.shows(within: 30), "machine not listed")
         XCTAssertTrue(new.waitFor(enabled: true, timeout: 45), "never connected: \(app.staticTexts["machine-problem"].label)")
         new.tap()
         let terminal = app.descendants(matching: .any)["terminal-view"]
@@ -730,12 +886,30 @@ final class FlowTests: XCTestCase {
         }
         sleep(3)
         shot(app, "6-machine")
-        XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")
+        XCTAssertTrue(machine.shows(within: 10), "not back on Machines")
 
-        // Signing out ends it here: the sign-in again.
-        go(app, "You")
+        // A notification about the staff room (#1260), tapped with the app
+        // closed: the room opens on Chat, with the chief of staff's messages.
+        if let staffRoom {
+            tapPush(app, said: ["chat": ["room": staffRoom], "tag": "chat-\(staffRoom)", "control": true],
+                    title: "jhgaylor's agent in Chief of staff", body: "pushed-\(Int.random(in: 1000...9999))")
+            let live = app.staticTexts["chat-live"]
+            XCTAssertTrue(live.shows(within: 30), "the tap opened no room: \(app.debugDescription)")
+            XCTAssertEqual(live.value as? String, staffRoom, "the tap opened another room")
+            let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
+            let shown = morning.shows(within: 20)
+            shot(app, "6-staff-from-push")
+            XCTAssertTrue(shown, "the staff room opened from its notification has no messages: \(app.debugDescription)")
+            if !iPad { goBack(app) }
+        }
+
+        // Signing out, under your picture, ends it here: the sign-in again.
+        go(app, "Overview")
+        let picture = app.buttons["account"].firstMatch
+        XCTAssertTrue(picture.shows(within: 30), "no picture in the heading")
+        picture.tap()
         let signOut = app.buttons["sign-out"]
-        XCTAssertTrue(signOut.shows(within: 30), "no sign-out")
+        XCTAssertTrue(signOut.shows(within: 10), "no sign-out under your picture")
         shot(app, "7-you")
         signOut.tap()
         XCTAssertTrue(app.buttons["signin-start"].shows(within: 15), "still signed in")

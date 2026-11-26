@@ -796,6 +796,55 @@
         }
       }
     },
+    "/api/boards/{id}/grant": {
+      "delete": {
+        "operationId": "DELETE_api_boards_id_grant",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardView"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/boards/{id}/reopen": {
       "post": {
         "operationId": "POST_api_boards_id_reopen",
@@ -1101,6 +1150,55 @@
             }
           }
         }
+      }
+    },
+    "/api/boards/{id}/run": {
+      "post": {
+        "operationId": "POST_api_boards_id_run",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardRunAsked"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/chat": {
@@ -4018,6 +4116,44 @@
         ]
       }
     },
+    "/api/feedback": {
+      "post": {
+        "operationId": "POST_api_feedback",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: FeedbackSubmit, read from the body (at most 32 KiB; the app's login sends as its account, under the account's limits, Arugula #1420)",
+          "response: FeedbackAck; refused with FeedbackRefused"
+        ]
+      }
+    },
     "/api/flags": {
       "get": {
         "operationId": "GET_api_flags",
@@ -4050,6 +4186,41 @@
         },
         "x-arugula-untyped": [
           "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/handoff": {
+      "post": {
+        "operationId": "POST_api_handoff",
+        "x-arugula-clients": [
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: an empty object",
+          "response: {code, expires_in}: a one-time code for the app's web view, a minute old at most (Arugula #1420)"
         ]
       }
     },
@@ -4541,6 +4712,74 @@
         ]
       }
     },
+    "/api/me/prefs": {
+      "get": {
+        "operationId": "GET_api_me_prefs",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: the account's prefs, a JSON object of strings"
+        ]
+      },
+      "post": {
+        "operationId": "POST_api_me_prefs",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request and response: a JSON object of the account's prefs, a key's null removing it"
+        ]
+      }
+    },
     "/api/people": {
       "get": {
         "operationId": "GET_api_people",
@@ -4722,6 +4961,55 @@
             }
           }
         }
+      }
+    },
+    "/api/projects/{project}/asks": {
+      "get": {
+        "operationId": "GET_api_projects_project_asks",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAsks"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/projects/{project}/boards": {
@@ -6776,6 +7064,41 @@
         ]
       }
     },
+    "/auth/handoff": {
+      "post": {
+        "operationId": "POST_auth_handoff",
+        "x-arugula-clients": [
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: a form (application/x-www-form-urlencoded), code and to (a path), posted by the app's web view, never in an address",
+          "response: 303 to that path on the platform page, a web session (an app window's) in Set-Cookie"
+        ]
+      }
+    },
     "/auth/logout": {
       "post": {
         "operationId": "POST_auth_logout",
@@ -7495,6 +7818,73 @@
         ],
         "type": "object"
       },
+      "BoardGrant": {
+        "description": "A board's standing grant (Arugula #1415, #1416): what its person approved\non its \"Run this board\" card. Its lead runs on `lead_machine`; its issue\nagents on that machine or `machines`, at most `cap` at once.",
+        "properties": {
+          "cap": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "`grt_…`.",
+            "type": "string"
+          },
+          "lapses_at": {
+            "description": "When it lapses; absent: when the board closes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lead_machine": {
+            "$ref": "#/components/schemas/GrantMachine"
+          },
+          "machines": {
+            "description": "Every machine its issue agents may use: the lead's first.",
+            "items": {
+              "$ref": "#/components/schemas/GrantMachine"
+            },
+            "type": "array"
+          },
+          "mine": {
+            "default": false,
+            "description": "The reader gave it, so Revoke is theirs.",
+            "type": "boolean"
+          },
+          "person": {
+            "description": "The account that gave it, and its name now.",
+            "type": "string"
+          },
+          "person_name": {
+            "default": "",
+            "type": "string"
+          },
+          "running": {
+            "default": 0,
+            "description": "Its issue agents running now (and tickets not attached yet).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "lead_machine",
+          "machines",
+          "cap",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "BoardLead": {
         "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
         "properties": {
@@ -7588,6 +7978,31 @@
         ],
         "type": "object"
       },
+      "BoardRunAsked": {
+        "description": "[`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the\nperson's staff room. `again`: it was open already.",
+        "properties": {
+          "again": {
+            "default": false,
+            "type": "boolean"
+          },
+          "ask": {
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ask",
+          "room",
+          "seq"
+        ],
+        "type": "object"
+      },
       "BoardSource": {
         "description": "The epic a board follows: its children are the board's rows, and the\nconnection made the board, not a person.",
         "properties": {
@@ -7648,6 +8063,17 @@
               "$ref": "#/components/schemas/BoardDoc"
             },
             "type": "array"
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoardGrant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its live grant to start agents (Arugula #1416), if it has one."
           },
           "groups": {
             "default": [],
@@ -7840,6 +8266,18 @@
               "null"
             ]
           },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatProposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What an agent session proposes (`ask:prp_…`, Arugula #1278): its\nchoices are [`APPROVE`] and [`DENY`]. None for any other ask."
+          },
           "question": {
             "type": "string"
           },
@@ -7876,10 +8314,32 @@
         "properties": {
           "choice": {
             "type": "string"
+          },
+          "note": {
+            "description": "A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or\n[`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It\nis kept on the to-do and never put in an event, a push or chat; one\nthat looks like a secret is refused. Any other ask takes none.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "choice"
+        ],
+        "type": "object"
+      },
+      "ChatAsks": {
+        "description": "[`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest\nfirst. Agents' proposals for now (Arugula #1278).",
+        "properties": {
+          "asks": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAsk"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "asks"
         ],
         "type": "object"
       },
@@ -8453,6 +8913,41 @@
               "room",
               "seq",
               "github"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The reader's Inbox changed (Arugula #1430): its one `count` now, and\nby project (`Inbox::by_project`, Arugula #1433), and the ids of the\nitems that came, went or changed (empty when it isn't known which):\nread `GET /api/inbox` again. Sent to that account only.",
+            "properties": {
+              "by_project": {
+                "additionalProperties": {
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "default": {},
+                "type": "object"
+              },
+              "changed": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "count": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "inbox",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "count"
             ],
             "type": "object"
           },
@@ -9228,6 +9723,115 @@
         ],
         "type": "object"
       },
+      "ChatProposal": {
+        "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
+        "properties": {
+          "action": {
+            "description": "`start`, `close`, `run_board` or `todo`.",
+            "type": "string"
+          },
+          "answered_by_name": {
+            "description": "Who answered it, by name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "by_session": {
+            "description": "The session that proposed it, `ses_…`.",
+            "type": "string"
+          },
+          "id": {
+            "description": "`prp_…`.",
+            "type": "string"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalIssue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`start`: the issue."
+          },
+          "outcome": {
+            "description": "What answering it did, in a line.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prompt": {
+            "description": "`start`: what the new session is told (none: to work on the issue).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "`start`: the repo it names, `owner/name`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalRun"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`run_board`: the board, where its lead runs and what it may start."
+          },
+          "sessions": {
+            "description": "`close`: the sessions, as they are now.",
+            "items": {
+              "$ref": "#/components/schemas/ProposalSession"
+            },
+            "type": "array"
+          },
+          "started": {
+            "description": "`start`, approved: the session it started.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why); a to-do's `open`, `done`, `cant`\nor `cancelled`.",
+            "type": "string"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalTodo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`todo`: what to do, how, and its receipt."
+          },
+          "why": {
+            "description": "Why, in the agent's words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "by_session",
+          "sessions",
+          "why",
+          "state"
+        ],
+        "type": "object"
+      },
       "ChatPushWhy": {
         "description": "Why control pushed someone.",
         "oneOf": [
@@ -9395,7 +9999,7 @@
                 "type": "null"
               }
             ],
-            "description": "The session that leads a staff room: the person's posts there are\ndelivered to it, as a board thread's are to the board's lead (#414)."
+            "description": "The session that leads a staff room, or an issue's thread (Arugula\n#1439): the posts there are delivered to it, never its own, as a\nboard thread's are to the board's lead (#414)."
           },
           "level": {
             "$ref": "#/components/schemas/NotifyLevel",
@@ -9635,7 +10239,7 @@
         "type": "object"
       },
       "ChatRoomLead": {
-        "description": "The session leading a staff room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
+        "description": "The session leading a room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
         "properties": {
           "machine": {
             "type": "string"
@@ -10865,6 +11469,22 @@
         ],
         "type": "object"
       },
+      "GrantMachine": {
+        "description": "A machine a [`BoardGrant`] names: its id, and its name now (its id while\nit can't be told).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "Group": {
         "description": "A named, ordered section of a board that its author sets: a phase, a\nwave, an area. A row belongs to at most one ([`Row::group`]); a group\nholds no lane, and a row's lane is the same in any group.",
         "properties": {
@@ -10915,15 +11535,67 @@
       },
       "Inbox": {
         "properties": {
+          "by_project": {
+            "additionalProperties": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "default": {},
+            "description": "`count`, by project (Arugula #1433): the rail's project marks. Each\ncounted item under its subject's project; one with no project (a\nDM) is in `count` alone, and a project with none isn't listed.\nEmpty from a server before it.",
+            "type": "object"
+          },
+          "count": {
+            "default": 0,
+            "description": "The one count (Arugula #1430): the open items whose `counts` is\ntrue. Every client shows this number and adds nothing to it. Seen\ndoesn't lower it: an item counts until it clears. 0 from a server\nbefore it.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
           "entries": {
+            "description": "Today's list, unchanged, for apps released before `items` (One\nInbox, Arugula #1428): removed once the oldest supported app reads\n`items`.",
             "items": {
               "$ref": "#/components/schemas/InboxEntry"
+            },
+            "type": "array"
+          },
+          "handled": {
+            "default": 0,
+            "description": "How many asks agents are handling among themselves (Arugula #1393):\nthe reader's agents' asks that the agent that started them answers\nfirst, for ten minutes. Shown as a line, never counted.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "default": [],
+            "description": "The one list: what needs the reader or names them, ranked by group\n([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first\nwithin a group. One item per thing: a mention in a thread is its\n`mention` item, never also the thread's `thread_news`.",
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
             },
             "type": "array"
           }
         },
         "required": [
           "entries"
+        ],
+        "type": "object"
+      },
+      "InboxAnswer": {
+        "description": "How to answer an item in place. `via` is `attention_act`,\n`session_action`, `card` (an `approval`), `todo`, `board_answer`,\n`deploy` or `chat_reply`; `options` only where the server holds them (a\nboard ask's, an approval's and a to-do's). An approval or a to-do is\nanswered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and\na to-do's `note`), as its staff card is.",
+        "properties": {
+          "options": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "via": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "via"
         ],
         "type": "object"
       },
@@ -10968,7 +11640,7 @@
           },
           "project": {
             "default": null,
-            "description": "A native issue's or a run's project (M202, M215).",
+            "description": "A native issue's or a run's project (M202, M215); a mirrored\nitem's, the project its repo is linked in (Arugula #1433).",
             "type": [
               "string",
               "null"
@@ -11030,13 +11702,161 @@
         ],
         "type": "object"
       },
+      "InboxFrom": {
+        "description": "Who an item is from: a person, or an agent and its machine.",
+        "properties": {
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agent": {
+            "description": "An agent session's id.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "machine": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "A person's or a GitHub login's name, as the list shows it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InboxItem": {
+        "description": "One item of the one Inbox (Arugula #1430): a thing that needs the\nreader or names them, until its source no longer does.",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxAnswer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How to answer it in place, when it can be."
+          },
+          "counts": {
+            "description": "Whether it's in `count`: false for `turn_finished`, for an alert\n(`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an\nitem `for` someone else.",
+            "type": "boolean"
+          },
+          "done_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "escalated": {
+            "description": "An agent's ask that another agent was to answer, and didn't within\nten minutes: it reached its person, and says so (Arugula #1393).",
+            "type": "boolean"
+          },
+          "for": {
+            "description": "The account it waits on (Arugula #1393): the reader, or a teammate\nwhose ask the reader sees folded (\"2 asks for Jake ›\"), never\ncounted for them. `None`: the reader's, as before it. An item\ncounts only when `counts` is true and `for` is the reader or absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "$ref": "#/components/schemas/InboxFrom",
+            "default": {},
+            "description": "Who asks or wrote. An agent's card is from its agent (`agent`, the\nsession's id or a machine's agent's name, and `machine`); a chief of\nstaff's `name` is `Chief of staff · <the project's name>`."
+          },
+          "group": {
+            "description": "One of [`INBOX_GROUPS`].",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (an\nagent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`\n(a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula\n#1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's\nitem and reason (`fi_…:review_requested`, `iss_…:mentioned`,\n`run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an\napproval or a to-do.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "One of [`INBOX_KINDS`].",
+            "type": "string"
+          },
+          "lines": {
+            "description": "The card's decision lines, as plain text (Arugula #1467): what its\nstaff card says, by the same words, so a client shows the expanded\nrow without reading the card. An `approval`'s are its terms (a Run\nthis board's lead, its issue agents' machines, the cap, the lapse\nand what each machine said of its clone; a close's blocks; a start's\nrepo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its\nhow when it has one: its steps as written, in one line with its\nnewlines, for the mono well. Never a secret, never a to-do's note.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "seen_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "since": {
+            "description": "When it started waiting on the reader (ms): it ranks the list.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "snippet": {
+            "description": "The message, for a DM, a thread or a chat mention. Never an agent's\nquestion, which stays on its machine.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subject": {
+            "$ref": "#/components/schemas/InboxSubject",
+            "description": "What it's about, and where Open goes."
+          },
+          "title": {
+            "description": "One line: the PR's title, the question, \"Approve deploy v0.70.105\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "group",
+          "counts",
+          "title",
+          "subject",
+          "since"
+        ],
+        "type": "object"
+      },
       "InboxMark": {
         "description": "Mark an item's entries: `true` sets seen or done (now, if it wasn't),\n`false` clears it, and one not given stays as it is.",
         "properties": {
+          "choice": {
+            "description": "Answers an `approval` or a `todo` (Arugula #1467) with one of its\n`answer.options`, as its staff card's buttons do, and by the same\npath: only its person, once. `seen` and `done` are then ignored.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "done": {
             "default": null,
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "A to-do's answer's note: kept on the to-do for its person, never in\nan item, a push or a live event. One that looks like a secret is\nrefused. Only with `choice`, and only a to-do's.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -11093,6 +11913,68 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "InboxSubject": {
+        "description": "What an item is about. `type` is `pane`, `session`, `proposal`,\n`board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is\nwhere Open goes (a path on the platform's page, or the item on GitHub).",
+        "properties": {
+          "board": {
+            "description": "A board ask's board.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "machine": {
+            "description": "The asker's machine: an agent's card's is the machine its agent\nasked from, never what it would act on (a close's blocks are in\n`lines`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pane": {
+            "description": "The asker's block on `machine`, as `%N`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "room": {
+            "description": "The chat room it's in: a proposal's card, a thread, a DM.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seq": {
+            "description": "The message in `room`: a proposal's card, the first unread.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "url"
+        ],
         "type": "object"
       },
       "Issue": {
@@ -12808,6 +13690,163 @@
           }
         ]
       },
+      "ProposalIssue": {
+        "description": "[`ChatProposal::issue`].",
+        "properties": {
+          "id": {
+            "description": "`iss_…`.",
+            "type": "string"
+          },
+          "number": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "title"
+        ],
+        "type": "object"
+      },
+      "ProposalRun": {
+        "description": "A \"Run this board\" card's lines ([`ChatProposal::run`]).",
+        "properties": {
+          "board": {
+            "description": "`brd_…`, and its title now.",
+            "type": "string"
+          },
+          "board_title": {
+            "type": "string"
+          },
+          "cap": {
+            "description": "How many issue agents at once.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "checkouts": {
+            "default": [],
+            "description": "What each machine said when the card was raised: the first of the\nproject's repos it has a clone of, or none. A machine that isn't here\ncouldn't be asked (offline, or its Arugula is too old).",
+            "items": {
+              "$ref": "#/components/schemas/RunCheckout"
+            },
+            "type": "array"
+          },
+          "lapse_days": {
+            "description": "None: until the board closes.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lead_machine": {
+            "$ref": "#/components/schemas/GrantMachine",
+            "description": "Where its lead runs."
+          },
+          "machines": {
+            "description": "Where its issue agents may run: the lead's machine first.",
+            "items": {
+              "$ref": "#/components/schemas/GrantMachine"
+            },
+            "type": "array"
+          },
+          "repo": {
+            "description": "The board's repo (Arugula #1458): the first of the project's linked\nrepos, the board's own first. None: the project links none, and\nagents start in their machine's home.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "board",
+          "board_title",
+          "lead_machine",
+          "machines",
+          "cap"
+        ],
+        "type": "object"
+      },
+      "ProposalSession": {
+        "description": "One of [`ChatProposal::sessions`].",
+        "properties": {
+          "id": {
+            "description": "`ses_…`.",
+            "type": "string"
+          },
+          "state": {
+            "description": "Its state now (`working`, `done`, `stopped`, …).",
+            "type": "string"
+          },
+          "title": {
+            "description": "What it works on: its branch's slug, or its issue's title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "state"
+        ],
+        "type": "object"
+      },
+      "ProposalTodo": {
+        "description": "A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as\nthe agent wrote it. Its why is [`ChatProposal::why`], whom it's for the\ncard's asker, and who answered [`ChatProposal::answered_by_name`].",
+        "properties": {
+          "answered_at": {
+            "description": "When it was answered (or cancelled), ms.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodoConversation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "how": {
+            "description": "The steps, shown as written in a mono well.",
+            "type": "string"
+          },
+          "machine": {
+            "description": "A machine's agent's: the machine, by id, and its conversation.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "The person's note with their answer: only they read it here.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "how"
+        ],
+        "type": "object"
+      },
       "PublicLink": {
         "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
         "properties": {
@@ -13122,7 +14161,7 @@
                 "type": "null"
               }
             ],
-            "description": "Never sent: a row's lane follows its work, and nobody sets it\n(Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from\n0.70.86 doesn't read it."
+            "description": "Never sent: a row's lane follows its work, and nobody sets it\n(Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from\n0.70.128 doesn't read it."
           },
           "live": {
             "anyOf": [
@@ -13409,6 +14448,26 @@
           "size",
           "digest",
           "created_at"
+        ],
+        "type": "object"
+      },
+      "RunCheckout": {
+        "description": "One machine's clone, for a \"Run this board\" card (Arugula #1458).",
+        "properties": {
+          "machine": {
+            "description": "The machine, by id.",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The first of the project's repos it has a clone of (where its agents\nstart); none: it has none, and no agent starts there.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "machine"
         ],
         "type": "object"
       },
@@ -15092,6 +16151,23 @@
           "failed"
         ],
         "type": "string"
+      },
+      "TodoConversation": {
+        "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+        "properties": {
+          "agent": {
+            "description": "`claude` or `codex`.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "id"
+        ],
+        "type": "object"
       },
       "UntriagedQuery": {
         "description": "Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`\nset, of the board's own project.",

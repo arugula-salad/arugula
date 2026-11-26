@@ -1,10 +1,10 @@
-// The Overview zoom (Arugula #1304, the web's #1287): Home is the Project
+// The Overview zoom (Arugula #1304, the web's #1287): the Overview is the Project
 // level, a board's row zooms to its Board level and a ticket there to its
 // Work level, and Back, or the path bar over each level, zooms out. Each level
 // has an address, the web's paths (web/src/platform/paths.ts) under
 // `arugula://`, so a link or a notification opens any of them:
 //
-//   arugula://p/:project                        Home, in that project
+//   arugula://p/:project                        the Overview, in that project
 //   arugula://p/:project/board/:board           a board's Board level
 //   arugula://p/:project/board/:board/card/:row a card's Work level
 //   arugula://p/:project/work/:session          a session on no card, by its
@@ -16,7 +16,7 @@
 
 import SwiftUI
 
-/// How far in Home is zoomed, below its Project level.
+/// How far in the Overview is zoomed, below its Project level.
 enum Zoom: Hashable {
     case board(String)
     case card(board: String, row: String)
@@ -88,7 +88,7 @@ struct ZoomRoute: Equatable {
 }
 
 /// Where a link, a notification or the app being opened at an address wants
-/// Home to zoom, until Home takes it.
+/// the Overview to zoom, until it takes it.
 @MainActor
 final class ZoomCenter: ObservableObject {
     static let shared = ZoomCenter()
@@ -116,14 +116,14 @@ private struct TalkKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    /// Zoom Home to a level of the current project; nil is its Project level.
+    /// Zoom the Overview to a level of the current project; nil is its Project level.
     var zoom: ((Zoom?) -> Void)? {
         get { self[ZoomKey.self] }
         set { self[ZoomKey.self] = newValue }
     }
 
     /// Open an agent, by its session's key, to talk to it (Arugula #1305):
-    /// Home zooms to its Work level, Boards pushes it. Unset, Home opens it.
+    /// the Overview zooms to its Work level, Boards pushes it. Unset, the Overview opens it.
     var talkTo: ((String) -> Void)? {
         get { self[TalkKey.self] }
         set { self[TalkKey.self] = newValue }
@@ -131,7 +131,7 @@ extension EnvironmentValues {
 }
 
 /// Open an agent to talk to it: where the view is, by `talkTo`, else on
-/// Home, in the project.
+/// The Overview, in the project.
 @MainActor
 func openAgent(_ key: String, talkTo: ((String) -> Void)?, project: String?) {
     if let talkTo {
@@ -141,7 +141,7 @@ func openAgent(_ key: String, talkTo: ((String) -> Void)?, project: String?) {
     }
 }
 
-/// A session's Work level pushed where Home isn't (Boards, Arugula #1305).
+/// A session's Work level pushed where the Overview isn't (Boards, Arugula #1305).
 struct WorkKey: Hashable { let key: String }
 
 extension LeadLine {
@@ -152,7 +152,7 @@ extension LeadLine {
     /// Its key, with its name kept for the Work level to call it by.
     @MainActor
     var opening: String {
-        ZoomCenter.shared.names[key] = lead.session
+        ZoomCenter.shared.names[key] = label
         return key
     }
 }
@@ -238,8 +238,8 @@ struct ZoomPath: View {
             .accessibilityValue(ZoomRoute(project: project, zoom: here).url.absoluteString)
     }
 
-    /// Zoom out: in Home, in place; anywhere else (a level pushed on
-    /// Boards), on Home.
+    /// Zoom out: in the Overview, in place; anywhere else (a level pushed on
+    /// Boards), on the Overview.
     private func go(_ z: Zoom?) {
         if let zoom { zoom(z) } else { ZoomCenter.shared.route = ZoomRoute(project: project, zoom: z) }
     }
@@ -283,8 +283,15 @@ extension Peeked {
     @MainActor
     var standing: Standing {
         switch self {
-        case .pane(let m, let p): (m.agents + m.panes).first { $0.id == p.id }?.standing ?? p.standing
+        case .pane(let m, let p): m.standing(of: (m.agents + m.panes).first { $0.id == p.id } ?? p)
         case .hosted(let s): s.standing
         }
+    }
+
+    /// Whose it is when it isn't the reader's (Arugula #1392).
+    @MainActor
+    var owner: String? {
+        if case .pane(let m, _) = self { return m.owner }
+        return nil
     }
 }

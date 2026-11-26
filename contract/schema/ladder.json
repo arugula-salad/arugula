@@ -1,0 +1,335 @@
+{
+  "$defs": {
+    "LadderStart": {
+      "description": "`POST` [`START_PATH`]: start an agent here under a ticket. The board, the\nrung, the issue and the recipe must be the ticket's.",
+      "properties": {
+        "allow": {
+          "description": "Tools it may use without asking (`Read`, `Bash`, ...).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "board": {
+          "type": "string"
+        },
+        "by": {
+          "$ref": "#/$defs/StartedBy",
+          "default": {
+            "machine": ""
+          }
+        },
+        "issue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_mode": {
+          "description": "The permission mode its session starts in (Claude Code's `auto`,\nsay), as `start_agent` takes it: never one that skips every check.\nNone: Claude Code's default, a card for each command it asks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "What to ask it.",
+          "type": "string"
+        },
+        "recipe": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "The repository it works in (`owner/name`): the target finds its own\nclone and opens the agent in a new worktree there. None: the target's\nhome.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rung": {
+          "$ref": "#/$defs/Rung"
+        },
+        "session": {
+          "description": "A name for its session there; default the rung and the issue.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "description": "Its block's title there; default its session's name. A block with a\ntitle is one a post naming its session reaches (the board's thread,\nfor a lead).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user_settings": {
+          "description": "The person's own Claude Code settings on the target (its allow and\ndeny lists, default mode, CLAUDE.md), without their hooks.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ticket",
+        "board",
+        "rung",
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "LadderStarted": {
+      "description": "The target's answer to a [`LadderStart`].",
+      "properties": {
+        "block": {
+          "description": "The agent block, there.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cwd": {
+          "description": "Where it works, there.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "machine": {
+          "description": "The target's name and id.",
+          "type": "string"
+        },
+        "said": {
+          "description": "What the target says of its row or its lead: the boards it's on, or\nwhy it isn't.",
+          "type": "string"
+        },
+        "session": {
+          "description": "Its session there.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "id",
+        "block",
+        "session",
+        "cwd",
+        "said"
+      ],
+      "type": "object"
+    },
+    "LadderStop": {
+      "description": "`POST` [`STOP_PATH`]: close an agent block a ladder start opened on the\ntarget.",
+      "properties": {
+        "block": {
+          "description": "The agent block, there ([`LadderStarted::block`]).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block"
+      ],
+      "type": "object"
+    },
+    "LadderStopped": {
+      "description": "The target's answer to a [`LadderStop`].",
+      "properties": {
+        "block": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "machine": {
+          "description": "The target's name and id.",
+          "type": "string"
+        },
+        "said": {
+          "description": "What became of its worktree, and whether control was told it closed\n(its grant's slot is free once it was).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "id",
+        "block",
+        "said"
+      ],
+      "type": "object"
+    },
+    "Rung": {
+      "description": "Which rung of the ladder the agent is.",
+      "oneOf": [
+        {
+          "const": "lead",
+          "description": "The board's lead: it takes the board's lead, so the board's thread\nreaches it.",
+          "type": "string"
+        },
+        {
+          "const": "issue",
+          "description": "An issue agent: it's attached to its issue's row and holds it, so the\nissue's thread reaches it.",
+          "type": "string"
+        }
+      ]
+    },
+    "StartClaims": {
+      "description": "A start ticket's claims.",
+      "properties": {
+        "aud": {
+          "description": "The target machine's id.",
+          "type": "string"
+        },
+        "board": {
+          "description": "The board, and its project: where the block is attached.",
+          "type": "string"
+        },
+        "exp": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "description": "The calling machine's id: the target refuses it from a channel whose\ncaller is another machine.",
+          "type": "string"
+        },
+        "grant": {
+          "description": "The board's grant the start counts against; none for a lead the\nperson's own approval starts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "iat": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iss": {
+          "description": "The hub's public URL.",
+          "type": "string"
+        },
+        "issue": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "jti": {
+          "description": "Unique to this ticket: the target takes it once, and names it when it\nattaches the block, so control counts the start.",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "recipe": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rung": {
+          "$ref": "#/$defs/Rung"
+        },
+        "sub": {
+          "description": "The person's account: the target refuses another account's (across\naccounts it's a task and its card, aru-050).",
+          "type": "string"
+        },
+        "use": {
+          "description": "Always [`START_USE`].",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iss",
+        "sub",
+        "aud",
+        "use",
+        "from",
+        "board",
+        "project",
+        "rung",
+        "iat",
+        "exp",
+        "jti"
+      ],
+      "type": "object"
+    },
+    "StartTicket": {
+      "description": "The hub's answer to a [`StartTicketAsk`].",
+      "properties": {
+        "expires": {
+          "description": "When it runs out, in seconds since the epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "StartTicketAsk": {
+      "description": "What a daemon asks the hub a start ticket for.",
+      "properties": {
+        "issue": {
+          "description": "The row's issue, as the caller writes it (`#N`, `owner/repo#N`,\n`IDENT-N` or an `iss_`/`fi_` id), for [`Rung::Issue`].",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipe": {
+          "description": "The recipe the agent wears; none for plain Claude Code.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rung": {
+          "$ref": "#/$defs/Rung"
+        },
+        "to": {
+          "description": "The target machine's id: the asking machine's own, or another of its\naccount's.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to",
+        "rung"
+      ],
+      "type": "object"
+    },
+    "StartedBy": {
+      "description": "Who started a ladder agent: the calling session, on its machine.",
+      "properties": {
+        "machine": {
+          "default": "",
+          "description": "The calling machine's name, filled in by the target from the\nchannel's caller (what the caller sends here is ignored).",
+          "type": "string"
+        },
+        "session": {
+          "description": "The calling session's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::ladder"
+}

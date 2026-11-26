@@ -26,12 +26,17 @@
 //! `flags::ISSUES_STEERING` as `additionalContext`, so Claude Code files a
 //! new issue in Arugula, not on GitHub, and `flags::DOCS_STEERING` before
 //! it, so a report is a Doc, not an Artifact (#1486; everyone's since Docs
-//! left Labs, native #204, unless an older daemon still has them off). It asks the daemon for at most [`FLAGS_WAIT`], because Claude
-//! Code waits for SessionStart hooks before a headless session's first
-//! turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
-//! sentence again as its context: it doesn't stop the command, which may
-//! be what the user asked for. A `PostToolUse` in a session a person drives
-//! also takes a mention that's waiting (#644), as `additionalContext`.
+//! left Labs, native #204, unless an older daemon still has them off). The
+//! issues sentence only once the machine has joined Arugula cloud, as in
+//! MCP's instructions: before, it would send an agent to tools it can't
+//! reach (Arugula #1403). It asks the daemon for at most [`FLAGS_WAIT`],
+//! because Claude Code waits for SessionStart hooks before a headless
+//! session's first turn. A `PreToolUse` of Bash that runs `gh issue
+//! create` on a joined machine gets the issues sentence again as its
+//! context (the daemon asked only for that command, for as long): it
+//! doesn't stop the command, which may be what the user asked for. A
+//! `PostToolUse` in a session a person drives also takes a mention that's
+//! waiting (#644), as `additionalContext`.
 //!
 //! Outside an Arugula pane all of them do nothing. Nor do they in an editor
 //! or the desktop app started from one, which inherits its `ARUGULA_PANE`
@@ -51,7 +56,8 @@ use arugula_proto::{
         PermitAnswer,
     },
     flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING},
-    op::ops::{FlagsList, PaneFollowUpAck, PaneInbox, PanePermit},
+    hosts::ControlState,
+    op::ops::{FlagsList, HostGet, PaneFollowUpAck, PaneInbox, PanePermit},
 };
 
 use crate::http::{Target, call, request, request_op, send_op};
@@ -60,8 +66,9 @@ use crate::http::{Target, call, request, request_op, send_op};
 /// permission to the terminal.
 const GIVE_UP: Duration = Duration::from_secs(60);
 
-/// The longest `SessionStart` waits for the daemon's flags. A session must
-/// never wait on Arugula.
+/// The longest the hook waits for each thing it asks the daemon, but a
+/// permission: `SessionStart`'s flags, and every other event's post. A
+/// session must never wait on Arugula.
 const FLAGS_WAIT: Duration = Duration::from_secs(2);
 
 /// The pane and the hook's input, unless this is outside a pane, or the
@@ -82,9 +89,9 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 }
 
 /// `arugula hook`: always exits 0; prints a decision only for a
-/// permission someone answered on a card, the issues (and, where `docs` is
-/// on, Doc) context on `SessionStart`, and the issues context before a
-/// `gh issue create`.
+/// permission someone answered on a card, the Doc (where `docs` is on) and,
+/// once joined, issues context on `SessionStart`, and, once joined, the
+/// issues context before a `gh issue create`.
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] == "SessionStart" {
@@ -100,7 +107,7 @@ pub fn run(sock: Target) -> i32 {
         return 0;
     }
     if hook["hook_event_name"] != "PermissionRequest" {
-        if let Some(out) = pre_tool_use(&hook) {
+        if let Some(out) = pre_tool_use(&hook, || joined(&sock).recv_timeout(FLAGS_WAIT).ok().flatten()) {
             let mut stdout = std::io::stdout().lock();
             let _ = writeln!(stdout, "{out}");
             let _ = stdout.flush();
@@ -111,8 +118,7 @@ pub fn run(sock: Target) -> i32 {
             hook[HOOK_TAKES_MENTION] = true.into();
             hook[HOOK_ACKS] = true.into();
         }
-        let answer = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
-        let answer = answer.ok().and_then(|r| r.parse::<HookAnswer>().ok()).filter(|_| asks);
+        let answer = post_hook(&sock, pane, hook, FLAGS_WAIT).filter(|_| asks);
         let id = answer.as_ref().and_then(|a| a.follow_up.as_ref()).and_then(|f| f.id);
         if let Some(out) = answer.and_then(mention_context) {
             let mut stdout = std::io::stdout().lock();
@@ -169,50 +175,67 @@ fn mention_context(answer: HookAnswer) -> Option<Value> {
 }
 
 /// What `SessionStart` prints, if the daemon answers within `wait`: Claude
-/// Code's `additionalContext`, the issues sentence, with the Doc one first.
-/// Nothing when the daemon doesn't answer in time, or answers something
-/// else.
+/// Code's `additionalContext`, the Doc sentence, then the issues one once
+/// the machine has joined (`joined`). Nothing when the daemon doesn't answer
+/// in time, or answers something else, or there'd be nothing to say.
 fn session_start(sock: &Target, wait: Duration, driven: bool) -> Option<Value> {
-    let mut context = match docs_on(sock, wait)? {
-        true => format!("{DOCS_STEERING} {ISSUES_STEERING}"),
-        false => ISSUES_STEERING.to_owned(),
-    };
-    if driven {
-        context = format!("{context} {MENTIONS_STEERING}");
+    let by = Instant::now() + wait;
+    let joined = joined(sock);
+    let docs = docs_on(sock, wait)?;
+    let joined = joined.recv_timeout(by.saturating_duration_since(Instant::now())).ok().flatten();
+    let context = [
+        docs.then_some(DOCS_STEERING),
+        joined.unwrap_or(false).then_some(ISSUES_STEERING),
+        driven.then_some(MENTIONS_STEERING),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if context.is_empty() {
+        return None;
     }
     Some(serde_json::json!({
         "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": context }
     }))
 }
 
-/// Whether the daemon has Docs, asked on a thread of its own so that a
-/// daemon that accepts and never answers still costs only `wait` (the thread
-/// ends with the process). `None`: it didn't answer. Every daemon since
-/// native #204 has them; an older one has them where its `docs` flag is on.
+/// `f`, on a thread of its own, for at most `wait`, so that a daemon that
+/// accepts and never answers still costs only `wait` (the thread ends with
+/// the process). `None`: it didn't finish in time.
+fn within<T: Send + 'static>(wait: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(wait).ok()
+}
+
+/// Passes an event to the daemon (`/api/panes/N/hook`) for at most `wait`
+/// (Arugula #1418), and its answer. `None`: it didn't answer in time, or
+/// answered something else; the hook carries on as if there were no daemon.
+fn post_hook(sock: &Target, pane: u32, hook: Value, wait: Duration) -> Option<HookAnswer> {
+    let sock = sock.clone();
+    within(wait, move || {
+        let res = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
+        res.ok().and_then(|r| r.parse::<HookAnswer>().ok())
+    })
+    .flatten()
+}
+
 /// Tells the daemon this session heard [`MENTIONS_STEERING`] (#644), for at
 /// most `wait`: a session must never wait on Arugula.
 fn say_mentions_told(sock: &Target, pane: u32, mut hook: Value, wait: Duration) {
     hook[HOOK_MENTIONS_TOLD] = true.into();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let sock = sock.clone();
-    std::thread::spawn(move || {
-        let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
-        let _ = tx.send(());
-    });
-    let _ = rx.recv_timeout(wait);
+    let _ = post_hook(sock, pane, hook, wait);
 }
 
 /// Tells the daemon the follow-up `id` is printed (#630), for at most
 /// `wait`: one never acked is offered again, so a lost ack costs at most a
 /// second copy, never the follow-up.
 fn ack(sock: &Target, pane: u32, id: u64, wait: Duration) {
-    let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
-    std::thread::spawn(move || {
-        let _ = send_op::<PaneFollowUpAck>(&sock, &pane, &FollowUpAck { id });
-        let _ = tx.send(());
-    });
-    let _ = rx.recv_timeout(wait);
+    within(wait, move || send_op::<PaneFollowUpAck>(&sock, &pane, &FollowUpAck { id }));
 }
 
 fn session_driven() -> bool {
@@ -220,29 +243,44 @@ fn session_driven() -> bool {
     driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref())
 }
 
-fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
+/// Whether this machine has joined Arugula cloud and is still in it, as
+/// MCP's `joined` has it, asked on a thread of its own so it runs beside
+/// [`docs_on`]: the caller waits on the answer. `None`: the daemon didn't
+/// say (an older one, or for someone who isn't the owner), taken as not
+/// joined.
+fn joined(sock: &Target) -> std::sync::mpsc::Receiver<Option<bool>> {
     let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
     std::thread::spawn(move || {
-        let _ = tx.send(call::<FlagsList>(&sock, &(), &Empty {}));
+        let got = send_op::<HostGet>(&sock, &(), &Empty {}).and_then(|r| r.json());
+        let _ = tx.send(got.ok().as_ref().and_then(ControlState::of_host).map(|c| c.state == "joined"));
     });
-    match rx.recv_timeout(wait) {
-        Ok(Ok(all)) => Some(!all.iter().any(|f| f.name == "docs" && !f.on)),
-        _ => None,
-    }
+    rx
+}
+
+/// Whether the daemon has Docs, for at most `wait`. `None`: it didn't
+/// answer. Every daemon since native #204 has them; an older one has them
+/// where its `docs` flag is on.
+fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
+    let sock = sock.clone();
+    let all = within(wait, move || call::<FlagsList>(&sock, &(), &Empty {}))?.ok()?;
+    Some(!all.iter().any(|f| f.name == "docs" && !f.on))
 }
 
 /// What a `PreToolUse` prints: the issues sentence, as context, for a Bash
-/// command that runs `gh issue create`. It never decides.
-fn pre_tool_use(hook: &Value) -> Option<Value> {
+/// command that runs `gh issue create`, if `joined` (asked only then) says
+/// the machine has joined Arugula cloud; not knowing is not joined (Arugula
+/// #1403). It never decides.
+fn pre_tool_use(hook: &Value, joined: impl FnOnce() -> Option<bool>) -> Option<Value> {
     if hook["hook_event_name"] != "PreToolUse" || hook["tool_name"] != "Bash" {
         return None;
     }
-    files_a_github_issue(hook["tool_input"]["command"].as_str()?).then(|| {
-        serde_json::json!({
-            "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING }
-        })
-    })
+    if !files_a_github_issue(hook["tool_input"]["command"].as_str()?) || joined() != Some(true) {
+        return None;
+    }
+    Some(serde_json::json!({
+        "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": ISSUES_STEERING }
+    }))
 }
 
 /// Whether a shell command runs `gh issue create` (or its alias `new`).
@@ -401,17 +439,29 @@ mod tests {
     fn only_bash_filing_a_github_issue_gets_the_issues_context() {
         let bash =
             |c: &str| json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": c } });
-        let out = pre_tool_use(&bash("gh issue create -t x")).expect("context");
+        let joined = || Some(true);
+        let out = pre_tool_use(&bash("gh issue create -t x"), joined).expect("context");
         assert_eq!(out["hookSpecificOutput"]["additionalContext"], arugula_proto::flags::ISSUES_STEERING);
         assert_eq!(out["hookSpecificOutput"]["hookEventName"], "PreToolUse");
         assert!(out["hookSpecificOutput"].get("permissionDecision").is_none(), "it never decides");
-        assert!(pre_tool_use(&bash("gh issue view 3")).is_none());
+        // The daemon is asked only for `gh issue create`.
+        let unasked = || -> Option<bool> { panic!("asked the daemon") };
+        assert!(pre_tool_use(&bash("gh issue view 3"), unasked).is_none());
         let mut post = bash("gh issue create");
         post["hook_event_name"] = json!("PostToolUse");
-        assert!(pre_tool_use(&post).is_none());
+        assert!(pre_tool_use(&post, unasked).is_none());
         let mut other = bash("gh issue create");
         other["tool_name"] = json!("Write");
-        assert!(pre_tool_use(&other).is_none());
+        assert!(pre_tool_use(&other, unasked).is_none());
+    }
+
+    /// Arugula #1403: an unjoined machine, or one whose daemon didn't say,
+    /// isn't sent to native issues it can't file.
+    #[test]
+    fn gh_issue_create_on_an_unjoined_machine_gets_no_context() {
+        let create = json!({ "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": { "command": "gh issue create" } });
+        assert!(pre_tool_use(&create, || Some(false)).is_none(), "not joined");
+        assert!(pre_tool_use(&create, || None).is_none(), "didn't say");
     }
 
     #[test]
@@ -423,5 +473,35 @@ mod tests {
         assert!(!driven(None, Some("sdk-py")), "an older SDK");
         assert!(driven(None, Some("cli")), "an older terminal claude");
         assert!(driven(None, None), "no word either way: wait, as before");
+    }
+
+    /// Arugula #1418: a daemon that accepts the hook's post and never
+    /// answers holds Claude Code's tool call only for the hook's limit, and
+    /// the hook carries on as if no daemon answered.
+    #[cfg(unix)]
+    #[test]
+    fn a_daemon_that_never_answers_costs_only_the_limit() {
+        use std::{os::unix::net::UnixListener, time::Instant};
+
+        use super::{FLAGS_WAIT, Target, post_hook};
+
+        let dir = std::env::temp_dir().join(format!("arugula-hook-hung-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sock");
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for conn in listener.incoming() {
+                held.push(conn);
+            }
+        });
+        let hook = json!({ "hook_event_name": "PostToolUse", "tool_name": "Bash" });
+        let started = Instant::now();
+        let answer = post_hook(&Target::Socket(path), 1, hook, FLAGS_WAIT);
+        let took = started.elapsed();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(answer.is_none(), "no answer, as if no daemon");
+        assert!(took < FLAGS_WAIT + std::time::Duration::from_millis(500), "took {took:?}");
     }
 }

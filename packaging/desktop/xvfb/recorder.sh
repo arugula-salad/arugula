@@ -7,4 +7,6 @@ mkdir -p "$d"
 pwd >"$d/cwd"
 (while :; do stty size </dev/tty >"$d/size.new" 2>/dev/null && mv "$d/size.new" "$d/size"; sleep 0.3; done) &
 stty raw -echo
-exec dd bs=1 of="$d/keys" 2>/dev/null
+# Appended, so a check that empties the file mid-run reads only what came
+# after: at dd's own offset it would read a hole of zeros first.
+exec dd bs=1 oflag=append conv=notrunc of="$d/keys" 2>/dev/null

@@ -1,0 +1,19 @@
+---
+section: Changed
+title: iPhone and iPad Machines is one page, as the web's
+line: Machines on the iPhone and iPad is one page of machines, session cards and one-line pane rows; a session opens with its panes stacked on an iPhone, and live beside the page on an iPad.
+headline: no
+---
+Machines on the iPhone and iPad is the web's page: each machine, in the
+shared core's order, with its sessions in the current project as cards, and
+each card's panes as one-line rows that say what they're doing, with a Needs
+you chip. A session with more than one tab names each; past three, the rest
+wait behind "+N more". Machines with nothing in the project fold into one
+line at the bottom, and an offline machine can't be opened. New terminal is
+on each of your machines.
+
+On an iPhone, a session's name opens the session a tab at a time, with its
+panes stacked and live. Tap any pane, there or on the page, to type into it
+full screen with the keyboard and the key bar, as before. On an iPad the
+page is the left column and the tab is live on the right; before you pick,
+it shows the pane you were last in on this device.

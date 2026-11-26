@@ -20,6 +20,9 @@
 //!   in a sandboxed frame: inline scripts and styles only, so a `<script src>`,
 //!   a `<link href>`, an `<iframe>`, `<object>`, `<embed>`, `<base>` or
 //!   `<meta http-equiv>` is refused, as is a second document.
+//!   Prototypes in one Doc can link to each other by file name (a link or
+//!   `location.assign` to `next-screen.html` shows the prototype titled
+//!   "Next screen" in place); anything else must route in memory.
 //! - ```` ```stats ````: a JSON list of 1 to 6 tiles (#254), each a `label`
 //!   and a `value` as text, with an optional `delta` and its `tone` (`up`,
 //!   `down` or `flat`) and no other keys.

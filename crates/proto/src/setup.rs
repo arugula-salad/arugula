@@ -66,7 +66,8 @@ pub struct ControlJoinRequest {
     /// A team to put it in ahead of time (its id).
     pub team: Option<String>,
     /// The owner's answer to "may people type into it through Arugula cloud?"
-    /// ([`crate::sharing::remote_input`]), asked as it joins. Taken only
+    /// ([`crate::sharing::remote_input`]), if they gave one; without it,
+    /// the join settles it ([`crate::sharing::joined_sets`]). Taken only
     /// from the owner on this machine (its socket, or its own page on
     /// loopback): through control or the tailnet it's refused.
     pub remote_input: Option<bool>,

@@ -63,7 +63,7 @@ pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
     flag: None,
 };
 
-pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.";
+pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. Its questions come to you first: answer them with session_reply, since one you leave for 10 minutes goes to your person (a permission goes to them at once). prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula cloud (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
@@ -97,13 +97,38 @@ pub struct SessionStartArgs {
     pub recipe: Option<String>,
 }
 
-/// The recipes `session_start` starts a session as: its name, and its
-/// standing instructions (Arugula #1276).
-pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("recipes/chief-of-staff.md"))];
+/// The recipes `session_start` starts a hosted session as: its name, and
+/// its standing instructions (Arugula #1276). They name a hosted session's
+/// tools; a chief of staff on a machine runs [`CHIEF_OF_STAFF_ON_A_MACHINE`]
+/// (Arugula #1337).
+pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("recipes/chief-of-staff-hosted.md"))];
+
+/// The chief of staff's standing instructions as an agent block on one of
+/// the person's machines, a Cloud workspace included (Arugula #1337): the
+/// tools an agent block has, where [`RECIPES`]' names a hosted session's.
+pub(crate) const CHIEF_OF_STAFF_ON_A_MACHINE: &str = include_str!("recipes/chief-of-staff.md");
+
+/// A board lead's standing instructions as an agent block (Arugula #1440):
+/// it starts an issue agent per ready row, talks to them in their issues'
+/// threads and merges their work.
+pub(crate) const BOARD_LEAD_ON_A_MACHINE: &str = include_str!("recipes/board-lead.md");
+
+/// What an agent started on an issue is told first (Arugula #1440): it
+/// leads the issue's thread, and whose word a post there is.
+pub(crate) const ISSUE_AGENT_ON_A_MACHINE: &str = include_str!("recipes/issue-agent.md");
+
+/// A recipe's first prompt: its standing instructions, then what the
+/// person asked, if anything.
+pub(crate) fn recipe_prompt(text: &str, prompt: Option<&str>) -> String {
+    match prompt.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => format!("{}\n\n{p}", text.trim_end()),
+        None => text.trim_end().to_owned(),
+    }
+}
 
 /// The chief of staff (Arugula #1276): it starts in the person's staff room,
 /// which it leads.
-pub(crate) const CHIEF_OF_STAFF: &str = "chief-of-staff";
+pub(crate) const CHIEF_OF_STAFF: &str = crate::mcp::registry::CHIEF_OF_STAFF;
 
 /// What `room` names for the person's staff room in the project, as
 /// read_thread and post_thread take it.
@@ -285,10 +310,7 @@ pub(crate) fn start_body(a: &SessionStartArgs, project: Option<String>) -> Resul
         if a.issue.is_some() || room.is_some_and(|r| r != STAFF) || a.thread.is_some() {
             return Err(format!("recipe {name} starts in your person's staff room: leave issue, room and thread out"));
         }
-        prompt = Some(match prompt {
-            Some(p) => format!("{}\n\n{p}", text.trim_end()),
-            None => text.trim_end().to_owned(),
-        });
+        prompt = Some(recipe_prompt(text, prompt.as_deref()));
         return Ok(AgentSessionStart { room: Some(STAFF.to_owned()), prompt, ..Default::default() });
     }
     match (a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()), room) {
@@ -345,12 +367,15 @@ pub(crate) async fn session_start(c: &Call<'_>, a: SessionStartArgs) -> Out {
         let v = c.app().control.cloud(Method::POST, &agent_staff_room(&project), None).await.map_err(said)?;
         start.room = Some(v["id"].as_str().ok_or("Arugula cloud named no staff room")?.to_owned());
     }
+    // The block that asked (Arugula #1393): its session's asks come to it
+    // first.
+    start.block = c.me().map(|p| p.to_string());
     let body = serde_json::to_value(start).map_err(|e| e.to_string())?;
     let v = sessions_call(c, AGENT_SESSIONS, body).await?;
     let at = format!("seq {} in {}", v["seq"], v["room"].as_str().unwrap_or("?"));
     let s = match v["session"].as_str() {
         Some(ses) => format!(
-            "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it."
+            "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it. Its questions come to you first: one you leave for 10 minutes goes to your person."
         ),
         None => {
             let said: Vec<&str> = v["said"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
@@ -623,6 +648,13 @@ mod tests {
         let p = b.prompt.unwrap();
         assert!(p.starts_with("You are this project's chief of staff"), "{p}");
         assert!(p.contains("watch` kind `events`") && p.contains("Never start, stop or close"), "{p}");
+        // Its staff room's posts are its prompts already (Arugula #1391).
+        assert!(p.contains("Never watch `staff`"), "{p}");
+        // Asks for a start or a close on a card, never a lead (Arugula #1278).
+        assert!(
+            p.contains("`ask_approval`") && p.contains("`ask.answered`") && p.contains("Never ask a board's lead"),
+            "{p}"
+        );
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "prompt": "brief me" })), None).unwrap();
         assert!(b.prompt.unwrap().ends_with("\n\nbrief me"));
         let b = start_body(&args(json!({ "recipe": "chief-of-staff", "room": "staff" })), None).unwrap();
@@ -633,8 +665,15 @@ mod tests {
             assert!(start_body(&args(a), None).unwrap_err().contains("staff room"), "{elsewhere}");
         }
         assert!(start_body(&args(json!({ "recipe": "ceo" })), None).unwrap_err().contains("chief-of-staff"));
-        // Every tool the recipe names is a hosted session's.
-        for tool in ["read_session_issues", "read_session_thread", "post_session_thread", "create_session_issue"] {
+        // Every tool the hosted recipe names is a hosted session's.
+        for tool in [
+            "read_session_issues",
+            "read_session_thread",
+            "post_session_thread",
+            "create_session_issue",
+            "board_read",
+            "ask_approval",
+        ] {
             assert!(RECIPES[0].1.contains(tool), "{tool}");
         }
     }

@@ -385,6 +385,20 @@ them. Don't quarantine a test in a serial spec (`describe.configure` mode
 report-only through `web/e2e/timing.ts`. To take one out, delete its
 entry.
 
+A test that ejects merge groups is put forward for it the same day:
+`.github/workflows/flaky-quarantine.yml` runs `scripts/flaky-quarantine.mjs`
+every hour. When one test (a spec's file and title, or a Rust test's name)
+failed the queue's verdict in two groups within a day, for two different
+pull requests that both merged later, and neither group was stacked on the
+other in the queue, it files a native issue labelled `flaky` through the
+project's CI alerts (a `ci.flaky` event) and opens a pull request adding
+the entry, until 14 days out, that names it. A person merges that pull
+request, or closes it to keep the test in: its branch,
+`quarantine-<hash>`, then keeps the script from opening another. It leaves
+a test in a serial spec alone, with a warning. Run it by hand with
+`replay` (FROM..TO) to see what it would have quarantined, hour by hour;
+`ARUGULA_QUARANTINE=off` (a repository variable) turns it off.
+
 `just quarantine`, in `just test-scripts` and so in lint, runs `chant ci
 quarantine check`, which fails when an entry is past its `until` or more
 than 14 days out, and fails on a Rust test named with its binary id. The

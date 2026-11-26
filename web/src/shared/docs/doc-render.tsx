@@ -13,7 +13,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
-import { ProtoScope } from "../ui/prototype-bridge";
+import { ProtoFiles, ProtoScope } from "../ui/prototype-bridge";
+import { protoFiles, type ProtoFile } from "../ui/prototype-files";
 import { Prototype, ProtoFill } from "../ui/prototype-frame";
 import { BlockError, BlockLoading } from "../ui/block-states";
 import { DocTimes, madeAt } from "./doc-times";
@@ -161,6 +162,10 @@ export function DocBlock({
       return <DocImage key={`${key}:${name}`} load={load} cached={cached} name={name} alt={alt} rev={revs.get(name)} />;
     };
   }, [kept, load, cached]);
+  // Redrawn only when a prototype's text changes, so a section filled beside
+  // them doesn't hand every frame a new list.
+  const filesKey = JSON.stringify(s ? protoFiles(s.entries) : []);
+  const files = useMemo(() => JSON.parse(filesKey) as ProtoFile[], [filesKey]);
   if (!s) return <BlockLoading what="the Doc" />;
   if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
   const key = docKey ?? s.doc ?? String(id);
@@ -185,6 +190,7 @@ export function DocBlock({
       </div>
     );
   return (
+    <ProtoFiles.Provider value={files}>
     <div class="doc" data-doc-block={id} data-layout={tabs ? "tabs" : undefined}>
       <div class="doc-page">
         <header class="doc-head">
@@ -227,6 +233,7 @@ export function DocBlock({
         {foot}
       </div>
     </div>
+    </ProtoFiles.Provider>
   );
 }
 

@@ -4,14 +4,15 @@
 // the UI changes and never show anything real.
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
 import type { PaneId } from "../src/shared/proto";
-import { menu, open, paneEl, panes, ready, reset, text } from "../e2e/helpers";
-import { labs } from "../e2e/labs";
+import { inProject, menu, open, paneEl, panes, ready, reset, text } from "../e2e/helpers";
+import { fixturePage } from "../e2e/fixture-page";
+import { HERE, LAUNCH, MINE, P, PERSONAL, ROOMS, STAFF } from "./team";
 import "../e2e/local-token";
 
 // SHOTS_PORT moves the daemon (and its block port, the next one up) and
@@ -37,7 +38,9 @@ let home: string;
 let state: string;
 let daemon: ChildProcess | undefined;
 
-test.use({ baseURL: base });
+// The app's pages are a fixture page this origin serves (./app-page.tsx):
+// Chrome counts it as public, so it needs this to reach the daemon.
+test.use({ baseURL: base, permissions: ["local-network-access"] });
 // xterm's WebGL renderer draws at the wrong size at an emulated 2x pixel
 // ratio; the DOM renderer (what phones get, chosen by this query) is right.
 test.beforeEach(async ({ page }) => {
@@ -91,7 +94,7 @@ impl Store {
 }
 `;
 
-const BASHRC = `PS1='\\[\\e]0;\\w\\a\\]\\[\\e[1;32m\\]demo@workstation\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '
+const BASHRC = `PS1='\\[\\e]0;\\w\\a\\]\\[\\e[1;32m\\]priya@priya-mbp\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '
 alias ls='ls --color=auto'
 export EDITOR=nvim LESS=-R GIT_PAGER=cat
 `;
@@ -100,7 +103,7 @@ export EDITOR=nvim LESS=-R GIT_PAGER=cat
 const CARGO = `#!/bin/sh
 f="$HOME/.cache/demo-cargo-runs"; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n + 1)) > "$f"
 g() { printf '\\033[1;32m%12s\\033[0m %s\\n' "$1" "$2"; }
-g Compiling "auth v0.4.2 (/home/demo/src/auth)"
+g Compiling "game-night v0.4.2 (/home/priya/src/game-night)"
 sleep 0.4
 g Finished "\\\`test\\\` profile [unoptimized + debuginfo] target(s) in 2.31s"
 g Running "unittests src/lib.rs"
@@ -122,7 +125,7 @@ printf 'test result: \\033[32mok\\033[0m. 6 passed; 0 failed; 0 ignored; finishe
 
 // A stand-in for npm: `npm run dev` says what Vite would, then serves web/.
 const NPM = () => `#!/bin/sh
-printf '\\n> auth-admin@0.4.2 dev\\n> vite\\n\\n'
+printf '\\n> game-night-web@0.4.2 dev\\n> vite\\n\\n'
 sleep 0.3
 printf '  \\033[1;32mVITE\\033[0m \\033[32mv6.3.5\\033[0m  ready in \\033[1m284\\033[0m ms\\n\\n'
 printf '  \\033[32m➜\\033[0m  \\033[1mLocal\\033[0m:   \\033[36mhttp://localhost:\\033[1m${DEV_PORT}\\033[0;36m/\\033[0m\\n'
@@ -131,40 +134,46 @@ printf '  \\033[2m➜  press h + enter to show help\\033[0m\\n'
 exec python3 -m http.server ${DEV_PORT} --bind 127.0.0.1 --directory web >/dev/null 2>&1
 `;
 
-// What the dev server serves: the auth crate's admin page.
+// What the dev server serves: the Game night app itself.
 const ADMIN_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><title>auth admin</title>
+<html><head><meta charset="utf-8"><title>Game night</title>
 <style>
-body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #f6f7fb; color: #1f2333; }
-header { display: flex; align-items: center; gap: 10px; padding: 14px 24px; background: #fff; border-bottom: 1px solid #e3e5ee; }
-header b { font-size: 16px; }
-header span { margin-left: auto; color: #6b7088; font-size: 13px; }
-main { padding: 24px; }
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 22px; }
-.tile { background: #fff; border: 1px solid #e3e5ee; border-radius: 10px; padding: 14px 16px; }
-.tile small { color: #6b7088; }
-.tile div { font-size: 26px; font-weight: 650; }
-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e3e5ee; border-radius: 10px; overflow: hidden; }
-th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid #eef0f5; }
-th { color: #6b7088; font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-.ok { color: #1a7f37; } .old { color: #b42318; }
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fbf7f0; color: #2a2118; }
+header { display: flex; align-items: center; gap: 12px; padding: 16px 28px; background: #fff; border-bottom: 1px solid #eadfcd; }
+header b { font-size: 18px; }
+header span { margin-left: auto; color: #8a7a64; font-size: 13px; }
+main { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; padding: 24px 28px; }
+.card { background: #fff; border: 1px solid #eadfcd; border-radius: 12px; padding: 16px 18px; }
+h2 { margin: 0 0 4px; font-size: 22px; } h3 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #8a7a64; }
+.when { color: #8a7a64; margin-bottom: 14px; }
+.game { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #f2eadc; }
+.game i { width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center; font-style: normal; font-size: 20px; background: #f6efe2; }
+.game small { color: #8a7a64; display: block; }
+.votes { margin-left: auto; font-weight: 600; color: #b5532c; }
+.who { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.who b { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; }
+.yes { margin-left: auto; color: #2f7d4a; font-size: 13px; } .maybe { margin-left: auto; color: #b07a12; font-size: 13px; }
+button { margin-top: 14px; width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #b5532c; color: #fff; font: inherit; font-weight: 600; }
 </style></head><body>
-<header><b>🔐 auth</b> admin <span>v0.4.2 · dev</span></header>
+<header><b>🎲 Game night</b><span>v0.4.2 · dev</span></header>
 <main>
-<div class="tiles">
-<div class="tile"><small>Live sessions</small><div>1,284</div></div>
-<div class="tile"><small>Expiring in 5 min</small><div>37</div></div>
-<div class="tile"><small>Swept today</small><div>9,912</div></div>
+<div class="card">
+<h2>Thursday, 7pm</h2><div class="when">At Priya's · 6 coming · vote for what we play</div>
+<div class="game"><i>🚂</i><div>Ticket to Ride<small>2–5 players · 60 min</small></div><span class="votes">5 votes</span></div>
+<div class="game"><i>🐦</i><div>Wingspan<small>1–5 players · 70 min</small></div><span class="votes">4 votes</span></div>
+<div class="game"><i>🕵️</i><div>Codenames<small>4–8 players · 15 min</small></div><span class="votes">3 votes</span></div>
+<div class="game"><i>🏝️</i><div>Catan<small>3–4 players · 90 min</small></div><span class="votes">1 vote</span></div>
 </div>
-<table>
-<tr><th>Session</th><th>User</th><th>Expires</th><th>State</th></tr>
-<tr><td>s_7f3a…c21</td><td>ana</td><td>in 58 min</td><td class="ok">live</td></tr>
-<tr><td>s_19be…04d</td><td>sam</td><td>in 41 min</td><td class="ok">live</td></tr>
-<tr><td>s_c0d2…9aa</td><td>kim</td><td>in 12 min</td><td class="ok">live</td></tr>
-<tr><td>s_44e1…7f0</td><td>lee</td><td>in 3 min</td><td class="ok">live</td></tr>
-<tr><td>s_a8b9…e13</td><td>ana</td><td>2 min ago</td><td class="old">expired</td></tr>
-<tr><td>s_5d70…b62</td><td>jo</td><td>9 min ago</td><td class="old">expired</td></tr>
-</table>
+<div class="card">
+<h3>Who's coming</h3>
+<div class="who"><b style="background:#b5532c">PR</b>Priya<span class="yes">hosting</span></div>
+<div class="who"><b style="background:#2f7d4a">MK</b>Marcus<span class="yes">yes</span></div>
+<div class="who"><b style="background:#4061a8">JL</b>Jen<span class="yes">yes</span></div>
+<div class="who"><b style="background:#8a4fb0">TO</b>Tomás<span class="yes">yes, bringing snacks</span></div>
+<div class="who"><b style="background:#b07a12">SA</b>Sam<span class="yes">yes</span></div>
+<div class="who"><b style="background:#6b7088">DE</b>Dev<span class="maybe">maybe</span></div>
+<button>I'm in</button>
+</div>
 </main></body></html>
 `;
 
@@ -196,7 +205,7 @@ const SWEEP = `
 }
 `;
 
-/** A Claude Code session from a terminal in the auth repo, for the
+/** A Claude Code session from a terminal in the game-night repo, for the
  * conversations shot: in the demo HOME's ~/.claude, as Claude Code writes it. */
 function seedConversation(cwd: string) {
   const id = "3b6f0c1e-5a2d-4c8e-9f7a-1d2e3c4b5a69";
@@ -231,7 +240,7 @@ function seedConversation(cwd: string) {
   add("user", { role: "user", content: "do that, and add a sweep while you're there" });
   tool("Write", { file_path: "src/clock.rs", content: CLOCK_RS }, "File created successfully");
   tool("Edit", { file_path: "src/session.rs", old_string: "Instant::now()", new_string: "self.clock.now()", replace_all: true }, "The file has been updated.");
-  tool("Bash", { command: "cargo test -p auth session" }, "running 6 tests\ntest session::tests::expires_after_ttl ... ok\n...\ntest result: ok. 6 passed; 0 failed");
+  tool("Bash", { command: "cargo test session" }, "running 6 tests\ntest session::tests::expires_after_ttl ... ok\n...\ntest result: ok. 6 passed; 0 failed");
   say("Done: Store takes a Clock, the test uses a fake one, and sweep() drops expired sessions. All 6 tests pass, 50 runs in a row.");
   lines.push({ type: "ai-title", aiTitle: "Fix flaky expires_after_ttl", sessionId: id });
   writeFileSync(join(dir, `${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
@@ -242,10 +251,10 @@ function git(cwd: string, ...args: string[]) {
     cwd,
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: "Demo",
-      GIT_AUTHOR_EMAIL: "demo@example.com",
-      GIT_COMMITTER_NAME: "Demo",
-      GIT_COMMITTER_EMAIL: "demo@example.com",
+      GIT_AUTHOR_NAME: "Priya",
+      GIT_AUTHOR_EMAIL: "priya@example.com",
+      GIT_COMMITTER_NAME: "Priya",
+      GIT_COMMITTER_EMAIL: "priya@example.com",
       GIT_AUTHOR_DATE: "2026-09-28T10:00:00Z",
       GIT_COMMITTER_DATE: "2026-09-28T10:00:00Z",
       HOME: home,
@@ -255,7 +264,7 @@ function git(cwd: string, ...args: string[]) {
 
 function demoHome() {
   home = join(root, "demo");
-  const repo = join(home, "src/auth");
+  const repo = join(home, "src/game-night");
   mkdirSync(join(repo, "src"), { recursive: true });
   mkdirSync(join(home, "bin"));
   mkdirSync(join(home, ".cache"));
@@ -265,13 +274,13 @@ function demoHome() {
   // The scripted agent, under a name that says what it is.
   writeFileSync(join(home, "bin/demo-agent"), `#!/bin/sh\nexec python3 ${agent}\n`);
   chmodSync(join(home, "bin/demo-agent"), 0o755);
-  writeFileSync(join(repo, "Cargo.toml"), '[package]\nname = "auth"\nversion = "0.4.2"\nedition = "2024"\n');
+  writeFileSync(join(repo, "Cargo.toml"), '[package]\nname = "game-night"\nversion = "0.4.2"\nedition = "2024"\n');
   git(repo, "init", "-q", "-b", "main");
   const commits: [string, string, string][] = [
-    ["src/lib.rs", "pub mod session;\npub mod token;\n", "Start the auth crate"],
+    ["src/lib.rs", "pub mod session;\npub mod token;\n", "Start the game night server"],
     ["src/token.rs", "// Signed session tokens.\n", "Signed tokens with an expiry"],
     ["src/session.rs", SESSION_RS.replace(/clock\.now\(\)/g, "Instant::now()"), "A session store with a TTL"],
-    ["README.md", "# auth\n", "Document the session lifecycle"],
+    ["README.md", "# Game night\n", "Document the session lifecycle"],
     ["src/session.rs", SESSION_RS, "Sessions read the time from a Clock"],
   ];
   for (const [file, body, msg] of commits) {
@@ -290,13 +299,15 @@ function demoHome() {
 }
 
 async function startDaemon() {
-  const nvim = ["/usr/bin", `${process.env.HOME}/.local/bin`].find((d) => existsSync(join(d, "nvim")));
+  const nvim = ["/usr/bin", "/opt/homebrew/bin", "/usr/local/bin", `${process.env.HOME}/.local/bin`].find((d) => existsSync(join(d, "nvim")));
   daemon = spawn(
     "../target/debug/arugulad",
     [
-      ...["--listen", `127.0.0.1:${PORT}`, "--state-dir", labs(state)],
+      ...["--listen", `127.0.0.1:${PORT}`, "--state-dir", state],
       ...["--shell", "bash", "--no-manager-env", "--tailscale-socket", "/nonexistent/tailscaled.sock"],
       ...["--block-listen", `127.0.0.1:${BLOCK_PORT}`],
+      // Not this computer's own name.
+      ...["--name", "priya-mbp"],
       // The pinned code-server, if this machine has it already, rather
       // than a download into the demo HOME.
       ...(codeServer ? ["--code-server", codeServer] : []),
@@ -306,9 +317,11 @@ async function startDaemon() {
       env: {
         HOME: home,
         SHELL: "/bin/bash",
-        USER: "demo",
+        USER: "priya",
         LANG: "C.UTF-8",
         TERM: "xterm-256color",
+        // macOS's bash says to use zsh otherwise, in every shot.
+        BASH_SILENCE_DEPRECATION_WARNING: "1",
         // No "a newer release is out" chip in the pictures.
         ARUGULA_NO_UPDATE_CHECK: "true",
         // The browser's cookie and Node's fetch carry this (e2e/local-token.ts).
@@ -329,8 +342,10 @@ async function startDaemon() {
 }
 
 test.beforeAll(async () => {
-  root = mkdtempSync(join(tmpdir(), "arugula-shots-"));
+  // Real (macOS's /var is /private/var), so the prompt says ~.
+  root = realpathSync(mkdtempSync(join(tmpdir(), "arugula-shots-")));
   state = join(root, "state");
+  mkdirSync(state);
   demoHome();
   mkdirSync(out, { recursive: true });
   await startDaemon();
@@ -338,7 +353,13 @@ test.beforeAll(async () => {
 
 test.afterAll(() => {
   daemon?.kill("SIGKILL");
-  rmSync(root, { recursive: true, force: true });
+  // And its panes' shims, which outlive it on purpose (their state is under root).
+  try {
+    execFileSync("pkill", ["-KILL", "-f", root]);
+  } catch {
+    // none left
+  }
+  rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 });
 
 const intent = (page: Page, i: object) => page.evaluate((i) => window.__arugula.client.intent(i as never), i);
@@ -360,7 +381,7 @@ async function line(page: Page, pane: PaneId, s: string) {
 }
 
 async function prompted(page: Page, pane: PaneId, n: number) {
-  await expect.poll(async () => ((await text(page, pane)).match(/demo@workstation/g) ?? []).length).toBeGreaterThanOrEqual(n);
+  await expect.poll(async () => ((await text(page, pane)).match(/priya@priya-mbp/g) ?? []).length).toBeGreaterThanOrEqual(n);
 }
 
 const session = (page: Page) => page.evaluate(() => window.__arugula.client.session!);
@@ -383,6 +404,17 @@ async function newTab(page: Page, name: string): Promise<number> {
   return id;
 }
 
+/** A new session, named, shown (one per picture after the first: the
+ * Machines page draws a session as a card); returns its id. */
+async function newSession(page: Page, name: string): Promise<number> {
+  const before = await page.evaluate(() => window.__arugula.client.state!.sessions.map((s) => s.id));
+  await intent(page, { op: "new_session", name, from_pane: null });
+  await expect.poll(() => page.evaluate((b) => window.__arugula.client.state!.sessions.some((s) => !b.includes(s.id)), before)).toBe(true);
+  const id = await page.evaluate((b) => window.__arugula.client.state!.sessions.find((s) => !b.includes(s.id))!.id, before);
+  await expect.poll(() => session(page)).toBe(id);
+  return id;
+}
+
 let editor: PaneId;
 let tests: PaneId;
 let gitPane: PaneId;
@@ -397,27 +429,24 @@ test.describe("desktop", () => {
     await prompted(page, editor, 1);
     await intent(page, { op: "rename_session", session: await session(page), name: "work" });
     authTab = await tabId(page);
-    await intent(page, { op: "rename_tab", tab: authTab, name: "auth" });
+    await intent(page, { op: "rename_tab", tab: authTab, name: "server" });
 
     tests = await split(page, editor, "right");
     gitPane = await split(page, tests, "bottom");
     await prompted(page, tests, 1);
-    await line(page, tests, "cd ~/src/auth && cargo test -p auth session");
+    await line(page, tests, "cd ~/src/game-night && cargo test session");
     await prompted(page, tests, 2);
-    await line(page, tests, "cargo test -p auth session");
+    await line(page, tests, "cargo test session");
     await prompted(page, tests, 3);
     await prompted(page, gitPane, 1);
-    await line(page, gitPane, "cd ~/src/auth && git log --oneline --graph --decorate --color && git status -sb");
+    await line(page, gitPane, "cd ~/src/game-night && git log --oneline --graph --decorate --color && git status -sb");
     await prompted(page, gitPane, 2);
-    await line(page, editor, "cd ~/src/auth && nvim src/session.rs");
+    await line(page, editor, "cd ~/src/game-night && nvim src/session.rs");
     await expect.poll(() => text(page, editor)).toContain("pub struct Store");
 
     // Two more tabs, then back to the first.
     for (const name of ["web", "notes"]) await newTab(page, name);
-    await page.locator(`[data-tab-id="${authTab}"]`).click();
-    await expect.poll(() => tabId(page)).toBe(authTab);
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(500);
+    await atPane(page, tests);
     await page.screenshot({ path: join(out, "desktop.png") });
 
     // The pane menu.
@@ -432,31 +461,27 @@ test.describe("desktop", () => {
     daemon?.kill("SIGKILL");
     await new Promise((r) => daemon!.once("exit", r));
     await startDaemon();
-    await open(page);
-    await page.locator(`[data-tab-id="${authTab}"]`).click();
-    await expect.poll(() => text(page, tests)).toContain("restored");
-    await expect.poll(() => text(page, gitPane)).toContain("restored");
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(800);
+    await atPane(page, tests);
+    await expect.poll(() => appText(page, tests)).toContain("restored");
+    await expect.poll(() => appText(page, gitPane)).toContain("restored");
+    await settled(page);
     await page.screenshot({ path: join(out, "restored.png") });
   });
 
   test("an agent beside its terminal", async ({ page }) => {
     await open(page);
     // A tab of its own: a shell, and the agent beside it.
-    await newTab(page, "agent");
+    await newSession(page, "launch");
     const [shell] = await panes(page);
     await ready(page, shell);
     await prompted(page, shell, 1);
-    await line(page, shell, "cd ~/src/auth && git diff --stat && git status -sb");
+    await line(page, shell, "cd ~/src/game-night && git diff --stat && git status -sb");
     await prompted(page, shell, 2);
-    await paneEl(page, shell).click({ button: "right", position: { x: 220, y: 120 } });
-    await page.getByRole("menuitem", { name: "Start an agent…" }).click();
-    const dialog = page.getByRole("dialog", { name: "Start an agent" });
-    await dialog.locator("select[name=agent]").selectOption("acp");
-    await dialog.locator("input[name=acp]").fill("demo-agent");
-    await dialog.locator("textarea[name=prompt]").fill("fix the flaky session test");
-    await dialog.getByRole("button", { name: "Start" }).click();
+    // What the Start an agent dialog sends (the pane menu's Start an agent…).
+    await page.evaluate(async (shell) => {
+      const config = { agent: "acp", command: "demo-agent", prompt: "fix the flaky session test" };
+      await window.__arugula.client.newAgent({ config, split: shell, from: shell } as never);
+    }, shell);
     const id = await page.evaluate(async () => {
       for (;;) {
         const a = window.__arugula.client.state!.panes.find((p) => p.type === "agent");
@@ -464,11 +489,13 @@ test.describe("desktop", () => {
         await new Promise((r) => setTimeout(r, 50));
       }
     });
+    await expect(paneEl(page, id).getByRole("button", { name: "Approve" })).toBeVisible();
+    // It works on #14, on Launch v1: the Overview's pictures show it there.
+    await onCard(page, id);
+    await atPane(page, id);
     const block = paneEl(page, id);
-    await expect(block.getByRole("button", { name: "Approve" })).toBeVisible();
     await expect(block.locator(".agent-tool .xterm-rows").first()).toContainText("expires_after_ttl");
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(500);
+    await settled(page);
     await page.screenshot({ path: join(out, "agent.png") });
 
     await block.getByRole("button", { name: "Approve" }).click();
@@ -476,8 +503,7 @@ test.describe("desktop", () => {
     await block.locator(".agent-composer textarea").fill("and the other sleeps?");
     await block.getByRole("button", { name: "Send" }).click();
     await expect(block.getByText("Inject the clock everywhere")).toBeVisible();
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(500);
+    await settled(page, 500);
     await block.screenshot({ path: join(out, "question.png") });
   });
 });
@@ -487,15 +513,11 @@ test.describe("blocks", () => {
 
   const openBlock = (page: Page, body: object) =>
     page.evaluate(async (b) => (await window.__arugula.client.openBlock(b as never))!, body);
-  const repo = () => join(home, "src/auth");
-  const settle = async (page: Page, ms = 800) => {
-    await page.mouse.move(0, 0);
-    await page.waitForTimeout(ms);
-  };
+  const repo = () => join(home, "src/game-night");
 
   test("what an agent changed, beside its terminal", async ({ page }) => {
     await open(page);
-    await newTab(page, "review");
+    await newSession(page, "review");
     const [shell] = await panes(page);
     await ready(page, shell);
     await prompted(page, shell, 1);
@@ -506,7 +528,7 @@ test.describe("blocks", () => {
       join(repo(), "src/session.rs"),
       SESSION_RS.replace("use crate::token", "use crate::clock::Clock;\nuse crate::token").replace(/\n}\n$/, "\n" + SWEEP),
     );
-    await line(page, shell, "cd ~/src/auth && cargo test -p auth session");
+    await line(page, shell, "cd ~/src/game-night && cargo test session");
     await prompted(page, shell, 2);
     const diff = await openBlock(page, { type: "diff", config: {}, from_pane: shell, split: shell });
     const view = page.locator(`[data-diff="${diff}"]`);
@@ -523,18 +545,20 @@ test.describe("blocks", () => {
         await new Promise((r) => setTimeout(r, 50));
       }
     });
+    await atPane(page, file);
     await expect(page.locator(`[data-file-block="${file}"] .cm-mark-line`)).toContainText("pub fn sweep", { timeout: 30_000 });
-    await settle(page);
+    await expect(page.locator(`[data-diff="${diff}"] .dl.add`, { hasText: "pub fn sweep" })).toBeVisible();
+    await settled(page);
     await page.screenshot({ path: join(out, "changes.png") });
   });
 
   test("a dev server beside its terminal", async ({ page }) => {
     await open(page);
-    await newTab(page, "admin");
+    await newSession(page, "game-night-web");
     const [shell] = await panes(page);
     await ready(page, shell);
     await prompted(page, shell, 1);
-    await line(page, shell, "cd ~/src/auth && npm run dev");
+    await line(page, shell, "cd ~/src/game-night && npm run dev");
     await expect.poll(() => text(page, shell)).toContain("ready in");
     for (let i = 0; i < 50; i++) {
       try {
@@ -545,9 +569,9 @@ test.describe("blocks", () => {
       await page.waitForTimeout(100);
     }
     const block = await openBlock(page, { type: "browser", config: { port: DEV_PORT, path: "/" }, split: shell });
-    const frame = paneEl(page, block).frameLocator("iframe");
-    await expect(frame.getByText("Live sessions")).toBeVisible({ timeout: 30_000 });
-    await settle(page);
+    await atPane(page, block);
+    await expect(paneEl(page, block).frameLocator("iframe").getByText("Ticket to Ride")).toBeVisible({ timeout: 30_000 });
+    await settled(page);
     await page.screenshot({ path: join(out, "port.png") });
   });
 
@@ -555,11 +579,11 @@ test.describe("blocks", () => {
     test.skip(!codeServer, "code-server isn't in ~/.cache/arugula yet");
     test.setTimeout(180_000);
     await open(page);
-    await newTab(page, "edit");
+    await newSession(page, "edit");
     const [shell] = await panes(page);
     await ready(page, shell);
     await prompted(page, shell, 1);
-    await line(page, shell, "cd ~/src/auth && cargo test -p auth session");
+    await line(page, shell, "cd ~/src/game-night && cargo test session");
     await prompted(page, shell, 2);
     const block = await openBlock(page, {
       type: "editor",
@@ -569,18 +593,20 @@ test.describe("blocks", () => {
     });
     const frame = paneEl(page, block).frameLocator("iframe");
     await expect(frame.locator(".monaco-editor .view-lines").first()).toContainText("pub fn sweep", { timeout: 120_000 });
-    await settle(page, 2500);
+    await atPane(page, block);
+    await expect(paneEl(page, block).frameLocator("iframe").locator(".monaco-editor .view-lines").first()).toContainText("pub fn sweep", { timeout: 120_000 });
+    await settled(page, 2500);
     await page.screenshot({ path: join(out, "editor.png") });
   });
 
   test("a Claude Code conversation from a terminal", async ({ page }) => {
     seedConversation(repo());
     await open(page);
-    await newTab(page, "claude");
+    await newSession(page, "claude");
     const [shell] = await panes(page);
     await ready(page, shell);
     await prompted(page, shell, 1);
-    await line(page, shell, "cd ~/src/auth && git log --oneline -3 && git status -sb");
+    await line(page, shell, "cd ~/src/game-night && git log --oneline -3 && git status -sb");
     await prompted(page, shell, 2);
     await menu(page, paneEl(page, shell), "Claude Code conversations…");
     const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
@@ -595,9 +621,207 @@ test.describe("blocks", () => {
         await new Promise((r) => setTimeout(r, 50));
       }
     }, agents);
+    await atPane(page, block);
     await expect(paneEl(page, block).locator(".agent-msg").last()).toContainText("50 runs in a row");
-    await settle(page);
+    await settled(page);
     await page.screenshot({ path: join(out, "conversation.png") });
+  });
+});
+
+/** Put the agent block `id` on its card, #14 on Launch v1, as an agent
+ * started from the card is. */
+async function onCard(page: Page, id: PaneId) {
+  await page.evaluate(
+    async ({ id, P, MINE }) => {
+      const body = { issue: `#${MINE.number}`, boards: [{ project: P, board: MINE.board, title: "Launch v1", row: MINE.row }] };
+      await fetch(`/api/blocks/${id}/call/set_work`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    },
+    { id, P, MINE },
+  );
+}
+
+/** The app (./app-page.tsx) at `path` (from /p/…), every session on the
+ * daemon in Game night first (or only those named in `only`, the rest in
+ * Priya's own project), and the teammates' machines beside it. */
+async function inApp(page: Page, path: string, fleet = true, only?: string[]) {
+  await open(page);
+  await inProject(page, P, "Game night");
+  if (only)
+    await page.evaluate(
+      ({ only, PERSONAL }) => {
+        const c = window.__arugula.client;
+        for (const s of c.state!.sessions) if (!only.includes(s.name)) c.intent({ op: "set_session_project", session: s.id, project: { id: PERSONAL, name: "Priya" } });
+      },
+      { only, PERSONAL },
+    );
+  const host = await page.evaluate(async () => ((await (await fetch("/api/hosts")).json()) as { this: string }).this);
+  // Launch v1 is led by Priya's agent, once there is one.
+  const agent = await page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id);
+  const lead = agent === undefined ? null : { machine: HERE, name: host, session: "launch", pane: agent };
+  await page.evaluate((l) => sessionStorage.setItem("shots.lead", JSON.stringify(l)), lead);
+  const body = await fixturePage("../screenshots/app-page.tsx");
+  await page.route(/\/p\/prj_/, (r) => r.fulfill({ contentType: "text/html", body }));
+  await page.goto(path);
+  // Chat and Issues load no machines.
+  if (!fleet) return;
+  await page.waitForFunction(() => !!(window as unknown as { __app?: unknown }).__app, null, { timeout: 30_000 });
+  await page.evaluate(() => (window as unknown as { __shots: { machines(): void } }).__shots.machines());
+}
+
+/** The app on pane `pane`'s machine page, at that pane. */
+async function atPane(page: Page, pane: PaneId) {
+  await inApp(page, `/p/${P}/machines?pane=${pane}`);
+  await expect(paneEl(page, pane)).toBeVisible({ timeout: 20_000 });
+  await settled(page, 1500);
+}
+
+/** A pane's text, in the app. */
+const appText = (page: Page, pane: PaneId) => page.evaluate((p) => (window as unknown as { __app: { text(p: number): string } }).__app.text(p), pane);
+
+/** The Overview with the chief of staff's proposal open (#1278): under
+ * Needs you, and its message in the staff room's tab. */
+async function proposalOverview(page: Page) {
+  await open(page);
+  await onCard(page, await agentBlock(page));
+  await page.evaluate(() => sessionStorage.setItem("shots.proposal", "open"));
+  await inApp(page, `/p/${P}`, true, OVERVIEW);
+  await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(`[data-ov-staff="${STAFF}"] [data-msg="2"]`)).toBeVisible({ timeout: 20_000 });
+  await settled(page, 2500);
+}
+
+/** The sessions the Overview's pictures show: Priya's agent's and her terminals'. */
+const OVERVIEW = ["launch", "work"];
+
+const settled = async (page: Page, ms = 800) => {
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(ms);
+};
+
+/** The agent block on the daemon, started now if there's none yet. */
+async function agentBlock(page: Page): Promise<PaneId> {
+  return page.evaluate(async () => {
+    const c = window.__arugula.client;
+    const a = c.state!.panes.find((p) => p.type === "agent");
+    if (a) return a.id;
+    const from = c.tabView()!.layout.panes[0][0];
+    const config = { agent: "acp", command: "demo-agent", prompt: "fix the flaky session test" };
+    const r = await fetch("/api/blocks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "agent", config, from_pane: from }) });
+    return (await r.json()).block;
+  });
+}
+
+test.describe("the app", () => {
+  test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+
+  test("the Overview, and zoomed to a board with agents on its tickets", async ({ page }) => {
+    await open(page);
+    await onCard(page, await agentBlock(page));
+    // The other pictures' sessions aren't the team's work: not on the Overview.
+    await inApp(page, `/p/${P}`, true, OVERVIEW);
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(`[data-ov-board="${LAUNCH}"]`)).toBeVisible();
+    await settled(page, 2500);
+    await page.screenshot({ path: join(out, "overview.png") });
+    await page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).click();
+    await settled(page, 2000);
+    await page.screenshot({ path: join(out, "overview-board.png") });
+  });
+
+  test("the chief of staff asks to start an agent: under Needs you, and its card in the staff room", async ({ page }) => {
+    await proposalOverview(page);
+    await page.screenshot({ path: join(out, "overview-proposal.png") });
+    // Approved from Needs you: it leaves, and its room says what came of it.
+    const approve = page.locator("[data-ov-needs] [data-proposal-approve]");
+    if (!(await approve.count())) return;
+    await approve.click();
+    await expect(page.locator("[data-ov-needs] [data-proposal]")).toHaveCount(0);
+    await page.reload();
+    await expect(page.locator(`[data-ov-staff="${STAFF}"] [data-ask-state="answered"]`)).toBeVisible({ timeout: 20_000 });
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "overview-proposal-approved.png") });
+  });
+
+  test("a board", async ({ page }) => {
+    await inApp(page, `/p/${P}/boards/${LAUNCH}`);
+    await expect(page.getByText("Fix the flaky session expiry test").first()).toBeVisible({ timeout: 20_000 });
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "board.png") });
+  });
+
+  test("the machines", async ({ page }) => {
+    await inApp(page, `/p/${P}/machines`);
+    await expect(page.locator("[data-machines-list]")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-machines-group="a11a00000000aa01"]')).toBeVisible();
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "machines.png") });
+  });
+
+  test("chat", async ({ page }) => {
+    await inApp(page, `/p/${P}/chat/${ROOMS[0].id}`, false);
+    await expect(page.getByText("Let's test the whole thing for real")).toBeVisible({ timeout: 20_000 });
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "chat.png") });
+  });
+
+  test("issues", async ({ page }) => {
+    await inApp(page, `/p/${P}/issues`, false);
+    await expect(page.getByText("Let the host close the vote")).toBeVisible({ timeout: 20_000 });
+    await settled(page, 1500);
+    await page.screenshot({ path: join(out, "issues.png") });
+  });
+});
+
+// dive.mjs: the Overview's zoom, Project → Board → Work and back, as frames
+// for a GIF in DIVE_OUT. The zooms are 0.2 s: the page's animations run at
+// 0.3 of their speed while it records, so each gets frames.
+test.describe("dive", () => {
+  test.use({ viewport: { width: 1400, height: 877 }, deviceScaleFactor: 1 });
+
+  test("the Overview's zoom, frame by frame", async ({ page }) => {
+    const dir = process.env.DIVE_OUT;
+    test.skip(!dir, "dive.mjs sets DIVE_OUT");
+    test.setTimeout(240_000);
+    mkdirSync(dir!, { recursive: true });
+    await open(page);
+    await onCard(page, await agentBlock(page));
+    await inApp(page, `/p/${P}`, true, OVERVIEW);
+    await expect(page.locator(`[data-ov-board="${LAUNCH}"]`)).toBeVisible({ timeout: 20_000 });
+    await settled(page, 2500);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Animation.enable");
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.3 });
+    let n = 0;
+    const name = (i: number) => join(dir!, `f${String(i).padStart(4, "0")}.png`);
+    const frame = () => page.screenshot({ path: name(n++) });
+    /** One picture, shown for `frames` frames. */
+    const hold = async (frames: number) => {
+      const first = name(n);
+      await frame();
+      for (let i = 1; i < frames; i++) copyFileSync(first, name(n++));
+    };
+    /** Frames while `act`'s zoom plays (0.7 s, slowed). */
+    const zoom = async (act: () => Promise<void>) => {
+      await act();
+      for (const end = Date.now() + 900; Date.now() < end; ) await frame();
+    };
+    await hold(20);
+    await page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).hover();
+    await hold(8);
+    await zoom(() => page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).click());
+    await page.mouse.move(0, 0);
+    await hold(24);
+    await page.locator(`[data-ov-ticket="${MINE.row}"]`).hover();
+    await hold(8);
+    await zoom(() => page.locator(`[data-ov-ticket="${MINE.row}"]`).click({ position: { x: 300, y: 12 } }));
+    await page.mouse.move(0, 0);
+    await settled(page, 1000);
+    await hold(32);
+    await zoom(() => page.keyboard.press("Escape"));
+    await hold(10);
+    await zoom(() => page.keyboard.press("Escape"));
+    await hold(12);
+    console.log(`${n} frames in ${dir}`);
   });
 });
 
@@ -606,22 +830,33 @@ test.describe("phone", () => {
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
   test("one pane at a time, and what needs you", async ({ page }) => {
-    await open(page);
-    await page.evaluate((p) => window.__arugula.client.setActive(p), tests);
-    await page.waitForTimeout(800);
+    await atPane(page, tests);
     await page.screenshot({ path: join(out, "phone-terminal.png") });
     // The agent's question, answered with a thumb.
-    await page.evaluate(() => {
-      const c = window.__arugula.client;
-      c.setActive(c.state!.panes.find((p) => p.type === "agent")!.id);
-    });
+    await open(page);
+    const agent = await agentBlock(page);
+    await atPane(page, agent);
     await expect(page.getByText("Inject the clock everywhere")).toBeVisible();
-    await page.waitForTimeout(800);
     await page.screenshot({ path: join(out, "phone.png") });
-    await page.evaluate((p) => window.__arugula.client.setActive(p), tests);
+    await atPane(page, tests);
     await page.locator(".sheet-button").click();
     await expect(page.locator(".needs-you")).toContainText("Needs you");
-    await page.waitForTimeout(500);
+    await settled(page, 500);
     await page.screenshot({ path: join(out, "phone-sheet.png") });
+  });
+
+  test("the Overview on a phone", async ({ page }) => {
+    await inApp(page, `/p/${P}`, true, OVERVIEW);
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await settled(page, 2500);
+    await page.screenshot({ path: join(out, "phone-overview.png") });
+  });
+
+  test("the chief of staff's proposal on a phone: Needs you on top, the staff room below", async ({ page }) => {
+    await proposalOverview(page);
+    await page.screenshot({ path: join(out, "phone-overview-proposal.png") });
+    await page.locator(`[data-ov-staff="${STAFF}"] [data-msg="2"]`).scrollIntoViewIfNeeded();
+    await settled(page, 800);
+    await page.screenshot({ path: join(out, "phone-overview-proposal-staff.png") });
   });
 });

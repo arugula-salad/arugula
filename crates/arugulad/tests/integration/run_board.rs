@@ -1,0 +1,424 @@
+//! Arugula #1416, "Run this board": the chief of staff asks its person to
+//! run a board (`ask_approval` `run_board`), the person's Approve reaches the
+//! grant's lead machine as `agents.approved`, which starts the board's lead
+//! there as a ladder start (a start ticket under the grant control just
+//! wrote) and makes it the board's lead; a post on the board's thread then
+//! reaches it. Revoked, the grant refuses the next start. The lead works in
+//! a worktree of this machine's clone of the board's repo, found in its home
+//! folder; a machine with none of the project's repos says so and starts
+//! nothing, and says which it has when control asks for the card (Arugula
+//! #1458). A wider card for a board with a lead only replaces its grant,
+//! and the chief of staff tells the lead in the board's thread, where it
+//! hears it (Arugula #1461). Against a fake
+//! control (it takes the card, plays the person's Approve on the relay
+//! socket, signs start tickets while the grant is live, and sends the
+//! board's thread to its lead) and a real daemon whose agents are the fake
+//! ACP agent.
+#![cfg(unix)]
+
+use std::{
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    process::Command,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
+use arugula_control_wire::ladder::START_USE;
+use arugula_e2e::DeviceKeys;
+use axum::{
+    Json, Router,
+    extract::{
+        Path as UrlPath, Request, State,
+        ws::{Message, WebSocketUpgrade},
+    },
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use base64::Engine as _;
+use ed25519_dalek::{Signer as _, SigningKey};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+
+use super::agentd::{Daemon, Mcp, PYTHON, fake};
+use super::mention_agent_block::enroll;
+
+const BOARD: &str = "brd_1";
+
+fn b64(b: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
+}
+
+fn issuer() -> SigningKey {
+    SigningKey::from_bytes(&[42; 32])
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
+/// A JWT as the hub signs one.
+fn jwt(claims: &Value) -> String {
+    let h = b64(&serde_json::to_vec(&json!({ "alg": "EdDSA", "typ": "JWT", "kid": "k1" })).unwrap());
+    let p = b64(&serde_json::to_vec(claims).unwrap());
+    let s = b64(&issuer().sign(format!("{h}.{p}").as_bytes()).to_bytes());
+    format!("{h}.{p}.{s}")
+}
+
+fn signer(h: &HeaderMap) -> String {
+    let a = h.get("x-arugula-auth").and_then(|v| v.to_str().ok()).unwrap_or_default();
+    a.split(' ').nth(1).unwrap_or_default().to_owned()
+}
+
+#[derive(Clone, Default)]
+struct Fake {
+    url: Arc<Mutex<String>>,
+    /// Every call but the relay's: method and path, and its body.
+    calls: Arc<Mutex<Vec<(String, Value)>>>,
+    /// What the daemon said on its relay socket, and what's for it to hear.
+    said: Arc<Mutex<Vec<Value>>>,
+    outbox: Arc<Mutex<Vec<String>>>,
+    /// The board's grant is live: written by the person's Approve, and not
+    /// revoked since.
+    granted: Arc<AtomicBool>,
+    issued: Arc<Mutex<Vec<Value>>>,
+    leads: Arc<Mutex<Vec<Value>>>,
+    /// Posts in a room as the owner's agent: the room, and the body.
+    posts: Arc<Mutex<Vec<(String, Value)>>>,
+}
+
+impl Fake {
+    fn asked(&self, what: &str) -> Vec<Value> {
+        self.calls.lock().unwrap().iter().filter(|(c, _)| c.starts_with(what)).map(|(_, b)| b.clone()).collect()
+    }
+
+    /// The daemon's answer to op `id`, once it gives one.
+    fn answer(&self, id: &str) -> Option<Value> {
+        self.said.lock().unwrap().iter().find(|v| v["t"] == "op.done" && v["id"] == id).map(|v| v["answer"].clone())
+    }
+
+    fn send(&self, op: Value) {
+        self.outbox.lock().unwrap().push(op.to_string());
+    }
+}
+
+async fn any(State(f): State<Fake>, req: Request) -> Response {
+    let (method, at) = (req.method().to_string(), req.uri().to_string());
+    let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+    let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    f.calls.lock().unwrap().push((format!("{method} {at}"), b.clone()));
+    let path = at.split_once('?').map_or(at.as_str(), |(p, _)| p);
+    let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    match (method.as_str(), segs.as_slice()) {
+        ("POST", ["api", "daemon", "projects", "prj_1", "proposals"]) => {
+            let n = f.asked("POST /api/daemon/projects/prj_1/proposals").len() - 1;
+            Json(json!({ "ask": format!("prp_{n}"), "room": "dm_staff", "seq": 40 + n })).into_response()
+        }
+        ("PUT", ["api", "daemon", "chat", "mention-state"]) => Json(json!({})).into_response(),
+        _ => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("no route {method} {path}") }))).into_response(),
+    }
+}
+
+async fn jwks() -> Json<Value> {
+    Json(json!({ "keys": [{
+        "kty": "OKP", "crv": "Ed25519", "kid": "k1", "alg": "EdDSA", "use": "sig",
+        "x": b64(issuer().verifying_key().as_bytes()),
+    }]}))
+}
+
+/// A lead's start ticket, while the board's grant is live: as control
+/// refuses one with no grant, else for the machine that asks.
+async fn start_ticket(
+    State(f): State<Fake>,
+    h: HeaderMap,
+    UrlPath(board): UrlPath<String>,
+    Json(a): Json<Value>,
+) -> Response {
+    if !f.granted.load(Ordering::SeqCst) {
+        let why = "this board has no grant to start agents: its person gives one with \"Run this board\"";
+        return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "no-grant" }))).into_response();
+    }
+    let iat = now();
+    let claims = json!({
+        "iss": *f.url.lock().unwrap(), "sub": "a1", "aud": a["to"], "use": START_USE, "from": signer(&h),
+        "board": board, "project": "prj_1", "grant": "grt_1", "rung": a["rung"], "issue": a["issue"],
+        "recipe": a["recipe"], "iat": iat, "exp": iat + 60, "jti": hex::encode(arugula_e2e::random::<16>()),
+    });
+    f.issued.lock().unwrap().push(claims.clone());
+    Json(json!({ "ticket": jwt(&claims), "expires": iat + 60 })).into_response()
+}
+
+async fn lead(State(f): State<Fake>, h: HeaderMap, Json(mut a): Json<Value>) -> Json<Value> {
+    a["signer"] = json!(signer(&h));
+    f.leads.lock().unwrap().push(a);
+    Json(json!({}))
+}
+
+/// A post in a board's thread, as control delivers one: to the board's
+/// lead, by its session's name, as a mention in the board's room.
+async fn post_message(State(f): State<Fake>, UrlPath(room): UrlPath<String>, Json(b): Json<Value>) -> Json<Value> {
+    let seq = 100 + f.posts.lock().unwrap().len();
+    f.posts.lock().unwrap().push((room.clone(), b.clone()));
+    let lead = f.leads.lock().unwrap().last().map(|l| l["session"].clone());
+    if room == BOARD
+        && let Some(session) = lead
+    {
+        f.send(json!({ "t": "op", "id": format!("post-{seq}"), "op": { "op": "agents.mention", "room": "ch_board",
+            "target": BOARD, "room_name": "Launch", "seq": seq, "author": "Jake's agent on mini",
+            "text": b["text"], "session": session } }));
+    }
+    Json(json!({ "seq": seq }))
+}
+
+async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
+    up.on_upgrade(|ws| async move {
+        let (mut tx, mut rx) = ws.split();
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(50));
+        loop {
+            tokio::select! {
+                m = rx.next() => {
+                    let Some(Ok(Message::Text(t))) = m else { if m.is_none() { break } else { continue } };
+                    if let Ok(v) = serde_json::from_str::<Value>(t.as_str()) {
+                        f.said.lock().unwrap().push(v);
+                    }
+                }
+                _ = tick.tick() => {
+                    let out: Vec<String> = std::mem::take(&mut *f.outbox.lock().unwrap());
+                    for o in out {
+                        let _ = tx.send(Message::Text(o.into())).await;
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let url = rt.block_on(async {
+        let home = json!({ "project": "prj_1", "name": "Launch crew", "home": "native" });
+        let app = Router::new()
+            .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+            .route("/.well-known/jwks.json", get(jwks))
+            .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+            .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+            .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+            .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+            .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
+            .route("/api/daemon/boards/{board}/start-ticket", post(start_ticket))
+            .route("/api/daemon/boards/{board}/lead", post(lead))
+            .route("/api/daemon/chat/rooms/{room}/messages", post(post_message))
+            .route("/api/relay/dial", get(dial))
+            .fallback(any)
+            .with_state(f.clone());
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = format!("http://{}", l.local_addr().unwrap());
+        *f.url.lock().unwrap() = at.clone();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        at
+    });
+    (rt, url)
+}
+
+fn git(dir: &Path, args: &[&str]) {
+    let o = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+/// A clone of `acme/widgets` at `dir`, from a bare repository at
+/// `root/acme/widgets.git`.
+fn clone_of_widgets(root: &Path, dir: &Path) {
+    let seed = root.join("seed");
+    std::fs::create_dir_all(&seed).unwrap();
+    git(&seed, &["init", "-q", "-b", "main"]);
+    std::fs::write(seed.join("README"), "widgets\n").unwrap();
+    git(&seed, &["add", "."]);
+    git(&seed, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "first"]);
+    let bare = root.join("acme/widgets.git");
+    std::fs::create_dir_all(bare.parent().unwrap()).unwrap();
+    git(root, &["clone", "-q", "--bare", &seed.display().to_string(), &bare.display().to_string()]);
+    git(root, &["clone", "-q", &bare.display().to_string(), &dir.display().to_string()]);
+}
+
+/// What the fake agent in block `id` was prompted with, every turn's.
+fn prompts(d: &Daemon, id: u64) -> String {
+    let Some(sid) = d.state(id)["session_id"].as_str().map(str::to_owned) else { return String::new() };
+    std::fs::read_to_string(d.sessions.join(format!("prompt-{sid}.json"))).unwrap_or_default()
+}
+
+#[test]
+fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_its_wider_grant_and_a_revoked_grant_starts_nothing()
+{
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-run-board-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    // Claude Code, as a ladder start runs it, is the fake agent.
+    let agents = tmp.join("agents");
+    let bin = agents.join("claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // Its home folder holds a clone of the board's repo that no pane works
+    // in: the lead's start finds it there.
+    let home = tmp.join("home");
+    let clone = home.join("dev/acme/widgets");
+    clone_of_widgets(&tmp.join("git"), &clone);
+
+    let agents_dir = agents.display().to_string();
+    let home_dir = home.display().to_string();
+    let here = Arc::new(Mutex::new(String::new()));
+    let me = here.clone();
+    let env = [("ARUGULA_AGENTS_DIR", agents_dir.as_str()), ("HOME", home_dir.as_str())];
+    let d = Daemon::child_in(&[], &env, move |state| {
+        enroll(state, &url);
+        *me.lock().unwrap() = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap().id();
+    });
+    let here = here.lock().unwrap().clone();
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+
+    // The chief of staff: an agent block.
+    let config = json!({ "agent": "acp", "command": [PYTHON, fake()], "cwd": tmp, "title": "Chief of staff",
+        "prompt": "hello" });
+    let chief = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(chief, "idle");
+    let mcp = Mcp::bridge(&d, Some(chief));
+
+    // With no grant, nobody starts the board's lead.
+    let why = mcp.call("start_agent", json!({ "board": BOARD, "prompt": "Lead it" })).unwrap_err();
+    assert!(why.contains("Run this board"), "{why}");
+
+    // It asks to run the board: a card, and nothing starts.
+    let before = d.get("/api/panes").as_array().unwrap().len();
+    let asked = mcp
+        .call(
+            "ask_approval",
+            json!({ "action": "run_board", "board": BOARD, "cap": 2, "machines": ["mini"],
+                "why": "its plan is ready", "project": "prj_1" }),
+        )
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_0", "{asked}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
+    assert_eq!(
+        card["proposal"],
+        json!({ "action": "run_board", "board": BOARD, "machines": ["mini"], "cap": 2, "why": "its plan is ready" })
+    );
+    assert_eq!((&card["session"], &card["pane"]), (&json!("Chief of staff"), &json!(chief)), "{card}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+    // What isn't a run_board's is refused here, before control.
+    let why = mcp.call("ask_approval", json!({ "action": "start", "issue": "#1", "cap": 2, "why": "x" })).unwrap_err();
+    assert!(why.contains("go with run_board"), "{why}");
+
+    // Before the person approves, control asks which of the project's repos
+    // this machine has a clone of, for the card to say.
+    f.send(json!({ "t": "op", "id": "clones-1", "op": { "op": "agents.checkouts",
+        "repos": ["acme/site", "acme/widgets"] } }));
+    f.send(json!({ "t": "op", "id": "clones-2", "op": { "op": "agents.checkouts", "repos": ["acme/site"] } }));
+    d.wait_for("its answers", || f.answer("clones-1").is_some() && f.answer("clones-2").is_some());
+    assert_eq!(f.answer("clones-1").unwrap(), json!({ "answer": "checkout", "repo": "acme/widgets" }));
+    assert_eq!(f.answer("clones-2").unwrap(), json!({ "answer": "checkout", "repo": null }));
+
+    // The person approves: control writes the grant and asks the grant's
+    // lead machine (this one) to start the lead. With no clone here of any
+    // of the project's repos, it says so and nothing starts.
+    f.granted.store(true, Ordering::SeqCst);
+    f.send(json!({ "t": "op", "id": "approve-0", "op": { "op": "agents.approved", "ask": "prp_0",
+        "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD,
+        "board_title": "Launch", "repos": ["acme/site", "acme/docs"] } }));
+    d.wait_for("its answer", || f.answer("approve-0").is_some());
+    let a = f.answer("approve-0").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    let why = a["error"].as_str().unwrap();
+    assert!(why.contains("has no clone of acme/site (or the project's 1 other repos)"), "{a}");
+    assert!(f.issued.lock().unwrap().is_empty(), "no ticket asked for");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+
+    // The board's own repo first: the first of them with a clone here.
+    f.send(json!({ "t": "op", "id": "approve-1", "op": { "op": "agents.approved", "ask": "prp_0",
+        "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD,
+        "board_title": "Launch", "repos": ["acme/site", "acme/widgets"] } }));
+    d.wait_for("its answer", || f.answer("approve-1").is_some());
+    let a = f.answer("approve-1").unwrap();
+    assert_eq!(a["answer"], "approved", "{a}");
+    let lead_block = a["block"].as_u64().unwrap();
+    let said = a["said"].as_str().unwrap();
+    assert!(said.starts_with(&format!("started the board's lead %{lead_block}")), "{a}");
+    assert!(said.contains("it leads the board"), "{a}");
+
+    // Under a start ticket for this machine's lead, and the board's lead now.
+    let issued = f.issued.lock().unwrap().clone();
+    assert_eq!(issued.len(), 1, "{issued:?}");
+    assert_eq!((&issued[0]["rung"], &issued[0]["aud"]), (&json!("lead"), &json!(here)), "{issued:?}");
+    let leads = f.leads.lock().unwrap().clone();
+    assert_eq!(leads.len(), 1, "{leads:?}");
+    assert_eq!((&leads[0]["pane"], &leads[0]["signer"]), (&json!(lead_block), &json!(here)), "{leads:?}");
+    // It leads by its block's title, the name a post finds it by.
+    assert_eq!(leads[0]["session"], "Lead · Launch", "{leads:?}");
+    let session = leads[0]["session"].as_str().unwrap().to_owned();
+    let b = d.get(&format!("/api/blocks/{lead_block}"));
+    assert_eq!(b["state"]["work"]["ladder"]["rung"], "lead", "{b}");
+    assert_eq!(b["state"]["title"], "Lead · Launch", "a title, so its session's posts find it: {b}");
+    assert_eq!(b["state"]["work"]["ladder"]["by_session"], "Chief of staff", "{b}");
+    // In a worktree of the home folder's clone, not the home folder.
+    let cwd = b["state"]["cwd"].as_str().unwrap_or_default();
+    let (real_clone, real_cwd) = (std::fs::canonicalize(&clone).unwrap(), std::fs::canonicalize(cwd).unwrap());
+    assert!(real_cwd.starts_with(&real_clone) && real_cwd != real_clone, "{cwd} isn't in {}", clone.display());
+    assert!(real_cwd.join("README").exists(), "a worktree of the clone: {cwd}");
+    assert!(said.contains(&format!(" in {cwd}:")), "{a}");
+    // It works without a card for each command, as the board-lead recipe's
+    // issue agents do (Arugula #1440).
+    assert_eq!((&b["state"]["permission_mode"], &b["state"]["user_settings"]), (&json!("auto"), &json!(true)), "{b}");
+    let allow = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch"].map(|t| json!({ "tool": t }));
+    assert_eq!(b["state"]["allow"], json!(allow), "{b}");
+    d.wait(lead_block, "idle");
+    assert!(prompts(&d, lead_block).contains("You lead the board brd_1"), "{}", prompts(&d, lead_block));
+
+    // A post on the board's thread reaches its lead.
+    f.send(json!({ "t": "op", "id": "m-1", "op": { "op": "agents.mention", "room": "ch_board", "target": BOARD,
+        "room_name": "Launch", "seq": 7, "author": "Jake", "text": "How far along is it?", "session": session } }));
+    d.wait_for("the lead hears the board's thread", || prompts(&d, lead_block).contains("How far along is it?"));
+    d.wait(lead_block, "idle");
+
+    // Arugula #1461: the lead asked for more (in staff, which the chief of
+    // staff leads), and the chief of staff asks for a wider card. The board
+    // has a lead, so Approve only replaces its grant: nothing starts here.
+    let asked = mcp
+        .call(
+            "ask_approval",
+            json!({ "action": "run_board", "board": BOARD, "cap": 3, "machines": ["mini"],
+                "why": "the lead has 2 rows waiting", "project": "prj_1" }),
+        )
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_1", "{asked}");
+    assert_eq!(f.asked("POST /api/daemon/projects/prj_1/proposals")[1]["proposal"]["cap"], 3);
+    // The chief of staff tells the lead in the board's thread, which reaches
+    // whoever leads the board, and its next prompt carries the approval.
+    let told = "Jake approved the wider grant: 3 issue agents at once. Start the waiting rows.";
+    mcp.call("post_thread", json!({ "room": BOARD, "text": told })).unwrap();
+    let posts = f.posts.lock().unwrap().clone();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    assert_eq!((posts[0].0.as_str(), &posts[0].1["session"]), (BOARD, &json!("Chief of staff")), "{posts:?}");
+    d.wait_for("the lead hears the approval", || prompts(&d, lead_block).contains(told));
+    assert_eq!(f.issued.lock().unwrap().len(), 1, "no second lead started");
+
+    // Revoked: the lead's next start is refused, in control's words.
+    f.granted.store(false, Ordering::SeqCst);
+    let why = mcp.call("start_agent", json!({ "board": BOARD, "prompt": "Lead it again" })).unwrap_err();
+    assert!(why.contains("no grant"), "{why}");
+    f.send(json!({ "t": "op", "id": "approve-2", "op": { "op": "agents.approved", "ask": "prp_2",
+        "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD } }));
+    d.wait_for("its answer", || f.answer("approve-2").is_some());
+    let a = f.answer("approve-2").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    assert_eq!(f.issued.lock().unwrap().len(), 1, "nothing more signed");
+
+    drop(mcp);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}

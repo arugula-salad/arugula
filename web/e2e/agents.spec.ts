@@ -74,6 +74,18 @@ test.describe("desktop", () => {
     await page.evaluate((b) => window.__arugula.client.intent({ op: "close_pane", pane: b }), id);
     await expect.poll(() => panes(page)).toEqual([term]);
   });
+
+  // Arugula #1386: on the pane menu itself, not only in a submenu, and it
+  // starts the agent beside the pane as the palette's does.
+  test("the pane menu's own Start an agent… opens the dialog", async ({ page }) => {
+    await reset(page);
+    const [term] = await panes(page);
+    await paneEl(page, term).click({ button: "right", position: { x: 60, y: 60 } });
+    await page.locator(".menu > .menu-item:not(.menu-parent)", { hasText: "Start an agent…" }).click();
+    await startFake(page, "hello");
+    await expect.poll(() => agentBlock(page)).not.toBeNull();
+    expect(await panes(page)).toEqual([term, (await agentBlock(page))!]);
+  });
 });
 
 test("a command's plain output is text, ending at its last line; only colours get a terminal", async ({ page }) => {
@@ -232,7 +244,7 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
   const before = await status();
   test.skip(before.state === "installed", "codex-acp is on this machine's PATH");
   expect(before.state).toBe("missing");
-  const pinned = /^npm install --omit=optional --prefix \S+\/codex @agentclientprotocol\/codex-acp@\d+\.\d+\.\d+$/;
+  const pinned = /^npm install --prefix \S+\/codex @agentclientprotocol\/codex-acp@\d+\.\d+\.\d+$/;
   expect(before.npm).toMatch(pinned);
   const [term] = await panes(page);
 
@@ -308,7 +320,7 @@ test("Getting started: each adapter's state, and one click that installs or upda
   // Claude Code's (the fake, no version) is next to Start an agent.
   await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
   const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 4 / 5 · Agents");
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 4 · Agents");
   await expect(panel.locator('[data-start-adapter="claude"]')).toContainText("Claude Code's adapter");
   await expect(panel.locator("[data-start-agent]")).toBeVisible();
   await panel.getByRole("button", { name: "Close" }).click();

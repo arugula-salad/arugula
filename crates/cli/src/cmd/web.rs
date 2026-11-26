@@ -6,20 +6,32 @@ use arugula_proto::{api::Empty, op::ops::SigninLinkGet};
 
 #[derive(clap::Args)]
 pub struct Args {
-    #[arg(long)]
+    #[arg(long, conflicts_with = "if_browser")]
     pub print: bool,
+    /// Open it only if there's a browser here, and print nothing (the link
+    /// least of all) when there isn't, exiting 1: what the installer runs.
+    #[arg(long)]
+    pub if_browser: bool,
 }
 
 /// `arugula web`: the sign-in link, opened in a browser (or printed).
 /// With `--ssh`, the box daemon's link: printed, since its page is on the
-/// box, with how to forward its port from here.
-pub fn web(sock: &http::Target, print: bool) -> anyhow::Result<i32> {
+/// box, with how to forward its port from here. With `--if-browser`, the
+/// browser here or nothing: the installer's, which never shows the link.
+pub fn web(sock: &http::Target, &Args { print, if_browser }: &Args) -> anyhow::Result<i32> {
     let v = send_op::<SigninLinkGet>(sock, &(), &Empty {})?.json()?;
     let Some(url) = v["url"].as_str() else { bail!("the daemon has no sign-in link: {v}") };
     let page = url.split("/auth?").next().unwrap_or(url);
     if print {
         println!("{url}");
         return Ok(0);
+    }
+    if if_browser {
+        let opened = !matches!(sock, http::Target::Ssh(_)) && crate::util::open_in_browser(url);
+        if opened {
+            println!("Opened {page} in your browser, signed in.");
+        }
+        return Ok(if opened { 0 } else { 1 });
     }
     if let http::Target::Ssh(r) = sock {
         println!("The page is on {}. Open this in a browser here once its port is forwarded:\n\n  {url}\n", r.dest);

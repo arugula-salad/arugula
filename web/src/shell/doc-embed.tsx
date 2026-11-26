@@ -24,7 +24,7 @@ import { DocBlock } from "../shared/docs/doc-render";
 import { DocComments } from "../shared/docs/doc-comments";
 import { reachOf } from "../shared/docs/doc-reach";
 import { DocError, projectDocs } from "../shared/docs/store";
-import { noImages, stateOf } from "../shared/docs/project-docs";
+import { stateOf, useProjectImages } from "../shared/docs/project-docs";
 import { whoLabel } from "../shared/issues/text";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
 
@@ -130,6 +130,7 @@ function Page({ project, doc }: { project: string; doc: string }) {
   }, [project]);
   const view = shown.kind === "doc" ? shown.view : null;
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
+  const images = useProjectImages(project, doc);
   const headings = useMemo(() => new Map(view?.sections.map((s) => [s.id, s.heading]) ?? []), [view]);
   useEffect(() => {
     if (view) tell({ kind: "ready", title: view.doc.title });
@@ -156,7 +157,8 @@ function Page({ project, doc }: { project: string; doc: string }) {
           docKey={doc}
           s={state}
           fresh={NO_FRESH}
-          load={noImages}
+          load={images.load}
+          cached={images.cached}
           link="page"
           byline={<span data-doc-maker>{whoLabel(shown.view.doc.author, shown.view.doc.agent, (a) => names.get(a))}</span>}
         />

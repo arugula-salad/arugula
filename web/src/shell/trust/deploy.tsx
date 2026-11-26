@@ -15,6 +15,11 @@
 // account owns the project now. Whatever drives this browser can't make the
 // assertion without the person. The checks and the ceremony are shared
 // with the platform page (../../shared/deploy-approval.ts).
+//
+// The phone app (Arugula #604) opens it in its web sheet as
+// `#deploy=dep_…&app`, where the passkey is control's own: decided, or
+// closed, the sheet goes back to the app (`APP_BACK`), which reads the
+// deploy again.
 
 import { useEffect, useState } from "preact/hooks";
 import { deployStateText, deployTitle, shortRef, staleNote } from "../../shared/deploys";
@@ -36,9 +41,9 @@ import {
   type DeployToCheck,
 } from "../../shared/deploy-approval.ts";
 import { platformHref } from "../platform-links";
-import { clearHash } from "./common";
+import { backToApp, clearHash } from "./common";
 
-export const DEPLOY_HASH = /^#deploy=(dep_[0-9a-f]{32})$/;
+export const DEPLOY_HASH = /^#deploy=(dep_[0-9a-f]{32})(&app)?$/;
 
 interface Deploy extends DeployToCheck {
   /** The platform's reading of the commit (#333): not in the signed
@@ -64,7 +69,7 @@ async function passkey(a: Approval): Promise<Assertion> {
   return passkeyOver(a, location.hostname, mine);
 }
 
-export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
+export function DeployPrompt({ s, id, app = false }: { s: ControlSession; id: string; app?: boolean }) {
   const [d, setD] = useState<Deploy | null>(null);
   const [shown, setShown] = useState<Checked | string | null>(null);
   const [err, setErr] = useState("");
@@ -79,7 +84,8 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
       (e: Error) => setErr(e.message),
     );
   }, [id]);
-  const back = platformHref(`/deploys/${id}`);
+  const back = app ? null : platformHref(`/deploys/${id}`);
+  const close = app ? backToApp : clearHash;
   const bad = typeof shown === "string" ? shown : null;
   const ok = shown && typeof shown !== "string" ? shown : null;
   const decide = async (decision: Decision) => {
@@ -96,13 +102,15 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
       });
       setD(after);
       setDone(decision === "once" ? "Approved. Its driver run can apply it now." : "Denied. It won't be applied.");
+      // The app says what became of it: a moment to read this first.
+      if (app) setTimeout(backToApp, 1200);
     } catch (e) {
       setErr((e as Error).message);
     }
     setBusy(false);
   };
   return (
-    <Modal close={clearHash}>
+    <Modal close={close}>
       <h2>{ok ? `Deploy to ${ok.op.name}?` : "A deploy"}</h2>
       {err ? <p class="control-error" data-deploy-error>{err}</p> : null}
       {d ? (
@@ -180,8 +188,8 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
             </p>
           ) : null}
           <div class="prompt-buttons">
-            <button class="secondary" data-deploy-back onClick={() => (back ? location.assign(back) : clearHash())}>
-              {back ? "Back" : "Close"}
+            <button class="secondary" data-deploy-back onClick={() => (back ? location.assign(back) : close())}>
+              {app ? "Back to the app" : back ? "Back" : "Close"}
             </button>
             {d.may_approve && !bad && !done && s.passkeys > 0 ? (
               <>
