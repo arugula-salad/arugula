@@ -15,6 +15,12 @@
 //! - **`close`:** each agent block named, as its `close` does (a worktree
 //!   is removed only if nothing would be lost). One that's gone is said
 //!   so; a pane that isn't an agent block is refused.
+//! - **`run_board`** (Arugula #1416): the board's lead, here. Control wrote
+//!   the board's grant on Approve and sends this to the grant's lead
+//!   machine, whichever asked; the lead starts as a ladder start does
+//!   (`ladder.rs`: a start ticket under the grant, then the board's lead),
+//!   in a worktree of the project's repo when there's a clone of it here,
+//!   in mode `auto` with [`LEAD_ALLOW`] and the person's own settings.
 //!
 //! Remote input off here refuses both, as it refuses a ladder start: they
 //! type into terminals on this machine through control.
@@ -38,7 +44,8 @@ pub async fn approved(app: &Arc<App>, a: &AskApproved) -> OpAnswer {
     let done = match a.action.as_str() {
         "start" => start(app, a).await,
         "close" => close(app, &a.blocks).await.map(|said| (said, None)),
-        other => Err(format!("this machine doesn't do {other:?}: start or close")),
+        "run_board" => run_board(app, a).await,
+        other => Err(format!("this machine doesn't do {other:?}: start, close or run_board")),
     };
     match done {
         Ok((said, block)) => {
@@ -160,6 +167,52 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     Ok((said, Some(block)))
 }
 
+/// What a board's lead is told when its card gave no prompt.
+pub fn lead_prompt_of(board: &str) -> String {
+    format!(
+        "You lead the board {board}: your person approved a card to run it. Read it with board_read {{board: \"{board}\"}}, then run it: start issue agents on its ready rows within its grant, and say what you're doing in the board's thread."
+    )
+}
+
+/// The tools a board's lead uses without asking. It starts in mode `auto`
+/// with these and the person's own settings, as the board-lead recipe starts
+/// its issue agents (Arugula #1440): in the default mode every command it
+/// runs is a card for its person.
+pub const LEAD_ALLOW: &[&str] = &["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch"];
+
+/// `run_board`: the board's lead here, as a ladder start under the grant
+/// control just wrote.
+async fn run_board(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId>), String> {
+    let board = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()).ok_or("a run_board names its board")?;
+    // The project's repo, when this machine has a clone of it; else its home.
+    let repo = match a.repo.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        Some(r) if crate::ladder::clone_of(app, r).await.is_some() => Some(r.to_owned()),
+        _ => None,
+    };
+    let prompt = match a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => p.to_owned(),
+        None => lead_prompt_of(board),
+    };
+    let ask = crate::ladder::Ask {
+        board: board.to_owned(),
+        rung: Some(arugula_control_wire::ladder::Rung::Lead),
+        repo,
+        prompt,
+        title: a.board_title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(|t| format!("Lead · {t}")),
+        by_session: Some(a.session.clone()).filter(|s| !s.is_empty()),
+        permission_mode: Some("auto".into()),
+        allow: LEAD_ALLOW.iter().map(|&t| t.to_owned()).collect(),
+        user_settings: true,
+        ..Default::default()
+    };
+    let started = crate::ladder::start(app, ask).await?;
+    let said = format!(
+        "started the board's lead %{} ({}) on {} in {}: {}",
+        started.block, started.session, started.machine, started.cwd, started.said
+    );
+    Ok((said, Some(started.block)))
+}
+
 /// The asking agent's directory: its block's, if it's still the agent of
 /// that name; else a live block's of that name; none when it's gone.
 async fn asker_dir(app: &App, a: &AskApproved) -> Option<String> {
@@ -239,5 +292,6 @@ mod tests {
         assert!(prompt_of(12, "Fix it", None).starts_with("Work on #12, Fix it. Read it with forge_read"));
         assert_eq!(prompt_of(12, "Fix it", Some("  only the tests ")), "only the tests");
         assert!(prompt_of(12, "Fix it", Some(" ")).starts_with("Work on #12"));
+        assert!(lead_prompt_of("brd_1").contains("board_read {board: \"brd_1\"}"));
     }
 }

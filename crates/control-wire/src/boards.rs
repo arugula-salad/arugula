@@ -91,6 +91,15 @@ pub const BOARD_ROW_LANE: &str = "/api/boards/{id}/rows/{row}/lane";
 /// `POST` [`AnswerAsk`]: the person an ask names answers it, or an owner or
 /// editor for them. A machine and its agents never do.
 pub const BOARD_ASK_ANSWER: &str = "/api/boards/{id}/asks/{ask}/answer";
+/// `POST`, no body: a person presses **Run this board** (Arugula #1416), and
+/// control puts the board's "Run this board" card, with its defaults, in
+/// their staff room, answered [`BoardRunAsked`]. One card per board: an open
+/// one is answered again.
+pub const BOARD_RUN: &str = "/api/boards/{id}/run";
+/// `DELETE`: the person who gave the board's grant revokes it (Arugula
+/// #1416), answered [`BoardView`]. Its lead and agents run on; the next
+/// start under it is refused.
+pub const BOARD_GRANT: &str = "/api/boards/{id}/grant";
 pub const PROJECT_WORK: &str = "/api/projects/{project}/work";
 
 /// A machine's agents, under `boards.read` / `boards.write` (over the
@@ -865,6 +874,59 @@ pub struct Board {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead: Option<BoardLead>,
+}
+
+/// [`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the
+/// person's staff room. `again`: it was open already.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardRunAsked {
+    pub ask: String,
+    pub room: String,
+    pub seq: i64,
+    #[serde(default)]
+    pub again: bool,
+}
+
+/// A board's standing grant (Arugula #1415, #1416): what its person approved
+/// on its "Run this board" card. Its lead runs on `lead_machine`; its issue
+/// agents on that machine or `machines`, at most `cap` at once.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardGrant {
+    /// `grt_…`.
+    pub id: String,
+    /// The account that gave it, and its name now.
+    pub person: String,
+    #[serde(default)]
+    pub person_name: String,
+    pub lead_machine: GrantMachine,
+    /// Every machine its issue agents may use: the lead's first.
+    pub machines: Vec<GrantMachine>,
+    pub cap: u32,
+    /// Its issue agents running now (and tickets not attached yet).
+    #[serde(default)]
+    pub running: u32,
+    pub created_at: u64,
+    /// When it lapses; absent: when the board closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lapses_at: Option<u64>,
+    /// The reader gave it, so Revoke is theirs.
+    #[serde(default)]
+    pub mine: bool,
+}
+
+/// A machine a [`BoardGrant`] names: its id, and its name now (its id while
+/// it can't be told).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GrantMachine {
+    pub id: String,
+    pub name: String,
 }
 
 /// The session that leads a board: the machine it runs on and its name there,
@@ -2180,6 +2242,10 @@ pub struct BoardView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub said: Option<String>,
+    /// Its live grant to start agents (Arugula #1416), if it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub grant: Option<BoardGrant>,
 }
 
 /// [`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is
@@ -2602,7 +2668,8 @@ pub fn text(view: &BoardView) -> String {
 
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
 /// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
-/// it when one does, `Issues` with the board's
+/// it when one does, `Grant:` its grant to start agents ([`grant_line`]),
+/// `Issues` with the board's
 /// progress when it has any, and `Done:` with the done note's first line
 /// when it is closed, and `Ready (n):` with the labels of the rows that can
 /// start now when there are any (#403). Then each lane is its title and how many rows it holds
@@ -2622,6 +2689,38 @@ pub fn text(view: &BoardView) -> String {
 ///   ◐ iss_1a2b3c4d     Parser rewrite
 ///       with m1/7
 /// ```
+/// A board's grant as [`render`] says it (Arugula #1416): `Grant: lead on
+/// geek · agents on geek, mini · 1 of 3 running · until the board closes`.
+pub fn grant_line(g: &BoardGrant) -> String {
+    let machines: Vec<&str> = g.machines.iter().map(|m| m.name.as_str()).collect();
+    let until = match g.lapses_at {
+        Some(at) => format!("until {} UTC", ymd_utc(at)),
+        None => "until the board closes".to_owned(),
+    };
+    format!(
+        "Grant: lead on {} · agents on {} · {} of {} running · {until}",
+        g.lead_machine.name,
+        machines.join(", "),
+        g.running,
+        g.cap
+    )
+}
+
+/// `at` (milliseconds since the epoch) as `YYYY-MM-DD`, in UTC.
+fn ymd_utc(at: u64) -> String {
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = (at / 86_400_000) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
 pub fn render(view: &BoardView) -> String {
     let mut out = String::new();
     let first = |s: &str| s.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_owned();
@@ -2631,6 +2730,9 @@ pub fn render(view: &BoardView) -> String {
     }
     if let Some(l) = &b.lead {
         out += &format!("{}\n", fit(&format!("Led by {} on {}", l.session, machine_label(l)), TEXT_WIDTH));
+    }
+    if let Some(g) = &view.grant {
+        out += &format!("{}\n", grant_line(g));
     }
     if !view.docs.is_empty() {
         let docs: Vec<&str> = view.docs.iter().map(|d| d.title.as_str()).collect();
@@ -2988,6 +3090,29 @@ mod tests {
         format!("{title}{count:>w$}", w = TEXT_WIDTH - title.chars().count())
     }
 
+    /// Arugula #1416: the grant, under who leads the board.
+    #[test]
+    fn a_grant_is_a_line_of_the_board() {
+        let m = |id: &str| GrantMachine { id: id.into(), name: id.into() };
+        let mut g = BoardGrant {
+            id: "grt_1".into(),
+            lead_machine: m("geek"),
+            machines: vec![m("geek"), m("mini")],
+            cap: 3,
+            running: 1,
+            ..Default::default()
+        };
+        assert_eq!(
+            grant_line(&g),
+            "Grant: lead on geek · agents on geek, mini · 1 of 3 running · until the board closes"
+        );
+        g.lapses_at = Some(1_796_256_000_000);
+        assert!(grant_line(&g).ends_with("until 2026-12-03 UTC"), "{}", grant_line(&g));
+        let mut v = view(vec![]);
+        v.grant = Some(g);
+        assert!(render(&v).contains("Grant: lead on geek"), "{}", render(&v));
+    }
+
     fn view(zones: Vec<LaneView>) -> BoardView {
         BoardView {
             board: board(),
@@ -2999,6 +3124,7 @@ mod tests {
             chain: vec![],
             order: vec![],
             said: None,
+            grant: None,
         }
     }
 

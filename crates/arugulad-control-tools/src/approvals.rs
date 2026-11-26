@@ -9,11 +9,13 @@
 //! `ask.answered` tells the agent, by its watch.
 //!
 //! The agent does nothing itself. A start on another of the person's
-//! machines is a ladder start's (aru-143, #1415), not a card's yet.
+//! machines is a ladder start's (aru-143, #1415), under a board's grant;
+//! **Run this board** (`run_board`, Arugula #1416) is the card that gives
+//! one: Approve writes it and starts the board's lead on its machine.
 
 use arugula_control_wire::sessions::{
     MachinePropose, MachineProposed, PROPOSAL_CLOSE_MAX, PROPOSAL_PROMPT_MAX, PROPOSAL_WHY_MAX, Proposal,
-    ProposalSession, agent_proposals,
+    ProposalSession, RUN_BOARD_CAP_MAX, RUN_BOARD_LAPSE_DAYS_MAX, RUN_BOARD_MACHINES_MAX, agent_proposals,
 };
 use arugula_proto::{BlockType, PaneId};
 use reqwest::Method;
@@ -29,7 +31,7 @@ use crate::{
 
 pub(crate) const TOOL: &str = "ask_approval";
 
-pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do, on this machine: start an agent on one of the project's issues (action start: issue #N, prompt), or close agent blocks here (action close: blocks, by pane). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them, here, and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.";
+pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.";
 
 /// What a control from before the cards means for the agent.
 const NOT_YET: &str =
@@ -37,16 +39,35 @@ const NOT_YET: &str =
 
 #[derive(Deserialize, JsonSchema)]
 pub struct AskApprovalArgs {
-    /// start (an agent on an issue, on this machine) or close (agent
-    /// blocks on this machine).
+    /// start (an agent on an issue, on this machine), close (agent blocks
+    /// on this machine) or run_board (a board's lead, and a grant for its
+    /// issue agents).
     pub action: String,
     /// start: the issue, as #N or N, in the project.
     #[serde(default)]
     pub issue: Option<String>,
-    /// start: what the new agent is told, at most 4000 characters.
-    /// Without it: to work on the issue.
+    /// start, run_board: what the new agent (or the lead) is told, at most
+    /// 4000 characters. Without it: to work on the issue (run the board).
     #[serde(default)]
     pub prompt: Option<String>,
+    /// run_board: the board (brd_…).
+    #[serde(default)]
+    pub board: Option<String>,
+    /// run_board: the machine its lead runs on, by name or id. Default:
+    /// this one.
+    #[serde(default)]
+    pub machine: Option<String>,
+    /// run_board: other machines its issue agents may use, by name or id
+    /// (the lead's machine always may), at most 10.
+    #[serde(default)]
+    pub machines: Vec<String>,
+    /// run_board: how many issue agents at once, 1 to 20. Default 3.
+    #[serde(default)]
+    pub cap: Option<u32>,
+    /// run_board: the grant lapses after this many days. Default: when
+    /// the board closes.
+    #[serde(default)]
+    pub lapse_days: Option<u32>,
     /// close: the agent blocks to close, by pane (7 or "%7"), at most 10.
     #[serde(default)]
     pub blocks: Vec<PaneArg>,
@@ -67,6 +88,15 @@ fn proposal(a: &AskApprovalArgs, blocks: Vec<PaneId>) -> Result<Proposal, String
     if why.chars().count() > PROPOSAL_WHY_MAX {
         return Err(format!("why: at most {PROPOSAL_WHY_MAX} characters"));
     }
+    let run_fields =
+        a.board.is_some() || a.machine.is_some() || !a.machines.is_empty() || a.cap.is_some() || a.lapse_days.is_some();
+    if run_fields && a.action.trim() != "run_board" {
+        return Err("board, machine, machines, cap and lapse_days go with run_board".into());
+    }
+    let prompt = a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned);
+    if prompt.as_ref().is_some_and(|p| p.chars().count() > PROPOSAL_PROMPT_MAX) {
+        return Err(format!("prompt: at most {PROPOSAL_PROMPT_MAX} characters"));
+    }
     match a.action.trim() {
         "start" => {
             if !blocks.is_empty() {
@@ -75,10 +105,6 @@ fn proposal(a: &AskApprovalArgs, blocks: Vec<PaneId>) -> Result<Proposal, String
             let issue = a.issue.as_deref().ok_or("start needs issue: #N")?;
             let number =
                 issue.trim().trim_start_matches('#').parse().map_err(|_| format!("an issue is #N, not {issue:?}"))?;
-            let prompt = a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned);
-            if prompt.as_ref().is_some_and(|p| p.chars().count() > PROPOSAL_PROMPT_MAX) {
-                return Err(format!("prompt: at most {PROPOSAL_PROMPT_MAX} characters"));
-            }
             Ok(Proposal::Start { number, prompt, repo: None, why })
         }
         "close" => {
@@ -91,7 +117,31 @@ fn proposal(a: &AskApprovalArgs, blocks: Vec<PaneId>) -> Result<Proposal, String
                 _ => Ok(Proposal::Close { sessions: vec![], blocks, why }),
             }
         }
-        a => Err(format!("action {a}: start or close")),
+        "run_board" => {
+            if !blocks.is_empty() || a.issue.is_some() {
+                return Err("issue and blocks don't go with run_board".into());
+            }
+            let board = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty());
+            let board = board.ok_or("run_board needs board: its brd_… id")?.to_owned();
+            let machine = a.machine.as_deref().map(str::trim).filter(|m| !m.is_empty()).map(str::to_owned);
+            let mut machines: Vec<String> = vec![];
+            for m in a.machines.iter().map(|m| m.trim()).filter(|m| !m.is_empty()) {
+                if !machines.iter().any(|n| n == m) {
+                    machines.push(m.to_owned());
+                }
+            }
+            if machines.len() > RUN_BOARD_MACHINES_MAX {
+                return Err(format!("machines: at most {RUN_BOARD_MACHINES_MAX}"));
+            }
+            if a.cap.is_some_and(|c| c == 0 || c > RUN_BOARD_CAP_MAX) {
+                return Err(format!("cap: 1 to {RUN_BOARD_CAP_MAX} issue agents at once"));
+            }
+            if a.lapse_days.is_some_and(|d| d == 0 || d > RUN_BOARD_LAPSE_DAYS_MAX) {
+                return Err(format!("lapse_days: 1 to {RUN_BOARD_LAPSE_DAYS_MAX}, or none for when the board closes"));
+            }
+            Ok(Proposal::RunBoard { board, machine, machines, cap: a.cap, lapse_days: a.lapse_days, prompt, why })
+        }
+        a => Err(format!("action {a}: start, close or run_board")),
     }
 }
 
@@ -193,7 +243,33 @@ mod tests {
         assert!(refused(json!({ "action": "start", "why": "x" })).contains("needs issue"));
         assert!(refused(json!({ "action": "close", "why": "x" })).contains("needs blocks"));
         assert!(refused(json!({ "action": "close", "issue": "#1", "why": "x" })).contains("go with start"));
-        assert!(refused(json!({ "action": "run_board", "why": "x" })).contains("start or close"));
+        assert!(refused(json!({ "action": "launch", "why": "x" })).contains("start, close or run_board"));
+        assert!(refused(json!({ "action": "run_board", "why": "x" })).contains("needs board"));
+        assert!(
+            refused(json!({ "action": "start", "issue": "#1", "cap": 2, "why": "x" })).contains("go with run_board")
+        );
+        assert!(
+            refused(json!({ "action": "run_board", "board": "brd_1", "cap": 0, "why": "x" })).contains("cap: 1 to")
+        );
+        assert!(
+            refused(json!({ "action": "run_board", "board": "brd_1", "lapse_days": 0, "why": "x" }))
+                .contains("lapse_days")
+        );
+        let a = args(
+            json!({ "action": "run_board", "board": " brd_1 ", "machines": ["mini", " mini", ""], "why": "ready" }),
+        );
+        assert_eq!(
+            proposal(&a, vec![]).unwrap(),
+            Proposal::RunBoard {
+                board: "brd_1".into(),
+                machine: None,
+                machines: vec!["mini".into()],
+                cap: None,
+                lapse_days: None,
+                prompt: None,
+                why: "ready".into()
+            }
+        );
         assert!(proposal(&args(json!({ "action": "start", "issue": "#1", "why": "x" })), vec![3]).is_err());
     }
 }

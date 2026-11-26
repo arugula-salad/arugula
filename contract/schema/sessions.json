@@ -360,7 +360,7 @@
       "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
       "properties": {
         "action": {
-          "description": "`start` or `close`.",
+          "description": "`start`, `close` or `run_board`.",
           "type": "string"
         },
         "answered_by_name": {
@@ -410,6 +410,17 @@
             "null"
           ]
         },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`run_board`: the board, where its lead runs and what it may start."
+        },
         "sessions": {
           "description": "`close`: the sessions, as they are now.",
           "items": {
@@ -440,6 +451,22 @@
         "sessions",
         "why",
         "state"
+      ],
+      "type": "object"
+    },
+    "GrantMachine": {
+      "description": "A machine a [`BoardGrant`] names: its id, and its name now (its id while\nit can't be told).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ],
       "type": "object"
     },
@@ -590,6 +617,65 @@
             "action"
           ],
           "type": "object"
+        },
+        {
+          "description": "\"Run this board\" (Arugula #1416): start the board's lead on\n`machine`, and grant it issue agents on that machine and `machines`,\n`cap` at once, until the board closes or `lapse_days` pass. Approve\nwrites the board's grant (replacing any it had) and starts the lead\nthere. A machine's agent's only: `machine` is a machine of its\nperson's, by name or id (none: the asking machine).",
+          "properties": {
+            "action": {
+              "const": "run_board",
+              "type": "string"
+            },
+            "board": {
+              "description": "`brd_…`.",
+              "type": "string"
+            },
+            "cap": {
+              "description": "None: [`RUN_BOARD_CAP`].",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "lapse_days": {
+              "description": "None: when the board closes.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "machine": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "machines": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "prompt": {
+              "description": "What the lead is told; none: to run the board.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "board"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -613,6 +699,52 @@
         "id",
         "number",
         "title"
+      ],
+      "type": "object"
+    },
+    "ProposalRun": {
+      "description": "A \"Run this board\" card's lines ([`ChatProposal::run`]).",
+      "properties": {
+        "board": {
+          "description": "`brd_…`, and its title now.",
+          "type": "string"
+        },
+        "board_title": {
+          "type": "string"
+        },
+        "cap": {
+          "description": "How many issue agents at once.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lapse_days": {
+          "description": "None: until the board closes.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lead_machine": {
+          "$ref": "#/$defs/GrantMachine",
+          "description": "Where its lead runs."
+        },
+        "machines": {
+          "description": "Where its issue agents may run: the lead's machine first.",
+          "items": {
+            "$ref": "#/$defs/GrantMachine"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "board",
+        "board_title",
+        "lead_machine",
+        "machines",
+        "cap"
       ],
       "type": "object"
     },

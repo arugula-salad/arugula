@@ -154,11 +154,32 @@ const CLOSE = {
   why: "Both are finished and hold a box each.",
 };
 
+const RUN = {
+  id: "prp_run",
+  action: "run_board",
+  by_session: "Chief of staff",
+  issue: null,
+  repo: null,
+  prompt: null,
+  sessions: [],
+  why: "Its plan is ready and nobody leads it.",
+  run: {
+    board: "brd_e2e1later",
+    board_title: "Later",
+    lead_machine: { id: "m_geek", name: "geek" },
+    machines: [
+      { id: "m_geek", name: "geek" },
+      { id: "m_mini", name: "jake-mini" },
+    ],
+    cap: 3,
+  },
+};
+
 /** The reader's staff room, with `proposal`'s message in it (seq 2), and the
  * hub's routes for it: the project's open asks, the ask, and its answer
  * (each body posted in `window.posted`). The fixture page answers chat
  * itself, so it's made up in the page. */
-async function proposing(page: Page, proposal: typeof START | typeof CLOSE) {
+async function proposing(page: Page, proposal: typeof START | typeof CLOSE | typeof RUN) {
   await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
   await page.evaluate(
     ({ P, proposal }) => {
@@ -1005,6 +1026,24 @@ test.describe("on a computer", () => {
     await expect(needs.locator("[data-ov-needs-count]")).toHaveCount(0);
   });
 
+  test("Run this board's card says the board, where its lead runs, where its agents may and how many, and until when; Approve sends it (Arugula #1416)", async ({ page }, info) => {
+    await overview(page);
+    await proposing(page, RUN);
+    const card = page.locator('[data-ov-needs] [data-proposal="prp_run"]');
+    await expect(card).toHaveAttribute("data-proposal-action", "run_board");
+    await expect(card).toContainText("Chief of staff · run a board");
+    await expect(card.locator("[data-proposal-board]")).toHaveText("Run Later");
+    await expect(card.locator("[data-proposal-lead]")).toHaveText("Lead on geek");
+    await expect(card.locator("[data-proposal-machines]")).toHaveText("Issue agents on geek, jake-mini · up to 3 at once");
+    await expect(card.locator("[data-proposal-lapse]")).toHaveText("Until the board closes");
+    await expect(card.locator("[data-proposal-why]")).toContainText("Its plan is ready and nobody leads it.");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: info.outputPath("run-this-board-card.png") });
+    await card.locator("[data-proposal-approve]").click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: unknown[] }).posted)).toEqual([{ choice: "Approve" }]);
+    await expect(card).toHaveCount(0);
+  });
+
   test("an agent's proposal to stop sessions lists them; Deny sends it and it leaves (Arugula #1278)", async ({ page }) => {
     await overview(page);
     await proposing(page, CLOSE);
@@ -1650,7 +1689,7 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
   });
 
-  test("the Board level: its goal and bar, its lead's card with Talk to the lead and Board thread apart, its open tickets with their word and the agents on them, Done folded; a board no one leads asks the chief of staff for one (Arugula #1288)", async ({ page }, info) => {
+  test("the Board level: its goal and bar, its lead's card with Talk to the lead and Board thread apart, its open tickets with their word and the agents on them, Done folded; a board no one leads offers Run this board (Arugula #1288, #1416)", async ({ page }, info) => {
     // Launch is led by the project's scratch session, and #12's agent is on it; Later has no lead.
     let led: unknown;
     await overview(page, null, true, () => led);
@@ -1712,7 +1751,7 @@ test.describe("on a computer", () => {
     await level.locator('[data-ov-ticket="row_r"] [data-ov-ticket-word]').click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*/card/row_r$`));
 
-    // Later has no lead: it says so, and asks the chief of staff in the staff room once there is one.
+    // Later has no lead: it says so, and Run this board puts its card in Needs you (#1416), bringing up the staff room once there is one.
     await page.goto(`/p/${P}/board/${LATER}`);
     await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
     const later = page.locator(`[data-ov-level-board="${LATER}"]`);
@@ -1720,8 +1759,8 @@ test.describe("on a computer", () => {
     const none = later.locator('[data-ov-lead-card=""]');
     await expect(none).toContainText("No lead");
     await expect(none.locator("[data-ov-lead-talk]")).toHaveCount(0);
+    await expect(none.locator("[data-ov-run-board]")).toHaveText("Run this board");
     await chatOn(page);
-    await expect(none.locator("[data-ov-ask-chief]")).toHaveCount(0);
     await page.evaluate((P) => {
       const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
       const posted: string[] = [];
@@ -1730,6 +1769,10 @@ test.describe("on a computer", () => {
       const before = window.fetch;
       window.fetch = async (input, init) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname.startsWith("/api/boards/") && url.pathname.endsWith("/run")) {
+          posted.push(`${init?.method} ${url.pathname}`);
+          return json({ ask: "prp_1", room: "dm_cos", seq: 9, again: false });
+        }
         if (url.pathname === "/api/chat/rooms/dm_cos/messages") {
           if (init?.method === "POST") {
             posted.push((JSON.parse(String(init.body)) as { text: string }).text);
@@ -1745,8 +1788,8 @@ test.describe("on a computer", () => {
     }, P);
     await expect(none.locator("[data-ov-lead-thread]")).toBeVisible();
     await page.screenshot({ path: info.outputPath("overview-board-level-no-lead.png") });
-    await none.locator("[data-ov-ask-chief]").click();
-    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual([`Please start a session to lead the board "Later" (${LATER}): read its goal and open tickets, then lead it.`]);
+    await none.locator("[data-ov-run-board]").click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual([`POST /api/boards/${LATER}/run`]);
     await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
   });
 

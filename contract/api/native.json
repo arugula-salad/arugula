@@ -11,6 +11,10 @@
   ],
   "out": [
     {
+      "match": "^/api/boards/\\{id\\}/(run|grant)$",
+      "why": "Run this board and revoking a board's grant are on the web for now (Arugula #1416)"
+    },
+    {
       "match": "/threads/{seq}/agents",
       "why": "The strip of a thread's agents is on the web for now (Arugula #646)"
     },

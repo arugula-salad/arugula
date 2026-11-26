@@ -7720,6 +7720,73 @@
         ],
         "type": "object"
       },
+      "BoardGrant": {
+        "description": "A board's standing grant (Arugula #1415, #1416): what its person approved\non its \"Run this board\" card. Its lead runs on `lead_machine`; its issue\nagents on that machine or `machines`, at most `cap` at once.",
+        "properties": {
+          "cap": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "`grt_…`.",
+            "type": "string"
+          },
+          "lapses_at": {
+            "description": "When it lapses; absent: when the board closes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lead_machine": {
+            "$ref": "#/components/schemas/GrantMachine"
+          },
+          "machines": {
+            "description": "Every machine its issue agents may use: the lead's first.",
+            "items": {
+              "$ref": "#/components/schemas/GrantMachine"
+            },
+            "type": "array"
+          },
+          "mine": {
+            "default": false,
+            "description": "The reader gave it, so Revoke is theirs.",
+            "type": "boolean"
+          },
+          "person": {
+            "description": "The account that gave it, and its name now.",
+            "type": "string"
+          },
+          "person_name": {
+            "default": "",
+            "type": "string"
+          },
+          "running": {
+            "default": 0,
+            "description": "Its issue agents running now (and tickets not attached yet).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "person",
+          "lead_machine",
+          "machines",
+          "cap",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "BoardLead": {
         "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
         "properties": {
@@ -7873,6 +7940,17 @@
               "$ref": "#/components/schemas/BoardDoc"
             },
             "type": "array"
+          },
+          "grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoardGrant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its live grant to start agents (Arugula #1416), if it has one."
           },
           "groups": {
             "default": [],
@@ -9510,7 +9588,7 @@
         "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
         "properties": {
           "action": {
-            "description": "`start` or `close`.",
+            "description": "`start`, `close` or `run_board`.",
             "type": "string"
           },
           "answered_by_name": {
@@ -9559,6 +9637,17 @@
               "string",
               "null"
             ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalRun"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`run_board`: the board, where its lead runs and what it may start."
           },
           "sessions": {
             "description": "`close`: the sessions, as they are now.",
@@ -11227,6 +11316,22 @@
           "project",
           "items",
           "withheld"
+        ],
+        "type": "object"
+      },
+      "GrantMachine": {
+        "description": "A machine a [`BoardGrant`] names: its id, and its name now (its id while\nit can't be told).",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },
@@ -13411,6 +13516,52 @@
           "id",
           "number",
           "title"
+        ],
+        "type": "object"
+      },
+      "ProposalRun": {
+        "description": "A \"Run this board\" card's lines ([`ChatProposal::run`]).",
+        "properties": {
+          "board": {
+            "description": "`brd_…`, and its title now.",
+            "type": "string"
+          },
+          "board_title": {
+            "type": "string"
+          },
+          "cap": {
+            "description": "How many issue agents at once.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lapse_days": {
+            "description": "None: until the board closes.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "lead_machine": {
+            "$ref": "#/components/schemas/GrantMachine",
+            "description": "Where its lead runs."
+          },
+          "machines": {
+            "description": "Where its issue agents may run: the lead's machine first.",
+            "items": {
+              "$ref": "#/components/schemas/GrantMachine"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "board",
+          "board_title",
+          "lead_machine",
+          "machines",
+          "cap"
         ],
         "type": "object"
       },

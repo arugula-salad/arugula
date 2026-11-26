@@ -451,6 +451,14 @@ pub const PROPOSAL_PROMPT_MAX: usize = 4000;
 pub const PROPOSAL_CLOSE_MAX: usize = 10;
 /// The most proposals one session keeps open at once.
 pub const PROPOSALS_OPEN_MAX: usize = 5;
+/// A [`Proposal::RunBoard`]'s cap when it names none: issue agents at once.
+pub const RUN_BOARD_CAP: u32 = 3;
+/// The largest cap one card grants.
+pub const RUN_BOARD_CAP_MAX: u32 = 20;
+/// The most machines one card names for its issue agents.
+pub const RUN_BOARD_MACHINES_MAX: usize = 10;
+/// The longest lapse one card grants, in days.
+pub const RUN_BOARD_LAPSE_DAYS_MAX: u32 = 365;
 
 /// What an agent session asks its asker to approve (Arugula #1278): it
 /// does nothing itself. The proposal is an ask in their staff room
@@ -486,6 +494,40 @@ pub enum Proposal {
         #[serde(default)]
         why: String,
     },
+    /// "Run this board" (Arugula #1416): start the board's lead on
+    /// `machine`, and grant it issue agents on that machine and `machines`,
+    /// `cap` at once, until the board closes or `lapse_days` pass. Approve
+    /// writes the board's grant (replacing any it had) and starts the lead
+    /// there. A machine's agent's only: `machine` is a machine of its
+    /// person's, by name or id (none: the asking machine).
+    RunBoard {
+        /// `brd_…`.
+        board: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        machine: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        machines: Vec<String>,
+        /// None: [`RUN_BOARD_CAP`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cap: Option<u32>,
+        /// None: when the board closes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lapse_days: Option<u32>,
+        /// What the lead is told; none: to run the board.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prompt: Option<String>,
+        #[serde(default)]
+        why: String,
+    },
+}
+
+impl Proposal {
+    /// The agent's why, as it wrote it.
+    pub fn why(&self) -> &str {
+        match self {
+            Proposal::Start { why, .. } | Proposal::Close { why, .. } | Proposal::RunBoard { why, .. } => why,
+        }
+    }
 }
 
 /// The route a machine's agent proposes by (Arugula #1417), `POST`, signed
@@ -532,7 +574,7 @@ pub struct MachineProposed {
 pub struct ChatProposal {
     /// `prp_…`.
     pub id: String,
-    /// `start` or `close`.
+    /// `start`, `close` or `run_board`.
     pub action: String,
     /// The session that proposed it, `ses_…`.
     pub by_session: String,
@@ -555,6 +597,30 @@ pub struct ChatProposal {
     pub outcome: Option<String>,
     /// `start`, approved: the session it started.
     pub started: Option<String>,
+    /// `run_board`: the board, where its lead runs and what it may start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub run: Option<ProposalRun>,
+}
+
+/// A "Run this board" card's lines ([`ChatProposal::run`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProposalRun {
+    /// `brd_…`, and its title now.
+    pub board: String,
+    pub board_title: String,
+    /// Where its lead runs.
+    pub lead_machine: crate::boards::GrantMachine,
+    /// Where its issue agents may run: the lead's machine first.
+    pub machines: Vec<crate::boards::GrantMachine>,
+    /// How many issue agents at once.
+    pub cap: u32,
+    /// None: until the board closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lapse_days: Option<u32>,
 }
 
 /// [`ChatProposal::issue`].

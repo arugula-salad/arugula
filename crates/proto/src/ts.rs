@@ -268,6 +268,7 @@ fn generate() -> String {
         c.visit::<BoardList>();
         c.visit::<NewBoard>();
         c.visit::<BoardView>();
+        c.visit::<BoardRunAsked>();
         c.visit::<PutEntry>();
         c.visit::<MoveEntry>();
         c.visit::<StaleOrder>();

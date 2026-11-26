@@ -62,6 +62,13 @@
         "ticket": {
           "type": "string"
         },
+        "title": {
+          "description": "Its block's title there; default its session's name. A block with a\ntitle is one a post naming its session reaches (the board's thread,\nfor a lead).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "user_settings": {
           "description": "The person's own Claude Code settings on the target (its allow and\ndeny lists, default mode, CLAUDE.md), without their hooks.",
           "type": "boolean"

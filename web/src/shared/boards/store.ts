@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, BoardLane, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, BoardLane, BoardRunAsked, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -109,6 +109,10 @@ export const boards = {
   /** Close the board as an epic, with what a person can now do. */
   close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
   reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
+  /** Run this board (Arugula #1416): its card, with the defaults filled in, goes in the reader's staff room, under Needs you. One card per board: an open one comes back `again`. */
+  run: (id: string) => call<BoardRunAsked>("POST", `/api/boards/${enc(id)}/run`),
+  /** Revoke the board's grant: its lead and agents run on, and nothing more starts under it. */
+  revokeGrant: (id: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/grant`),
   remove: (id: string, entry: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/entries/${enc(entry)}`),
   /** Move a row to a group (`zone`, null: none), or a group among groups (`before`, null: last). */
   move: (id: string, entry: string, rev: number, m: { zone?: string | null; before?: string | null }) =>

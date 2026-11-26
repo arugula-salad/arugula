@@ -175,10 +175,10 @@
       "type": "object"
     },
     "AskApproved": {
-      "description": "`agents.approved`'s ask (Arugula #1417): the card's proposal, as the\nperson approved it. The machine is the one whose agent asked: a start on\nanother machine is #1415's start ticket's, not this op's.",
+      "description": "`agents.approved`'s ask (Arugula #1417): the card's proposal, as the\nperson approved it. The machine is the one whose agent asked: a start on\nanother machine is #1415's start ticket's, not this op's. A `run_board`\n(Arugula #1416) goes to the grant's lead machine instead, which starts\nthe lead with a start ticket of its own.",
       "properties": {
         "action": {
-          "description": "`start` or `close`.",
+          "description": "`start`, `close` or `run_board`.",
           "type": "string"
         },
         "ask": {
@@ -193,6 +193,20 @@
             "type": "integer"
           },
           "type": "array"
+        },
+        "board": {
+          "description": "`run_board` (Arugula #1416): the board whose lead starts here, under\nthe grant control wrote on Approve.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "board_title": {
+          "description": "`run_board`: the board's title, for its lead's block.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "issue": {
           "anyOf": [
@@ -216,6 +230,13 @@
         },
         "prompt": {
           "description": "`start`: what the new agent is told (none: to work on the issue).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it.",
           "type": [
             "string",
             "null"

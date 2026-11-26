@@ -474,7 +474,9 @@ pub struct SessionCardAsk {
 
 /// `agents.approved`'s ask (Arugula #1417): the card's proposal, as the
 /// person approved it. The machine is the one whose agent asked: a start on
-/// another machine is #1415's start ticket's, not this op's.
+/// another machine is #1415's start ticket's, not this op's. A `run_board`
+/// (Arugula #1416) goes to the grant's lead machine instead, which starts
+/// the lead with a start ticket of its own.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AskApproved {
@@ -482,7 +484,7 @@ pub struct AskApproved {
     pub ask: String,
     /// Its project, `prj_…`: a start's issue is in it.
     pub project: String,
-    /// `start` or `close`.
+    /// `start`, `close` or `run_board`.
     pub action: String,
     /// The agent that asked: its session's name and its block.
     pub session: String,
@@ -496,6 +498,17 @@ pub struct AskApproved {
     /// `close`: the agent blocks to close, by pane.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<u32>,
+    /// `run_board` (Arugula #1416): the board whose lead starts here, under
+    /// the grant control wrote on Approve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    /// `run_board`: the board's title, for its lead's block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_title: Option<String>,
+    /// `run_board`: the project's repo (`owner/name`), for the lead to work
+    /// in when this machine has a clone of it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
 }
 
 /// `sessions.set_project`'s ask (Arugula #1166).
