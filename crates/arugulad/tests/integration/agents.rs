@@ -795,7 +795,12 @@ fn a_turn_ended_as_a_task_notification_goes_idle_and_takes_the_next_prompt() {
     });
     let v = mcp.call("prompt_agent", json!({ "pane": id, "text": "hello", "timeout": 1 })).unwrap();
     let summary = v["summary"].as_str().unwrap_or_default();
-    assert!(summary.contains("your prompt is queued") && summary.contains("its last output was"), "{v}");
+    assert!(
+        summary.contains("your prompt is queued")
+            && summary.contains("its turn has run")
+            && summary.contains("its last output was"),
+        "{v}"
+    );
     d.wait_for("the queued prompt's turn", || {
         entries(&d.state(id)).iter().any(|e| e["type"] == "agent" && e["text"] == "Hello! I am fake.")
     });

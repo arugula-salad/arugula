@@ -341,6 +341,13 @@
       "properties": {
         "choice": {
           "type": "string"
+        },
+        "note": {
+          "description": "A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or\n[`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It\nis kept on the to-do and never put in an event, a push or chat; one\nthat looks like a secret is refused. Any other ask takes none.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -367,7 +374,7 @@
       "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
       "properties": {
         "action": {
-          "description": "`start`, `close` or `run_board`.",
+          "description": "`start`, `close`, `run_board` or `todo`.",
           "type": "string"
         },
         "answered_by_name": {
@@ -443,8 +450,19 @@
           ]
         },
         "state": {
-          "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why).",
+          "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why); a to-do's `open`, `done`, `cant`\nor `cancelled`.",
           "type": "string"
+        },
+        "todo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalTodo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`todo`: what to do, how, and its receipt."
         },
         "why": {
           "description": "Why, in the agent's words.",
@@ -497,6 +515,18 @@
       "required": [
         "room",
         "seq"
+      ],
+      "type": "object"
+    },
+    "MachineCancel": {
+      "description": "[`agent_proposal_cancel`]'s body: the agent that asked, by its session's\nname on the machine.",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
       ],
       "type": "object"
     },
@@ -683,8 +713,65 @@
             "board"
           ],
           "type": "object"
+        },
+        {
+          "description": "A to-do (Arugula #1462): work its person does outside Arugula (an\napproval on GitHub, a script with their credentials, a secret put\nsomewhere) and reports back on. Its card's choices are [`TODO_DONE`]\nand [`TODO_CANT`], with a note; nothing is done on Approve, and the\nagent may cancel it. `what`, `why` and `how` are plain text, shown\nas written (no Markdown): `what` one line, `how` the steps,\ncommands verbatim. It's for the person the agent works for (a\nsession's asker, a machine's owner): the agent doesn't name them.",
+          "properties": {
+            "action": {
+              "const": "todo",
+              "type": "string"
+            },
+            "conversation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TodoConversation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A machine's agent's conversation, which the answer is for."
+            },
+            "how": {
+              "default": "",
+              "type": "string"
+            },
+            "issue": {
+              "description": "Its card: one of the project's native issues, by number.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "what": {
+              "type": "string"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "what"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "ProposalCancelled": {
+      "description": "A to-do cancelled by its agent: [`agent_proposal_cancel`]'s answer, and\na session's `ProposalCancel`'s.",
+      "properties": {
+        "ask": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ask"
+      ],
+      "type": "object"
     },
     "ProposalIssue": {
       "description": "[`ChatProposal::issue`].",
@@ -790,6 +877,56 @@
         "id",
         "title",
         "state"
+      ],
+      "type": "object"
+    },
+    "ProposalTodo": {
+      "description": "A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as\nthe agent wrote it. Its why is [`ChatProposal::why`], whom it's for the\ncard's asker, and who answered [`ChatProposal::answered_by_name`].",
+      "properties": {
+        "answered_at": {
+          "description": "When it was answered (or cancelled), ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TodoConversation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "how": {
+          "description": "The steps, shown as written in a mono well.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "A machine's agent's: the machine, by id, and its conversation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "The person's note with their answer: only they read it here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "what": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "what",
+        "how"
       ],
       "type": "object"
     },
@@ -2146,6 +2283,23 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "TodoConversation": {
+      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+      "properties": {
+        "agent": {
+          "description": "`claude` or `codex`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "id"
+      ],
       "type": "object"
     }
   },

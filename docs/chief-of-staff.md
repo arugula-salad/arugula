@@ -291,7 +291,11 @@ there (`work.ladder`), and only for the machine that started it or the
 board's current lead, as control says it. Either way the machine tells
 control at once that the block closed, without waiting for its next
 block-state report, so the slot is free for the lead's next start. The
-answer says so. A guest's agent can't use `start_agent` with `board` or
+answer says so. Here, each issue agent is in a tab of its own, which an
+agent's token doesn't reach, so `close` lets the lead past that for a block
+a ladder start opened for its board (`work.ladder`), when control says the
+caller's own pane on this machine leads it (Arugula #1471). Any other pane in
+another tab stays refused, and so does a sibling issue agent. A guest's agent can't use `start_agent` with `board` or
 `close` with `to`.
 
 Revoking the grant refuses the next start; agents already running keep

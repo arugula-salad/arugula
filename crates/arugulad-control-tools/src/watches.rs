@@ -250,12 +250,17 @@ fn code_of(v: &Value) -> Option<i32> {
     }
 }
 
+const NO_WATCHES: &str = "Arugula cloud doesn't keep watches yet: use wait with pr to block until it happens";
+
 /// What control's answer says when it fails.
 fn said(e: CloudRefused) -> String {
     match e {
         CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where watches are kept: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
-        CloudRefused::OldControl | CloudRefused::Said { status: 404 | 405, .. } => {
-            "Arugula cloud doesn't keep watches yet: use wait with pr to block until it happens".into()
+        // A route control doesn't have answers with no reason of its own: a
+        // 404 that says why (no such board) is a refusal, said as it is.
+        CloudRefused::OldControl => NO_WATCHES.into(),
+        CloudRefused::Said { status: status @ (404 | 405), said, .. } if said == format!("control answered {status}") => {
+            NO_WATCHES.into()
         }
         e => e.to_string(),
     }
@@ -371,6 +376,12 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
         return made_said(made, "This machine made no watch, and said nothing of why");
     }
     let mut body = create_body(a)?;
+    // A board's id is its thread's room: control's watches take the room's.
+    for t in &mut body.targets {
+        if let WatchTarget::Thread { room, .. } = t {
+            *room = crate::threads::thread_room(c, room).await?;
+        }
+    }
     (body.session, body.session_name) = session(c).await?;
     // Without one, the watch goes as asked: the cloud says if it needs one.
     if wants_project(&body)
@@ -730,6 +741,18 @@ mod tests {
     use arugula_control_wire::watch::{EXPIRES_MAX_MS, NOTE_MAX, PrUntil};
     use serde_json::json;
 
+    use super::said as said_of;
+
+    #[test]
+    fn a_refusal_that_says_why_is_not_a_missing_route() {
+        let said = |status, said: &str| said_of(CloudRefused::Said { status, said: said.into(), reason: None });
+        assert_eq!(said(404, "control answered 404"), NO_WATCHES);
+        assert_eq!(said(405, "control answered 405"), NO_WATCHES);
+        assert_eq!(said_of(CloudRefused::OldControl), NO_WATCHES);
+        let why = said(404, "no such room");
+        assert!(why.contains("no such room") && !why.contains("doesn't keep watches"), "{why}");
+    }
+
     #[test]
     fn expires_reads_minutes_hours_and_days_up_to_a_week() {
         assert_eq!(expires("30m"), Ok(30 * 60_000));
@@ -801,6 +824,9 @@ mod tests {
         // The chief of staff's "main went red" (#1291): main's own head, not a PR's base.
         let red = json!({ "event": "github.check.failed", "match": { "heads": "main" } });
         assert_eq!(create_body(args(red)).unwrap().event.as_deref(), Some("github.check.failed"));
+        // A chief of staff's "my person's sessions" (#1489): `me` is the cloud's to resolve.
+        let mine = json!({ "event": "session.needs_input", "match": { "by": "me" } });
+        assert_eq!(create_body(args(mine)).unwrap().event.as_deref(), Some("session.needs_input"));
         assert!(
             create_body(args(json!({ "event": "issue.labeled", "match": { "issue": "#3", "label": "bug" } }))).is_ok()
         );

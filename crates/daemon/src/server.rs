@@ -179,12 +179,30 @@ async fn runner() -> Response {
         .unwrap()
 }
 
+/// What a prototype that went to another page of this one's origin (a write
+/// to `location`, which the runner can't catch) loads instead of a 404: a page
+/// that says where it is to the app above, which shows the Doc's prototype of
+/// that name, or says the prototype left (Arugula #1451). Under the runner's
+/// policy, so it can run nothing else and load nothing.
+const NAVIGATED: &str = "<!doctype html><title>prototype</title><script>\
+parent.postMessage({type:'arugula.nav',url:location.href},'*')</script>";
+
+async fn navigated() -> Response {
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-store")
+        .header(header::CONTENT_SECURITY_POLICY, RUNNER_CSP)
+        .body(Body::from(NAVIGATED))
+        .unwrap()
+}
+
 pub fn router(app: Arc<App>) -> Router {
     let r = Router::new()
         .route("/ws", get(ws))
         .route(crate::e2e::PATH, get(crate::e2e::ws))
         .route(crate::localauth::AUTH_PATH, get(signin))
         .route(RUNNER_PATH, get(runner))
+        .route("/proto/{*file}", get(navigated))
         .merge(
             api_routes(&app)
                 .layer(middleware::from_fn_with_state(app.clone(), crate::authz::check))
@@ -447,7 +465,7 @@ fn shell_file(path: &str) -> bool {
     let file = path.trim_start_matches('/');
     file.is_empty()
         || path == arugula_control_wire::CONTROL_JSON
-        || path == RUNNER_PATH
+        || path.starts_with(RUNNER_PATH)
         || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
 }
 

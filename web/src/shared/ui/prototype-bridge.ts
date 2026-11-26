@@ -11,12 +11,16 @@
 
 import { createContext } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
+import type { ProtoFile } from "./prototype-files";
 import { COPY, COPY_MAX, KEY_MAX, SECTION_MAX, STORE_ALL, STORE_GET, STORE_SET, VALUE_MAX, reply, requestOf, type Request } from "./prototype-messages";
 
 /** Which Doc and section a prototype is in: the store's key. The Doc is its
  * block id, a project Doc's id or a share link's id, so two Docs with a
  * section `s1` don't share sliders. */
 export const ProtoScope = createContext<{ doc: string; section: string } | null>(null);
+
+/** The prototypes in this Doc a prototype can go to by file name (#1451). */
+export const ProtoFiles = createContext<ProtoFile[]>([]);
 
 const storeKey = (s: { doc: string; section: string }) => `arugula.proto.${s.doc}.${s.section}`;
 
@@ -94,8 +98,10 @@ async function writeClipboard(text: string): Promise<boolean> {
 
 /** Answers `frame`'s bridge requests while it is `live`; `copied` is true for
  * a moment after a copy, for the frame's edge to say "Copied". */
-export function useBridge(frame: { current: HTMLIFrameElement | null }, live: boolean): boolean {
-  const scope = useContext(ProtoScope);
+export function useBridge(frame: { current: HTMLIFrameElement | null }, live: boolean, section?: string): boolean {
+  const host = useContext(ProtoScope);
+  // A prototype that went to another of the Doc's keeps that one's settings.
+  const scope = host && section ? { doc: host.doc, section } : host;
   const scopeNow = useRef(scope);
   scopeNow.current = scope;
   const [copied, setCopied] = useState(false);

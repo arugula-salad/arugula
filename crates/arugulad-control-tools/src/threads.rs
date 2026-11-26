@@ -449,6 +449,20 @@ async fn room_id(c: &Call<'_>, room: &str) -> Result<String, String> {
     v["id"].as_str().map(str::to_owned).ok_or_else(|| "Arugula cloud named no staff room".to_owned())
 }
 
+/// A board's thread room (`ob_…`) from its `brd_…` id, as `post_thread`
+/// reaches it: control's thread route takes the board's id for its room.
+/// Any other room is as given. A board that isn't there, or that this
+/// machine has no grant over, says so, with the board named.
+pub(crate) async fn thread_room(c: &Call<'_>, room: &str) -> Result<String, String> {
+    let room = room.trim();
+    if !room.starts_with("brd_") {
+        return Ok(room.to_owned());
+    }
+    let path = format!("{}?limit=1", agent_messages(room));
+    let v = threads_call(c, Method::GET, &path, None).await.map_err(|e| format!("board {room}: {e}"))?;
+    v["room"]["id"].as_str().map(str::to_owned).ok_or_else(|| format!("Arugula cloud named no thread room for {room}"))
+}
+
 /// What `room` names for [`room_id`].
 const STAFF: &str = "staff";
 

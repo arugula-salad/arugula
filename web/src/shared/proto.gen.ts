@@ -1225,7 +1225,14 @@ proposal: ChatProposal | null, };
 /**
  * [`ASK`]'s `POST` body: the choice pressed.
  */
-export type ChatAskAnswer = { choice: string, };
+export type ChatAskAnswer = { choice: string, 
+/**
+ * A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or
+ * [`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It
+ * is kept on the to-do and never put in an event, a push or chat; one
+ * that looks like a secret is refused. Any other ask takes none.
+ */
+note?: string, };
 
 /**
  * [`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest
@@ -1664,7 +1671,7 @@ export type ChatProposal = {
  */
 id: string, 
 /**
- * `start`, `close` or `run_board`.
+ * `start`, `close`, `run_board` or `todo`.
  */
 action: string, 
 /**
@@ -1693,7 +1700,8 @@ sessions: Array<ProposalSession>,
 why: string, 
 /**
  * `open`, `approved`, `denied` or `failed` (approved, and doing it
- * didn't work: `outcome` says why).
+ * didn't work: `outcome` says why); a to-do's `open`, `done`, `cant`
+ * or `cancelled`.
  */
 state: string, 
 /**
@@ -1711,7 +1719,11 @@ started: string | null,
 /**
  * `run_board`: the board, where its lead runs and what it may start.
  */
-run?: ProposalRun, };
+run?: ProposalRun, 
+/**
+ * `todo`: what to do, how, and its receipt.
+ */
+todo?: ProposalTodo, };
 
 /**
  * Why control pushed someone.
@@ -5623,6 +5635,29 @@ title: string,
 state: string, };
 
 /**
+ * A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as
+ * the agent wrote it. Its why is [`ChatProposal::why`], whom it's for the
+ * card's asker, and who answered [`ChatProposal::answered_by_name`].
+ */
+export type ProposalTodo = { what: string, 
+/**
+ * The steps, shown as written in a mono well.
+ */
+how: string, 
+/**
+ * A machine's agent's: the machine, by id, and its conversation.
+ */
+machine?: string, conversation?: TodoConversation, 
+/**
+ * When it was answered (or cancelled), ms.
+ */
+answered_at?: number, 
+/**
+ * The person's note with their answer: only they read it here.
+ */
+note?: string, };
+
+/**
  * Which forge.
  */
 export type Provider = "forgejo" | "github" | "gitlab";
@@ -6920,6 +6955,17 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
  * Why telemetry is on or off here.
  */
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
+
+/**
+ * The conversation a machine's agent's to-do is for (Arugula #1462): its
+ * harness and its id there, so an answer can find it again once its block
+ * is gone. The machine is the one that asked.
+ */
+export type TodoConversation = { 
+/**
+ * `claude` or `codex`.
+ */
+agent: string, id: string, };
 
 /**
  * How a tracker item is closed.

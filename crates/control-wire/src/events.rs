@@ -39,7 +39,7 @@ pub const DATA_MAX_BYTES: usize = 4096;
 /// Keys `data` may not have, at any depth: the words for text someone
 /// wrote. [`data_check`] refuses them; it can't see every such field, so a
 /// producer still puts only ids, states, logins and times in.
-pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text", "message", "description"];
+pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text", "message", "description", "note"];
 
 /// One event in the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -221,6 +221,7 @@ const GITHUB_CHECKS: &[MatchField] = &[REPO, PR, BRANCH, OUTSIDE];
 const BASE: MatchField = m("base", "the branch it's to merge into");
 const BLOCK: MatchField = m("session", "the agent block, as <machine>/<pane>");
 const MACHINE: MatchField = m("machine", "the machine, by its id");
+const OWNER: MatchField = m("by", "the login of the session's owner (the machine's owner); `me` is your person");
 
 /// Every type this side knows. Issues and sessions ride `cloud.drive` until
 /// they have read powers of their own, as PR watches do.
@@ -273,20 +274,21 @@ pub const CATALOG: &[EventType] = &[
     },
     // A machine's agent blocks, from the state its daemon reports for boards
     // (Arugula #1274): ids, a kind and times, never what is asked. Who may
-    // watch them is who sees a block's state on a board.
+    // watch them is who may read sessions: control takes sessions.start,
+    // sessions.reply or threads.read, as `list sessions` does (Arugula #1476).
     EventType {
         name: "session.needs_input",
         meaning: "An agent block on a machine started asking a person something: a question or a permission.",
-        matches: &[BLOCK, PROJECT, MACHINE, PANE, m("kind", "what it asks for: ask or permission")],
+        matches: &[BLOCK, PROJECT, MACHINE, PANE, m("kind", "what it asks for: ask or permission"), OWNER],
         home: Home::Cloud,
-        power: Some("boards.read"),
+        power: Some("sessions.start"),
     },
     EventType {
         name: "session.idle",
         meaning: "An agent block on a machine finished its turn, or was answered and went idle.",
-        matches: &[BLOCK, PROJECT, MACHINE, PANE],
+        matches: &[BLOCK, PROJECT, MACHINE, PANE, OWNER],
         home: Home::Cloud,
-        power: Some("boards.read"),
+        power: Some("sessions.start"),
     },
     EventType {
         name: "run.ended",
@@ -333,13 +335,13 @@ pub const CATALOG: &[EventType] = &[
     // the card is in its asker's staff room, so threads.read.
     EventType {
         name: "ask.answered",
-        meaning: "A person answered their agent's approval card (an agent session's, or a machine's agent's): approved it, denied it, or approved it and doing it failed.",
+        meaning: "A person answered their agent's approval card (an agent session's, or a machine's agent's): approved it, denied it, or approved it and doing it failed; or a to-do: done, can't, or cancelled by its agent. Never the person's note.",
         matches: &[
             m("ask", "the card, prp_…"),
             PROJECT,
             m("session", "the session that proposed it: ses_…, or a machine's agent's session name"),
-            m("action", "what it proposed: start or close"),
-            m("answer", "approved, denied or failed"),
+            m("action", "what it proposed: start, close, run_board or todo"),
+            m("answer", "approved, denied or failed; a to-do's done, cant or cancelled"),
         ],
         home: Home::Cloud,
         power: Some("threads.read"),
@@ -732,6 +734,8 @@ mod tests {
         assert!(data_check(&json!("closed")).is_err());
         assert!(data_check(&json!({ "title": "x" })).unwrap_err().contains("title"));
         assert!(data_check(&json!({ "reviews": [{ "body": "lgtm" }] })).unwrap_err().contains("body"));
+        // A to-do's note (Arugula #1462) is the person's words: never an event's.
+        assert!(data_check(&json!({ "ask": "prp_1", "note": "14,203 rows" })).unwrap_err().contains("note"));
         let fits = json!({ "s": "a".repeat(DATA_MAX_BYTES - 8) });
         assert_eq!(serde_json::to_vec(&fits).unwrap().len(), DATA_MAX_BYTES);
         assert!(data_check(&fits).is_ok());
@@ -811,8 +815,10 @@ mod tests {
         assert_eq!(lookup("board.closed").unwrap().power, Some("boards.read"));
         for name in ["session.needs_input", "session.idle"] {
             let t = lookup(name).unwrap();
-            assert_eq!((t.home, t.power), (Home::Cloud, Some("boards.read")), "{name}");
-            assert!(["session", "project", "machine", "pane"].iter().all(|f| t.matches.iter().any(|m| m.name == *f)));
+            assert_eq!((t.home, t.power), (Home::Cloud, Some("sessions.start")), "{name}");
+            assert!(
+                ["session", "project", "machine", "pane", "by"].iter().all(|f| t.matches.iter().any(|m| m.name == *f))
+            );
         }
         assert!(lookup("session.needs_input").unwrap().matches.iter().any(|f| f.name == "kind"));
         for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {

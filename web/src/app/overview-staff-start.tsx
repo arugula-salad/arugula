@@ -14,7 +14,7 @@
 // never in chat. Once started, the staff room is read from the hub and the
 // tab is the room's, with its head (#1342). While the room's chief of staff
 // is asleep, the same pick and start move it to another machine (StaffMove,
-// #1453).
+// #1453), and while no session leads the room, start one there (#1472).
 
 import { useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
@@ -204,13 +204,19 @@ export function StaffStart({ project, fleet, hostedIn }: { project: string; flee
  * offline or gone (Arugula #1453): Run it on another machine, on one the
  * reader picks as Start does. start_agent there moves it: the one that led
  * is told to stand down (or stopped, a hosted one), so the room keeps one
- * lead, and the room's head follows it there. */
-export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; asleepOn: string }) {
+ * lead, and the room's head follows it there. With no lead at all
+ * (`asleepOn` absent, #1472), the same pick starts one, and every state of
+ * the tab has a way to start it. */
+export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; asleepOn?: string }) {
   const s = useStaffStart(project, fleet, hostedIn, asleepOn);
   return (
-    <div class="ov-staff-move" data-ov-staff-move={asleepOn}>
-      <p class="dim">Nothing hears what you write here while it's asleep. Run it on another machine and it moves there; the one on {shortHost(asleepOn)} stands down.</p>
-      {s.can.length > 0 && <StaffGo s={s} go="Run it on another machine" />}
+    <div class="ov-staff-move" data-ov-staff-move={asleepOn ?? ""} data-ov-staff-lead={asleepOn ? "asleep" : "none"}>
+      {asleepOn ? (
+        <p class="dim">Nothing hears what you write here while it's asleep. Run it on another machine and it moves there; the one on {shortHost(asleepOn)} stands down.</p>
+      ) : (
+        <p class="dim">No chief of staff leads this room, so nothing hears what you write here. Start one on a machine of yours.</p>
+      )}
+      {s.can.length > 0 && <StaffGo s={s} go={asleepOn ? "Run it on another machine" : "Start"} />}
       <StaffCannot s={s} />
       <StaffAfter s={s} />
     </div>

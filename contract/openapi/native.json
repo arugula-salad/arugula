@@ -8314,6 +8314,13 @@
         "properties": {
           "choice": {
             "type": "string"
+          },
+          "note": {
+            "description": "A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or\n[`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It\nis kept on the to-do and never put in an event, a push or chat; one\nthat looks like a secret is refused. Any other ask takes none.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -9711,7 +9718,7 @@
         "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
         "properties": {
           "action": {
-            "description": "`start`, `close` or `run_board`.",
+            "description": "`start`, `close`, `run_board` or `todo`.",
             "type": "string"
           },
           "answered_by_name": {
@@ -9787,8 +9794,19 @@
             ]
           },
           "state": {
-            "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why).",
+            "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why); a to-do's `open`, `done`, `cant`\nor `cancelled`.",
             "type": "string"
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalTodo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`todo`: what to do, how, and its receipt."
           },
           "why": {
             "description": "Why, in the agent's words.",
@@ -13737,6 +13755,56 @@
         ],
         "type": "object"
       },
+      "ProposalTodo": {
+        "description": "A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as\nthe agent wrote it. Its why is [`ChatProposal::why`], whom it's for the\ncard's asker, and who answered [`ChatProposal::answered_by_name`].",
+        "properties": {
+          "answered_at": {
+            "description": "When it was answered (or cancelled), ms.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodoConversation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "how": {
+            "description": "The steps, shown as written in a mono well.",
+            "type": "string"
+          },
+          "machine": {
+            "description": "A machine's agent's: the machine, by id, and its conversation.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "The person's note with their answer: only they read it here.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "what",
+          "how"
+        ],
+        "type": "object"
+      },
       "PublicLink": {
         "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
         "properties": {
@@ -16041,6 +16109,23 @@
           "failed"
         ],
         "type": "string"
+      },
+      "TodoConversation": {
+        "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+        "properties": {
+          "agent": {
+            "description": "`claude` or `codex`.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "id"
+        ],
+        "type": "object"
       },
       "UntriagedQuery": {
         "description": "Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`\nset, of the board's own project.",
