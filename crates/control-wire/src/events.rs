@@ -39,7 +39,7 @@ pub const DATA_MAX_BYTES: usize = 4096;
 /// Keys `data` may not have, at any depth: the words for text someone
 /// wrote. [`data_check`] refuses them; it can't see every such field, so a
 /// producer still puts only ids, states, logins and times in.
-pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text", "message", "description"];
+pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text", "message", "description", "note"];
 
 /// One event in the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -333,13 +333,13 @@ pub const CATALOG: &[EventType] = &[
     // the card is in its asker's staff room, so threads.read.
     EventType {
         name: "ask.answered",
-        meaning: "A person answered their agent's approval card (an agent session's, or a machine's agent's): approved it, denied it, or approved it and doing it failed.",
+        meaning: "A person answered their agent's approval card (an agent session's, or a machine's agent's): approved it, denied it, or approved it and doing it failed; or a to-do: done, can't, or cancelled by its agent. Never the person's note.",
         matches: &[
             m("ask", "the card, prp_…"),
             PROJECT,
             m("session", "the session that proposed it: ses_…, or a machine's agent's session name"),
-            m("action", "what it proposed: start or close"),
-            m("answer", "approved, denied or failed"),
+            m("action", "what it proposed: start, close, run_board or todo"),
+            m("answer", "approved, denied or failed; a to-do's done, cant or cancelled"),
         ],
         home: Home::Cloud,
         power: Some("threads.read"),
@@ -732,6 +732,8 @@ mod tests {
         assert!(data_check(&json!("closed")).is_err());
         assert!(data_check(&json!({ "title": "x" })).unwrap_err().contains("title"));
         assert!(data_check(&json!({ "reviews": [{ "body": "lgtm" }] })).unwrap_err().contains("body"));
+        // A to-do's note (Arugula #1462) is the person's words: never an event's.
+        assert!(data_check(&json!({ "ask": "prp_1", "note": "14,203 rows" })).unwrap_err().contains("note"));
         let fits = json!({ "s": "a".repeat(DATA_MAX_BYTES - 8) });
         assert_eq!(serde_json::to_vec(&fits).unwrap().len(), DATA_MAX_BYTES);
         assert!(data_check(&fits).is_ok());

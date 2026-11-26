@@ -3839,6 +3839,51 @@
             "board"
           ],
           "type": "object"
+        },
+        {
+          "description": "A to-do (Arugula #1462): work its person does outside Arugula (an\napproval on GitHub, a script with their credentials, a secret put\nsomewhere) and reports back on. Its card's choices are [`TODO_DONE`]\nand [`TODO_CANT`], with a note; nothing is done on Approve, and the\nagent may cancel it. `what`, `why` and `how` are plain text, shown\nas written (no Markdown): `what` one line, `how` the steps,\ncommands verbatim. It's for the person the agent works for (a\nsession's asker, a machine's owner): the agent doesn't name them.",
+          "properties": {
+            "action": {
+              "const": "todo",
+              "type": "string"
+            },
+            "conversation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TodoConversation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A machine's agent's conversation, which the answer is for."
+            },
+            "how": {
+              "default": "",
+              "type": "string"
+            },
+            "issue": {
+              "description": "Its card: one of the project's native issues, by number.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "what": {
+              "type": "string"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "what"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -5157,6 +5202,23 @@
             "proposal"
           ],
           "type": "object"
+        },
+        {
+          "description": "Cancel one of the session's own to-dos (Arugula #1462) while it's\nopen: it leaves its person's Needs you, and `ask.answered` says\n`cancelled`. Only a to-do is cancelled.",
+          "properties": {
+            "ask": {
+              "type": "string"
+            },
+            "op": {
+              "const": "proposal_cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "ask"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -5416,6 +5478,23 @@
             "ask",
             "room",
             "seq"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Cancelled (`ProposalCancel`).",
+          "properties": {
+            "ask": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "proposal_cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "ask"
           ],
           "type": "object"
         },
@@ -5691,6 +5770,23 @@
           "required": [
             "op",
             "proposal"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Cancel one of the session's own to-dos (Arugula #1462) while it's\nopen: it leaves its person's Needs you, and `ask.answered` says\n`cancelled`. Only a to-do is cancelled.",
+          "properties": {
+            "ask": {
+              "type": "string"
+            },
+            "op": {
+              "const": "proposal_cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "ask"
           ],
           "type": "object"
         }
@@ -6154,6 +6250,23 @@
         "failed"
       ],
       "type": "string"
+    },
+    "TodoConversation": {
+      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+      "properties": {
+        "agent": {
+          "description": "`claude` or `codex`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "id"
+      ],
+      "type": "object"
     },
     "WatchCancelled": {
       "description": "What [`WatchCancel`] cancelled, by id. The session that asked is told\nby this answer, and gets no message for them.",

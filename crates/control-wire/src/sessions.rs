@@ -435,6 +435,13 @@ pub struct ChatAsk {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatAskAnswer {
     pub choice: String,
+    /// A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or
+    /// [`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It
+    /// is kept on the to-do and never put in an event, a push or chat; one
+    /// that looks like a secret is refused. Any other ask takes none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub note: Option<String>,
 }
 
 /// A proposal's choice that does what it proposes, as the person pressing it.
@@ -459,6 +466,16 @@ pub const RUN_BOARD_CAP_MAX: u32 = 20;
 pub const RUN_BOARD_MACHINES_MAX: usize = 10;
 /// The longest lapse one card grants, in days.
 pub const RUN_BOARD_LAPSE_DAYS_MAX: u32 = 365;
+/// A to-do's choice (Arugula #1462): its person did it.
+pub const TODO_DONE: &str = "Done";
+/// A to-do's choice: its person can't do it.
+pub const TODO_CANT: &str = "Can't";
+/// The longest [`Proposal::Todo`]'s `what`, in characters: one line.
+pub const TODO_WHAT_MAX: usize = 120;
+/// The longest [`Proposal::Todo`]'s `how`, in characters.
+pub const TODO_HOW_MAX: usize = 4000;
+/// The longest note a to-do's person answers with, in characters.
+pub const TODO_NOTE_MAX: usize = 1000;
 
 /// What an agent session asks its asker to approve (Arugula #1278): it
 /// does nothing itself. The proposal is an ask in their staff room
@@ -519,15 +536,75 @@ pub enum Proposal {
         #[serde(default)]
         why: String,
     },
+    /// A to-do (Arugula #1462): work its person does outside Arugula (an
+    /// approval on GitHub, a script with their credentials, a secret put
+    /// somewhere) and reports back on. Its card's choices are [`TODO_DONE`]
+    /// and [`TODO_CANT`], with a note; nothing is done on Approve, and the
+    /// agent may cancel it. `what`, `why` and `how` are plain text, shown
+    /// as written (no Markdown): `what` one line, `how` the steps,
+    /// commands verbatim. It's for the person the agent works for (a
+    /// session's asker, a machine's owner): the agent doesn't name them.
+    Todo {
+        what: String,
+        #[serde(default)]
+        why: String,
+        #[serde(default)]
+        how: String,
+        /// Its card: one of the project's native issues, by number.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        issue: Option<u64>,
+        /// A machine's agent's conversation, which the answer is for.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        conversation: Option<TodoConversation>,
+    },
 }
 
 impl Proposal {
     /// The agent's why, as it wrote it.
     pub fn why(&self) -> &str {
         match self {
-            Proposal::Start { why, .. } | Proposal::Close { why, .. } | Proposal::RunBoard { why, .. } => why,
+            Proposal::Start { why, .. }
+            | Proposal::Close { why, .. }
+            | Proposal::RunBoard { why, .. }
+            | Proposal::Todo { why, .. } => why,
         }
     }
+}
+
+/// The conversation a machine's agent's to-do is for (Arugula #1462): its
+/// harness and its id there, so an answer can find it again once its block
+/// is gone. The machine is the one that asked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TodoConversation {
+    /// `claude` or `codex`.
+    pub agent: String,
+    pub id: String,
+}
+
+/// The route a machine's agent cancels its to-do by (Arugula #1462),
+/// `POST`, signed as the machine, a [`MachineCancel`] answered a
+/// [`ProposalCancelled`]: only the machine and agent that asked, while it's
+/// open. `ask.answered` follows with `answer` `cancelled`.
+pub fn agent_proposal_cancel(project: &str, ask: &str) -> String {
+    format!("/api/daemon/projects/{project}/proposals/{ask}/cancel")
+}
+
+/// [`agent_proposal_cancel`]'s body: the agent that asked, by its session's
+/// name on the machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineCancel {
+    pub session: String,
+}
+
+/// A to-do cancelled by its agent: [`agent_proposal_cancel`]'s answer, and
+/// a session's `ProposalCancel`'s.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ProposalCancelled {
+    pub ask: String,
 }
 
 /// The route a machine's agent proposes by (Arugula #1417), `POST`, signed
@@ -574,7 +651,7 @@ pub struct MachineProposed {
 pub struct ChatProposal {
     /// `prp_…`.
     pub id: String,
-    /// `start`, `close` or `run_board`.
+    /// `start`, `close`, `run_board` or `todo`.
     pub action: String,
     /// The session that proposed it, `ses_…`.
     pub by_session: String,
@@ -589,7 +666,8 @@ pub struct ChatProposal {
     /// Why, in the agent's words.
     pub why: String,
     /// `open`, `approved`, `denied` or `failed` (approved, and doing it
-    /// didn't work: `outcome` says why).
+    /// didn't work: `outcome` says why); a to-do's `open`, `done`, `cant`
+    /// or `cancelled`.
     pub state: String,
     /// Who answered it, by name.
     pub answered_by_name: Option<String>,
@@ -601,6 +679,37 @@ pub struct ChatProposal {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub run: Option<ProposalRun>,
+    /// `todo`: what to do, how, and its receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub todo: Option<ProposalTodo>,
+}
+
+/// A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as
+/// the agent wrote it. Its why is [`ChatProposal::why`], whom it's for the
+/// card's asker, and who answered [`ChatProposal::answered_by_name`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProposalTodo {
+    pub what: String,
+    /// The steps, shown as written in a mono well.
+    pub how: String,
+    /// A machine's agent's: the machine, by id, and its conversation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub conversation: Option<TodoConversation>,
+    /// When it was answered (or cancelled), ms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub answered_at: Option<u64>,
+    /// The person's note with their answer: only they read it here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub note: Option<String>,
 }
 
 /// A "Run this board" card's lines ([`ChatProposal::run`]).
@@ -1243,6 +1352,37 @@ mod tests {
         let v = serde_json::to_value(&op).unwrap();
         assert_eq!((v["op"].as_str(), v["proposal"]["action"].as_str()), (Some("propose"), Some("close")));
         assert!(serde_json::from_value::<Proposal>(serde_json::json!({ "action": "spend" })).is_err());
+    }
+
+    /// Arugula #1462: a to-do is a proposal of its own, plain text, with its
+    /// card and a machine's conversation when it has them; a note goes with
+    /// an answer, and is left out when there's none.
+    #[test]
+    fn a_todo_says_what_why_and_how() {
+        let v = serde_json::json!({ "action": "todo", "what": "Approve the deploy", "why": "only you may",
+            "how": "1. Open it\n```\ngh run view\n```", "issue": 983,
+            "conversation": { "agent": "claude", "id": "c-1" } });
+        let p: Proposal = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(
+            p,
+            Proposal::Todo {
+                what: "Approve the deploy".into(),
+                why: "only you may".into(),
+                how: "1. Open it\n```\ngh run view\n```".into(),
+                issue: Some(983),
+                conversation: Some(TodoConversation { agent: "claude".into(), id: "c-1".into() }),
+            }
+        );
+        assert_eq!(p.why(), "only you may");
+        assert_eq!(serde_json::to_value(&p).unwrap(), v);
+        let bare: Proposal = serde_json::from_value(serde_json::json!({ "action": "todo", "what": "x" })).unwrap();
+        assert_eq!(serde_json::to_value(&bare).unwrap().get("issue"), None);
+        let a: ChatAskAnswer = serde_json::from_value(serde_json::json!({ "choice": TODO_DONE })).unwrap();
+        assert_eq!(a.note, None);
+        assert_eq!(serde_json::to_value(&a).unwrap(), serde_json::json!({ "choice": "Done" }));
+        let op = crate::work::SessionIssuesOp::ProposalCancel { ask: "prp_1".into() };
+        assert_eq!(serde_json::to_value(&op).unwrap(), serde_json::json!({ "op": "proposal_cancel", "ask": "prp_1" }));
+        assert_eq!(agent_proposal_cancel("prj_1", "prp_1"), "/api/daemon/projects/prj_1/proposals/prp_1/cancel");
     }
 
     #[test]
