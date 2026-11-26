@@ -3651,7 +3651,8 @@ count: number,
 items: Array<InboxItem>, 
 /**
  * How many asks agents are handling among themselves (Arugula #1393):
- * shown as a line, never counted.
+ * the reader's agents' asks that the agent that started them answers
+ * first, for ten minutes. Shown as a line, never counted.
  */
 handled: number, };
 
@@ -3731,7 +3732,8 @@ agent?: string, machine?: string, };
 export type InboxItem = { 
 /**
  * Stable and unique for the reader, and a push's tag: `prp_…` (a
- * proposal), `ask_…` (a board ask), `dep_…` (a deploy), `room:<id>`
+ * proposal), `ask_…` (a board ask), `dep_…` (a deploy), `ses_…:<since>`
+ * (a hosted session's open ask, Arugula #1393), `room:<id>`
  * (a DM, a thread or a chat mention), or an entry's item and reason
  * (`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).
  * `POST /api/inbox/{id}` marks it.
@@ -3746,9 +3748,23 @@ kind: string,
  */
 group: string, 
 /**
- * Whether it's in `count`: false for `turn_finished`.
+ * Whether it's in `count`: false for `turn_finished`, for an alert
+ * (`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an
+ * item `for` someone else.
  */
 counts: boolean, 
+/**
+ * The account it waits on (Arugula #1393): the reader, or a teammate
+ * whose ask the reader sees folded ("2 asks for Jake ›"), never
+ * counted for them. `None`: the reader's, as before it. An item
+ * counts only when `counts` is true and `for` is the reader or absent.
+ */
+for?: string, 
+/**
+ * An agent's ask that another agent was to answer, and didn't within
+ * ten minutes: it reached its person, and says so (Arugula #1393).
+ */
+escalated?: boolean, 
 /**
  * One line: the PR's title, the question, "Approve deploy v0.70.105".
  */
