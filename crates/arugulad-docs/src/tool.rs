@@ -162,7 +162,7 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "fill",
-        description: r##"Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store; prototypes in one Doc can link to each other by file name, anything else must route in memory) draw as more than code: call doc fences for their format before writing one."##,
+        description: r##"Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
