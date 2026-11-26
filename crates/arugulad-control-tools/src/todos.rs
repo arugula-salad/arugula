@@ -15,9 +15,9 @@
 //! - **`list` is this machine's.** Control has no route that lists a
 //!   machine agent's to-dos, so the ones added here are kept in
 //!   `todos.json` in the state dir, by conversation (by session name for a
-//!   caller with none), until they're cancelled. An answer isn't heard here
-//!   yet (Arugula #1465 wakes the agent with it), so one answered since
-//!   stays listed until a cancel finds it settled.
+//!   caller with none), until they're cancelled. The answer wakes the agent
+//!   with its note (Arugula #1465), but isn't kept here, so one answered
+//!   since stays listed until a cancel finds it settled.
 //! - **`cancel`** is `agent_proposal_cancel`, as the session that asked;
 //!   control refuses one that isn't open, and says how it stands.
 
@@ -43,7 +43,7 @@ use crate::{
 
 pub(crate) const TOOL: &str = "todo";
 
-pub(crate) const DESCRIPTION: &str = "Hand your person a task you can't do yourself: approve something on GitHub, run a script with their credentials, put a secret somewhere. It waits under Needs you, on their phone and on your card until they mark it Done or Can't, with a note. It's for the person this machine belongs to, on the card you're on: you don't name either. Don't wait or poll: watch event ask.answered with match {\"ask\": <its id>}, then end your turn or go on with other work. Call it from your agent block, or a terminal with Arugula's hooks.";
+pub(crate) const DESCRIPTION: &str = "Hand your person a task you can't do yourself: approve something on GitHub, run a script with their credentials, put a secret somewhere. It waits under Needs you, on their phone and on your card until they mark it Done or Can't, with a note. It's for the person this machine belongs to, on the card you're on: you don't name either. Their answer wakes you here with their note, no watch needed: don't wait or poll, end your turn or go on with other work. Call it from your agent block, or a terminal with Arugula's hooks.";
 
 /// `todo`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -197,7 +197,8 @@ async fn add(c: &Call<'_>, a: AddArgs) -> Out {
     let proposal = proposal(&a, issue, me.conversation.clone())?;
     let Proposal::Todo { what, .. } = &proposal else { unreachable!("proposal makes a to-do") };
     let what = what.clone();
-    let body = MachinePropose { proposal, session: me.session.clone(), pane: me.pane, blocks: vec![] };
+    let conversation = me.conversation.clone();
+    let body = MachinePropose { proposal, session: me.session.clone(), pane: me.pane, blocks: vec![], conversation };
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, &agent_proposals(&project), Some(&body)).await.map_err(refused)?;
     let p: MachineProposed = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
@@ -218,8 +219,8 @@ async fn add(c: &Call<'_>, a: AddArgs) -> Out {
     let on = issue.map(|n| format!(" on #{n}")).unwrap_or_default();
     done(
         format!(
-            "Added to-do {}{on} for your person: it waits under Needs you until they mark it Done or Can't. Watch event ask.answered with match {{\"ask\": \"{}\"}}, then end your turn or go on with other work.{unkept}",
-            p.ask, p.ask
+            "Added to-do {}{on} for your person: it waits under Needs you until they mark it Done or Can't, and their answer wakes you here with their note, no watch needed: end your turn or go on with other work.{unkept}",
+            p.ask
         ),
         json!({ "todo": p.ask, "status": "open", "card": issue, "project": project, "room": p.room, "seq": p.seq }),
     )
