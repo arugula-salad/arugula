@@ -151,7 +151,7 @@ fun NewSheet(api: Api, model: HomeModel, fleet: HomeFleet, onDismiss: () -> Unit
                 Step.BOARD -> {
                     if (model.boards.isEmpty()) Caps("No open boards")
                     for (b in model.boards.sortedWith(compareBy({ if (it.lead == null) 1 else 0 }, { it.title }))) {
-                        Choice(b.title, leadWords(b.lead), "tell-${b.title}") {
+                        Choice(b.title, leadWords(b.lead, LocalScope.current.current), "tell-${b.title}") {
                             onDismiss()
                             nav.open(AppTab.OVERVIEW, Dest.BoardThread(b))
                         }

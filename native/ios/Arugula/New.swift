@@ -111,7 +111,7 @@ struct NewSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 if model.boards.isEmpty { Caps("No open boards") }
                 ForEach(model.boards.sorted { ($0.lead == nil ? 1 : 0, $0.title) < ($1.lead == nil ? 1 : 0, $1.title) }) { b in
-                    choice(b.title, BoardLineRow.lead(b.lead), id: "tell-\(b.title)") {
+                    choice(b.title, BoardLineRow.lead(b.lead, in: scope.current?.shown), id: "tell-\(b.title)") {
                         dismiss()
                         open(.thread(b))
                     }

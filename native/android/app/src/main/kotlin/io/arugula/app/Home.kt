@@ -511,15 +511,16 @@ private fun BoardLineRow(line: BoardLine, modifier: Modifier) {
             },
             style = Face.ui(13.sp), maxLines = 2,
         )
-        Text(leadWords(line.board.lead), style = Face.mono(11.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(leadWords(line.board.lead, LocalScope.current.current), style = Face.mono(11.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** Who leads it: a session on a machine, or nobody. */
-fun leadWords(l: Lead?): String {
+/** Who leads it: a session on a machine, or nobody. A chief of staff's
+ * session reads by [project]'s name, when it's that project's (Arugula #1457). */
+fun leadWords(l: Lead?, project: Project? = null): String {
     l ?: return "No lead"
     val on = l.machineName?.takeIf { it.isNotEmpty() }?.let { " on $it" } ?: ""
-    return "Led by ${l.session}$on"
+    return "Led by ${sessionLabel(l.session, project)}$on"
 }
 
 // ---- a board's thread
@@ -564,7 +565,7 @@ private fun BoardThreadHeading(api: Api, board: Board, model: HomeModel, session
     Column(Modifier.fillMaxWidth().background(Palette.void).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         LaneBar(done, review, doing, total.coerceAtLeast(1))
         Text("$done done · $review review · $doing doing · ${(total - done - review - doing).coerceAtLeast(0)} next", style = Face.mono(11.sp), color = Palette.dim)
-        Text(leadWords(line.lead), Modifier.testTag("board-lead"), style = Face.mono(11.sp), color = Palette.subtle)
+        Text(leadWords(line.lead, LocalScope.current.current), Modifier.testTag("board-lead"), style = Face.mono(11.sp), color = Palette.subtle)
         BoardGrantLine(api, line, model, toast)
         if (sessions.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

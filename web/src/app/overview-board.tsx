@@ -129,7 +129,7 @@ function LeadCard({ b, who, leads, talkTo, thread, run }: { b: OvBoard; who?: st
         </div>
       </aside>
     );
-  const name = who ? `${who}'s ${l.session}` : l.session;
+  const name = who ? `${who}'s ${l.peek.name}` : l.peek.name;
   const says = l.standing ? wordOf({ standing: l.standing, asks: who }) : "";
   return (
     <aside class="ov-bl-lead" data-ov-lead-card={l.session}>

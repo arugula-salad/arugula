@@ -23,8 +23,13 @@ const STAFF: &str = "dm_staff";
 /// The person's post `seq` in their staff room, told to the session that
 /// leads it.
 fn staff_post(id: &str, seq: i64, text: &str) -> String {
-    json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": STAFF, "room_name": "Chief of staff",
-        "seq": seq, "author": "Jake", "text": text, "session": "Chief of staff", "from_owner": true } })
+    staff_post_to(id, seq, text, "Chief of staff", "Chief of staff")
+}
+
+/// [`staff_post`] in the room `room_name`, to the session `session`.
+fn staff_post_to(id: &str, seq: i64, text: &str, room_name: &str, session: &str) -> String {
+    json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": STAFF, "room_name": room_name,
+        "seq": seq, "author": "Jake", "text": text, "session": session, "from_owner": true } })
     .to_string()
 }
 
@@ -64,6 +69,14 @@ fn idle(d: &arugula_testkit::Daemon, block: u64) -> bool {
 /// A daemon enrolled with the fake control, and an agent block titled
 /// "Chief of staff" whose first turn has ended: it sits idle.
 fn boot(name: &str) -> (tokio::runtime::Runtime, Fake, arugula_testkit::Daemon, u64, std::path::PathBuf) {
+    boot_with(name, json!({}))
+}
+
+/// [`boot`], with `extra` in the block's config.
+fn boot_with(
+    name: &str,
+    extra: Value,
+) -> (tokio::runtime::Runtime, Fake, arugula_testkit::Daemon, u64, std::path::PathBuf) {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::default();
     let url = serve(&rt, f.clone());
@@ -83,8 +96,9 @@ fn boot(name: &str) -> (tokio::runtime::Runtime, Fake, arugula_testkit::Daemon, 
     d.start();
 
     let fake = format!("{}/../daemon/tests/fake_acp.py", env!("CARGO_MANIFEST_DIR"));
-    let config = json!({ "agent": "acp", "command": ["python3", fake], "cwd": sessions, "title": "Chief of staff",
+    let mut config = json!({ "agent": "acp", "command": ["python3", fake], "cwd": sessions, "title": "Chief of staff",
                          "prompt": "your standing instructions" });
+    config.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
     let block = d.post("/api/blocks", json!({ "type": "agent", "config": config }))["block"].as_u64().unwrap();
     d.wait_for("its first turn to end", || turns(&d, block) == 1 && idle(&d, block));
     d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
@@ -121,6 +135,29 @@ fn an_idle_chief_of_staff_wakes_on_its_persons_staff_post_and_on_its_watch() {
     d.wait_for("idle again", || idle(&d, block));
     std::thread::sleep(Duration::from_millis(500));
     assert_eq!(turns(&d, block), 3, "one turn for each wake");
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&sessions);
+}
+
+/// A chief of staff's session goes by its project's id (Arugula #1457),
+/// apart from its block's title: its project renamed since it started (the
+/// room's name, and the title it was given then, now differ), the person's
+/// post in staff still reaches it by that session.
+#[test]
+fn a_chief_of_staff_of_a_renamed_project_still_gets_its_staff_posts() {
+    let session = "Chief of staff · prj_1";
+    let extra = json!({ "title": "Chief of staff · Launch crew", "session": session });
+    let (_rt, f, d, block, sessions) = boot_with("cosrenamed", extra);
+    let pane = d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == block).cloned().unwrap();
+    assert_eq!(pane["title"], "Chief of staff · Launch crew", "people read the project's name: {pane}");
+
+    f.outbox.lock().unwrap().push(staff_post_to("p1", 5, "still there?", "Chief of staff · Renamed crew", session));
+    d.wait_for("the daemon's answer", || answer(&f, "p1").is_some());
+    let a = answer(&f, "p1").unwrap();
+    assert_eq!((&a["routed"]["step"], &a["routed"]["session"]), (&json!("named"), &json!(session)), "{a}");
+    d.wait_for("a second turn", || turns(&d, block) == 2);
+    assert!(last_prompt(&d, block).contains("still there?"));
 
     drop(d);
     let _ = std::fs::remove_dir_all(&sessions);

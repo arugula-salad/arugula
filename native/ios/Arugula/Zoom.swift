@@ -152,7 +152,7 @@ extension LeadLine {
     /// Its key, with its name kept for the Work level to call it by.
     @MainActor
     var opening: String {
-        ZoomCenter.shared.names[key] = lead.session
+        ZoomCenter.shared.names[key] = label
         return key
     }
 }
