@@ -20,7 +20,18 @@ use crate::{
 impl Handle for ClosePane {
     async fn handle(cx: &Cx<'_>, id: arugula_proto::PaneId, _: Empty) -> Result<Closed, OpError> {
         use arugula_proto::op::Op;
-        cx.may(Self::ACCESS, id).await?;
+        if let Err(refused) = cx.may(Self::ACCESS, id).await {
+            // A board's lead closes the agents its board's starts opened
+            // here, in their own tabs (Arugula #1471).
+            let me = match &cx.via {
+                super::Via::Mcp(call) => call.me(),
+                super::Via::Http { .. } => None,
+            };
+            match me {
+                Some(me) if crate::ladder::lead_closes(cx.app, me, id).await => {}
+                _ => return Err(refused),
+            }
+        }
         // An agent's invites (#234) are the owner's to close, not an agent's.
         if cx.agent_or_guest() && crate::api::is_invite(cx.app, id).await {
             return Err(OpError::Forbidden(crate::invite::CLOSE_OWNER_ONLY.into()));
@@ -74,7 +85,7 @@ impl McpOp for ClosePane {
     const SURFACE: Surface = Surface::Tool {
         name: "close",
         title: "Close a pane",
-        description: "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced. With to: an agent a board's start opened on another of your machines (start_agent with board and to), freeing its slot under the board's grant.",
+        description: "Close a pane or block, ending what runs in it. A block that owns a git worktree (start_agent with worktree, or an agent on an issue) has it removed, with its local branch, only if nothing is uncommitted or unpushed and the branch is merged into its base (or its squash-merged PR's head is exactly HEAD, which gh says); otherwise worktree says kept and why. Never forced. With to: an agent a board's start opened on another of your machines (start_agent with board and to), freeing its slot under the board's grant. A board's lead also closes the agents its board's starts opened on its own machine, in their own tabs.",
         destructive: true,
         idempotent: false,
         open_world: false,
