@@ -75,6 +75,9 @@ struct NeedAnswer: View {
             } else if model.opened[s.session]?.may == false {
                 Caps("View only")
             }
+        case .todo:
+            // Answered by its own row (TodoAnswer).
+            EmptyView()
         }
     }
 

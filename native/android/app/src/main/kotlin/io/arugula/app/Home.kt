@@ -234,6 +234,8 @@ data class Need(
         data class Session(val s: SessionRow) : Target
         /** A deploy waiting for your approval (Arugula #1435): approved on the platform's page, where it opens. */
         data class Deploy(val item: InboxItem) : Target
+        /** An agent's to-do for you (Arugula #1470): it opens in its row, answered Done or Can't with a note. */
+        data class Todo(val item: InboxItem) : Target
     }
 }
 
@@ -322,6 +324,11 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel, inbox: Li
                 listOfNotNull("Waits for your approval", i.from.name?.let { "planned by $it" }).joinToString(" · "), "", false, Need.Target.Deploy(i),
             )
         }
+        // Your to-dos from the project's agents, as the Inbox lists them.
+        for (i in inbox) {
+            if (!i.isTodo || (i.subject.project ?: project.id) != project.id || i.doneAt != null || i.forTeammate(me)) continue
+            needs += Need("todo:${i.id}", i.id, 1, i.since, i.from.name ?: "Your agent", Standing.ASKS, "A to-do for you", i.title, false, Need.Target.Todo(i))
+        }
         needs.sortWith(compareBy({ it.rank }, { it.since }, { it.id }))
 
         for (b in model.boards) {
@@ -380,6 +387,8 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
     var refreshing by remember { mutableStateOf(false) }
     /** What was answered here, by need and ask: folded away. */
     val folded = remember { mutableStateMapOf<String, Boolean>() }
+    /** The to-dos open in their rows (Todo.kt). */
+    val expanded = remember { mutableStateMapOf<String, Boolean>() }
     val project = scope.current
 
     suspend fun refresh(soon: Boolean = false) {
@@ -447,12 +456,26 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
                                     is Need.Target.OnBoard -> nav.push(Dest.BoardThread(t.board))
                                     is Need.Target.Session -> peek = Peeked.Hosted(t.s)
                                     is Need.Target.Deploy -> heading?.let { h -> h.inbox.later { openOnPlatform(context, h.model.url, t.item.subject.url) } }
+                                    is Need.Target.Todo -> {
+                                        expanded[t.item.id] = expanded[t.item.id] != true
+                                        if (!t.item.seen) heading?.inbox?.later { mark(t.item, seen = true) }
+                                    }
                                 }
                             })
-                            NeedAnswer(n, api, model) { said ->
-                                folded["${n.id}|${n.ask}"] = true
-                                toast("${n.who}: $said")
-                                coroutines.launch { refresh(soon = true) }
+                            val t = n.target
+                            if (t is Need.Target.Todo) {
+                                if (expanded[t.item.id] == true && heading != null) {
+                                    TodoAnswer(t.item, heading.inbox) { said ->
+                                        folded["${n.id}|${n.ask}"] = true
+                                        toast("${n.who}: $said")
+                                    }
+                                }
+                            } else {
+                                NeedAnswer(n, api, model) { said ->
+                                    folded["${n.id}|${n.ask}"] = true
+                                    toast("${n.who}: $said")
+                                    coroutines.launch { refresh(soon = true) }
+                                }
                             }
                         }
                         HorizontalDivider(color = Palette.raised)

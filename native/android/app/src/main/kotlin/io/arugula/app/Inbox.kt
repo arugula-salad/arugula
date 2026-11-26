@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -209,15 +208,15 @@ class InboxModel(private val api: Api) {
         load()
     }
 
-    /** Answer an agent's card (an `approval`, a `todo`, Arugula #1467) with one of its options, and a to-do's note, as its staff card does. */
+    /**
+     * Answer an agent's card (an `approval`, a `todo`, Arugula #1467) with one of its options, and a to-do's note, as its staff card does:
+     * the one call both rows make (Arugula #1470). Refused, it throws the server's words and the list stays as it was.
+     */
     suspend fun choose(i: InboxItem, choice: String, note: String? = null) {
         val body = JSONObject().put("choice", choice)
         if (!note.isNullOrBlank()) body.put("note", note.trim())
-        try {
-            api.post("/api/inbox/${Uri.encode(i.id)}", body)
-        } finally {
-            load()
-        }
+        api.post("/api/inbox/${Uri.encode(i.id)}", body)
+        load()
     }
 
     /** Every entry of [item] seen, as a link to it says (no reason marks them all). */
@@ -306,11 +305,15 @@ fun InboxSheet(heading: Heading, onDismiss: () -> Unit) {
     val inbox = heading.inbox
     val me = scope.me?.account
     val unfolded = remember { mutableStateMapOf<String, Boolean>() }
+    /** The to-dos open in their rows (Todo.kt). */
+    val expanded = remember { mutableStateMapOf<String, Boolean>() }
     LaunchedEffect(Unit) { inbox.load() }
 
+    /** Mark it seen, then open it; a to-do opens in its row instead, or folds. */
     fun open(i: InboxItem) {
         if (!i.seen) inbox.later { mark(i, seen = true) }
-        if (openItem(context, heading, nav, i)) onDismiss()
+        if (i.isTodo) expanded[i.id] = expanded[i.id] != true
+        else if (openItem(context, heading, nav, i)) onDismiss()
     }
 
     /** Dismiss: done; a pane's ask of yours is told so too, as the attention drawer does. */
@@ -339,7 +342,7 @@ fun InboxSheet(heading: Heading, onDismiss: () -> Unit) {
                         val folds = rows.filter { it.forTeammate(me) }.groupBy { it.forAccount!! }.entries.sortedByDescending { it.value.size }
                         group(id, words, yours.size)
                         items(yours, key = { it.id }) { i ->
-                            ItemRow(i, heading, Modifier.clickable { open(i) }, answers = true) { dismiss(i) }
+                            ItemRow(i, heading, Modifier.clickable { open(i) }, answers = true, expanded = expanded[i.id] == true) { dismiss(i) }
                             HorizontalDivider(color = Palette.raised)
                         }
                         for ((who, theirs) in folds) {
@@ -397,7 +400,7 @@ private fun titled(title: String): Pair<String?, String> {
 
 /** One item: whose or which, its title, what it says, what it is; and, when [answers], its answer under it. A kind this doesn't know is its title alone. */
 @Composable
-private fun ItemRow(i: InboxItem, heading: Heading, modifier: Modifier, answers: Boolean, dismiss: () -> Unit) {
+private fun ItemRow(i: InboxItem, heading: Heading, modifier: Modifier, answers: Boolean, expanded: Boolean = false, dismiss: () -> Unit) {
     val seen = i.seen
     val (ref, title) = titled(i.title)
     Entry(modifier.testTag("inbox-item-${i.id}"), dismiss, i.id) {
@@ -410,19 +413,24 @@ private fun ItemRow(i: InboxItem, heading: Heading, modifier: Modifier, answers:
         }
         Text(title, style = Face.ui(15.sp, if (seen) FontWeight.Normal else FontWeight.SemiBold), color = Palette.fg, maxLines = 2, overflow = TextOverflow.Ellipsis)
         i.snippet?.let { Text(it, style = Face.ui(14.sp), color = Palette.subtle, maxLines = 3, overflow = TextOverflow.Ellipsis) }
-        for (l in i.lines) Text(l, style = Face.mono(12.sp), color = Palette.subtle, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        if (!i.isTodo) for (l in i.lines) Text(l, style = Face.mono(12.sp), color = Palette.subtle, maxLines = 4, overflow = TextOverflow.Ellipsis)
         val what = listOfNotNull(InboxItem.KINDS[i.kind], if (i.escalated) "no agent answered it" else null).joinToString(" · ")
         if (what.isNotEmpty()) Caps(what)
-        if (answers) InPlace(i, heading)
+        // A to-do opens in its row; a teammate's is theirs to answer.
+        if (answers && i.isTodo) {
+            if (expanded) TodoAnswer(i, heading.inbox) {}
+        } else if (answers) {
+            InPlace(i, heading)
+        }
     }
 }
 
 /**
  * An item's answer under its row, as its `answer.via` says: a pane's ask of
  * yours over the machine link (`/api/attention/act`, as Needs you answers
- * it), an agent's card (`card`: its options) and a to-do (`todo`: Done or
- * Can't, with a note) with `POST /api/inbox/{id}`'s choice, and a board's ask
- * to its board. Anything else opens where it is.
+ * it), an agent's card (`card`: its options) with `POST /api/inbox/{id}`'s
+ * choice, and a board's ask to its board. A to-do has its own (TodoAnswer);
+ * anything else opens where it is.
  */
 @Composable
 private fun InPlace(i: InboxItem, heading: Heading) {
@@ -436,7 +444,6 @@ private fun InPlace(i: InboxItem, heading: Heading) {
     }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    var note by remember { mutableStateOf("") }
     val coroutines = rememberCoroutineScope()
     val send: (suspend () -> Unit) -> Unit = { f ->
         busy = true
@@ -455,10 +462,6 @@ private fun InPlace(i: InboxItem, heading: Heading) {
     Column(Modifier.padding(top = 5.dp).alpha(if (busy) 0.5f else 1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (a.via) {
             "card" -> Choices(a.options, !busy) { c -> send { inbox.choose(i, c) } }
-            "todo" -> {
-                OutlinedTextField(note, { note = it }, Modifier.fillMaxWidth().testTag("inbox-note"), placeholder = { Text("A note (optional)") }, maxLines = 3, textStyle = Face.ui(14.sp))
-                Choices(a.options.ifEmpty { listOf("Done", "Can't") }, !busy) { c -> send { inbox.choose(i, c, note) } }
-            }
             "board_answer" -> {
                 val board = i.subject.board
                 if (board != null) {

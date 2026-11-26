@@ -424,6 +424,9 @@ struct Need: Identifiable {
         /// A board's row: its ask, its failing checks, its review.
         case board(Board, BoardDetail.Row?)
         case session(SessionWave.Row)
+        /// An agent's to-do for the reader (Arugula #1470): it opens in its
+        /// row, answered Done or Can't with a note.
+        case todo(InboxModel.Item)
     }
     let id: String
     /// What it asks, exactly: answered, the row folds away until it asks
@@ -531,8 +534,10 @@ struct HomeState {
 
     init() {}
 
+    /// `todos`: the Inbox's to-dos waiting on the reader, as Needs you
+    /// lists them too.
     @MainActor
-    init(project: Projects.Project, fleet: HomeFleet, model: HomeModel) {
+    init(project: Projects.Project, fleet: HomeFleet, model: HomeModel, todos: [InboxModel.Item] = []) {
         // The project's panes: its sessions', its cards', or, in the personal
         // project, those placed nowhere on your own machines (the core's rule).
         var panes: [(MachineSession, PaneRow)] = []
@@ -580,6 +585,13 @@ struct HomeState {
                 id: "hosted:\(s.session)", ask: model.opened[s.session]?.card.open?.request ?? waiting, rank: asks ? 1 : 2, since: s.updated_at,
                 who: s.issue.map { "#\($0.number) \($0.title)" } ?? "A session", standing: .needs,
                 on: "Arugula cloud", text: s.question ?? waiting, mono: false, target: .session(s)))
+        }
+
+        for t in todos where t.isTodo && (t.subject.project ?? project.id) == project.id {
+            needs.append(Need(
+                id: "todo:\(t.id)", ask: t.id, rank: 1, since: t.since,
+                who: t.from?.name ?? "Your agent", standing: .asks, on: "A to-do for you",
+                text: t.title, mono: false, target: .todo(t)))
         }
         needs.sort { ($0.rank, $0.since, $0.id) < ($1.rank, $1.since, $1.id) }
 
@@ -670,6 +682,9 @@ struct PhoneHome: View {
     @State private var folded: Set<String> = []
     @State private var said: String?
     @State private var peek: Peeked?
+    /// The to-dos open in their rows.
+    @State private var expanded: Set<String> = []
+    @ObservedObject private var inbox = InboxModel.shared
     /// The Doc open (Arugula #1259): the right-hand column on an iPad, over
     /// everything on a phone.
     @State private var doc: DocRef?
@@ -1023,8 +1038,13 @@ struct PhoneHome: View {
         }
     }
 
+    /// The reader's own to-dos waiting in the Inbox, not a teammate's.
+    private var todos: [InboxModel.Item] {
+        inbox.shown.filter { $0.isTodo && ($0.waitsOn == nil || $0.waitsOn == scope.me?.account) }
+    }
+
     private var state: HomeState {
-        scope.current.map { HomeState(project: $0, fleet: fleet, model: model) } ?? HomeState()
+        scope.current.map { HomeState(project: $0, fleet: fleet, model: model, todos: todos) } ?? HomeState()
     }
 
     /// A short word of what was done.
@@ -1143,16 +1163,28 @@ struct PhoneHome: View {
                 case .board(let b, let r):
                     if let r { zoom(.card(board: b.id, row: r.id)) } else { opened = .board(b) }
                 case .session(let s): peek = .hosted(s)
+                case .todo(let t):
+                    if expanded.remove(t.id) == nil { expanded.insert(t.id) }
+                    if !t.seen { Task { try? await inbox.mark(control, item: t.id, seen: true) } }
                 }
             } label: {
                 NeedRow(need: n)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("need-\(n.id)")
-            NeedAnswer(need: n, control: control, model: model) { said in
-                withAnimation { _ = folded.insert("\(n.id)|\(n.ask)") }
-                show("\(n.who): \(said)")
-                Task { await refresh(soon: true) }
+            if case .todo(let t) = n.target {
+                if expanded.contains(t.id) {
+                    TodoAnswer(item: t, control: control) { said in
+                        withAnimation { _ = folded.insert("\(n.id)|\(n.ask)") }
+                        show("\(n.who): \(said)")
+                    }
+                }
+            } else {
+                NeedAnswer(need: n, control: control, model: model) { said in
+                    withAnimation { _ = folded.insert("\(n.id)|\(n.ask)") }
+                    show("\(n.who): \(said)")
+                    Task { await refresh(soon: true) }
+                }
             }
         }
         .voidRow()

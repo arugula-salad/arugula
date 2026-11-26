@@ -133,7 +133,8 @@ final class InboxModel: ObservableObject {
     }
 
     /// Answer an agent's card or a to-do with one of its options, and a
-    /// to-do's note.
+    /// to-do's note: the one call both rows make (Arugula #1470). Refused,
+    /// it throws the server's words and the list stays as it was.
     func answer(_ control: Control, item: String, choice: String, note: String? = nil) async throws {
         var body: [String: Any] = ["choice": choice]
         if let note, !note.isEmpty { body["note"] = note }
@@ -194,6 +195,8 @@ struct InboxSheet: View {
     @State private var unfolded: Set<String> = []
     /// What was said of an item answered here, until it leaves the list.
     @State private var answered: [String: String] = [:]
+    /// The to-dos open in their rows (Todo.swift).
+    @State private var expanded: Set<String> = []
 
     /// The groups, as the server ranks them (the web's GROUPS).
     private static let groups: [(String, String)] = [
@@ -269,6 +272,7 @@ struct InboxSheet: View {
                 .onAppear {
                     if let focus, let i = shown.first(where: { Self.matches($0, focus) }) {
                         if let w = i.waitsOn, !mine(i) { unfolded.insert("\(i.group) \(w)") }
+                        if i.isTodo { expanded.insert(i.id) }
                         reader.scrollTo(i.id, anchor: .center)
                     }
                 }
@@ -339,7 +343,7 @@ struct InboxSheet: View {
         let (ref, title) = Self.titled(i.title)
         let over = ref ?? scope.projects.first(where: { $0.id == i.subject.project }).map { "\($0.name) ·" }
         return VStack(alignment: .leading, spacing: 6) {
-            Button { Task { await open(i) } } label: {
+            Button { Task { i.isTodo ? toggle(i) : await open(i) } } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     if over != nil || !i.seen {
                         HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -357,7 +361,7 @@ struct InboxSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("inbox-entry-\(i.id)")
-            if let lines = i.lines, !lines.isEmpty {
+            if let lines = i.lines, !lines.isEmpty, !i.isTodo {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, l in
                         Text(verbatim: l).font(Face.mono(11)).foregroundStyle(Palette.subtle).lineLimit(4)
@@ -366,6 +370,13 @@ struct InboxSheet: View {
             }
             if let said = answered[i.id] {
                 Caps(said)
+            } else if i.isTodo {
+                // A to-do opens in its row; a teammate's is theirs to answer.
+                if expanded.contains(i.id) && mine(i) {
+                    TodoAnswer(item: i, control: control) { said in
+                        answered[i.id] = said
+                    }
+                }
             } else if mine(i) {
                 ItemAnswer(item: i, control: control, need: need(i), model: model) { said in
                     answered[i.id] = said
@@ -522,6 +533,12 @@ struct InboxSheet: View {
         }
     }
 
+    /// Open a to-do in its row, or fold it; opening marks it seen.
+    private func toggle(_ i: InboxModel.Item) {
+        if expanded.remove(i.id) == nil { expanded.insert(i.id) }
+        if !i.seen { Task { try? await inbox.mark(control, item: i.id, seen: true) } }
+    }
+
     private func dismiss(_ i: InboxModel.Item) async {
         busy = i.id
         defer { busy = nil }
@@ -534,8 +551,8 @@ struct InboxSheet: View {
 }
 
 /// How an item is answered in its row, by its `answer.via`: an agent's card
-/// or a to-do with its choice (and a to-do's note), a board's ask on its
-/// board, an agent's ask as Needs you answers it. Any other is opened.
+/// with its choice, a board's ask on its board, an agent's ask as Needs you
+/// answers it. A to-do has its own (TodoAnswer); any other is opened.
 private struct ItemAnswer: View {
     let item: InboxModel.Item
     let control: Control
@@ -562,17 +579,6 @@ private struct ItemAnswer: View {
     private var content: some View {
         let options = item.answer?.options ?? []
         switch item.answer?.via {
-        case "todo":
-            TextField("A note (optional)", text: $words, axis: .vertical)
-                .font(Face.ui(14))
-                .lineLimit(1...4)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityIdentifier("answer-note")
-            choices(options.isEmpty ? ["Done", "Can't"] : options) { c in
-                try await inbox.answer(control, item: item.id, choice: c, note: words.trimmingCharacters(in: .whitespacesAndNewlines))
-                return c
-            }
         case "card":
             choices(options.isEmpty ? ["Approve", "Deny"] : options) { c in
                 try await inbox.answer(control, item: item.id, choice: c)
