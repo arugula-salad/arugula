@@ -191,8 +191,8 @@ function mix(a: string, b: string, t: number): string {
   return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
 }
 
-const MONO = `"Arugula Mono", "JetBrains Mono", ui-monospace, monospace`;
-const DISPLAY = `"Big Shoulders Display", "Arial Narrow", sans-serif`;
+const MONO = `"SF Mono", ui-monospace, Menlo, monospace`;
+const DISPLAY = `"Helvetica Neue", Helvetica, Arial, sans-serif`;
 
 function textTexture(lines: [string, string, string, number, number][], w: number, h: number): THREE.CanvasTexture {
   const c = document.createElement("canvas");
@@ -326,11 +326,11 @@ export class City implements SwarmScene {
 
     this.listen();
     // Block names are drawn into textures: draw them again in the swarm's
-    // faces once those load (shared/fonts.css). A face that didn't load
+    // faces once those load (the brand's, kit/tokens.css). A face that didn't load
     // leaves the fallback's, already drawn.
     void document.fonts
-      ?.load(`800 112px "Big Shoulders Display"`)
-      .then(() => document.fonts.load(`500 34px "Arugula Mono"`))
+      ?.load(`800 112px "Helvetica Neue"`)
+      .then(() => document.fonts.load(`500 34px "SF Mono"`))
       .then(() => {
         this.fontsReady = true;
         this.blockSig = "";

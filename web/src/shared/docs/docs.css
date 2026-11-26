@@ -59,7 +59,7 @@
 }
 
 .doc-writer textarea {
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
 }
 
 .doc-writer button {

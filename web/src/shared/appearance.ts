@@ -1,12 +1,13 @@
-// How the page looks, on this device: a theme (Slate, dark, or Latte,
-// light, or the system's pick) and Look's three sliders (kit/look.ts).
+// How the page looks, on this device: a theme (dark, light, or the
+// system's pick), a preset (Arugula unless picked) and Look's three
+// sliders (kit/look.ts).
 // Kept in this browser (and, on arugula.io, in a cookie every arugula.io
 // host reads: appearance-cookie.ts), applied before the first draw so a
 // reload doesn't flash the default.
 
 import type { ITheme } from "@xterm/xterm";
 import { cookieDomain, cookieLine, pickStored, readCookie } from "./appearance-cookie";
-import { fix, mix, paint, SLIDERS, type Sliders, type Ui } from "./kit/look";
+import { fix, mix, paint, preset, PRESETS, sliders, type Sliders, type Ui } from "./kit/look";
 
 export { contrast, onFill, selectedFill } from "./kit/look";
 
@@ -124,32 +125,40 @@ export const THEMES = [
 
 export type Theme = (typeof THEMES)[number]["id"];
 
-export interface Appearance extends Sliders {
-  /** Dark (Slate) unless picked: "light" is Latte, "system" follows the
-   * system's. */
+export interface Appearance extends Omit<Sliders, "light"> {
+  /** Dark unless picked; "system" follows the system's. */
   theme: Theme;
+  /** A preset's id (kit/look.ts's PRESETS): Arugula unless picked. */
+  preset: string;
+  /** The light slider, or null for the theme's own (each theme starts
+   * somewhere else). */
+  light: number | null;
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { theme: "dark", ...SLIDERS };
+const DEFAULT: Appearance = { theme: "dark", preset: PRESETS[0].id, ...sliders(true), light: null };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
 const LIGHT_PALETTES = ["latte", "platinum", "solarized-light"];
-const slider = (v: unknown, d: number) => (typeof v === "number" && v >= 0 && v <= 1 ? v : d);
+const slider = <D,>(v: unknown, d: D) => (typeof v === "number" && v >= 0 && v <= 1 ? v : d);
 
-/** A stored appearance, or one from before Look (a palette, a finish,
- * corners, density): a light palette is Light, "system" is System, any
- * other is Dark. */
+/** A stored appearance, or one from before the brand: its theme stays (a
+ * light palette from before Look is Light, "system" is System, any other
+ * Dark), and sliders set for the interim look start again at Arugula's. */
 export function parseAppearance(raw: string): Appearance | null {
   try {
     const v = JSON.parse(raw) as (Partial<Appearance> & { palette?: string }) | null;
     if (!v || typeof v !== "object") return null;
     const old = v.palette === "system" ? "system" : LIGHT_PALETTES.includes(v.palette ?? "") ? "light" : "dark";
+    const theme = THEMES.some((t) => t.id === v.theme) ? v.theme! : old;
+    if (typeof v.preset !== "string") return { ...DEFAULT, theme };
+    const p = preset(v.preset);
     return {
-      theme: THEMES.some((t) => t.id === v.theme) ? v.theme! : old,
-      light: slider(v.light, DEFAULT.light),
-      warmth: slider(v.warmth, DEFAULT.warmth),
-      depth: slider(v.depth, DEFAULT.depth),
+      theme,
+      preset: p.id,
+      light: v.light === null ? null : slider(v.light, null),
+      warmth: slider(v.warmth, p.warmth),
+      depth: slider(v.depth, p.depth),
     };
   } catch {
     return null;
@@ -203,9 +212,9 @@ function store(json: string) {
 
 export const appearance = () => current;
 
-/** Whether the page is light now: Latte picked, or the system's light
+/** Whether the page is light now: Light picked, or the system's light
  * with System picked. */
-const isLight = (a: Appearance = current) => a.theme === "light" || (a.theme === "system" && !!lightQuery?.matches);
+export const isLight = (a: Appearance = current) => a.theme === "light" || (a.theme === "system" && !!lightQuery?.matches);
 
 /** The theme's palette in use: Latte when light, else Slate. */
 export function palette(a: Appearance = current): Palette {
@@ -220,7 +229,26 @@ export function onAppearance(fn: () => void): () => void {
   return () => void listeners.delete(fn);
 }
 
+/** The sliders as they paint: the light slider's own value, or the
+ * theme's. */
+export function lookSliders(a: Appearance = current): Sliders {
+  return { light: a.light ?? sliders(!isLight(a)).light, warmth: a.warmth, depth: a.depth };
+}
+
+/** Picks a preset: its hues, and the warmth and depth it starts at. */
+export function setPreset(id: string) {
+  const p = preset(id);
+  setAppearance({ preset: p.id, warmth: p.warmth, depth: p.depth });
+}
+
+/** Back to nothing picked: Dark, Arugula, its sliders. */
+export const resetAppearance = () => setAppearance(DEFAULT);
+
+export const isDefaultAppearance = (a: Appearance = current) => (Object.keys(DEFAULT) as (keyof Appearance)[]).every((k) => a[k] === DEFAULT[k]);
+
 export function setAppearance(change: Partial<Appearance>) {
+  // A new theme starts at its own lightness.
+  if (change.theme && change.theme !== current.theme && !("light" in change)) change = { ...change, light: null };
   current = { ...current, ...change };
   const json = JSON.stringify(current);
   try {
@@ -295,17 +323,19 @@ function applyHouse(scheme: Scheme, root: HTMLElement) {
 }
 
 /** Puts the appearance on the document: kit/tokens.css's role tokens, as
- * kit/look.ts paints them from the theme and the sliders (tokens.css holds
- * Slate's, for a page that never runs this). */
+ * kit/look.ts paints them from the theme, the preset and the sliders
+ * (tokens.css holds Arugula dark's, for a page that never runs this). */
 export function apply() {
   const p = palette();
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(paint(p.ui, !p.light, current))) root.style.setProperty(`--${k}`, v);
+  const tokens = paint(p.ui, !p.light, lookSliders(), preset(current.preset));
+  for (const [k, v] of Object.entries(tokens)) root.style.setProperty(`--${k}`, v);
   applyHouse(p.light ? "light" : "dark", root);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
   root.dataset.palette = p.id;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.ui.surface);
+  root.dataset.preset = preset(current.preset).id;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", tokens.canvas);
   listeners.forEach((fn) => fn());
 }
 

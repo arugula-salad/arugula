@@ -64,7 +64,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 var(--text-md) var(--f-mono);
+  font: 600 var(--text-md) var(--font-mono);
 }
 
 /* Not a chip: the VM tag is a Chip (shared/ui/state-chip.tsx). The
@@ -73,7 +73,7 @@
 .sheet-host .host-state {
   flex: none;
   color: var(--dim);
-  font: var(--text-sm) var(--f-mono);
+  font: var(--text-sm) var(--font-mono);
 }
 
 .sheet-host .host-state {
@@ -111,7 +111,7 @@
 }
 
 .host-count {
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
   color: var(--fg);
 }
 

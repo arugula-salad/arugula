@@ -77,7 +77,7 @@
 
 .board-aside-head {
   margin: 0;
-  font: 600 var(--text-xs)/1.4 var(--f-mono);
+  font: 600 var(--text-xs)/1.4 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
@@ -276,7 +276,7 @@
 }
 
 .board-ptr {
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
@@ -289,7 +289,7 @@
   height: 8px;
   margin: 6px -4px 0 0;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 /* The title shares the line with the dot instead of wrapping under it. */
@@ -380,7 +380,7 @@
 }
 
 .board-fact {
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
@@ -395,14 +395,14 @@
   flex-wrap: wrap;
   gap: 6px 18px;
   margin: 6px 0;
-  font: 500 var(--text-sm)/1.2 var(--f-mono);
+  font: 500 var(--text-sm)/1.2 var(--font-mono);
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
 
 .board .sw-stats b {
   display: block;
-  font: 700 var(--text-xl)/1 var(--f-mono);
+  font: 700 var(--text-xl)/1 var(--font-mono);
   color: var(--fg);
 }
 
@@ -559,7 +559,7 @@
 }
 
 .page-head.board-head h1.named {
-  font: 800 var(--text-doc)/1.02 var(--f-display);
+  font: 700 var(--text-doc)/1.02 var(--font-title);
   letter-spacing: var(--track-display);
   text-wrap: balance;
 }
@@ -683,7 +683,7 @@
 
 .board-docs-head {
   margin: 0 0 4px;
-  font: 600 var(--text-xs)/1.4 var(--f-mono);
+  font: 600 var(--text-xs)/1.4 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
@@ -711,7 +711,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg);
-  font: var(--text-xs)/1.5 var(--f-mono);
+  font: var(--text-xs)/1.5 var(--font-mono);
   text-decoration: none;
 }
 
@@ -847,7 +847,7 @@
 .board-done-list summary {
   cursor: pointer;
   margin: 8px 0;
-  font: 700 var(--text-xl)/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--font-title);
 }
 
 /* A board on a list is a Card (shared/ui/card.css) in a grid of 250px-and-up

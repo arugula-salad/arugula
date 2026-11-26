@@ -8,7 +8,6 @@
 // teammates' machines to the page's fleet beside the daemon.
 
 import { render } from "preact";
-import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
 import "../src/platform/platform.css";

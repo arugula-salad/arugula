@@ -8,7 +8,6 @@
 
 import { render } from "preact";
 import type { InboxItem } from "../src/shared/proto.gen";
-import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
 import "../src/platform/platform.css";

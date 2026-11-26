@@ -299,7 +299,7 @@ test("callouts and stat tiles draw in the Doc's tones, light and dark", async ({
   expect(new Set(dark.tones).size, "five tones").toBe(5);
   expect(dark.fill, "a tinted fill, not the paper").not.toBe(dark.paper);
   expect(dark.up).not.toBe(dark.down);
-  expect(dark.valueFont).toContain("Big Shoulders Display");
+  expect(dark.valueFont).toContain("Helvetica Neue");
   expect(dark.labelCase).toBe("uppercase");
   expect(new Set(dark.top).size, "one row on a desktop").toBe(1);
   await shoot(page, doc, "block-desktop-dark");
@@ -384,7 +384,7 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
 
   // The house pair is the scheme's, not the viewer's Look: at the darkest,
   // the Doc is still Slate's paper under the viewer's chrome.
-  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "dark", light: 1, warmth: 0.5, depth: 0.5 })));
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "dark", preset: "arugula", light: 1, warmth: 0, depth: 0 })));
   await page.reload();
   await expect(named).toBeVisible({ timeout: 15_000 });
   await look("dark");

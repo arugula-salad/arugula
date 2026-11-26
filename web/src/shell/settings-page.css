@@ -58,14 +58,14 @@
 /* The display headings, as `/settings` has them (platform/swarm.css); the
    page title is PageHeader's (shared/ui/page-header.css). */
 .settings-place .settings-sec > h2 {
-  font: 700 var(--text-xl)/1.05 var(--f-display);
+  font: 700 var(--text-xl)/1.05 var(--font-title);
   letter-spacing: var(--track-section);
 }
 
 /* A section's count, beside its heading, as /settings has it. */
 .settings-place .settings-sec > h2 > .dim {
   margin-left: 4px;
-  font: 700 var(--text-sm)/1 var(--f-mono);
+  font: 700 var(--text-sm)/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   vertical-align: 2px;
 }

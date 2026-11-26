@@ -131,7 +131,7 @@
 }
 
 .step-bar[data-bar="review"] {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .step-bar[data-bar="wait"] {

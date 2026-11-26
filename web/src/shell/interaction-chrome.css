@@ -7,7 +7,7 @@
 .add-pane-seg button > span { min-width: 0; white-space: normal; }
 .add-pane-seg strong { display: block; font-size: var(--text-sm); font-weight: 500; }
 .add-pane-seg small { display: block; margin-top: 6px; color: var(--subtle); font-size: var(--text-xs); line-height: 1.5; }
-.add-pane-kind-icon { flex: none; width: 22px; color: var(--accent); font: 22px/1.1 var(--f-mono); text-align: center; } /* off-scale: glyph */
+.add-pane-kind-icon { flex: none; width: 22px; color: var(--accent); font: 22px/1.1 var(--font-mono); text-align: center; } /* off-scale: glyph */
 .add-pane-input { width: 100%; }
 .add-pane-directory { display: flex; align-items: stretch; gap: 8px; min-width: 0; }
 .add-pane-dir { padding: var(--space-2) 10px; border: 1px solid var(--line); border-radius: var(--field-radius); background: var(--bg); }

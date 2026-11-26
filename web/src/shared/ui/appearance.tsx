@@ -1,5 +1,5 @@
-// Appearance: this device's theme and Look's three sliders (design lift
-// §4.3). Each change applies at once, so the page is the preview. Drawn in
+// Appearance: this device's theme, preset and Look's three sliders
+// (design lift §4.3, §4.4). Each change applies at once, so the page is the preview. Drawn in
 // place in Settings (You's Appearance, the daemon's `#settings`; Arugula
 // #1318), and as a dialog, Appearance…, where there's no Settings page to
 // go to: the phone's settings menu and the command palette.
@@ -7,8 +7,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { useSubscribe } from "./hooks";
 import { Modal } from "./modal";
-import { appearance, onAppearance, setAppearance, THEMES } from "../appearance";
-import { SLIDERS, type Sliders } from "../kit/look";
+import { appearance, isDefaultAppearance, lookSliders, onAppearance, resetAppearance, setAppearance, setPreset, THEMES } from "../appearance";
+import { PRESETS, type Sliders } from "../kit/look";
 
 let shown = false;
 const listeners = new Set<() => void>();
@@ -38,19 +38,11 @@ export function AppearanceLayer() {
   return <AppearanceDialog close={close} />;
 }
 
-const RESET = { theme: "dark", ...SLIDERS } as const;
-
-/** Back to nothing picked: Dark, each slider in the middle. */
+/** Back to nothing picked: Dark, Arugula and its sliders. */
 export function ResetAppearance() {
   useSubscribe(onAppearance);
-  const a = appearance();
   return (
-    <button
-      class="secondary"
-      type="button"
-      onClick={() => setAppearance(RESET)}
-      disabled={a.theme === RESET.theme && a.light === RESET.light && a.warmth === RESET.warmth && a.depth === RESET.depth}
-    >
+    <button class="secondary" type="button" onClick={resetAppearance} disabled={isDefaultAppearance()}>
       Reset
     </button>
   );
@@ -85,10 +77,12 @@ const LOOK: { key: keyof Sliders; name: string; ends: [string, string] }[] = [
 ];
 
 /** What the dialog holds, drawn in place where Settings is a page (You's
- * Appearance, the daemon's `#settings`): the theme, then the sliders. */
+ * Appearance, the daemon's `#settings`): the theme and the preset, then
+ * the sliders. */
 export function AppearanceControls() {
   useSubscribe(onAppearance);
   const a = appearance();
+  const s = lookSliders(a);
   return (
     <div class="appearance-controls" data-appearance-controls>
       <p class="dim">On this device. The terminals follow the theme.</p>
@@ -100,21 +94,29 @@ export function AppearanceControls() {
           </button>
         ))}
       </div>
+      <h3 id="appearance-preset">Preset</h3>
+      <div class="seg" role="radiogroup" aria-labelledby="appearance-preset">
+        {PRESETS.map((p) => (
+          <button key={p.id} type="button" role="radio" aria-checked={a.preset === p.id} class={a.preset === p.id ? "on" : undefined} data-preset-choice={p.id} onClick={() => setPreset(p.id)}>
+            {p.name}
+          </button>
+        ))}
+      </div>
       <h3>Look</h3>
       <div class="appearance-sliders">
-        {LOOK.map((s) => (
-          <label key={s.key} class="appearance-slider">
-            <span class="dim">{s.ends[0]}</span>
+        {LOOK.map((k) => (
+          <label key={k.key} class="appearance-slider">
+            <span class="dim">{k.ends[0]}</span>
             <input
               type="range"
               min={0}
               max={100}
-              aria-label={s.name}
-              data-look-slider={s.key}
-              value={Math.round(a[s.key] * 100)}
-              onInput={(e) => setAppearance({ [s.key]: +(e.target as HTMLInputElement).value / 100 })}
+              aria-label={k.name}
+              data-look-slider={k.key}
+              value={Math.round(s[k.key] * 100)}
+              onInput={(e) => setAppearance({ [k.key]: +(e.target as HTMLInputElement).value / 100 })}
             />
-            <span class="dim">{s.ends[1]}</span>
+            <span class="dim">{k.ends[1]}</span>
           </label>
         ))}
       </div>

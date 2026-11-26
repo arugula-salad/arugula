@@ -16,7 +16,7 @@
 
 /* Done ok, Review accent, Doing warn: the lanes' own tones, which a card takes too (cardTone). */
 .board-bar i[data-lane="review"] {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .board-bar i[data-lane="doing"] {
