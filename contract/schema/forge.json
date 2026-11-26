@@ -1735,14 +1735,14 @@
       "type": "object"
     },
     "WatchTag": {
-      "description": "On an `agents.mention` that is a watch's message (fired, or ended\nwithout firing): which watch, and the one Claude Code session it is for.\nThe daemon gives it to that session alone, framed as Arugula's word and\nnot a teammate's, past the owner's switch for teammates' mentions (the\nowner's own agent asked for it).",
+      "description": "On an `agents.mention` that is a watch's message (fired, or ended\nwithout firing): which watch, and the one Claude Code session it is for.\nThe daemon gives it to that session alone, framed as Arugula's word and\nnot a teammate's, past the owner's switch for teammates' mentions (the\nowner's own agent asked for it).\n\nOr an answer to the session's own ask (Arugula #1465): `id` is the ask,\nan approval card or to-do's `prp_…` or a board ask's `ask_…`, and the\ntext says who answered and how, with a to-do's note. It goes the same\nway, to that session alone and once, with no watch: a daemon that knows\n[`is_answer`] frames it as its person's answer; an older one, as a\nwatch's message.",
       "properties": {
         "id": {
-          "description": "`wch_…`.",
+          "description": "`wch_…`, or an answered ask's `prp_…` or `ask_…`.",
           "type": "string"
         },
         "session": {
-          "description": "The Claude Code session's id.",
+          "description": "The Claude Code session's id (or an agent block's, for its harness).",
           "type": "string"
         }
       },

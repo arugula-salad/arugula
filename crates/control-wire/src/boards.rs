@@ -1880,6 +1880,11 @@ pub struct NewAsk {
     pub options: Vec<String>,
     #[serde(default)]
     pub recommend: Option<String>,
+    /// A machine's agent's conversation (Arugula #1465): the answer is told
+    /// to it, as a follow-up. A person's ask has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub conversation: Option<crate::sessions::TodoConversation>,
 }
 
 /// [`BOARD_ASK_ANSWER`]'s body: one of the ask's `option`s, or `text` when

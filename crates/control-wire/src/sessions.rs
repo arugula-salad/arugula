@@ -573,7 +573,9 @@ impl Proposal {
 
 /// The conversation a machine's agent's to-do is for (Arugula #1462): its
 /// harness and its id there, so an answer can find it again once its block
-/// is gone. The machine is the one that asked.
+/// is gone. The machine is the one that asked. Any card's or board ask's
+/// answer wakes it (Arugula #1465): [`MachinePropose::conversation`],
+/// `boards::NewAsk::conversation`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -628,6 +630,12 @@ pub struct MachinePropose {
     pub session: String,
     /// Its block, by pane: a start works in its repo.
     pub pane: u32,
+    /// Its conversation (Arugula #1465), whatever the card: the answer is
+    /// told to it, as a follow-up, with no watch. A to-do's
+    /// [`Proposal::Todo`] `conversation` says the same; this one wins. An
+    /// older control ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<TodoConversation>,
     /// A close's blocks as the machine sees them now, for the card: `id`
     /// is `%N`, `title` the block's, `state` its agent's.
     #[serde(default)]

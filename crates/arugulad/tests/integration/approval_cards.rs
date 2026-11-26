@@ -2,7 +2,8 @@
 //! a start or a close on a card (`ask_approval`), the person's Approve
 //! reaches this machine as `agents.approved`, which starts an agent block on
 //! the issue (or closes blocks) here, and the card's `ask.answered` wakes the
-//! chief of staff through its watch. Against a fake control (it takes the
+//! chief of staff through its watch, or its answer does with no watch
+//! (Arugula #1465). Against a fake control (it takes the
 //! card, plays the person's Approve on the relay socket, and fires the
 //! watch) and a real daemon whose agents are the fake ACP agent.
 #![cfg(unix)]
@@ -184,7 +185,7 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
         .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
         .unwrap();
     assert_eq!(asked["ask"], "prp_0", "{asked}");
-    assert!(asked["summary"].as_str().unwrap().contains("Watch event ask.answered"), "{asked}");
+    assert!(asked["summary"].as_str().unwrap().contains("no watch needed"), "{asked}");
     let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
     assert_eq!(
         card["proposal"],
@@ -284,6 +285,61 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     assert!(a["error"].as_str().unwrap().contains("isn't running on"), "{a}");
     assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
 
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Arugula #1465: a Claude Code chief of staff's card names its
+/// conversation, and the answer control tells it, tagged with the card's
+/// `prp_…`, wakes it with no watch: the person's answer and note, framed as
+/// theirs, once.
+#[test]
+fn a_cards_answer_wakes_the_conversation_that_asked_with_no_watch() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-answer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let bin = tmp.join("agents/claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let agents_dir = tmp.join("agents").display().to_string();
+    let d = Daemon::child_in(&[], &[("ARUGULA_AGENTS_DIR", &agents_dir)], |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+
+    let config = json!({ "agent": "claude", "cwd": tmp, "title": "Chief of staff", "prompt": "hello" });
+    let chief = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(chief, "idle");
+    let session = d.state(chief)["session_id"].as_str().expect("its session").to_owned();
+    let mcp = Mcp::bridge(&d, Some(chief));
+    let asked = mcp
+        .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_0", "{asked}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
+    assert_eq!(card["conversation"], json!({ "agent": "claude", "id": session }), "{card}");
+    assert!(f.asked("POST /api/daemon/watches").is_empty(), "no watch");
+
+    // The person answers: control tells the conversation that asked.
+    let said = "Ada approved your card prp_0 (start an agent on #12 Fix the login): started agent block %9.\nAda's note: \"go\"";
+    let op = |id: &str| {
+        json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "prp_0", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": said, "watch": { "id": "prp_0", "session": session } } })
+    };
+    f.send(op("m-1"));
+    d.wait_for("its answer", || f.answer("m-1").is_some());
+    assert_eq!(f.answer("m-1").unwrap()["routed"]["step"], "named");
+    d.wait_for("the chief of staff woken", || prompts(&d, chief).contains("Your ask prp_0 was answered"));
+    let p = prompts(&d, chief);
+    assert!(p.contains("started agent block %9") && p.contains("Ada's note"), "{p}");
+    // Sent again (control lost the daemon's answer): told once.
+    d.wait(chief, "idle");
+    f.send(op("m-2"));
+    d.wait_for("its answer", || f.answer("m-2").is_some());
+    assert_eq!(prompts(&d, chief).matches("Your ask prp_0 was answered").count(), 1, "once");
+
+    drop(mcp);
     drop(d);
     let _ = std::fs::remove_dir_all(&tmp);
 }
