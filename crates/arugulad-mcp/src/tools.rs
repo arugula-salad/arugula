@@ -4921,6 +4921,10 @@ mod tests {
         assert!(text.contains(flags::ISSUES_STEERING), "{text}");
         // A board row is kept current.
         assert!(text.contains(flags::BOARDS_STEERING), "{text}");
+        // Work only the person can do is a to-do, not chat alone (Arugula
+        // #1463); a merge's closing rule is issue_write's.
+        assert!(text.contains(flags::TODOS_STEERING) && text.contains("add a to-do with todo"), "{text}");
+        assert!(!text.contains("On merge"), "{text}");
         // When to show a PR (AR-7).
         assert!(text.contains("show it (kind pr)"), "{text}");
     }
@@ -4938,10 +4942,12 @@ mod tests {
             assert!(!text.contains("thread"), "{text}");
         }
         assert!(joined.contains(flags::ISSUES_STEERING) && joined.contains(flags::BOARDS_STEERING), "{joined}");
-        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board"] {
+        assert!(joined.contains(flags::TODOS_STEERING), "{joined}");
+        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board", "to-do"] {
             assert!(!alone.contains(word), "{word} in: {alone}");
         }
         let without = joined.replace(&format!(" {}", flags::ISSUES_STEERING), "");
+        let without = without.replace(&format!(" {}", flags::TODOS_STEERING), "");
         assert_eq!(without.replace(&format!(" {}", flags::BOARDS_STEERING), ""), alone);
     }
 

@@ -111,6 +111,8 @@ pub const OWNERS: &[Entry] = &[
     // Its card is in the owner's staff room, and Approve acts as them
     // (Arugula #1417).
     ("ask_approval", None),
+    // For the owner, in their staff room (Arugula #1463).
+    ("todo", None),
 ];
 
 /// Arguments that take a tab's tool past the tab, by tool (`*`: any):
