@@ -382,9 +382,9 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   await look("light");
   await shoot(page, doc, "block-named-colours-latte");
 
-  // The house pair is the scheme's, not the picked palette's: Gruvbox is a
-  // dark palette, and the Doc is still Slate's paper under the viewer's chrome.
-  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "gruvbox", finish: "flat", corners: "square" })));
+  // The house pair is the scheme's, not the viewer's Look: at the darkest,
+  // the Doc is still Slate's paper under the viewer's chrome.
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "dark", light: 1, warmth: 0.5, depth: 0.5 })));
   await page.reload();
   await expect(named).toBeVisible({ timeout: 15_000 });
   await look("dark");

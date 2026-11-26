@@ -179,17 +179,17 @@ test("an open editor follows palette changes and keeps a customized editor theme
   await expect(frame(page, first).locator(".monaco-workbench")).toBeVisible({ timeout: 30_000 });
   // The sidebar opened in the prior test stays open on the new page.
   await expect(frame(page, first).locator(".monaco-workbench .part.sidebar")).toBeVisible();
-  const select = async (palette: string) => {
-    await (await openSettingsPage(page)).locator(`[data-palette-choice="${palette}"]`).click();
+  const select = async (theme: string) => {
+    await (await openSettingsPage(page)).locator(`[data-theme-choice="${theme}"]`).click();
     await closeSettingsPage(page);
   };
   // Locator assertions retry across code-server's startup/navigation instead
   // of letting a transient destroyed execution context abort expect.poll.
   const background = (color: string) => expect(frame(page, first).locator(".monaco-workbench"))
     .toHaveCSS("--vscode-editor-background", new RegExp(`^\\s*${color}\\s*$`, "i"), { timeout: 15_000 });
-  await select("latte");
+  await select("light");
   await background("#eff1f5");
-  await select("slate");
+  await select("dark");
   await background("#0c1118");
 
   // This is VS Code's workspace settings file, the same place its settings

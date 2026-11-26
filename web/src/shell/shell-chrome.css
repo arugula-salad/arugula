@@ -132,7 +132,7 @@
 
 /* It sits with the panes, on their background and at their inset, so the
    space around it is even (the panes' padding is the space above it). */
-:where(html:not([data-corners="square"], [data-finish="glass"]) .app.ws) .ws-work:has(> .ws-activity) {
+:where(.app.ws) .ws-work:has(> .ws-activity) {
   background: var(--letterbox);
 }
 

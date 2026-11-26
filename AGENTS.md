@@ -318,6 +318,15 @@ restyle a page, pane, dialog, list or menu in `web/`: it names the shared
 component for each piece (type, colour, buttons, headers, rows, chips,
 dialogs, menus, empty states) and what not to invent.
 
+The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase
+at a time. Until a screen's row says otherwise, work on it keeps today's look.
+Every new colour, face, size or shape names a role token in
+`web/src/shared/kit/tokens.css`, never a legacy alias (`--bg`, `--fg` …).
+
+| Screen | Look | Since |
+|---|---|---|
+| Every screen | today's, painted by the role tokens and Look's sliders | Lift 1 (#1477) |
+
 ## Commands
 
 - `just bootstrap`, then `just web`: toolchains, web dependencies, and the web

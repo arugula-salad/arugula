@@ -359,75 +359,8 @@ a.secondary.danger:hover {
   background: color-mix(in srgb, var(--accent) 26%, var(--bg));
 }
 
-/* -- Aqua: gel. The primary a lit drop of its fill, the secondary a clear
-      one; both pills whatever the corners, as Aqua's were. */
-
-html[data-finish="aqua"] .primary {
-  border-radius: 999px;
-  border-color: transparent;
-  background:
-    linear-gradient(#fffa, #fff3 45%, #0000 50%, #fff3 100%),
-    var(--btn-fill);
-  box-shadow:
-    inset 0 -2px 4px color-mix(in srgb, var(--btn-fill) 60%, #fff),
-    inset 0 1px 1px #fff8,
-    0 1px 3px #0006;
-  color: var(--on-color);
-  text-shadow: 0 1px 0 #fff4;
-}
-
-html[data-finish="aqua"] .secondary {
-  border-radius: 999px;
-  border-color: color-mix(in srgb, var(--fg) 25%, transparent);
-  background:
-    linear-gradient(#fff6, #fff1 45%, #0000 50%, #fff2 100%),
-    var(--raised);
-  box-shadow:
-    inset 0 1px 1px #fff6,
-    0 1px 2px #0005;
-}
-
-html[data-finish="aqua"] .secondary.danger {
-  background:
-    linear-gradient(#fff6, #fff1 45%, #0000 50%, #fff2 100%),
-    color-mix(in srgb, var(--danger) 12%, var(--raised));
-}
-
-/* -- Brushed metal: bevelled, the primary its fill under the bevel. */
-
-html[data-finish="brushed"] .primary,
-html[data-finish="brushed"] .secondary {
-  border-color: color-mix(in srgb, var(--raised) 60%, #000);
-  box-shadow: inset 0 1px 0 #fff6, 0 1px 1px #0004;
-}
-
-html[data-finish="brushed"] .primary {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--btn-fill);
-}
-
-html[data-finish="brushed"] .secondary {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), var(--raised);
-}
-
-html[data-finish="brushed"] .secondary.danger {
-  background: linear-gradient(#fff6, #fff0 50%, #0001 51%, #0002), color-mix(in srgb, var(--danger) 12%, var(--raised));
-}
-
-/* -- Glass: the secondary a frosted pane with a lit edge; the primary
-      keeps its fill, so the one thing to do still reads first. */
-
-html[data-finish="glass"] .secondary {
-  background: color-mix(in srgb, var(--raised) 50%, transparent);
-  border-color: #fff3;
-  backdrop-filter: blur(6px);
-}
-
-html[data-finish="glass"] .primary {
-  box-shadow: inset 0 1px 0 #fff5, 0 2px 10px color-mix(in srgb, var(--btn-fill) 35%, transparent);
-}
-
-/* A filter that's set: the .secondary with accent text and edge. Not a tint,
-   which Aqua, Brushed and Glass paint over; so it sits after them. */
+/* A filter that's set: the .secondary with accent text and edge, not a
+   tint. */
 html .secondary:is(.on, [aria-pressed="true"]),
 html .secondary:is(.on, [aria-pressed="true"]):hover:not(:disabled) {
   border-color: var(--accent);

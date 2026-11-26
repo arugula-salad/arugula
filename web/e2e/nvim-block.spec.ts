@@ -159,9 +159,9 @@ async function choose(page: Page, label: "VS Code" | "nvim" | "Ask each time") {
   await closeSettingsPage(page);
 }
 
-/** Appearance › a palette. */
+/** Appearance › the theme whose palette is `id`. */
 async function paletteTo(page: Page, id: "latte" | "slate") {
-  await (await openSettingsPage(page)).locator(`[data-palette-choice="${id}"]`).click();
+  await (await openSettingsPage(page)).locator(`[data-theme-choice="${id === "latte" ? "light" : "dark"}"]`).click();
   await closeSettingsPage(page);
 }
 

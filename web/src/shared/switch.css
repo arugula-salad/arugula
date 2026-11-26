@@ -71,10 +71,6 @@
   }
 }
 
-html[data-corners="square"] input.sw-switch {
-  border-radius: 3px;
-}
-
 @media (prefers-reduced-motion: reduce) {
   :root input.sw-switch {
     transition: none;

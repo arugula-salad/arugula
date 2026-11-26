@@ -152,7 +152,7 @@ export function SettingsPage({ client }: { client: Client }) {
             <div class="settings-body" ref={body}>
               <PageHeader title="Settings" />
               {section("push")}
-              <Section id="appearance" title="Appearance" lede="Palette, finish, corners and chat density on this device, and your preferences.">
+              <Section id="appearance" title="Appearance" lede="Theme and look on this device, and your preferences.">
                 <AppearanceControls />
                 <div class="prompt-buttons">
                   <ResetAppearance />

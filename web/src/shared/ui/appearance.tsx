@@ -1,13 +1,14 @@
-// Appearance: this device's palette, finish, corners and messages'
-// density. Each choice applies at once, so the page is the preview. Drawn
-// in place in Settings (You's Appearance, the daemon's `#settings`;
-// Arugula #1318), and as a dialog, Appearance…, where there's no Settings
-// page to go to: the phone's settings menu and the command palette.
+// Appearance: this device's theme and Look's three sliders (design lift
+// §4.3). Each change applies at once, so the page is the preview. Drawn in
+// place in Settings (You's Appearance, the daemon's `#settings`; Arugula
+// #1318), and as a dialog, Appearance…, where there's no Settings page to
+// go to: the phone's settings menu and the command palette.
 
 import { useEffect, useState } from "preact/hooks";
 import { useSubscribe } from "./hooks";
 import { Modal } from "./modal";
-import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, legible, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
+import { appearance, onAppearance, setAppearance, THEMES } from "../appearance";
+import { SLIDERS, type Sliders } from "../kit/look";
 
 let shown = false;
 const listeners = new Set<() => void>();
@@ -37,7 +38,9 @@ export function AppearanceLayer() {
   return <AppearanceDialog close={close} />;
 }
 
-/** Back to nothing picked: the default palette, flat, square, cozy. */
+const RESET = { theme: "dark", ...SLIDERS } as const;
+
+/** Back to nothing picked: Dark, each slider in the middle. */
 export function ResetAppearance() {
   useSubscribe(onAppearance);
   const a = appearance();
@@ -45,8 +48,8 @@ export function ResetAppearance() {
     <button
       class="secondary"
       type="button"
-      onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
-      disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
+      onClick={() => setAppearance(RESET)}
+      disabled={a.theme === RESET.theme && a.light === RESET.light && a.warmth === RESET.warmth && a.depth === RESET.depth}
     >
       Reset
     </button>
@@ -74,115 +77,47 @@ function AppearanceDialog({ close }: { close: () => void }) {
   );
 }
 
+/** The sliders, each with the words at its two ends. */
+const LOOK: { key: keyof Sliders; name: string; ends: [string, string] }[] = [
+  { key: "light", name: "Lightness", ends: ["Lighter", "Darker"] },
+  { key: "warmth", name: "Warmth", ends: ["Cool", "Warm"] },
+  { key: "depth", name: "Depth", ends: ["Flat", "Deep"] },
+];
+
 /** What the dialog holds, drawn in place where Settings is a page (You's
- * Appearance, the daemon's `#settings`): palette, finish, corners and
- * messages' density. Each applies at once. */
+ * Appearance, the daemon's `#settings`): the theme, then the sliders. */
 export function AppearanceControls() {
   useSubscribe(onAppearance);
   const a = appearance();
-  const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
-  // Nothing picked yet: the default's card is the one on.
-  const picked = a.palette === "default" ? darkDefault() : a.palette;
   return (
     <div class="appearance-controls" data-appearance-controls>
-      <p class="dim">On this device. The terminals follow the palette.</p>
-      <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
-        <strong>Use the Slate look</strong>
-        <span>Near-black Slate, cyan focus, soft pane corners</span>
-      </button>
-      <h3>Palette</h3>
-      <div class="appearance-palettes" role="radiogroup" aria-label="Palette">
-        <PaletteCard p={palette({ ...a, palette: "system" })} id="system" name="Match system" hint={`${dark} or Latte`} on={a.palette === "system"} />
-        {PALETTES.map((p) => (
-          <PaletteCard key={p.id} p={p} id={p.id} name={p.name} on={picked === p.id} />
-        ))}
-      </div>
-      <h3>Finish</h3>
-      <div class="appearance-finishes" role="radiogroup" aria-label="Finish">
-        {FINISHES.map((f) => (
-          <button
-            key={f.id}
-            role="radio"
-            aria-checked={a.finish === f.id}
-            class={a.finish === f.id ? "appearance-finish on" : "appearance-finish"}
-            data-finish-choice={f.id}
-            data-look={f.id}
-            onClick={() => setAppearance({ finish: f.id })}
-          >
-            <span class="appearance-finish-sample" aria-hidden="true">
-              <span class="sample-bar" />
-              <span class="sample-button">OK</span>
-            </span>
-            <b>{f.name}</b>
-            <span class="dim">{f.hint}</span>
+      <p class="dim">On this device. The terminals follow the theme.</p>
+      <h3 id="appearance-theme">Theme</h3>
+      <div class="seg" role="radiogroup" aria-labelledby="appearance-theme">
+        {THEMES.map((t) => (
+          <button key={t.id} type="button" role="radio" aria-checked={a.theme === t.id} class={a.theme === t.id ? "on" : undefined} data-theme-choice={t.id} onClick={() => setAppearance({ theme: t.id })}>
+            {t.name}
           </button>
         ))}
       </div>
-      <h3>Corners</h3>
-      <div class="appearance-corners" role="radiogroup" aria-label="Corners">
-        {CORNERS.map((c) => (
-          <button
-            key={c.id}
-            role="radio"
-            aria-checked={a.corners === c.id}
-            class={a.corners === c.id ? "on" : undefined}
-            data-corners-choice={c.id}
-            onClick={() => setAppearance({ corners: c.id })}
-          >
-            <span class={`corner-sample ${c.id}`} aria-hidden="true" />
-            {c.name}
-          </button>
+      <h3>Look</h3>
+      <div class="appearance-sliders">
+        {LOOK.map((s) => (
+          <label key={s.key} class="appearance-slider">
+            <span class="dim">{s.ends[0]}</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              aria-label={s.name}
+              data-look-slider={s.key}
+              value={Math.round(a[s.key] * 100)}
+              onInput={(e) => setAppearance({ [s.key]: +(e.target as HTMLInputElement).value / 100 })}
+            />
+            <span class="dim">{s.ends[1]}</span>
+          </label>
         ))}
       </div>
-      <h3>Messages</h3>
-      <div class="appearance-corners appearance-density" role="radiogroup" aria-label="Message density">
-        {DENSITIES.map((d) => (
-          <button
-            key={d.id}
-            role="radio"
-            aria-checked={a.density === d.id}
-            class={a.density === d.id ? "on" : undefined}
-            title={d.hint}
-            data-density-choice={d.id}
-            onClick={() => setAppearance({ density: d.id })}
-          >
-            {d.name}
-          </button>
-        ))}
-      </div>
-      <p class="dim">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
     </div>
-  );
-}
-
-/** A palette as a tiny window: its bar, its background with text, and its
- * colors in a row. */
-function PaletteCard({ p, id, name, hint, on }: { p: Palette; id: string; name: string; hint?: string; on: boolean }) {
-  // The colours the page will paint (legible()), not the raw palette's.
-  const u = legible(p);
-  return (
-    <button
-      role="radio"
-      aria-checked={on}
-      class={on ? "appearance-palette on" : "appearance-palette"}
-      data-palette-choice={id}
-      onClick={() => setAppearance({ palette: id })}
-    >
-      <span class="palette-sample" style={{ background: u.bg, borderColor: u.raised }} aria-hidden="true">
-        <span class="palette-sample-bar" style={{ background: u.surface }}>
-          <span style={{ background: u.accent }} />
-        </span>
-        <span class="palette-sample-text" style={{ color: u.fg }}>
-          <span style={{ color: u.ok }}>❯</span> ls <span style={{ color: u.dim }}>~/src</span>
-        </span>
-        <span class="palette-sample-dots">
-          {[u.danger, u.ok, u.warn, u.info, u.accent, u.teal].map((c) => (
-            <span key={c} style={{ background: c }} />
-          ))}
-        </span>
-      </span>
-      <span class="palette-name">{name}</span>
-      {hint ? <span class="palette-hint dim">{hint}</span> : null}
-    </button>
   );
 }

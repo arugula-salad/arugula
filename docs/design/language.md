@@ -75,14 +75,13 @@ contrast against that, not the palette as written.
   a side sheet, `--raised` for a menu, a dialog, hover. Selection is a tint,
   not a surface.
 - **One backdrop**, `--backdrop` (#733's value, 40% black), under every
-  dialog, picker, menu sheet and side sheet. Glass keeps its blur on top of
-  it; Getting started keeps its heavier look as a modifier.
+  dialog, picker, menu sheet and side sheet. Getting started keeps its heavier look as a modifier.
 - **The Doc wears the house pair** (Slate in dark, Latte in light, whatever
-  palette is picked), so a shared Doc reads the same for everyone. Its paper
+  theme and sliders are picked), so a shared Doc reads the same for everyone. Its paper
   is `--bg`, its reading ink a stronger text colour, and its named hues map
   to palette colours (`houseColours` in `appearance.ts`; the share page gets the same from the build). The swarm's `--void`, `--ink`, `--mute` and state colours are palette tokens too.
 
-Don't add a palette, a `var(--x)33` hex suffix (it's invalid CSS and draws
+Don't add a palette (Look's sliders vary the theme), a `var(--x)33` hex suffix (it's invalid CSS and draws
 nothing; use `color-mix`), or a `var(--x, #fallback)`.
 
 ## Buttons
@@ -330,6 +329,6 @@ size, not a look.
 ## Spacing
 
 Use the scale: `--space-1` … `--space-6` (4, 8, 12, 16, 20, 24). Corners come
-from the Corners setting (`--btn-radius`, `--tag-radius`, `--card-radius`,
+from the radius tokens (`--btn-radius`, `--tag-radius`, `--card-radius`,
 `--panel-radius`), never a raw `6px`. A page header ends in a 1px `--line`
 rule; a page's sections are separated by a section head, not a box.

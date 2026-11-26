@@ -44,7 +44,7 @@
   height: 14px;
 }
 
-html:not([data-corners="square"]) .app:not(.phone) .grid.pane-chrome .pane {
+:root .app:not(.phone) .grid.pane-chrome .pane {
   border-radius: 0 0 var(--pane-radius, 0) var(--pane-radius, 0);
 }
 
@@ -85,10 +85,6 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
     font-size: 0;
     gap: 0;
   }
-}
-
-html[data-corners="square"] .grid.pane-chrome :is(.pane-header, .pane-frame, .pane) {
-  border-radius: 0;
 }
 
 .grid.pane-chrome .pane-header.live { gap: var(--space-2); }

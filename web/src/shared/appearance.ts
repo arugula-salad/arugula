@@ -1,16 +1,14 @@
-// How the page looks, on this device: a palette (the page's colors and the
-// terminals'), a finish (flat, Aqua, brushed metal, glass) and how round
-// the panes' corners are. Kept in this browser (and, on arugula.io, in a
-// cookie every arugula.io host reads: appearance-cookie.ts), applied
-// before the first draw so a reload doesn't flash the default.
+// How the page looks, on this device: a theme (Slate, dark, or Latte,
+// light, or the system's pick) and Look's three sliders (kit/look.ts).
+// Kept in this browser (and, on arugula.io, in a cookie every arugula.io
+// host reads: appearance-cookie.ts), applied before the first draw so a
+// reload doesn't flash the default.
 
 import type { ITheme } from "@xterm/xterm";
 import { cookieDomain, cookieLine, pickStored, readCookie } from "./appearance-cookie";
-import { theme as mochaTerm } from "./theme";
-import { fix, mix, paint, type Ui } from "./kit/look";
+import { fix, mix, paint, SLIDERS, type Sliders, type Ui } from "./kit/look";
 
 export { contrast, onFill, selectedFill } from "./kit/look";
-
 
 export interface Palette {
   id: string;
@@ -49,33 +47,6 @@ function term(fg: string, bg: string, cursor: string, sel: string, c: string[]):
 }
 
 export const PALETTES: Palette[] = [
-  {
-    id: "mocha",
-    name: "Mocha",
-    light: false,
-    ui: {
-      bg: "#1e1e2e",
-      fg: "#cdd6f4",
-      dim: "#7f849c",
-      surface: "#181825",
-      letterbox: "#11111b",
-      raised: "#313244",
-      "raised-hover": "#45475a",
-      accent: "#cba6f7",
-      danger: "#f38ba8",
-      ok: "#a6e3a1",
-      warn: "#f9e2af",
-      info: "#89b4fa",
-      peach: "#fab387",
-      teal: "#94e2d5",
-      pink: "#f5c2e7",
-      merged: "#b4befe",
-      muted: "#585b70",
-      subtle: "#a6adc8",
-      "on-color": "#11111b",
-    },
-    term: mochaTerm,
-  },
   {
     // M108 (#1023): the workspace's own dark palette, from #1018's mission
     // control: near-black slate, blue-gray lines, a restrained cyan for
@@ -141,244 +112,52 @@ export const PALETTES: Palette[] = [
       "#6c6f85", "#d20f39", "#40a02b", "#df8e1d", "#1e66f5", "#ea76cb", "#179299", "#bcc0cc",
     ]),
   },
-  {
-    id: "platinum",
-    name: "Platinum",
-    light: true,
-    ui: {
-      bg: "#ffffff",
-      fg: "#1d1d1f",
-      dim: "#6e6e73",
-      surface: "#e8e8ea",
-      letterbox: "#d5d5d8",
-      raised: "#f4f4f5",
-      "raised-hover": "#dcdce0",
-      accent: "#2f7cf6",
-      danger: "#e0393e",
-      ok: "#2e9d3c",
-      warn: "#b07c00",
-      info: "#2f7cf6",
-      peach: "#e86a17",
-      teal: "#16978e",
-      pink: "#d23f8f",
-      merged: "#8250df",
-      muted: "#a0a0a6",
-      subtle: "#3c3c43",
-      "on-color": "#ffffff",
-    },
-    term: term("#1d1d1f", "#ffffff", "#2f7cf6", "#2f7cf633", [
-      "#1d1d1f", "#c23621", "#1f9e1f", "#9a8600", "#2f52d8", "#b72fb7", "#178fa0", "#bdbdc2",
-      "#6e6e73", "#e0393e", "#2e9d3c", "#b07c00", "#2f7cf6", "#d23f8f", "#16978e", "#8e8e93",
-    ]),
-  },
-  {
-    id: "solarized-light",
-    name: "Solarized Light",
-    light: true,
-    ui: {
-      bg: "#fdf6e3",
-      fg: "#586e75",
-      dim: "#93a1a1",
-      surface: "#eee8d5",
-      letterbox: "#e6dfca",
-      raised: "#f6efdb",
-      "raised-hover": "#e3dcc6",
-      accent: "#268bd2",
-      danger: "#dc322f",
-      ok: "#859900",
-      warn: "#b58900",
-      info: "#268bd2",
-      peach: "#cb4b16",
-      teal: "#2aa198",
-      pink: "#d33682",
-      merged: "#6c71c4",
-      muted: "#b5b9b0",
-      subtle: "#657b83",
-      "on-color": "#fdf6e3",
-    },
-    term: term("#586e75", "#fdf6e3", "#586e75", "#eee8d5", [
-      "#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5",
-      "#002b36", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3",
-    ]),
-  },
-  {
-    id: "nord",
-    name: "Nord",
-    light: false,
-    ui: {
-      bg: "#2e3440",
-      fg: "#d8dee9",
-      dim: "#7b88a1",
-      surface: "#272c36",
-      letterbox: "#21252e",
-      raised: "#3b4252",
-      "raised-hover": "#434c5e",
-      accent: "#88c0d0",
-      danger: "#bf616a",
-      ok: "#a3be8c",
-      warn: "#ebcb8b",
-      info: "#81a1c1",
-      peach: "#d08770",
-      teal: "#8fbcbb",
-      pink: "#b48ead",
-      merged: "#a07fc9",
-      muted: "#4c566a",
-      subtle: "#e5e9f0",
-      "on-color": "#21252e",
-    },
-    term: term("#d8dee9", "#2e3440", "#d8dee9", "#4c566a80", [
-      "#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0", "#e5e9f0",
-      "#4c566a", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#8fbcbb", "#eceff4",
-    ]),
-  },
-  {
-    id: "gruvbox",
-    name: "Gruvbox",
-    light: false,
-    ui: {
-      bg: "#282828",
-      fg: "#ebdbb2",
-      dim: "#928374",
-      surface: "#1d2021",
-      letterbox: "#161819",
-      raised: "#3c3836",
-      "raised-hover": "#504945",
-      accent: "#fe8019",
-      danger: "#fb4934",
-      ok: "#b8bb26",
-      warn: "#fabd2f",
-      info: "#83a598",
-      peach: "#fe8019",
-      teal: "#8ec07c",
-      pink: "#d3869b",
-      merged: "#b16286",
-      muted: "#665c54",
-      subtle: "#d5c4a1",
-      "on-color": "#1d2021",
-    },
-    term: term("#ebdbb2", "#282828", "#ebdbb2", "#50494580", [
-      "#3c3836", "#cc241d", "#98971a", "#d79921", "#458588", "#b16286", "#689d6a", "#a89984",
-      "#928374", "#fb4934", "#b8bb26", "#fabd2f", "#83a598", "#d3869b", "#8ec07c", "#ebdbb2",
-    ]),
-  },
-  {
-    id: "tokyo-night",
-    name: "Tokyo Night",
-    light: false,
-    ui: {
-      bg: "#1a1b26",
-      fg: "#c0caf5",
-      dim: "#565f89",
-      surface: "#16161e",
-      letterbox: "#101014",
-      raised: "#292e42",
-      "raised-hover": "#3b4261",
-      accent: "#7aa2f7",
-      danger: "#f7768e",
-      ok: "#9ece6a",
-      warn: "#e0af68",
-      info: "#7dcfff",
-      peach: "#ff9e64",
-      teal: "#73daca",
-      pink: "#bb9af7",
-      merged: "#9d7cd8",
-      muted: "#414868",
-      subtle: "#a9b1d6",
-      "on-color": "#101014",
-    },
-    term: term("#c0caf5", "#1a1b26", "#c0caf5", "#33467c", [
-      "#15161e", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
-      "#414868", "#f7768e", "#9ece6a", "#e0af68", "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
-    ]),
-  },
-  {
-    id: "dracula",
-    name: "Dracula",
-    light: false,
-    ui: {
-      bg: "#282a36",
-      fg: "#f8f8f2",
-      dim: "#6272a4",
-      surface: "#21222c",
-      letterbox: "#191a21",
-      raised: "#44475a",
-      "raised-hover": "#565970",
-      accent: "#bd93f9",
-      danger: "#ff5555",
-      ok: "#50fa7b",
-      warn: "#f1fa8c",
-      info: "#8be9fd",
-      peach: "#ffb86c",
-      teal: "#8be9fd",
-      pink: "#ff79c6",
-      merged: "#bd93f9",
-      muted: "#6272a4",
-      subtle: "#e0e0e0",
-      "on-color": "#191a21",
-    },
-    term: term("#f8f8f2", "#282a36", "#f8f8f2", "#44475a", [
-      "#21222c", "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd", "#f8f8f2",
-      "#6272a4", "#ff6e6e", "#69ff94", "#ffffa5", "#d6acff", "#ff92df", "#a4ffff", "#ffffff",
-    ]),
-  },
 ];
 
-export const FINISHES = [
-  { id: "flat", name: "Flat", hint: "Plain fills, as Arugula has always looked" },
-  { id: "aqua", name: "Aqua", hint: "Glossy gel buttons, pinstripes, a lit title bar" },
-  { id: "brushed", name: "Brushed metal", hint: "Machined aluminum, bevelled buttons" },
-  { id: "glass", name: "Glass", hint: "Frosted bars and menus over a soft glow" },
+/** What Theme offers: the system's pick, Latte (light) or Slate (dark,
+ * the default). */
+export const THEMES = [
+  { id: "system", name: "System" },
+  { id: "light", name: "Light" },
+  { id: "dark", name: "Dark" },
 ] as const;
 
-export const CORNERS = [
-  { id: "square", name: "Square" },
-  { id: "soft", name: "Soft" },
-  { id: "round", name: "Round" },
-] as const;
+export type Theme = (typeof THEMES)[number]["id"];
 
-/** How chat's messages are set: a picture and a name over the text, or IRC's
- * one line each (#121). */
-export const DENSITIES = [
-  { id: "cozy", name: "Cozy", hint: "Pictures, names over the text" },
-  { id: "compact", name: "Compact", hint: "Time, name and text on one line" },
-] as const;
-
-export type Finish = (typeof FINISHES)[number]["id"];
-export type Corners = (typeof CORNERS)[number]["id"];
-export type Density = (typeof DENSITIES)[number]["id"];
-
-export interface Appearance {
-  /** A palette's id, "system" (the dark default, or Latte when the system
-   * is light) or "default": nothing picked, which is Slate (M113; Mocha
-   * before it). */
-  palette: string;
-  finish: Finish;
-  corners: Corners;
-  /** Chat's message rows. */
-  density: Density;
+export interface Appearance extends Sliders {
+  /** Dark (Slate) unless picked: "light" is Latte, "system" follows the
+   * system's. */
+  theme: Theme;
 }
 
 const KEY = "arugula-appearance";
-const DEFAULT: Appearance = { palette: "default", finish: "flat", corners: "soft", density: "cozy" };
+const DEFAULT: Appearance = { theme: "dark", ...SLIDERS };
 const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: light)") : null;
 
-let current: Appearance = load();
-const listeners = new Set<() => void>();
+const LIGHT_PALETTES = ["latte", "platinum", "solarized-light"];
+const slider = (v: unknown, d: number) => (typeof v === "number" && v >= 0 && v <= 1 ? v : d);
 
-function parse(raw: string): Appearance | null {
+/** A stored appearance, or one from before Look (a palette, a finish,
+ * corners, density): a light palette is Light, "system" is System, any
+ * other is Dark. */
+export function parseAppearance(raw: string): Appearance | null {
   try {
-    const v = JSON.parse(raw) as Partial<Appearance> | null;
+    const v = JSON.parse(raw) as (Partial<Appearance> & { palette?: string }) | null;
     if (!v || typeof v !== "object") return null;
+    const old = v.palette === "system" ? "system" : LIGHT_PALETTES.includes(v.palette ?? "") ? "light" : "dark";
     return {
-      palette: v.palette === "system" || v.palette === "default" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
-      finish: FINISHES.some((f) => f.id === v.finish) ? v.finish! : DEFAULT.finish,
-      corners: CORNERS.some((c) => c.id === v.corners) ? v.corners! : DEFAULT.corners,
-      density: DENSITIES.some((d) => d.id === v.density) ? v.density! : DEFAULT.density,
+      theme: THEMES.some((t) => t.id === v.theme) ? v.theme! : old,
+      light: slider(v.light, DEFAULT.light),
+      warmth: slider(v.warmth, DEFAULT.warmth),
+      depth: slider(v.depth, DEFAULT.depth),
     };
   } catch {
     return null;
   }
 }
+
+let current: Appearance = load();
+const listeners = new Set<() => void>();
 
 /** The cookie's copy (on arugula.io), then this origin's localStorage. */
 function load(): Appearance {
@@ -394,13 +173,12 @@ function load(): Appearance {
   } catch {
     // Private mode or blocked storage.
   }
-  const a = pickStored(cookie, stored, parse);
+  const a = pickStored(cookie, stored, parseAppearance);
   if (!a) return DEFAULT;
   // Keep the two in step: a choice made on another arugula.io host lands
   // in this origin's localStorage, one kept only in localStorage (from
-  // before the cookie) goes into the cookie, and M108–M112's "New
-  // workspace" switch (`workspace: "classic" | "new"`), gone now, drops
-  // out of both.
+  // before the cookie) goes into the cookie, and what came before Look
+  // (a palette, a finish, corners, density) drops out of both.
   const json = JSON.stringify(a);
   if (stored !== json) {
     try {
@@ -425,14 +203,13 @@ function store(json: string) {
 
 export const appearance = () => current;
 
-/** The dark palette nothing picked means: Slate, the workspace's own
- * (M113). Anyone who picked one keeps it. */
-export const darkDefault = () => "slate";
+/** Whether the page is light now: Latte picked, or the system's light
+ * with System picked. */
+const isLight = (a: Appearance = current) => a.theme === "light" || (a.theme === "system" && !!lightQuery?.matches);
 
-/** The palette in use: "system" and "default" resolved. */
+/** The theme's palette in use: Latte when light, else Slate. */
 export function palette(a: Appearance = current): Palette {
-  const id = a.palette === "system" ? (lightQuery?.matches ? "latte" : darkDefault()) : a.palette === "default" ? darkDefault() : a.palette;
-  return PALETTES.find((p) => p.id === id) ?? PALETTES[0];
+  return PALETTES.find((p) => p.id === (isLight(a) ? "latte" : "slate"))!;
 }
 
 /** The terminals' colors, for a new terminal; `onAppearance` for changes. */
@@ -517,23 +294,19 @@ function applyHouse(scheme: Scheme, root: HTMLElement) {
   for (const [k, v] of Object.entries(houseColours(scheme))) root.style.setProperty(`--doc-${k}`, v);
 }
 
-/** Puts the appearance on the document: the palette as kit/tokens.css's
- * role tokens (kit/look.ts paints them; tokens.css holds Mocha's, for a
- * page that never runs this), the finish and corners as attributes
- * style.css keys on. */
+/** Puts the appearance on the document: kit/tokens.css's role tokens, as
+ * kit/look.ts paints them from the theme and the sliders (tokens.css holds
+ * Slate's, for a page that never runs this). */
 export function apply() {
   const p = palette();
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(paint(p.ui, !p.light))) root.style.setProperty(`--${k}`, v);
+  for (const [k, v] of Object.entries(paint(p.ui, !p.light, current))) root.style.setProperty(`--${k}`, v);
   applyHouse(p.light ? "light" : "dark", root);
   root.style.colorScheme = p.light ? "light" : "dark";
   root.dataset.scheme = p.light ? "light" : "dark";
-  root.dataset.finish = current.finish;
-  root.dataset.corners = current.corners;
-  root.dataset.density = current.density;
   root.dataset.palette = p.id;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.ui.surface);
   listeners.forEach((fn) => fn());
 }
 
-lightQuery?.addEventListener("change", () => current.palette === "system" && apply());
+lightQuery?.addEventListener("change", () => current.theme === "system" && apply());

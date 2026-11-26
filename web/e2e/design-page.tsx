@@ -11,7 +11,6 @@ import "../src/platform/swarm.css";
 import "../src/shared/ui/settings-section.css";
 import "../src/shared/switch.css";
 import "../src/platform/settings.css";
-import "../src/platform/finish.css";
 import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";

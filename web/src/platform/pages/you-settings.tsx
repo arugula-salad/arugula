@@ -20,7 +20,7 @@
 // and billing, each owner's; hosted Arugula's status page is in the avatar
 // menu (bar.tsx); Help is in the command palette.
 
-import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
+import { onAppearance, appearance, THEMES } from "../../shared/appearance";
 import { lendReached, lending, onLending, setLend } from "../../shared/lending";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
@@ -68,13 +68,13 @@ function Appearance() {
   useSubscribe(onAppearance);
   useSubscribe(subscribeSeen);
   useSubscribe(onLending);
-  const finish = FINISHES.find((f) => f.id === appearance().finish)?.name;
+  const theme = THEMES.find((t) => t.id === appearance().theme)!.name;
   return (
     <Section
       id="appearance"
       title="Appearance"
-      summary={joined(`${palette().name}${finish ? `, ${finish}` : ""} on this device`, lending() && "lent to agents", preferencesSaid())}
-      lede="Palette, finish, corners and chat density on this device, whether agents may use it, and your preferences."
+      summary={joined(`${theme} on this device`, lending() && "lent to agents", preferencesSaid())}
+      lede="Theme and look on this device, whether agents may use it, and your preferences."
     >
       <AppearanceControls />
       <div class="prompt-buttons">

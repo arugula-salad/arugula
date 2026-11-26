@@ -18,7 +18,6 @@ import "../shared/ui/settings-section.css";
 // A switch, one look on every page and in every dialog (#1099).
 import "../shared/switch.css";
 import "../platform/settings.css";
-import "../platform/finish.css";
 // Every input, select and textarea (#1097), at no specificity.
 import "../shared/fields.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.

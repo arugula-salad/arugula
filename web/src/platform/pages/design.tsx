@@ -44,7 +44,7 @@ import "../design.css";
 const TONES = [...(/export type Tone =([^;]+);/.exec(chipSource)?.[1] ?? "").matchAll(/"([a-z]+)"/g)].map((m) => m[1] as Tone);
 
 /** The custom properties a stylesheet defines whose name matches `re`, in any
- * rule (`:root`, a corners or palette variant, a media query). */
+ * rule (`:root`, a theme variant, a media query). */
 function tokens(re: RegExp): string[] {
   const found = new Set<string>();
   const walk = (rules: CSSRuleList) => {
@@ -856,7 +856,7 @@ function Spacing({ scheme }: { scheme: string }) {
           ))}
         </div>
       </Sample>
-      <Sample label="corners: from the Corners setting, never a raw px">
+      <Sample label="corners: the radius tokens, never a raw px">
         {radii.map((name) => (
           <div key={name} class="design-corner" data-design-radius={name} style={{ borderRadius: `var(${name})` }}>
             <code class="design-token">{name}</code>
@@ -994,7 +994,7 @@ export function DesignPage() {
         <Section id="states" title="Empty and error states" use="A statement with a full stop, a why and at most one primary; no match is a dim line; an error starts with Can't." from="shared/ui/block-states.tsx">
           <States />
         </Section>
-        <Section id="spacing" title="Spacing and shadows" use="Use the scale for space, the Corners setting for corners and the three shadows for depth." from="shared/style.css: --space-*, --*-radius, --shadow-*, --icon-*">
+        <Section id="spacing" title="Spacing and shadows" use="Use the scale for space, the radius tokens for corners and the three shadows for depth." from="shared/style.css: --space-*, --*-radius, --shadow-*, --icon-*">
           <Spacing scheme={shown} />
         </Section>
       </main>

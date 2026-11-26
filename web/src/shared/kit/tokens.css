@@ -1,7 +1,7 @@
 /* The role tokens (design lift §4.2): every color, face, size and shape the
    page draws with, by what it is for, never by value. ./look.ts paints the
    colors and the depth on the root from the theme and the Look sliders;
-   the values here are what a page that never runs it shows.
+   the values here, Slate's, are what a page that never runs it shows.
 
    Below them, today's names (`--bg`, `--fg`, `--surface` …) as aliases of
    the roles, so every screen keeps drawing. A screen's phase moves its
@@ -11,40 +11,40 @@
 :root {
   /* Surfaces: the page, the rail, a section and a card on it, a card
      raised off that, a Doc's paper, and the well a terminal sits in. */
-  --canvas: #1e1e2e;
-  --rail: #181825;
-  --section: #181825;
-  --card: #181825;
-  --card-raised: #313244;
-  --paper: #1e1e2e;
-  --well: #11111b;
+  --canvas: #0c1118;
+  --rail: #090d13;
+  --section: #090d13;
+  --card: #090d13;
+  --card-raised: #1a2230;
+  --paper: #0c1118;
+  --well: #06090d;
 
   /* Ink: words, on the surfaces and in a well, and on a colored fill. */
-  --ink: #cdd6f4;
-  --ink-dim: #7f849c;
-  --ink-faint: #585b70;
-  --well-ink: #cdd6f4;
-  --well-dim: #7f849c;
-  --on-accent: #11111b;
-  --on-needs: #11111b;
+  --ink: #d6dee9;
+  --ink-dim: #8b98ab;
+  --ink-faint: #3a4658;
+  --well-ink: #d6dee9;
+  --well-dim: #8b98ab;
+  --on-accent: #06090d;
+  --on-needs: #06090d;
 
   /* Lines: a rule or a border; the frame and a border on a raised fill; a
      hovered row; the focus ring. */
-  --line: #313244;
+  --line: #1a2230;
   --line-strong: color-mix(in srgb, var(--ink-faint) 55%, var(--section));
-  --hover: #45475a;
+  --hover: #243042;
   --focus: var(--accent);
 
   /* Signal: the brand and live work; what asks or waits on you; what
      failed; what's in review; what's done; what dims the page under a
      sheet. */
-  --accent: #cba6f7;
-  --needs: #f9e2af;
+  --accent: #56c8dc;
+  --needs: #f0b45a;
   --needs-tint: color-mix(in srgb, var(--needs) 14%, transparent);
-  --fail: #f38ba8;
+  --fail: #f2778a;
   --fail-tint: color-mix(in srgb, var(--fail) 14%, transparent);
-  --review: #89b4fa;
-  --done: #a6e3a1;
+  --review: #7aa7f0;
+  --done: #5fd394;
   --backdrop: rgb(0 0 0 / 0.4);
 
   /* Depth: a card's shadow, a raised thing's (a popover, a menu), a top
@@ -117,9 +117,9 @@ html[data-scheme="light"] {
   --btn-radius: var(--radius-control);
   --field-radius: var(--radius-control);
   /* Colors no role covers yet; look.ts paints them. */
-  --subtle: #a6adc8;
-  --peach: #fab387;
-  --teal: #94e2d5;
-  --pink: #f5c2e7;
-  --merged: #b4befe;
+  --subtle: #b4c0d0;
+  --peach: #f29b6b;
+  --teal: #5fd3c4;
+  --pink: #ad9cf2;
+  --merged: #b49cf2;
 }

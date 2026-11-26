@@ -645,12 +645,6 @@ export function RoomMessage({
             {whenShort(m.at)}
           </time>
         )}
-        {/* Compact rows have no picture: the time takes the gutter. */}
-        {head && (
-          <time class="msg-hover-time compact-time" title={new Date(m.at).toLocaleString()}>
-            {whenShort(m.at)}
-          </time>
-        )}
       </div>
       <div class="msg-body">
         {head && (
