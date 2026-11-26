@@ -1,6 +1,5 @@
 //! `ls`: every pane and block. Over HTTP (`arugula ls`, the web) and as
-//! MCP's `list` kind panes, where an agent block's token sees only its own
-//! tab, and the answer is shaped for agents.
+//! MCP's `list` kind panes, shaped for agents.
 
 use arugula_proto::{
     Attention, PaneId,
@@ -13,7 +12,7 @@ use crate::{
     mcp::{
         ops::{McpOp, Surface},
         results,
-        tools::{Call, ListArgs, Out, done, entry},
+        tools::{Call, Out, done, entry},
     },
     mux::Api,
 };
@@ -24,31 +23,49 @@ impl Handle for ListPanes {
     }
 }
 
+#[derive(serde::Deserialize, schemars::JsonSchema, Default)]
+pub struct PanesArgs {
+    /// Only this tab, by name or number.
+    #[serde(default)]
+    pub tab: Option<String>,
+}
+
 impl McpOp for ListPanes {
     const SURFACE: Surface = Surface::Kind {
         tool: "list",
         kind: "panes",
-        description: "Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it, agents' spend.",
+        description: "Every pane and block in any tab (terminals, browsers, agents): what it runs, if it needs attention, who opened it, agents' cost.",
     };
-    type Args = ListArgs;
+    type Args = PanesArgs;
     type Answer = serde_json::Value;
 
-    async fn args(_: &Call<'_>, _: &ListArgs) -> Result<((), Empty), String> {
+    async fn args(_: &Call<'_>, _: &PanesArgs) -> Result<((), Empty), String> {
         Ok(((), Empty {}))
     }
 
-    fn answer(call: &Call<'_>, _: &ListArgs, _: &(), panes: Vec<PaneSummary>) -> Out {
-        shape(&panes, call.me(), call.own_pane())
+    fn answer(call: &Call<'_>, a: &PanesArgs, _: &(), panes: Vec<PaneSummary>) -> Out {
+        shape(&panes, call.me(), call.own_pane(), a.tab.as_deref())
     }
 }
 
-/// The answer an agent gets: all the panes, or for an agent block (`me`),
-/// those in its tab, with the caller's own pane (`own`) marked.
-fn shape(panes: &[PaneSummary], me: Option<PaneId>, own: Option<PaneId>) -> Out {
-    let tab = me.and_then(|me| panes.iter().find(|p| p.info.id == me).map(|p| p.tab));
-    let entries: Vec<results::PaneEntry> = panes
+/// The answer an agent gets: every pane on the machine, or one tab's
+/// (`tab`, by name or number), with the caller's own pane (`own`) marked.
+/// An agent block (`me`) reads every tab too: reading isn't acting.
+fn shape(panes: &[PaneSummary], me: Option<PaneId>, own: Option<PaneId>, tab: Option<&str>) -> Out {
+    let mine = me.or(own).and_then(|me| panes.iter().find(|p| p.info.id == me));
+    let shown: Vec<&PaneSummary> = match tab.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(t) => {
+            let n = t.parse::<u32>().ok();
+            let shown: Vec<_> = panes.iter().filter(|p| Some(p.tab) == n || p.tab_name.as_deref() == Some(t)).collect();
+            if shown.is_empty() {
+                return Err(format!("no tab {t:?}: list with no tab shows every one"));
+            }
+            shown
+        }
+        None => panes.iter().collect(),
+    };
+    let entries: Vec<results::PaneEntry> = shown
         .iter()
-        .filter(|p| tab.is_none_or(|t| p.tab == t))
         .take(300)
         .map(|p| {
             let mut e = entry(p);
@@ -58,15 +75,17 @@ fn shape(panes: &[PaneSummary], me: Option<PaneId>, own: Option<PaneId>) -> Out 
             e
         })
         .collect();
-    let needs: Vec<String> = panes
-        .iter()
-        .filter(|p| tab.is_none_or(|t| p.tab == t) && p.info.attention == Attention::NeedsInput)
-        .map(|p| format!("%{}", p.info.id))
-        .collect();
-    let mut summary = match tab {
-        Some(_) => format!("{} panes and blocks in this agent's tab", entries.len()),
-        None => format!("{} panes and blocks", entries.len()),
-    };
+    let needs: Vec<String> =
+        shown.iter().filter(|p| p.info.attention == Attention::NeedsInput).map(|p| format!("%{}", p.info.id)).collect();
+    let mut tabs: Vec<(u32, &str)> = shown.iter().map(|p| (p.tab, p.session_name.as_str())).collect();
+    tabs.sort_unstable();
+    tabs.dedup();
+    let mut summary =
+        format!("{} panes and blocks in {} tab{}", entries.len(), tabs.len(), if tabs.len() == 1 { "" } else { "s" });
+    if let Some(p) = mine {
+        let name = p.tab_name.as_deref().map(|n| format!(" ({n})")).unwrap_or_default();
+        summary.push_str(&format!("; yours is tab {}{name}", p.tab));
+    }
     if !needs.is_empty() {
         summary.push_str(&format!("; {} need input", needs.join(", ")));
     }
@@ -90,19 +109,43 @@ mod tests {
         v["panes"].as_array().unwrap().iter().map(|p| (p["pane"].as_u64().unwrap(), p["you"] == true)).collect()
     }
 
-    /// `list` kind panes is the grouped tool's default kind: a token with no
-    /// agent block sees every pane, and an agent block sees only its own
-    /// tab, with itself marked `you`.
+    fn tabbed(id: PaneId, tab: u32, name: Option<&str>, attention: &str) -> PaneSummary {
+        let mut p = pane(id, tab, attention);
+        p.tab_name = name.map(str::to_owned);
+        p
+    }
+
+    /// An agent block reads every tab, as any other caller does, with itself
+    /// marked `you`; its summary names its own tab.
     #[test]
-    fn an_agent_blocks_list_is_its_tab_and_marks_itself() {
-        let panes = [pane(1, 1, "idle"), pane(2, 1, "needs_input"), pane(3, 2, "needs_input")];
+    fn an_agent_blocks_list_is_every_tab_and_marks_itself() {
+        let panes = [pane(1, 1, "idle"), tabbed(2, 1, Some("work"), "needs_input"), pane(3, 2, "needs_input")];
 
-        let all = shape(&panes, None, Some(1)).unwrap();
+        let all = shape(&panes, None, Some(1), None).unwrap();
         assert_eq!(listed(&all), [(1, true), (2, false), (3, false)]);
-        assert_eq!(all["summary"], "3 panes and blocks; %2, %3 need input");
+        assert_eq!(all["summary"], "3 panes and blocks in 2 tabs; yours is tab 1; %2, %3 need input");
 
-        let tab = shape(&panes, Some(2), Some(2)).unwrap();
-        assert_eq!(listed(&tab), [(1, false), (2, true)]);
-        assert_eq!(tab["summary"], "2 panes and blocks in this agent's tab; %2 need input");
+        let agent = shape(&panes, Some(2), Some(2), None).unwrap();
+        assert_eq!(listed(&agent), [(1, false), (2, true), (3, false)]);
+        assert_eq!(agent["summary"], "3 panes and blocks in 2 tabs; yours is tab 1 (work); %2, %3 need input");
+    }
+
+    /// `tab` narrows the answer to one tab, by name or by number.
+    #[test]
+    fn tab_narrows_the_list_by_name_or_number() {
+        let panes = [
+            tabbed(1, 1, Some("work"), "idle"),
+            tabbed(2, 2, Some("agent-work"), "idle"),
+            tabbed(3, 2, Some("agent-work"), "idle"),
+        ];
+
+        for tab in ["agent-work", "2", " 2 "] {
+            let v = shape(&panes, Some(1), Some(1), Some(tab)).unwrap();
+            assert_eq!(listed(&v), [(2, false), (3, false)], "{tab}");
+            assert_eq!(v["summary"], "2 panes and blocks in 1 tab; yours is tab 1 (work)", "{tab}");
+        }
+        let v = shape(&panes, Some(1), Some(1), Some("work")).unwrap();
+        assert_eq!(listed(&v), [(1, true)]);
+        assert!(shape(&panes, Some(1), Some(1), Some("nope")).unwrap_err().contains("no tab"));
     }
 }

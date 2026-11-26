@@ -816,10 +816,13 @@ fn an_agent_block_works_in_its_own_tab() {
     assert_eq!((info["type"].as_str(), info["started_by"]["block"].as_u64()), (Some("browser"), Some(a)), "{info}");
     d.wait_for("the page to load", || d.state(b)["title"].as_str().is_some_and(|t| t.contains("Directory listing")));
 
-    // It sees its own tab only.
+    // It reads every tab, and `tab` narrows the list to one.
     let l = agent_mcp(&d, a, "list", json!({})).unwrap();
     let seen: Vec<u64> = l["panes"].as_array().unwrap().iter().map(|p| p["pane"].as_u64().unwrap()).collect();
-    assert!(seen.contains(&a) && seen.contains(&server) && seen.contains(&b) && !seen.contains(&other), "{l}");
+    assert!(seen.contains(&a) && seen.contains(&server) && seen.contains(&b) && seen.contains(&other), "{l}");
+    let one = agent_mcp(&d, a, "list", json!({ "tab": tab_of(&d, a).to_string() })).unwrap();
+    let seen: Vec<u64> = one["panes"].as_array().unwrap().iter().map(|p| p["pane"].as_u64().unwrap()).collect();
+    assert!(seen.contains(&a) && seen.contains(&server) && !seen.contains(&other), "{one}");
     // Touching another tab is refused.
     for (tool, args) in [
         ("send_input", json!({ "pane": other, "text": "rm -rf ~" })),
@@ -887,6 +890,41 @@ fn one_agent_starts_another_and_answers_its_question() {
     let s = d.state(c);
     assert_eq!((s["allow"].clone(), s["permission_mode"].as_str()), (json!([{ "tool": "Bash" }]), Some("auto")));
     assert!(entries(&s).iter().any(|e| e["text"] == "Mode: auto"), "{s}");
+}
+
+/// An agent block that opens another leaves who it was on the new block
+/// (Arugula #1507): its block, its session and the issue it named, which
+/// `list` shows as `opened_by`; the old `started_by` string stays.
+#[test]
+fn a_block_says_which_session_opened_it() {
+    let d = Daemon::child();
+    let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "hello",
+        "session": "chief" });
+    let a = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(a, "idle");
+    let b = agent_mcp(
+        &d,
+        a,
+        "start_agent",
+        json!({ "agent": "acp", "command": format!("python3 {}", fake()), "prompt": "hello", "issue": "acme/widgets#5" }),
+    )
+    .unwrap()["block"]
+        .as_u64()
+        .unwrap();
+    let by = d.get(&format!("/api/blocks/{b}"))["info"]["started_by"].clone();
+    assert_eq!(
+        (by["block"].as_u64(), by["session"].as_str(), by["issue"].as_str()),
+        (Some(a), Some("chief"), Some("acme/widgets#5")),
+        "{by}"
+    );
+    let l = agent_mcp(&d, a, "list", json!({})).unwrap();
+    let e = l["panes"].as_array().unwrap().iter().find(|p| p["pane"] == b).unwrap();
+    assert_eq!(e["started_by"], by["by"], "{e}");
+    assert_eq!(e["opened_by"], json!({ "block": a, "session": "chief", "issue": "acme/widgets#5" }), "{e}");
+    // `arugula ls --json` reads the same pane info.
+    let ls = d.get("/api/panes");
+    let info = ls.as_array().unwrap().iter().find(|p| p["id"] == b).unwrap();
+    assert_eq!(info["started_by"]["session"], "chief", "{info}");
 }
 
 /// M71: an agent attaches a file of its own: to an agent it started, as

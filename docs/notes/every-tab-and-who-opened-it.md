@@ -1,0 +1,7 @@
+---
+section: Changed
+title: An agent lists every tab and who opened each block
+line: An agent's list now shows every pane on the machine, and each block says which block and session opened it, and for which board or issue.
+headline: no
+---
+An agent block's `list` used to show only its own tab, so a chief of staff missed work that lived in a shared tab. It now sees every tab, and `tab` (a name or number) narrows the list to one. Each entry says who opened it: the block, the session's name, and the board or issue the call named. Reading isn't acting: an agent still can't send input to, or close, what it didn't open.

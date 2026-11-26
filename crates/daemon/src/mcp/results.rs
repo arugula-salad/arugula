@@ -49,6 +49,10 @@ pub struct PaneEntry {
     pub current: Option<String>,
     pub last: Option<LastCommand>,
     pub started_by: Option<String>,
+    /// Which block and session opened it, and the board and issue the call
+    /// named (Arugula #1507).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opened_by: Option<OpenedBy>,
     /// The git worktree an agent block owns, absolute.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
@@ -61,6 +65,19 @@ pub struct PaneEntry {
     /// Set on the caller's own pane only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub you: Option<bool>,
+}
+
+/// Who opened a pane or block, in a [`PaneEntry`].
+#[derive(Debug, Serialize)]
+pub struct OpenedBy {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block: Option<PaneId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
 }
 
 /// `list` kind panes.
@@ -328,6 +345,7 @@ mod tests {
             current: None,
             last: None,
             started_by: None,
+            opened_by: None,
             worktree: None,
             project: None,
             card: None,

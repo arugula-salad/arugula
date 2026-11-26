@@ -543,8 +543,18 @@ impl<'a> Call<'a> {
     }
 
     pub async fn started(&self, pane: PaneId) {
+        self.started_for(pane, None, None).await;
+    }
+
+    /// `started`, with the board and issue the call named (Arugula #1507),
+    /// and the opening pane's session name as it is now.
+    pub async fn started_for(&self, pane: PaneId, board: Option<String>, issue: Option<String>) {
         let from = if self.me().is_none() { self.own_pane() } else { None };
-        let by = StartedBy { by: self.by(), block: self.me(), from };
+        let session = match self.own_pane() {
+            Some(p) => crate::agent_mentions::session_name(self.app, p).await,
+            None => None,
+        };
+        let by = StartedBy { by: self.by(), block: self.me(), from, session, board, issue };
         self.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(pane, by)));
     }
 
@@ -618,10 +628,20 @@ impl Call<'_> {
     }
 
     pub async fn open(&self, req: OpenRequest) -> Result<PaneId, String> {
+        self.open_for(req, None, None).await
+    }
+
+    /// `open`, recording the board and issue the call named.
+    pub async fn open_for(
+        &self,
+        req: OpenRequest,
+        board: Option<String>,
+        issue: Option<String>,
+    ) -> Result<PaneId, String> {
         confine(self.on_machine().await?, open_lands_on_machine(&req))?;
         match self.app.mux.api(|r| Api::Open(req, None, r)).await {
             Some(Ok(b)) => {
-                self.started(b).await;
+                self.started_for(b, board, issue).await;
                 Ok(b)
             }
             Some(Err(e)) => Err(e),
@@ -649,6 +669,14 @@ pub fn entry(p: &PaneSummary) -> results::PaneEntry {
         current: i.current.as_ref().and_then(|c| c.text.clone()),
         last: i.last.as_ref().map(|c| results::LastCommand { command: c.text.clone(), exit: c.exit }),
         started_by: i.started_by.as_ref().map(|s| s.by.clone()),
+        opened_by: i.started_by.as_ref().filter(|s| s.block.is_some() || s.session.is_some()).map(|s| {
+            results::OpenedBy {
+                block: s.block,
+                session: s.session.clone(),
+                board: s.board.clone(),
+                issue: s.issue.clone(),
+            }
+        }),
         worktree: i.worktree.clone(),
         project: i
             .on_issue

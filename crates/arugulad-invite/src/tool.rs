@@ -195,7 +195,7 @@ async fn invite_person(call: &Call<'_>, a: InvitePersonArgs) -> Out {
                 Some(r) => r?,
                 None => return Err("the daemon is shutting down".into()),
             };
-            let by = StartedBy { by: call.by(), block: None, from: None };
+            let by = StartedBy { by: call.by(), ..Default::default() };
             call.app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(id, by)));
             let b = call.app.mux.api(|r| Api::Block(id, r)).await.flatten().ok_or("the invite block closed")?;
             (id, b)

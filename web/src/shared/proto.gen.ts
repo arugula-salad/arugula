@@ -6897,7 +6897,20 @@ block?: number,
  * an agent, so the Overview can say who did (Arugula #1441). Display
  * only, never a credential: what may drive it is `block`'s alone.
  */
-from?: number, };
+from?: number, 
+/**
+ * The opening pane's session name, as it was then (Arugula #1507): who
+ * to ask about it. A name is no authority.
+ */
+session?: string, 
+/**
+ * The board (`brd_…`) the call named, when it did.
+ */
+board?: string, 
+/**
+ * The issue the call named, when it did.
+ */
+issue?: string, };
 
 /**
  * Everything a client needs to draw: sessions in order, each tab's tree

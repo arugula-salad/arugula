@@ -216,7 +216,7 @@ mod tests {
     }
 
     fn started_by(mut p: PaneSummary, block: u32) -> PaneSummary {
-        p.info.started_by = Some(StartedBy { by: "mcp:claude".into(), block: Some(block), from: None });
+        p.info.started_by = Some(StartedBy { by: "mcp:claude".into(), block: Some(block), ..Default::default() });
         p
     }
 

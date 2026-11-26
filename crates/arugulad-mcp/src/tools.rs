@@ -3233,7 +3233,8 @@ impl ToolCall<'_, '_> {
             project: None,
             issue: None,
         };
-        let block = self.open(req).await?;
+        let named = what.issue.clone();
+        let block = self.open_for(req, None, named).await?;
         let deadline = Instant::now() + Duration::from_secs(30);
         let b = loop {
             let b = self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or("the block closed")?;
@@ -3655,7 +3656,7 @@ impl ToolCall<'_, '_> {
         {
             return Err(format!("{held}; no agent was started"));
         }
-        let block = match self.open(req).await {
+        let block = match self.open_for(req, None, issue.clone()).await {
             Ok(b) => b,
             Err(e) => {
                 // Nothing runs there: take back the worktree this made, by
@@ -3894,9 +3895,11 @@ impl ToolCall<'_, '_> {
             None => None,
         };
         let blank = |o: Option<String>| o.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty());
+        let ask_board = a.board.clone().unwrap_or_default().trim().to_owned();
+        let ask_issue = blank(a.issue.clone());
         let ask = arugulad_base::ladder::Ask {
             machine: blank(a.to),
-            board: a.board.unwrap_or_default().trim().to_owned(),
+            board: ask_board.clone(),
             rung: None,
             issue: blank(a.issue),
             recipe: blank(a.recipe),
@@ -3914,7 +3917,7 @@ impl ToolCall<'_, '_> {
         // started, in whatever tab (Arugula #1474). Another machine's block
         // isn't a pane here.
         if self.app.control.enrolled().is_some_and(|e| e.keys.id() == started.id) {
-            self.started(started.block).await;
+            self.started_for(started.block, Some(ask_board).filter(|b| !b.is_empty()), ask_issue).await;
         }
         done(
             format!(
