@@ -22,9 +22,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The kit: the only files that draw a field. */
+/** Today's field kit, kept until the last screen's lift moves off it: with
+ * shared/kit/ (design lift §4.1: Field), the only files that draw a field. */
 export const KIT = new Set([
-  "shared/kit/kit.css",
   "shared/fields.css",
   "shared/switch.css",
   "shared/ui/search-field.css",
@@ -162,7 +162,7 @@ export function drawsOnField(sel, classes = new Map()) {
 /** The offending declarations in `css` (read from `file`, relative to src), with their lines. */
 export function offenders(css, file, classes = new Map()) {
   file = file.replaceAll("\\", "/");
-  if (KIT.has(file)) return [];
+  if (file.startsWith("shared/kit/") || KIT.has(file)) return [];
   const allowed = EMBEDDED.get(file) ?? new Set();
   const out = [];
   const text = strip(css);

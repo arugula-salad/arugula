@@ -41,7 +41,7 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
-export function Avatar({ p, onClick, title }: { p: Pick<Presence, "who" | "name" | "pic">; onClick?: () => void; title?: string }) {
+export function PresenceAvatar({ p, onClick, title }: { p: Pick<Presence, "who" | "name" | "pic">; onClick?: () => void; title?: string }) {
   return (
     <span class="avatar" style={{ "--who": colorOf(p.who) }} title={title ?? p.name} data-who={p.who} onClick={onClick}>
       {p.pic ? <img src={p.pic} alt="" referrerpolicy="no-referrer" /> : initials(p.name)}
@@ -64,7 +64,7 @@ export function PeopleBar({ client }: { client: Client }) {
   return (
     <div class="people">
       {here.map((p) => (
-        <Avatar
+        <PresenceAvatar
           key={p.who}
           p={p}
           title={following?.who === p.who ? `Following ${p.name} (click to stop)` : `${p.name}: click to follow`}
@@ -520,7 +520,7 @@ export function ShareDialog({ client }: { client: Client }) {
               const account = g.principal.startsWith("account:") ? g.principal.slice("account:".length) : null;
               return (
                 <li key={g.principal} data-grant={g.principal}>
-                  <Avatar p={{ who: g.principal, name: g.name }} />
+                  <PresenceAvatar p={{ who: g.principal, name: g.name }} />
                   <span class="share-name" title={g.name}>
                     {g.name}
                     {verified(g) ? (

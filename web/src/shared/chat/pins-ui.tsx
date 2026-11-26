@@ -30,7 +30,7 @@ export async function editDescription(store: ChatStore, room: ChatRoom, toast: (
 
 /** A button and the card it opens under it, closed by Escape or a press
  * outside. On a phone the card spans the screen's width. */
-function Popover({
+function PopCard({
   label,
   title,
   button,
@@ -123,7 +123,7 @@ export function TopicLine({ room, fallback, toast }: { room: ChatRoom; fallback:
 export function AboutButton({ room, toast }: { room: ChatRoom; toast: (s: string) => void }) {
   if (room.kind !== "channel" || (!room.description && !room.topic_writable)) return null;
   return (
-    <Popover label="About this channel" title="About this channel" hook="data-chat-about" button="ⓘ">
+    <PopCard label="About this channel" title="About this channel" hook="data-chat-about" button="ⓘ">
       {(close) => (
         <>
           <strong>#{room.name}</strong>
@@ -153,7 +153,7 @@ export function AboutButton({ room, toast }: { room: ChatRoom; toast: (s: string
           )}
         </>
       )}
-    </Popover>
+    </PopCard>
   );
 }
 
@@ -186,7 +186,7 @@ export function PinsButton({ room, toast }: { room: ChatRoom; toast: (s: string)
   const pins = chat.pinsOf(room.id);
   if (!room.pins && !pins?.length) return null;
   return (
-    <Popover
+    <PopCard
       label={`Pinned messages: ${room.pins}`}
       title="Pinned messages"
       hook="data-chat-pins"
@@ -230,7 +230,7 @@ export function PinsButton({ room, toast }: { room: ChatRoom; toast: (s: string)
           </ul>
         </>
       )}
-    </Popover>
+    </PopCard>
   );
 }
 

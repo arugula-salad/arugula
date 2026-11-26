@@ -26,7 +26,7 @@ function lasted(ms: number): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
-function Row({ s }: { s: RemoteSession }) {
+function RemoteLine({ s }: { s: RemoteSession }) {
   const role = s.role === "device" ? "device key" : s.role;
   return (
     <li data-remote-session={s.open ? "open" : "closed"}>
@@ -89,7 +89,7 @@ export function RemoteSessionsSection({ client, typing = true }: { client: Clien
       {sessions.length ? (
         <ul class="settings-rows">
           {sessions.map((s, i) => (
-            <Row key={i} s={s} />
+            <RemoteLine key={i} s={s} />
           ))}
         </ul>
       ) : (

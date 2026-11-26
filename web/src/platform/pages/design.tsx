@@ -128,7 +128,7 @@ function FieldsDemo() {
   const [on, setOn] = useState(true);
   const [range, setRange] = useState<"day" | "week" | "month">("week");
   return (
-    <div class="design-row">
+    <div class="design-line">
       <TextField label="Name" value={name} onInput={setName} />
       <TextField label="Note" value="" onInput={noop} placeholder="Why" hint="no secrets" />
       <Toggle label="Notify me" on={on} onChange={setOn} />
@@ -147,7 +147,7 @@ function SheetDemo() {
       {open ? (
         <Sheet title="Remove this board?" onClose={() => setOpen(false)}>
           <p>Its rows stay in the project's issues.</p>
-          <div class="design-row">
+          <div class="design-line">
             <Button kind="danger" onClick={() => setOpen(false)}>
               Remove
             </Button>
@@ -281,7 +281,7 @@ export function DesignPage() {
         </Section>
         <Section id="surface" title={S("surface")} use="The canvas, then a section, then cards on it; paper for a Doc; an overlay floats.">
           <Surface kind="section">
-            <div class="design-row">
+            <div class="design-line">
               <Surface>A card</Surface>
               <Surface current>The open card</Surface>
               <Surface kind="paper">Paper</Surface>
@@ -305,7 +305,7 @@ export function DesignPage() {
           </Well>
         </Section>
         <Section id="state-mark" title={S("state-mark")} use="A state is a mark and always its word.">
-          <div class="design-row">
+          <div class="design-line">
             {(Object.keys(MARKS) as State[]).map((s) => (
               <StateMark key={s} state={s} />
             ))}
@@ -315,12 +315,12 @@ export function DesignPage() {
           <Crumb steps={[{ label: "Arugula", go: noop }, { label: "Boards", go: noop }, { label: "Product improvements", go: noop }, { label: "#1443", id: true }]} />
         </Section>
         <Section id="kbd" title={S("kbd")} use="Every action has a key, shown as a key.">
-          <div class="design-row">
+          <div class="design-line">
             <Kbd keys="⌘K" /> <Kbd keys="g o" /> <Kbd keys="esc" />
           </div>
         </Section>
         <Section id="avatar" title={S("avatar")} use="A person is initials on a disc; an agent is the ✻ mark.">
-          <div class="design-row">
+          <div class="design-line">
             <Avatar name="Aaron Biller" /> <Avatar name="Jake" /> <Avatar name="claude@dust" agent />
           </div>
         </Section>
@@ -350,7 +350,7 @@ export function DesignPage() {
           <SheetDemo />
         </Section>
         <Section id="button" title={S("button")} use="One primary to a place; plain; danger. A key that does the same shows inside it.">
-          <div class="design-row">
+          <div class="design-line">
             <Button kind="primary" keys="y">
               Allow
             </Button>

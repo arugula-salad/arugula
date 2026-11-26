@@ -18,7 +18,7 @@ import { ViewHead } from "./find";
 import { iso, when } from "../time";
 import { Count } from "../ui/state-chip";
 
-function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
+function ThreadLine({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   const api = usePlatformApi();
   const room = store.room(it.room);
   const t = it.parent.thread;
@@ -91,7 +91,7 @@ export function ThreadsView({ store, phone, scope }: { store: ChatStore; phone: 
         )}
         <ul class="chat-hits">
           {shown.map((it) => (
-            <Row key={`${it.room}/${it.parent.seq}`} store={store} it={it} />
+            <ThreadLine key={`${it.room}/${it.parent.seq}`} store={store} it={it} />
           ))}
         </ul>
       </div>

@@ -18,7 +18,7 @@ import { openEditor } from "../blocks/editor";
 import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-editor";
 import { AskCard, type Answered, type Ask } from "../../shared/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
-import { Avatar } from "./people";
+import { PresenceAvatar } from "./people";
 import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export { answeredLine, clock } from "./answer-card";
@@ -45,7 +45,7 @@ function Watching({ client, id }: { client: Client; id: PaneId }) {
   return (
     <span class="ask-watching" title={`${others.map((p) => p.name).join(", ")} ${others.length > 1 ? "have" : "has"} this open`}>
       {others.map((p) => (
-        <Avatar key={p.who} p={p} />
+        <PresenceAvatar key={p.who} p={p} />
       ))}
     </span>
   );

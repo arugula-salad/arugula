@@ -1082,7 +1082,7 @@ function Lane({
       {!fold.folded && (
         <ul class="board-rows card-list">
           {z.rows.map((r) => (
-            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} opened={opened} />
+            <BoardItemRow key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} opened={opened} />
           ))}
         </ul>
       )}
@@ -1140,7 +1140,7 @@ function FilterMenu({ name, title, choices, picked, set }: { name: string; title
   );
 }
 
-function Row({
+function BoardItemRow({
   r,
   project,
   editing,

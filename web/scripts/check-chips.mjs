@@ -1,4 +1,5 @@
-// The chip rule (#730): chips come in five shapes, and every one is drawn in
+// The chip rule (#730): chips are drawn by the kit (src/shared/kit/), or,
+// until the last screen's lift, in five shapes in
 // src/shared/ui/state-chip.css (status `.chip`, tag `.chip-tag`, `.count`,
 // `.chip-object`, `.hint`). No other stylesheet defines a new class ending
 // in `-chip`, `-tag` or `-badge`: use the shape (shared/ui/state-chip.tsx),
@@ -9,8 +10,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The shared chip file, and the shared classes other files may name. */
-const HOME = "shared/ui/state-chip.css";
+/** Only the kit draws a chip (design lift §4.1: StateMark, Kbd).
+ * state-chip.css is today's chips, kept until the last screen's lift moves
+ * off them. And the shared classes other files may name. */
+const home = (file) => file.startsWith("shared/kit/") || file === "shared/ui/state-chip.css";
 const SHARED = new Set(["chip-tag"]);
 
 /** Classes that predate the rule and haven't moved onto a shape yet. None are
@@ -25,7 +28,7 @@ export function offenders(css, file) {
   const text = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "));
   text.split("\n").forEach((line, i) => {
     for (const m of line.matchAll(CLASS)) {
-      if (file === HOME || SHARED.has(m[1]) || ALLOWED.has(m[1])) continue;
+      if (home(file) || SHARED.has(m[1]) || ALLOWED.has(m[1])) continue;
       out.push({ file, line: i + 1, name: m[1] });
     }
   });

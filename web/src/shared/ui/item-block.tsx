@@ -76,7 +76,7 @@ function SourceIcon({ source }: { source: ItemSource }) {
   );
 }
 
-function Avatar({ role, name, badge, ring, dim, title }: { role: "reviewer" | "assignee"; name: string; badge?: "ok" | "danger" | "info"; ring?: boolean; dim?: boolean; title: string }) {
+function ReviewerFace({ role, name, badge, ring, dim, title }: { role: "reviewer" | "assignee"; name: string; badge?: "ok" | "danger" | "info"; ring?: boolean; dim?: boolean; title: string }) {
   return (
     <span class="item-avatar" data-item-avatar={role} data-name={name} data-ring={ring ? "asked" : undefined} data-dim={dim ? "" : undefined} title={title}>
       {name.charAt(0).toUpperCase()}
@@ -123,7 +123,7 @@ function Fact({ fact }: { fact: ItemFact }) {
       return (
         <span class="item-fact item-avatars" data-item-fact="reviewers">
           {fact.people.map((p) => (
-            <Avatar
+            <ReviewerFace
               role="reviewer"
               key={p.name}
               name={p.name}
@@ -161,7 +161,7 @@ function Fact({ fact }: { fact: ItemFact }) {
       return (
         <span class="item-fact item-avatars" data-item-fact="assignees">
           {fact.people.map((p) => (
-            <Avatar key={p} role="assignee" name={p} title={`Assigned to ${p}`} />
+            <ReviewerFace key={p} role="assignee" name={p} title={`Assigned to ${p}`} />
           ))}
         </span>
       );

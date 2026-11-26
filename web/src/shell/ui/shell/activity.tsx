@@ -584,7 +584,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
                       : `Nothing ${where} yet.`}
             </div>
           ) : (
-            shown.map((it) => <Row key={it.id} client={client} it={it} session={p.everywhere ? session : null} onClick={() => reveal(it)} />)
+            shown.map((it) => <ActivityLine key={it.id} client={client} it={it} session={p.everywhere ? session : null} onClick={() => reveal(it)} />)
           )}
           {feed.status === "error" && shown.length > 0 && (
             <div class="ws-activity-note error" data-activity-error>
@@ -599,7 +599,7 @@ export function ActivityDrawer({ client, session }: { client: Client; session: S
 
 /** `session`: the one selected, when the list is every session's: a row
  * from another says which it's from. */
-function Row({ client, it, session, onClick }: { client: Client; it: Item; session: SessionId | null; onClick: () => void }) {
+function ActivityLine({ client, it, session, onClick }: { client: Client; it: Item; session: SessionId | null; onClick: () => void }) {
   const here = it.pane !== null && !!client.info(it.pane);
   const from = session === null || it.pane === null ? null : client.sessionOfPane(it.pane);
   const elsewhere = from !== null && from !== session ? (client.state?.sessions.find((s) => s.id === from)?.name ?? `$${from}`) : null;

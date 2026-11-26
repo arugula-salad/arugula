@@ -17,7 +17,7 @@ import type { Fleet, FleetPane } from "../fleet";
 import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../../shared/proto";
 import { AskCard, type Answered } from "../../shared/ask";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
-import { Avatar } from "../ui/people";
+import { PresenceAvatar } from "../ui/people";
 import { escapeTaken, MenuLayer, openMenu } from "../../shared/ui/menu";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { inShown } from "../project-view";
@@ -859,7 +859,7 @@ function Watching({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   return (
     <span class="ask-watching" title={`${unique.map((p) => p.name).join(", ")} ${unique.length > 1 ? "have" : "has"} this open`}>
       {unique.map((p) => (
-        <Avatar key={p.who} p={p} />
+        <PresenceAvatar key={p.who} p={p} />
       ))}
     </span>
   );
