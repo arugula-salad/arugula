@@ -1,6 +1,6 @@
 ---
 section: Fixed
-title: An agent block no longer stays working after background tasks
+title: Agent blocks no longer stay working after background tasks
 line: A Claude Code agent block whose turn ended after it ran shell commands in the background now goes idle and takes the next prompt, instead of showing working for good.
 headline: no
 ---
