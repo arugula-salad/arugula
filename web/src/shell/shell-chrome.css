@@ -166,16 +166,6 @@
   box-shadow: inset 0 0 0 1px var(--chrome-selected-line);
 }
 
-.ws-foot {
-  gap: 16px;
-  font-size: var(--text-xs);
-  border-top-color: var(--line-strong);
-}
-
-.ws-foot-hints {
-  gap: 10px !important;
-}
-
 @media (max-width: 1400px) {
   .ws-crumb-tab {
     display: none;
@@ -193,7 +183,7 @@
 
 /* Align the workspace's reading order: identity on the left, actions on
    the right. Surface boundaries are independent of text contrast. */
-.ws-head, .ws-sidebar, .ws-foot {
+.ws-head, .ws-sidebar {
   background: var(--surface);
 }
 .ws-session-main {
@@ -225,9 +215,7 @@
 .pt-fill { flex: none; width: 4px; }
 .pt-note { position: absolute; right: 10px; top: 100%; z-index: 10; background: var(--surface); }
 .ws-activity { background: var(--chrome-panel); }
-.ws-foot kbd { border-color: var(--line-strong); }
 @media (max-width: 1100px) {
-  .ws-foot-hints { gap: 6px !important; }
   .pane-toolbar .pt-presets > .bar-btn { padding-inline: var(--space-1); }
 }
 

@@ -6,7 +6,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
 import type { Preset, TabView } from "../../../shared/proto";
-import { keyHint } from "../keys";
+import { keyHint } from "../../../shared/keys";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { arrange, arrangeRefusal, goToPane, layoutRefusal, PRESETS, toggleFocus } from "../panes/layout";
 import { AddPaneDrawer, addPane, useAddPane } from "./add-pane";

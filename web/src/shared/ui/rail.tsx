@@ -6,6 +6,8 @@
 // page's state: each builds its items and says which is lit.
 
 import type { ComponentChildren } from "preact";
+import { useRef } from "preact/hooks";
+import { both, useBindings } from "../keys";
 
 export type RailItem = {
   label: string;
@@ -28,7 +30,33 @@ export type RailItem = {
   target?: string;
 };
 
+/** Each place's `g` key (v6's), by its hook's name. */
+const GO: Record<string, string> = { overview: "o", boards: "b", docs: "d", machines: "m", chat: "c", inbox: "i" };
+
+/** `g o`, `g b`…: the rail's places by key, as a click on each (the
+ * items as last drawn). */
+function useGoKeys(items: RailItem[]) {
+  const latest = useRef(items);
+  latest.current = items;
+  const places = items.map((i) => i.hook.replace(/^data-open-/, "")).filter((p) => GO[p]);
+  useBindings(
+    places.map((place) => ({
+      id: `go.${place}`,
+      label: items.find((i) => i.hook === `data-open-${place}`)!.label,
+      group: "go" as const,
+      keys: both(`key:g key:${GO[place]}`),
+      run: () => {
+        const item = latest.current.find((i) => i.hook === `data-open-${place}`);
+        if (item?.onClick) item.onClick(new MouseEvent("click"));
+        else if (item?.href) location.assign(item.href);
+      },
+    })),
+    [places.join()],
+  );
+}
+
 export function Rail({ brand, items, bottom, foot, label = "Places" }: { brand: ComponentChildren; items: RailItem[]; bottom: RailItem[]; foot?: ComponentChildren; label?: string }) {
+  useGoKeys([...items, ...bottom]);
   return (
     <nav class="ws-rail" aria-label={label}>
       {brand}

@@ -10001,7 +10001,6 @@ button.thread-quote:hover {
   --rail-w: 56px;
   --head-h: 44px;
   --tabs-h: 34px;
-  --foot-h: 26px;
   flex-direction: row;
   background: var(--surface);
 }
@@ -10828,63 +10827,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   }
 }
 
-/* The footer. */
-.ws-foot {
-  flex: none;
-  height: var(--foot-h);
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 12px;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  color: var(--dim);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.ws-foot > span,
-.ws-foot > button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.ws-foot-host {
-  color: var(--fg);
-}
-
-.ws-foot-repo {
-  font-family: var(--f-mono);
-}
-
-.ws-foot-needs {
-  height: 20px;
-  padding: 0 8px;
-  border-radius: var(--chip-radius);
-  color: var(--warn);
-}
-
-.ws-foot-needs:hover {
-  background: var(--raised);
-}
-
-.ws-foot-fill {
-  flex: 1;
-}
-
-.ws-foot-hints {
-  gap: 14px !important;
-}
-
-.ws-hint kbd {
-  padding: 0 var(--space-1);
-  border: 1px solid var(--line);
-  border-radius: var(--tag-radius);
-  font: var(--text-xs) var(--f-ui);
-  color: var(--subtle);
-}
 
 /* ---- M111 (#1026): the bell, the attention drawer and the session
    overview. */
@@ -11202,8 +11144,6 @@ html[data-workspace="new"] #status {
    get any smaller. */
 @media (max-width: 1100px) {
   .ws-crumb-tab,
-  .ws-foot > .ws-foot-hints,
-  .ws-foot > .ws-foot-repo,
   .ws-search-button.commands-button kbd {
     display: none;
   }
@@ -11626,7 +11566,7 @@ html[data-workspace="new"] .thread-panel {
 
 /* While the link is down, what the page heard last: nothing claims to be
    working, running or connected (the header's chip says reconnecting). */
-.app.ws.stale :is(.ws-session, .ws-group, .pane-header, .ws-foot-needs) .ws-dot {
+.app.ws.stale :is(.ws-session, .ws-group, .pane-header) .ws-dot {
   background: var(--muted);
 }
 

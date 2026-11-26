@@ -20,7 +20,7 @@ import { getFleet } from "../hosts";
 import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { TabPeople } from "../people";
-import { ariaKeys, keyHint } from "../keys";
+import { ariaKeys, keyHint } from "../../../shared/keys";
 import { newTabRefusal } from "./live";
 import { SidebarToggle } from "./context-header";
 import { RenameInput, type Renaming } from "./rename-input";

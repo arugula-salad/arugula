@@ -49,6 +49,7 @@ import { followPlatformLinks } from "./platform-here";
 import { accountBackend, setSeenBackend } from "../shared/seen";
 import { arriveHere } from "../platform/chat-nav";
 import { PlatformPage } from "../platform/page";
+import { KeysSheetLayer } from "../shared/kit/frame/keys-sheet";
 
 // This device's palette and finish, before anything draws: on
 // app.arugula.io, the one picked on control's page too (the cookie,
@@ -122,6 +123,8 @@ render(
     <AppearanceLayer />
     {/* Send feedback…, from the account menus and the palette (#1217, #1240). */}
     <FeedbackLayer />
+    {/* `?`: every key the page has. */}
+    <KeysSheetLayer />
   </PlatformApiContext.Provider>,
   document.getElementById("root")!,
 );

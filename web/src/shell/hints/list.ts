@@ -4,7 +4,7 @@
 // copy, its action and its place.
 
 import type { Hint } from "./index";
-import { keyHint } from "../ui/keys";
+import { keyHint } from "../../shared/keys";
 import { sharedAgents } from "./agents-notify";
 import { pathOffered } from "./attach";
 import { cdTyped } from "./cd";

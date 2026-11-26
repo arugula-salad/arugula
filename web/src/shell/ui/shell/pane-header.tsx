@@ -5,7 +5,7 @@ import type { PaneId, PaneInfo, Rect, TabView } from "../../../shared/proto";
 import type { Cell } from "../cells";
 import { paneItems } from "../commands";
 import { startDrag } from "../drag";
-import { keyHint } from "../keys";
+import { keyHint } from "../../../shared/keys";
 import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
 import { len } from "../panes/geometry";

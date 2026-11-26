@@ -30,7 +30,7 @@ import { directory } from "../hosts";
 import { openRules } from "./rules";
 import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
-import { keyHint } from "./keys";
+import { keyHint } from "../../shared/keys";
 import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { pinItems } from "../pins";

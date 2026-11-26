@@ -50,7 +50,10 @@ import { PhoneOfferLayer } from "./phone-offer";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
-import { StatusFooter, StatusPill } from "./shell/status-footer";
+import { StatusPill } from "./shell/status-pill";
+import { Footer } from "../../shared/kit/frame/footer";
+import { ActivityToggle } from "./shell/activity";
+import { agentRunning } from "../../shared/needs-you";
 import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar, showSession } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
@@ -229,7 +232,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
             {/* M111: between the header and the footer, over the panes. */}
             <AttentionDrawer client={client} />
           </div>
-          {state && <StatusFooter client={client} />}
+          {state && <WorkFooter client={client} />}
         </div>
         {layers}
         <StatusPill client={client} errorsOnly />
@@ -490,4 +493,16 @@ function PlaceGuard({ client, at, inWorkspace, children }: { client: Client; at:
       {children}
     </PageGuard>
   );
+}
+
+/** The places' names, for the footer. */
+const PLACE_NAME: Record<Place, string> = { panes: "Machines", swarm: "Swarm", agents: "Agents", docs: "Docs", settings: "Settings" };
+
+/** The frame's footer: the place, its keys, the agents running on this
+ * machine (not while the link is down: they may not be, M113; a stopped
+ * agent isn't, UI audit #154) and the session's Activity. */
+function WorkFooter({ client }: { client: Client }) {
+  const running = client.connected ? (client.state?.panes ?? []).filter(agentRunning).length : 0;
+  const activity = client.session !== null && client.state?.sessions.length ? <ActivityToggle client={client} /> : null;
+  return <Footer place={PLACE_NAME[currentPlace()]} running={running} extra={activity} />;
 }

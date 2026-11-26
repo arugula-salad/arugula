@@ -358,6 +358,21 @@ Every new colour, face, size or shape names a role token in
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.
 - `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.
+- Some suites run only on main, not on a pull request. Run them yourself
+  before a pull request that touches what they cover is ready:
+  - web paths, page titles and `#` fragments: `cd web && npm run paths`;
+  - in the cloud repo (arugula-salad/cloud), a control route:
+    `cargo test -p arugula-control-base --lib -- routes::` (a `routes.toml`
+    edit also regenerates this repo's `contract/api/routes.json`); control's
+    tables: `cargo test -p arugula-control-base --lib db::tables`, then
+    `just control-tables`;
+  - CLI help (no `#N` in clap doc comments):
+    `cargo test -p arugulad-base --lib help`;
+  - MCP tool text: `cargo test -p arugulad --bin arugulad whole_tests`
+    (`ARUGULA_BLESS=1` re-blesses `mcp-tool-list.json`); MCP instructions:
+    `cargo test -p arugulad-mcp`;
+  - e2e: a pull request runs shards 1–2 and the merge queue all 12, so grep
+    all of `web/e2e` for any rail item, label or key you change.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
   parallel builds don't share one `target/`, and put it under `~/.cache`
   (`~/.cache/arugula-<worktree>-target`, `<worktree>` the worktree's folder
