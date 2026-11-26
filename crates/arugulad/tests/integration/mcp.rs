@@ -4372,16 +4372,37 @@ async fn start_agent_starts_a_chief_of_staff_that_leads_the_staff_room() {
         "{prompt}"
     );
     assert!(config.get("recipe").is_none(), "no Claude Code subagent worn: {config}");
+    // Arugula #1490: with no mode given, it starts as a board's lead does:
+    // mode auto, the lead's tools and the person's own settings.
+    let lead_allow: Vec<Value> = arugulad_base::approvals::LEAD_ALLOW.iter().map(|t| json!({ "tool": t })).collect();
+    assert_eq!(
+        (&config["permission_mode"], &config["allow"], &config["user_settings"]),
+        (&json!("auto"), &json!(lead_allow), &json!(true)),
+        "{config}"
+    );
 
     // Control refuses the lead: it starts all the same, and says why.
     control.refuse.store(true, Relaxed);
     // A title of its own is only its title: its session is the project's.
-    let r = call(&s, "start_agent", chief(json!({ "prompt": "", "title": "My staff" }))).await;
+    // A mode the caller names wins; tools it names are allowed beside the lead's.
+    let mine = json!({ "prompt": "", "title": "My staff", "permission_mode": "acceptEdits", "allow": ["WebSearch"] });
+    let r = call(&s, "start_agent", chief(mine)).await;
     let c = &r["chief_of_staff"];
     assert_eq!((&c["session"], &c["lead"]), (&json!(session), &json!(false)), "{r}");
     assert_eq!(c["closed"], json!([block]), "one session per project: {r}");
     assert!(c["said"].as_str().unwrap().contains("threads.read"), "{r}");
     assert_eq!(control.leads.lock().unwrap().len(), 1);
+    let again = r["block"].as_u64().unwrap().to_string();
+    d.wait_for("its config saved", || !layout()["panes"][&again]["config"].is_null());
+    let config = &layout()["panes"][&again]["config"];
+    let allow = config["allow"].as_array().unwrap();
+    assert_eq!(
+        (&config["permission_mode"], &config["user_settings"]),
+        (&json!("acceptEdits"), &json!(true)),
+        "{config}"
+    );
+    assert_eq!(allow[0], json!({ "tool": "WebSearch" }), "{config}");
+    assert!(lead_allow.iter().all(|t| allow.contains(t)), "{config}");
     s.cancel().await.unwrap();
 }
 
