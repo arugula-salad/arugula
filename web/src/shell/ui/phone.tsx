@@ -83,7 +83,7 @@ export function PhoneHeader({ client }: { client: Client }) {
           <PaneCardChip client={client} pane={active} room={Math.floor((window.innerWidth - 24) / 6.5)} />
         </div>
       )}
-      {open && <Sheet client={client} close={() => setOpen(false)} />}
+      {open && <PhoneSheet client={client} close={() => setOpen(false)} />}
     </>
   );
 }
@@ -94,7 +94,7 @@ const TABS = [
   ["more", "More"],
 ] as const;
 
-function Sheet({ client, close }: { client: Client; close: () => void }) {
+function PhoneSheet({ client, close }: { client: Client; close: () => void }) {
   const state = client.state!;
   // The sheet is mounted fresh each time it opens, so it always lands on Here.
   const [tab, setTab] = useState<(typeof TABS)[number][0]>("here");

@@ -1,0 +1,594 @@
+/* The kit (design lift §4.1): the fourteen parts every screen is built
+   from, one block each, in the order of /design and docs/design/language.md.
+   Painted only from the role tokens (./tokens.css); every class is `k-…`,
+   so nothing here touches a screen that doesn't use the kit. A state is
+   never colour alone: a mark, a word or an edge goes with it. */
+
+/* ---- shared: mono roles, the focus ring */
+
+.m-code {
+  font-family: var(--font-mono);
+}
+.m-id {
+  font-family: var(--font-id);
+}
+.m-meta {
+  font-family: var(--font-meta);
+}
+:where([class^="k-"], [class*=" k-"]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---- 1. Surface: a section holds cards; a card is the tactile thing; paper
+   is a Doc's page; an overlay floats over the page. */
+
+.k-surface {
+  min-width: 0;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.k-surface.is-section {
+  padding: var(--gap);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--sheen), var(--section);
+  box-shadow: var(--highlight), var(--shadow-card);
+}
+.k-surface.is-card {
+  padding: 10px var(--gap);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--highlight), var(--shadow-card);
+}
+.k-surface.is-paper {
+  padding: 32px 48px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--highlight), var(--shadow-card);
+}
+.k-surface.is-overlay {
+  padding: var(--gap);
+  border-color: var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card-raised);
+  box-shadow: var(--highlight), var(--shadow-raised);
+}
+.k-surface[aria-current="true"] {
+  border-color: var(--focus);
+  box-shadow: var(--highlight), var(--shadow-card), 0 0 0 1px var(--focus);
+}
+
+/* ---- 2. Row and 3. NeedRow: one flat line (mark · kind · title · who ·
+   meta · age), and the A2P row that expands in place. A need has a thin
+   amber tick at its left, never a fill; expanded, a hairline amber edge. */
+
+.k-row {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+}
+.k-row-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--row);
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.k-row:hover {
+  background: var(--hover);
+}
+.k-row.is-selected {
+  background: var(--card-raised);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+.k-row.is-need::before {
+  position: absolute;
+  top: 7px;
+  left: -1px;
+  width: 2px;
+  height: calc(var(--row) - 14px);
+  border-radius: 1px;
+  background: var(--needs);
+  content: "";
+}
+.k-row.is-need[data-open] {
+  border-color: color-mix(in srgb, var(--needs) 55%, transparent);
+  background: none;
+}
+.k-row.is-done .k-row-title {
+  color: var(--ink-dim);
+}
+.k-row-kind {
+  flex: none;
+  width: 72px;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-row-meta {
+  flex: none;
+  max-width: 30%;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-needs {
+  color: var(--needs);
+}
+.k-row-body {
+  display: grid;
+  gap: 8px;
+  padding: 2px 12px 12px 31px;
+  line-height: 1.5;
+}
+.k-row-body p {
+  margin: 0;
+}
+.k-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+/* A third of a wide screen, or a phone: two lines, the mark and the title,
+   then the kind, who and the age under the title. */
+@container k-need (max-width: 480px) {
+  .k-row-line {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-block: 6px;
+  }
+  .k-row-title {
+    flex-basis: calc(100% - 21px);
+  }
+  .k-row-kind {
+    order: 1;
+    width: auto;
+    margin-left: 21px;
+  }
+  .k-row-meta {
+    order: 2;
+  }
+}
+.k-need-list {
+  display: grid;
+  gap: 2px;
+  container: k-need / inline-size;
+}
+
+/* ---- 4. Well: inset, flat, mono, its label set into the frame; brighter
+   on focus. Terminals, agent panes and a to-do's how. */
+
+.k-well {
+  position: relative;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  color: var(--well-ink);
+  font: var(--text-meta) / 1.6 var(--font-mono);
+}
+.k-well:focus-within {
+  border-color: var(--line-strong);
+}
+.k-well-label {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--well);
+  color: var(--well-dim);
+  font-size: var(--text-label);
+}
+.k-well pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+/* ---- 5. StateMark: the mark and its word. */
+
+.k-state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.k-mark {
+  width: 11px;
+  font-family: var(--font-mono);
+  font-style: normal;
+  text-align: center;
+}
+.k-state-word {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+[data-state="working"] > .k-mark {
+  color: var(--accent);
+  animation: k-breathe 2.4s ease-in-out infinite;
+}
+[data-state="asks"] > .k-mark,
+[data-state="waits"] > .k-mark {
+  color: var(--needs);
+}
+[data-state="stuck"] > .k-mark,
+[data-state="failing"] > .k-mark {
+  color: var(--fail);
+}
+[data-state="done"] > .k-mark {
+  color: var(--done);
+}
+[data-state="idle"] > .k-mark {
+  color: var(--ink-faint);
+}
+@keyframes k-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-state="working"] > .k-mark {
+    animation: none;
+  }
+}
+
+/* ---- 6. Crumb: a path you can climb; the first segment is the project. */
+
+.k-crumb {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.k-crumb-step {
+  padding: 3px 7px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-crumb-step:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.k-crumb-step[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.k-crumb-sep {
+  color: var(--ink-faint);
+}
+
+/* ---- 7. Kbd: a small raised key. */
+
+.k-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--card-raised);
+  box-shadow: 0 1px 0 var(--line-strong);
+  color: var(--ink);
+  font: 500 var(--text-label) / 1 var(--font-mono);
+}
+
+/* ---- 8. Avatar: a person's initials disc, an agent's mark. */
+
+.k-avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--card-raised);
+  color: var(--ink);
+  /* off-scale: initials sized to the disc */
+  font: 600 10px / 1 var(--font-sans);
+}
+.k-avatar.is-agent {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--well);
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+/* ---- 9. Panel: the agent panel on the right; 11. Tabs. */
+
+.k-panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.k-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.k-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 14px;
+}
+.k-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.k-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  height: 38px;
+  margin-bottom: -1px;
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-tab:hover,
+.k-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+.k-tab[aria-selected="true"] {
+  border-bottom-color: var(--ink);
+  font-weight: 600;
+}
+.k-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-tab-x {
+  color: var(--ink-faint);
+}
+.k-tab-x:hover {
+  color: var(--ink);
+}
+
+/* ---- 10. Composer: a field that glows on focus, a round send. */
+
+.k-composer {
+  display: block;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--card);
+}
+.k-composer:focus-within {
+  border-color: transparent;
+  background: linear-gradient(var(--card), var(--card)) padding-box, var(--glow), var(--focus) border-box;
+}
+.k-composer textarea {
+  width: 100%;
+  min-height: 0;
+  padding: 2px 0 8px;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: none;
+  color: var(--ink);
+  font: var(--text-body) / 1.45 var(--font-sans);
+  resize: none;
+}
+.k-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-composer-send {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---- 12. Sheet: the one overlay, over a backdrop. */
+
+.k-sheet-back {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  background: var(--backdrop);
+}
+.k-sheet {
+  width: min(640px, calc(100vw - 24px));
+  max-height: calc(100vh - 120px);
+  margin: 84px auto 0;
+  overflow: auto;
+}
+.k-sheet-title {
+  margin: 0 0 10px;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+/* ---- 13. Button: primary, plain, danger; with an optional Kbd. */
+
+.k-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--text-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-button:hover {
+  border-color: var(--focus);
+}
+.k-button.is-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.k-button.is-danger {
+  color: var(--fail);
+}
+.k-button.is-primary .k-kbd {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+}
+.k-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- 14. Field: text, toggle, choice. */
+
+.k-field {
+  display: grid;
+  gap: 4px;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-field-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+.k-field-box:focus-within {
+  border-color: var(--focus);
+}
+.k-field-box input {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  outline: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--text-body) var(--font-sans);
+}
+.k-field-box input::placeholder {
+  color: var(--ink-dim);
+}
+.k-field-hint {
+  color: var(--ink-faint);
+  font-size: var(--text-label);
+}
+.k-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.k-toggle-track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--well);
+}
+.k-toggle-track::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  content: "";
+}
+[aria-checked="true"] > .k-toggle-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+[aria-checked="true"] > .k-toggle-track::after {
+  left: 14px;
+  background: var(--on-accent);
+}
+.k-choice {
+  display: inline-flex;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.k-choice-option {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+}
+.k-choice [aria-checked="true"] {
+  background: var(--card-raised);
+  color: var(--ink);
+}

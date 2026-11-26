@@ -11,7 +11,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter } from "../ui/adapter";
 import { AgentMessage } from "../../shared/agent-message";
-import { Composer, EarlierNote, KeptImage, STATUS, filesOf, forgetKept, money, type AgentState, type Entry } from "./agent";
+import { AgentComposer, EarlierNote, KeptImage, STATUS, filesOf, forgetKept, money, type AgentState, type Entry } from "./agent";
 import { BlockLoading, EmptyState } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Bar } from "../../shared/ui/bar";
@@ -146,7 +146,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
       {s.adapter && stopped && (
         <AdapterHelp client={client} a={s.adapter} said then="Resume once it's done." install={() => void installAdapter(client, s.adapter!.kind, { split: id })} />
       )}
-      <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} placeholder={`Message ${s.label}…`} />
+      <AgentComposer client={client} id={id} s={s} attached={attached} setAttached={setAttached} placeholder={`Message ${s.label}…`} />
     </div>
   );
 }

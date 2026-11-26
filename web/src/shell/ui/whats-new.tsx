@@ -99,10 +99,10 @@ export function WhatsNewLayer({ client }: { client: Client }) {
       changed();
     });
   }, [ready, has, client]);
-  return open ? <Panel {...open} /> : null;
+  return open ? <WhatsNewPanel {...open} /> : null;
 }
 
-function Panel({ client, releases, newer }: { client: Client; releases: WhatsNewRelease[]; newer?: Newer }) {
+function WhatsNewPanel({ client, releases, newer }: { client: Client; releases: WhatsNewRelease[]; newer?: Newer }) {
   return (
     <section class="whats-new" aria-label="What's new" data-whats-new>
       <header class="whats-new-head">

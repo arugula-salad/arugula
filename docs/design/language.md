@@ -1,334 +1,157 @@
-# Design language
+# Design language: the kit
 
-**See it:** [`/design`](https://app.arugula.io/design) in the platform app is
-the living reference. It draws every piece below with the real components, in
-Slate and Latte, one section for each of the sections here. Check new UI
-against it (the command palette has it as *Go to Design reference*); its code
-is `web/src/platform/pages/design.tsx`.
+**See it:** [`/design`](https://app.arugula.io/design) in the platform app
+draws every part below with the real component, one section each, in the
+same order as the headings here. Its Look button (`s`) repaints the page in
+either theme and along the three sliders, so you can check a part
+everywhere it will be drawn. The code is `web/src/shared/kit/`, one file per
+part, and one block per part in `kit.css`.
 
-Status: decided (#660, from the #685 inventory and its nine picks, Aaron,
-2026-11-05). Read this before you build or restyle a page, a pane, a dialog
-or a list. Every piece here is built: use it, and don't invent a third look.
+Status: the design lift's kit (plan §4.1, Lift 2, #1478), drawn to the v6
+prototype. Screens move onto it lift by lift; until a screen's lift has
+merged, work on it keeps today's pieces ([today.md](today.md)). AGENTS.md
+("Building UI") says which screens have moved.
 
-The rule behind all of it: **use the shared piece; if it doesn't fit, change
-the piece, not your page.** The code is `web/src/shared/` (`ui/` for the
-components, `buttons.css`, `style.css`). Prototypes in a Doc start from the
-kit (`shared/ui/runner.html`, `--ar-*` tokens and `ar-*` classes), which
-should paint what the app paints.
+**The rule behind all of it: build from the kit; if a part doesn't fit,
+change the part, not your screen.** A fifteenth part needs a design-session
+sign-off in its PR, and deletes one.
 
-## Type
+**The material:** the canvas; tactile containers (a section, then cards on
+it); flat content (rows, words); the well only for terminals, agent panes and
+something to copy.
 
-*(Built: #687. The sizes are the `--text-*` tokens in `shared/style.css`, and
-`scripts/check-type.mjs` fails a stylesheet that sets a size off them.)* Seven
-sizes, each with its line-height, and nothing between them:
+**Never colour alone.** A state is a mark and a word; a need is the ◆, the
+word "asks you" and a thin edge; picked is a ring or a bar as well as a fill.
+**Every action has a key**, shown as a `Kbd`. **The focus ring** (2px of
+`--focus`) shows for the keyboard on every part.
 
-| size | job | face | line |
-|---|---|---|---|
-| 11 | caps label (600, 0.08em), chips, tags, ids, times, kbd | UI; mono for ids | 16 |
-| 12 | meta, secondary lines, buttons | UI | 16 |
-| 13 | body: row titles (600), messages, form text | UI | 18; prose 1.45 |
-| 15 | a title: dialogs, side sheets, empty states, a room on the phone; body on touch | UI | 20 |
-| 19 | a section h2; stat numbers (mono) | display 700, as written, 0.02em | 1.05 |
-| 32 | a page h1 (`PageHeader`) | display 800, caps, 0.01em | 0.95 |
-| 38 | the Doc's own title | display 800, sentence case | 1.02 |
+## Tokens
 
-- **Tokens:** `--text-xs` … `--text-2xl`, `--text-doc`, and `--t-body` (13, 15 on
-  touch) and `--t-field` (13, 16 on touch). A size that isn't a token is a bug.
-- **Faces:** the UI face is Instrument Sans everywhere (its own change, after
-  the sizes). Mono is `--f-mono`, never a literal `ui-monospace` stack. The
-  display face is for 19 and up; a caps label at 11 is the UI face, not
-  display or mono.
-- **Fields are 16 on a phone**, or iOS zooms.
-- **Off the scale, on purpose:** glyphs and avatar initials sized to their
-  box, the terminal, the Doc's paper and body, the start code.
-- A name someone wrote (a board, an issue, a Doc) keeps its case:
-  `PageHeader named`.
+`shared/kit/tokens.css`, painted by `shared/kit/look.ts` from the theme and
+the sliders (light↔dark, cool↔warm, flat↔deep). New CSS names a role, never
+a value or one of today's names (`--bg`, `--fg`, `--surface` … are aliases
+until each screen's lift drops them).
 
-Don't invent a half size (10.5, 13.5, 14), an `em` size, or a letter-spacing
-other than 0, 0.01em and 0.08em.
-
-## Colour
-
-Colours are the palette's tokens (`--bg`, `--surface`, `--raised`, `--fg`,
-`--subtle`, `--dim`, `--line`, `--line-strong`, `--accent`, `--ok`, `--warn`,
-`--danger`, `--info`, `--merged`), never a hex or an `rgb()` in a rule.
-Latte is drawn as `legible()` paints it (`shared/appearance.ts`), so test
-contrast against that, not the palette as written.
-
-- **Roles (the design lift, #1477):** those names are now aliases of the role
-  tokens in `shared/kit/tokens.css` (`--canvas`, `--section`, `--card`,
-  `--ink`, `--ink-dim`, `--needs`, `--fail`, `--done` …), which
-  `shared/kit/look.ts` paints from the theme and the Look sliders. New CSS
-  names a role; each screen's phase moves its rules onto the roles.
-
-- **Accent means live:** the thing you're in, on or choosing now. The "on"
-  tint, the selected row, a count that's for you, the primary button, a
-  fresh fill. Links are `--info`, not accent.
-- **Accent can also be a tone**, for a row that is live without being picked:
-  the Docs list's "open in a block" and Boards' Review lane keep their accent
-  bar. A selected row tells itself apart by more than the bar: the tint and
-  the edge (Rows).
-- **Status colours mean a state:** ok, warn, danger, merged, info. They go
-  on a status chip, a tone bar or a dot, and a state is always said in
-  words as well, never by colour alone.
-- **Depth is three surfaces:** `--bg` for a page, `--surface` for a sidebar or
-  a side sheet, `--raised` for a menu, a dialog, hover. Selection is a tint,
-  not a surface.
-- **One backdrop**, `--backdrop` (#733's value, 40% black), under every
-  dialog, picker, menu sheet and side sheet. Getting started keeps its heavier look as a modifier.
-- **The Doc wears the house pair** (Slate in dark, Latte in light, whatever
-  theme and sliders are picked), so a shared Doc reads the same for everyone. Its paper
-  is `--bg`, its reading ink a stronger text colour, and its named hues map
-  to palette colours (`houseColours` in `appearance.ts`; the share page gets the same from the build). The swarm's `--void`, `--ink`, `--mute` and state colours are palette tokens too.
-
-Don't add a palette (Look's sliders vary the theme), a `var(--x)33` hex suffix (it's invalid CSS and draws
-nothing; use `color-mix`), or a `var(--x, #fallback)`.
-
-## Buttons
-
-`shared/buttons.css`. Three heights, whatever the area:
-
-| size | height | class | where |
-|---|---|---|---|
-| bar | 24 | `.bar-btn`, `.bar-btn.sq` for an icon (24×24) | a pane's or block's bar, a card's ⋯, a toolbar |
-| page | 32 | `.primary`, `.secondary` | a page, a dialog, a form |
-| touch | 40 | the same, on `(pointer: coarse)` | a phone; segments are 40 |
-
-- **One `.primary` per place.** It is the one thing to do. Everything else is
-  `.secondary`; a quiet action inside text is `.link`. `.small` is a compact
-  page button for rows and cards, not a fourth height.
-- **⋯ is one size:** the bar icon. An overflow menu holds what doesn't fit; copy
-  link and share come last before it.
-- **Danger** is `.danger` beside a variant, and anything that takes
-  something away asks first (`ConfirmRemove`).
-- **Add buttons are plain.** `+ Add row` is a `.secondary.small` with a + icon.
-  Dashed means "not there yet" or "drop it here", never "click me".
-
-### The "on" state
-
-One look, everywhere: the accent at 18% as the fill (`--on-fill`) with accent
-text, 26% under the pointer. It's set by `aria-pressed`, `aria-selected` or
-`aria-expanded` (or `.on`), not by a class of your own. Use it on a bg or
-surface, never on raised: Latte's text fails there.
-
-Don't invent another "on" (an inverted fill, a solid accent, an accent
-border, bold).
-
-### The segmented control
-
-`.seg`: a `.secondary`-edged track, rounded segments with a 2px inset, and
-the "on" tint as the thumb. Use it for a choice of one (Open/Closed, the
-phone's tabs, Slate/Latte). `role="group"` with `aria-pressed` for a filter,
-`role="tablist"` with `aria-selected` for tabs. Sizes: `.small` (24), default
-(32), `.touch` (40). A row of actions (the pane presets) is a group of bar
-buttons, not a segmented control, because nothing in it is ever on.
-
-## Fields
-
-*(Built: #1097–#1101. `shared/fields.css`, `shared/switch.css`,
-`shared/ui/search-field.tsx`, `shared/ui/schedule.tsx`; `/design#fields`
-shows each in its states.)*
-
-**The quiet hairline: a field is outlined, a button is filled,** so the shape
-says "type here" or "press here". A field is a 1px `--line-strong` line on the
-page's `--bg`; under the pointer the line darkens; on focus it goes accent
-with a 3px accent halo. Invalid is a `--danger` line (`aria-invalid="true"`)
-with the error as a red line by the field; disabled is the same field at half
-strength. A placeholder is `--dim`.
-
-- **Every `<input>`, `<select>` and `<textarea>` gets it** at no specificity,
-  so a bare one is right. `.field` is the same look as a class, for a place
-  whose own rule would win. Don't restyle a field in an area's CSS.
-- **Sizes:** 32 on a page, 24 in a bar (inside a bar, or `.small`), 40 on
-  touch (32 in a bar there). Text is `--t-field`: 13, and **16 on a phone**,
-  or iOS zooms.
-- **A select** draws the kit's caret, the same on every system. **A
-  textarea** grows by hand, at the prose line-height. **A time** reads in
-  the mono.
-- **Search** is `SearchField`: the glass, the box and, for a page's main
-  search, the `/` key (shown in the box until you type). Esc clears it, and
-  on an empty box leaves it.
-
-### Choices
-
-Five controls, one rule for which:
-
-| control | use it when | is |
-|---|---|---|
-| switch | it takes effect now, with no button | `.sw-switch` (`role="switch"`); `.partial` for some of it, `aria-busy` while it's being turned |
-| box | you pick, then a button commits it | a checkbox; indeterminate (set in code) is "some of a list" |
-| dot | one of a few, each needing words | a radio |
-| segments | one of two to four, short | `.seg` (Buttons) |
-| weekday chips | any of the days of the week | `Weekdays` |
-
-Boxes and dots are drawn by the kit: off is the field's hairline, on is the
-accent with a tick or a dot; 16 (20 on touch). A switch is 32×18, its knob on
-the accent when on.
-
-### Days and times
-
-`shared/ui/schedule.tsx`. Any of the seven days is `Weekdays`: a row of
-toggle buttons (M T W T F S S, each `aria-pressed`, the "on" tint), 40 on
-touch. They're buttons, not chips. A from-to time is `TimeRange`: two time
-fields in one outlined field, so neither end reads as off, saying "into the next
-morning" when it ends before it starts. Settings' quiet hours use both.
-
-## Headers
-
-Two, and nothing else.
-
-- **The bar** is a pane's, a block's or a column's: 34px, 13/500 title, 24px
-  ghost buttons, 1px rule under it. `PaneHeader`
-  (`shell/ui/shell/pane-header.tsx`). A block's own bar sits under it at the
-  same 34 and the same buttons. Chat's room header is a bar. *(Built: #686.
-  `Bar`, with `BarTitle` and `BarWhere`, is `shared/ui/bar.tsx`, and
-  `PaneHeader` draws through it.)*
-- **The page header** is a place you go to: `PageHeader`
-  (`shared/ui/page-header.tsx`). A back link, a 32px display title, a state
-  chip, up to two labelled actions, a sub line and stats, then a 1px rule.
-  Past two labelled actions the rest go into ⋯, and copy link · share · ⋯ are
-  always last, in that order. A group inside a page is a section head
-  (`SectionHead`, the 19px h2), not a second page header.
-- State is a chip; a sentence ("on this machine") is the `sub`.
-- **A Doc's own head** (its 38px title) is the document, not the app, and
-  stays as it is.
-
-Don't build a header out of a `div`, a 22px title, or a bar that wraps to a
-second row.
-
-## Rows and the selected state
-
-Two shapes, with one selected state.
-
-- **Flat row** (`.list-row`, `shared/ui/list-page.css`): a Docs or Agents row,
-  a session, a chat room, an attention item. 13px title at 600, 11px tags.
-  In a sidebar it is inset and rounded (sessions, chat rooms, the attention
-  drawer), dense (26px) for chat rooms, and 44px at ≤600px or on a coarse
-  pointer. Those sizes are in each area's own CSS, on the one selected state;
-  they aren't classes yet.
-- **Card row** (`.sw-card`): a platform or Boards card, 13px. It opens a page
-  or a sheet.
-- A settings row is a list of things to open: the whole row is the button,
-  with hover, and it is never selected.
-
-**Selected** is the same on every shape: the `--selected` tint (accent at
-14%, mixed over `transparent` so it works on any surface), a 3px accent bar
-and a 1px accent edge, both drawn inset (`--selected-mark`, or `--selected-edge`
-for a flat row, whose bar is its `::before`) so a row never moves. The title
-stays in the text colour. The edge is what tells a selected row from an
-accent-toned one, which has the bar and no tint. `legible()` checks every text
-colour on the tint, so a palette can't make a selected row unreadable.
-A selected row keeps its tint under hover. **Hover** is raised at 45%.
-**Focus** is a 2px accent outline, drawn for the keyboard only. **Unread** is
-a 700 title and an accent count. Selection owns the bar: a selected row
-shows the accent bar whatever its tone, and the tone comes back when you move
-off. No glow, no solid accent fill, no different colour per area.
-
-## Chips
-
-`shared/ui/state-chip.tsx`. Five shapes, so a thing's shape says what it is:
-
-| shape | use | is |
-|---|---|---|
-| status | a state: open, merged, failed, waits | `StateChip` / `Chip`, 11px with a 6px dot, a tone |
-| tag | a label: `VM`, `shared`, `on the platform` | `Chip kind="tag"`, a raised box, no edge, 4px corners |
-| count | a number | `Count`: neutral; accent when it's for you, warn for a mention |
-| object | an issue, a PR, a person, an attachment | `ObjectChip`: mono id, title, a fact in its tone; dashed for proof |
-| hint | a key hint | `HintChip` |
-
-Round means a state or a count; square-cornered means a label. Touch: 28px
-for status and tag, with a 44px target on anything you can press.
-
-Don't add a `*-chip`, `*-tag` or `*-badge` rule outside the shared chip file.
-
-## Dialogs, side sheets and the backdrop
-
-*(Built: #690. `Modal`, `ConfirmRemove`, `SideSheet`
-(`shared/ui/side-sheet.tsx`) and `--backdrop`; Boards' row drawer, Add a pane
-and Needs you are the side sheet, and the last hand-rolled dialogs and pickers
-use `Modal`.)*
-
-- **The dialog** is `Modal` / `.prompt` (`shared/ui/modal.tsx`): a 15/600
-  title, a body, a right-aligned button row, Cancel first and the action last.
-  Removing something is `ConfirmRemove` (`shared/ui/confirm.tsx`), including
-  on a phone, at touch size. Don't build a dialog or an inline "Delete? Yes /
-  No".
-- **The side sheet** is one component with a head (a 15/600 title, an optional
-  12px subtitle, ×, a rule), a scrolling body and an optional foot. Surface
-  fill, a left rule, `--shadow-lg`, 440px wide, one z-index above panes and
-  below dialogs. At ≤600px it is a bottom sheet (max 80vh, `--panel-radius` on
-  top). Boards' row drawer, Add a pane and Needs you are all it.
-- **The backdrop** is under every sheet at every width. Escape, or a click on
-  the backdrop, closes it. So on a desktop a click on another card closes
-  the sheet first.
-- The phone's drop-down sheet hangs from the 44px phone bar, on the same
-  backdrop.
-
-## Menus
-
-One menu: `openMenu` (`shared/ui/menu.tsx`). Chat's ⋯, Boards' facets and the
-pane menu all use it.
-
-- An icon column of 16px stroke icons, only in a menu where every row has one
-  (`icon` on an item). Any row with an icon or a mark gives every row the
-  column. ✓ (`multi`) is "several, and the menu stays open"; ● (`checked`,
-  `current`) is "one of".
-- A work-item picker stays a combobox (it takes pasted ids) and draws its list
-  as the menu.
-- A menu of 13 choosable rows or more starts with a filter row
-  (`.menu-filter`): typing narrows the rows by label, ↑ ↓ and Enter work over
-  what is left (Enter takes the first), Escape clears the text and the next
-  one closes. It has the focus on open on a desktop, and not on a touch sheet,
-  so the keyboard stays down. A menu under 13 rows has none.
-- A menu hangs under its button, left edges together, and right edges together
-  when that would run it off the window, rather than pushed against its edge.
-- At ≤600px it is a bottom sheet on `--backdrop` (z 90, over a side sheet at
-  85 and under a dialog at 95), with 44px rows at 15px; a tap on the backdrop
-  closes the menu alone. A coarse pointer wider than that keeps the dropdown at
-  touch size.
-- A menu inherits the page's one UI face; it has no face rule of its own.
-
-## Empty and error states
-
-One `EmptyState` (`shared/ui/block-states.tsx`): a title, a why, and at most
-one `.primary`. Loading is `BlockLoading`, which says nothing for the first
-300ms so a quick load doesn't flash it.
-
-- **The title is a statement with a full stop** ("No rows yet."), 15/600. The
-  why says what the thing is and where it comes from, in one or two
-  sentences, at 13 (15 on touch). The button is the page's own verb and noun.
-- **A page** gets a dashed card (`--line-strong`, `--card-radius`); **a pane**
-  gets the same card, centred. No picture.
-- **No button** when the action is already on screen (chat's composer, the
-  phone's quick buttons) or the reader can't take it; the why says who can.
-- **No match is a dim line** (`EmptyLine`), not a card, with Clear when the
-  page has none beside it. So is "None yet." in a settings section.
-- **An error** (`BlockError`) is the same card with a solid danger edge and a
-  15/600 title starting "Can't…", and Try again as a `.secondary`. On a page it stands in
-  for the content only when the whole list couldn't be read; a form error
-  stays a red line by its field.
-- **Phone, Here, nothing waiting:** one short dim line under the Needs you
-  heading, "Nothing right now." Needs you is a 15/600 title there and in the
-  swarm's rail, not display caps.
-
-## Touch
-
-At `(pointer: coarse)` or ≤600px, one rule for every piece:
-
-| piece | size |
+| group | roles |
 |---|---|
-| button, segment | 40 |
-| row, menu row | 44, text 15 |
-| status chip, tag | 28, with a 44 target if pressable |
-| body text | 15; fields 16 |
-| phone bar | 44 |
+| surfaces | `--canvas` `--rail` `--section` `--card` `--card-raised` `--paper` `--well` |
+| ink | `--ink` `--ink-dim` `--ink-faint` `--well-ink` `--well-dim` `--on-accent` `--on-needs` |
+| lines | `--line` `--line-strong` `--hover` `--focus` |
+| signal | `--accent` (brand, working, primary, send) `--needs` (asks or waits on you) `--needs-tint` `--fail` `--fail-tint` `--review` `--done` `--backdrop` |
+| depth | `--shadow-card` `--shadow-raised` `--highlight` `--sheen` `--glow` |
+| type | `--font-sans` `--font-title` `--font-mono` `--font-id` `--font-meta`; `--text-label` `--text-meta` `--text-body` `--text-title` `--text-hero` `--text-doc` |
+| shape | `--radius` `--radius-control` `--gap` `--row` `--rail-w` `--panel-w` |
 
-Selected, "on" and pressed look the same as on a desktop. The phone gets a
-size, not a look.
+- **Where mono goes is a token, not a class change.** Put `.m-code`, `.m-id`
+  or `.m-meta` on the element; `--font-id` and `--font-meta` decide whether
+  ids and meta are mono.
+- **Amber is a highlight, never a fill**: the mark, the kind word, "asks
+  you", a 2px edge. Red likewise.
+- `look.ts`'s `fix()` keeps every word at AA (4.5:1) whatever the sliders.
 
-## Spacing
+## Surface
 
-Use the scale: `--space-1` … `--space-6` (4, 8, 12, 16, 20, 24). Corners come
-from the radius tokens (`--btn-radius`, `--tag-radius`, `--card-radius`,
-`--panel-radius`), never a raw `6px`. A page header ends in a 1px `--line`
-rule; a page's sections are separated by a section head, not a box.
+`Surface` (`surface.tsx`): `section`, `card`, `paper` or `overlay`. A section
+holds cards; a card is the thing you act on; paper is a Doc's page; an
+overlay floats (a `Sheet` is one). `current` rings the open one. Nothing else
+draws a box: no `-card` class outside the kit.
+
+## Row
+
+`Row` (`row.tsx`): one flat line, mark · kind · title · who and meta · age,
+on a section or a card, never a card of its own. `plain`, `need` (the amber
+tick), `selected` (a fill and a bar; `aria-current`) or `done` (dim). The
+whole line is one button; a row that expands says so (`aria-expanded`) and
+holds its body under the line.
+
+## NeedRow
+
+`NeedRow` (`need-row.tsx`): the A2P row, one for the Overview, the Inbox, a
+board, a card and Machines. It takes the wire's item (`kind`, `from`, `for`,
+`subject`, `lines`, `answer`, `escalated`, a to-do's `how`) and answers in
+place:
+
+- **ask:** the question and its options. **permission:** the command in a
+  well, Allow / Deny. **trust:** the folder, Trust / Not now. **approval:**
+  Start / Not now. **to-do:** why, the how in a well with Copy, a note marked
+  "no secrets", Done / Can't.
+- The keys are `y` and `x` (`D` for Done), shown on the buttons; the
+  screen's key table binds them.
+- It says who: "asks you", "waits on you", or "asks Jake" (neutral: no amber,
+  no answer buttons).
+- Answered, it stays as a dim receipt: "✓ Truncate middle by you now · note".
+- **It works at a third of the screen and on a phone (360–480px).** Put rows
+  in a `NeedList`: under 480px each is two lines, the mark and the title,
+  then the kind, who and age.
+
+## Well
+
+`Well` (`well.tsx`): inset, flat, mono, its label set into the frame; the
+frame brightens while focus is inside. Only for a terminal, an agent pane, or
+something to copy.
+
+## StateMark
+
+`StateMark` (`state-mark.tsx`): ◉ working (breathes) · ◆ asks · ◇ waits ·
+▲ stuck · ✕ failing · ✓ done · ○ idle, always with its word. `Mark` is the
+mark alone, for a row that says the state in words elsewhere.
+
+## Crumb
+
+`Crumb` (`crumb.tsx`): where you are, as a path you can climb. The first step
+is the project; the last is here and isn't a link. An id step is in the id
+face.
+
+## Kbd
+
+`Kbd` (`kbd.tsx`): a key as a small raised chip; `"g o"` is two. A button
+whose action has a key shows it inside (`Button keys`).
+
+## Avatar
+
+`Avatar` (`avatar.tsx`): a person is their initials on a disc; an agent is
+the ✻ mark on a well. Its name is its label.
+
+## Panel
+
+`Panel` (`panel.tsx`): the agent panel on the right: its tabs, a head (who,
+where, what it's doing), the transcript or a well, and the composer.
+
+## Composer
+
+`Composer` (`composer.tsx`): where you write to an agent or a room. It glows
+while you're in it; ↵ sends, ⇧↵ is a new line; the line under it says who it
+goes to.
+
+## Tabs
+
+`Tabs` (`tabs.tsx`): an icon, a title, a count and a close. ← → Home End
+move between them; Delete closes the focused one. Panes beside each other
+come with the board (Lift 5b).
+
+## Sheet
+
+`Sheet` (`sheet.tsx`): the one overlay, over `--backdrop`: Go to…, the keys,
+Look, a menu, a confirm. Focus goes in and stays in; Esc or a click on the
+backdrop closes it, and focus goes back.
+
+## Button
+
+`Button` (`button.tsx`): `primary` (one to a place), `plain` or `danger`.
+`keys` shows the key that does the same and sets `aria-keyshortcuts`.
+
+## Field
+
+`TextField`, `Toggle` and `Choice` (`field.tsx`). A text box carries its label
+and may end in a hint ("no secrets"); a toggle takes effect now
+(`role="switch"`); a choice is one of two to four, as segments the arrow
+keys move through (`role="radiogroup"`).
+
+## Guards
+
+- `check-cards`, `check-chips` and `check-fields` let the kit draw a card, a
+  chip or a field.
+- `check-type` and `check-colour` hold the kit to the size and colour roles
+  like everything else.
+- `kit.spec.ts` checks every part on `/design`: it renders, shows the ring,
+  never says a state in colour alone, and works by keyboard.

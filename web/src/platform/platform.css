@@ -1513,7 +1513,7 @@ span.untri-title {
   flex-direction: column;
 }
 
-/* A caps label (docs/design/language.md), as the prototype's headings. */
+/* A caps label (docs/design/today.md), as the prototype's headings. */
 .switcher-head {
   display: flex;
   align-items: baseline;
@@ -1755,4 +1755,81 @@ span.untri-title {
 html[data-scheme="dark"] .platform input::placeholder,
 html[data-scheme="dark"] .platform textarea::placeholder {
   color: var(--dim);
+}
+
+/* The design reference (pages/design.tsx): only its layout. Every part on
+   the page is the kit's (shared/kit/kit.css); nothing here restyles one. */
+
+.design-page > * {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+.design-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap);
+  margin-top: 16px;
+}
+.design-head h1 {
+  margin: 0 auto 0 0;
+  font: 700 var(--text-hero) / 1.1 var(--font-sans);
+}
+.design-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-block: 16px;
+  font-size: var(--text-meta);
+}
+.design-section {
+  margin-block: 32px;
+  scroll-margin-top: 16px;
+}
+.design-section h2 {
+  margin: 0;
+  font-size: var(--text-title);
+}
+.design-use {
+  margin-block: 4px 12px;
+  color: var(--ink-dim);
+  font-size: var(--text-body);
+}
+.design-row,
+.design-look {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+}
+.design-look {
+  flex-direction: column;
+  align-items: stretch;
+}
+.design-slider {
+  display: grid;
+  gap: 2px;
+}
+.design-third {
+  max-width: 420px;
+}
+.design-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.design-swatch {
+  display: flex;
+  align-items: flex-end;
+  height: 56px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.design-swatch code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: var(--text-label);
 }

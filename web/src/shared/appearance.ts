@@ -275,7 +275,7 @@ export function houseColours(scheme: Scheme): Record<string, string> {
     "line-quiet": mix(u.bg, mix(u.surface, u.muted, 0.55), 0.5),
     rule: mix(u.surface, u.muted, 0.55),
     // A Doc's links are info; accent means live (a fresh fill), as
-    // everywhere (language.md).
+    // everywhere (docs/design/today.md).
     link: u.info,
     live: u.accent,
     // What a drawing sits on in either scheme: the light house's paper.
