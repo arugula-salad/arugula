@@ -46,7 +46,13 @@ final class FlowTests: XCTestCase {
         }
     }
 
-    /// A tab, from the tab bar (always there, Arugula #1262).
+    /// A menu's item, by its identifier, or by its label where iOS (27)
+    /// leaves a menu item's identifier off.
+    private func menuItem(_ app: XCUIApplication, _ id: String, _ label: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier == %@ OR label == %@", id, label)).firstMatch
+    }
+
+        /// A tab, from the tab bar (always there, Arugula #1262).
     private func go(_ app: XCUIApplication, _ name: String) {
         clearAlerts()
         let t = tab(app, name)
@@ -250,7 +256,7 @@ final class FlowTests: XCTestCase {
         tab(app, "Overview").tap()
         XCTAssertTrue(switcher.shows(within: 10), "not back on the Overview from Docs")
         switcher.tap()
-        let issuesItem = app.buttons["project-issues"]
+        let issuesItem = menuItem(app, "project-issues", "Issues")
         XCTAssertTrue(issuesItem.shows(within: 10), "no Issues in the project's menu")
         issuesItem.tap()
         XCTAssertTrue(app.buttons["issues-done"].shows(within: 15), "the project's issues didn't open")
@@ -301,7 +307,7 @@ final class FlowTests: XCTestCase {
             XCTAssertFalse(row.exists, "the approved deploy is still under Needs you")
 
             switcher.tap()
-            let runs = app.buttons["project-runs"]
+            let runs = menuItem(app, "project-runs", "Runs")
             XCTAssertTrue(runs.shows(within: 10), "no Runs in the project's menu")
             runs.tap()
             let grant = app.staticTexts["runs-grant"]
@@ -573,6 +579,34 @@ final class FlowTests: XCTestCase {
                 try "asked".write(to: handoff.appendingPathComponent("run-board"), atomically: true, encoding: .utf8)
                 if app.buttons["zoom-path-overview"].exists { app.buttons["zoom-path-overview"].tap() }
             }
+            // A stand-in agent's to-do in the team's project, where its
+            // person's staff room is (Arugula #1470): it opens in its row under
+            // Needs you, its how is copied, and it's marked Done with a note.
+            // The script checks the agent woke with the note.
+            if let todo = env["ARUGULA_TODO"], !todo.isEmpty {
+                go(app, "Overview")
+                let row = app.buttons["need-todo:\(todo)"]
+                XCTAssertTrue(row.shows(within: 60), "no to-do under Needs you: \(app.debugDescription)")
+                clearAlerts()
+                row.tap()
+                let copy = app.buttons["todo-copy"]
+                if !copy.shows(within: 10) { shot(app, "fail-todo-open") }
+                XCTAssertTrue(copy.exists, "the to-do didn't open with its how: \(app.debugDescription)")
+                copy.tap()
+                let note = app.descendants(matching: .any)["todo-note"].firstMatch
+                focus(app, note)
+                note.typeText(env["ARUGULA_TODO_NOTE"] ?? "done from the phone")
+                shot(app, "5-todo")
+                let done = app.buttons["todo-Done"]
+                // The keyboard can cover it: put it away first.
+                if !done.isHittable { app.keyboards.buttons["Return"].firstMatch.tap() }
+                done.tap()
+                let doneBy = Date().addingTimeInterval(30)
+                while row.exists && Date() < doneBy { sleep(1) }
+                if row.exists { shot(app, "fail-todo") }
+                XCTAssertFalse(row.exists, "the to-do's row didn't clear: \(app.debugDescription)")
+                shot(app, "5-todo-done")
+            }
             pick(app, "Default")
             go(app, "Overview")
         }
@@ -768,32 +802,6 @@ final class FlowTests: XCTestCase {
                 XCTAssertFalse(yes.exists, "the board's ask didn't fold away: \(app.debugDescription)")
             }
             shot(app, "3-answered")
-        }
-
-        // A stand-in agent's to-do (Arugula #1470): it opens in its row under
-        // Needs you, its how is copied, and it's marked Done with a note. The
-        // script checks the agent woke with the note.
-        if let todo = env["ARUGULA_TODO"], !todo.isEmpty {
-            let row = app.buttons["need-todo:\(todo)"]
-            XCTAssertTrue(row.shows(within: 60), "no to-do under Needs you: \(app.debugDescription)")
-            clearAlerts()
-            row.tap()
-            let copy = app.buttons["todo-copy"]
-            XCTAssertTrue(copy.shows(within: 10), "the to-do didn't open with its how")
-            copy.tap()
-            let note = app.descendants(matching: .any)["todo-note"].firstMatch
-            focus(app, note)
-            note.typeText(env["ARUGULA_TODO_NOTE"] ?? "done from the phone")
-            shot(app, "3-todo")
-            let done = app.buttons["todo-Done"]
-            // The keyboard can cover it: put it away first.
-            if !done.isHittable { app.keyboards.buttons["Return"].firstMatch.tap() }
-            done.tap()
-            let doneBy = Date().addingTimeInterval(30)
-            while row.exists && Date() < doneBy { sleep(1) }
-            if row.exists { shot(app, "fail-todo") }
-            XCTAssertFalse(row.exists, "the to-do's row didn't clear: \(app.debugDescription)")
-            shot(app, "3-todo-done")
         }
 
         // New (Arugula #1257): tell the board, which opens its thread; then

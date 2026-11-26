@@ -16,8 +16,8 @@
 # ARUGULA_GRANT_BOARD, a board with a grant the person gave, whose Revoke the
 # test presses, and ARUGULA_RUN_BOARD, one with no lead and no grant, whose
 # Run this board it presses (Arugula #1456). ARUGULA_TODO is a stand-in
-# agent's to-do (its prp_ id, Arugula #1470), marked Done under Needs you with
-# ARUGULA_TODO_NOTE. Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
+# agent's to-do in ARUGULA_TEAM (its prp_ id, Arugula #1470), marked Done under
+# Needs you there with ARUGULA_TODO_NOTE. Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
 # host's: its port is reversed onto the device.
 #
 # It uses the device adb already has (ANDROID_SERIAL), else boots the AVD

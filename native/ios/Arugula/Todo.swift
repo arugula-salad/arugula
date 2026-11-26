@@ -82,6 +82,7 @@ struct TodoAnswer: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("todo-how")
             HStack {
                 Spacer()
                 Button(copied ? "Copied" : "Copy") {
@@ -101,7 +102,6 @@ struct TodoAnswer: View {
         .padding(10)
         .background(Palette.surface, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.raised, lineWidth: 1))
-        .accessibilityIdentifier("todo-how")
     }
 
     private func send(_ choice: String) {

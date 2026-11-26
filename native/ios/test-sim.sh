@@ -26,8 +26,9 @@
 # opens it from Needs you and writes the address Approve opens to
 # HANDOFF/approve; something else approves it with the account's passkey and
 # writes HANDOFF/approved.
-# ARUGULA_TODO is a stand-in agent's to-do (its prp_ id, Arugula #1470): the
-# test opens it under Needs you and marks it Done with ARUGULA_TODO_NOTE.
+# ARUGULA_TODO is a stand-in agent's to-do in ARUGULA_STAFF_PROJECT (its prp_
+# id, Arugula #1470): the test opens it under Needs you there and marks it
+# Done with ARUGULA_TODO_NOTE.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -37,9 +38,11 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/arugula-native-core-ta
 rm -rf "$handoff"; mkdir -p "$handoff"
 ./build.sh sim >/dev/null
 pick=$(xcrun simctl list -j runtimes available | ARUGULA_SIM_FAMILY="${ARUGULA_SIM_FAMILY:-iPhone}" python3 -c '
-import json, os, sys
+import json, os, re, sys
 family = os.environ["ARUGULA_SIM_FAMILY"]
-ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS"]
+# A general runtime, not one made for a single new device (iOS-27-2-iPhone19-4),
+# whose screen the test is not made for.
+ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS" and re.fullmatch(r".*\.iOS-\d+-\d+", r["identifier"])]
 kinds = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == family]
 if not kinds:
     sys.exit(f"no {family} simulator in the newest iOS runtime")

@@ -34,8 +34,8 @@ import org.junit.runner.RunWith
  * and `ask` (a board in the personal project, and its row's question to the
  * person signing in). `team` names a team's project with `grant_board`, a
  * board with a grant the person gave, and `run_board`, one with no lead and
- * no grant (Arugula #1456). `todo` is a stand-in agent's to-do (its prp_ id,
- * Arugula #1470), marked Done under Needs you with `todo_note`. Something else allows the sign-in: the app writes its
+ * no grant (Arugula #1456). `todo` is a stand-in agent's to-do in `team`
+ * (its prp_ id, Arugula #1470), marked Done under Needs you with `todo_note`. Something else allows the sign-in: the app writes its
  * ticket to `files/handoff/ticket`, and the test waits for the address the
  * Allow was sent to in `files/handoff/callback` and types it in. Screenshots
  * go to `files/handoff` as PNGs.
@@ -90,7 +90,6 @@ class AppFlowTest {
             if (rail) check(rule.onAllNodes(hasTestTag("heading-inbox")).fetchSemanticsNodes().isEmpty()) { "the bell is in the heading beside the rail" }
             inbox(bell)
             args.getString("board")?.takeIf { it.isNotEmpty() }?.let { board -> home(board, args.getString("ask")) }
-            args.getString("todo")?.takeIf { it.isNotEmpty() }?.let { todo -> todo(todo, args.getString("todo_note") ?: "done from the phone") }
             shot("2-home")
             args.getString("team")?.takeIf { it.isNotEmpty() }?.let { team -> runAndRevoke(team, args.getString("grant_board"), args.getString("run_board")) }
 
@@ -251,6 +250,8 @@ class AppFlowTest {
             tap("back")
             wait("home-list")
         }
+        // A stand-in's to-do, in this project's staff room (Arugula #1470).
+        args.getString("todo")?.takeIf { it.isNotEmpty() }?.let { todo -> todo(todo, args.getString("todo_note") ?: "done from the phone") }
         start?.let { name ->
             tap("project-switcher")
             until("$name in the switcher", 10_000) { rule.onAllNodes(hasText(name)).fetchSemanticsNodes().isNotEmpty() }
