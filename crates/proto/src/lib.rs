@@ -1073,6 +1073,12 @@ impl BlockType {
     pub fn prompted(self) -> bool {
         matches!(self, BlockType::Agent | BlockType::Chat)
     }
+
+    /// A block whose card only the owner answers, by any route: an agent's
+    /// invites (#234), or a Doc's share (#1067). No agent answers it.
+    pub fn owner_answers(self) -> bool {
+        matches!(self, BlockType::Invite | BlockType::Doc)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

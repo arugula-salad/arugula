@@ -199,6 +199,11 @@ pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
 /// sessions across machines. The list replaces the machine's last one; the
 /// machine is the one that signed the request, never a field of the body.
 pub const AGENT_MACHINE_SESSIONS: &str = "/api/daemon/machine-sessions";
+/// `PUT` [`PaneAsksReport`]: a machine tells control which of its panes wait
+/// on someone (Arugula #1431), so their asks join their person's Inbox. The
+/// list replaces the machine's last one; the machine is the one that signed
+/// the request, never a field of the body.
+pub const AGENT_PANE_ASKS: &str = "/api/daemon/asks";
 /// `PUT` [`SessionCardSet`]: a person puts one of the project's sessions
 /// on a card, or takes it back to the one its branch gives (Arugula
 /// #1019). `{kind}` and `{id}` are the session's in the project's sessions
@@ -1556,6 +1561,57 @@ pub struct MachineSessionPane {
     /// The card this pane works on, when it isn't its session's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_item: Option<String>,
+}
+
+/// [`AGENT_PANE_ASKS`]'s body: every pane on the machine that signs it that
+/// waits on someone now, the whole list each time (Arugula #1431). Kinds,
+/// times and pane numbers only (aru-116): never what is asked, which the
+/// apps read from the machine. `deny_unknown_fields`, at every level, as
+/// [`MachineSessionsReport`] is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct PaneAsksReport {
+    pub asks: Vec<PaneAsk>,
+}
+
+/// One pane's open ask in a [`PaneAsksReport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct PaneAsk {
+    pub pane: u32,
+    pub kind: PaneAskKind,
+    /// When it began waiting, in milliseconds since the epoch.
+    pub since: u64,
+    /// Only a person may answer it (a gate, an invite, a Doc's share): no
+    /// agent that started the pane answers it first.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub for_person: bool,
+    /// The agent block on the same machine that started this pane, while
+    /// it's there: it answers first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u32>,
+}
+
+/// What a pane waits for ([`PaneAsk::kind`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PaneAskKind {
+    /// It asks a question, or waits on a prompt some other way.
+    Question,
+    /// To approve something: a tool's use, an edit.
+    Permission,
+    /// An agent's command or program failed.
+    Failure,
+    /// A release or an op waits at a gate (M34).
+    Gate,
+    /// An agent finished its turn: nothing asked, never counted.
+    Finished,
 }
 
 /// [`PROJECT_SESSION_CARD`]'s body (Arugula #1019).
