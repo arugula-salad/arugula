@@ -242,6 +242,8 @@ test.describe("on a computer", () => {
     await expect(sw.locator(`[data-command="project/${P}"]`)).toContainText("3 for you");
     await expect(sw.locator('[data-command="project/prj_aaaa0003"]')).not.toContainText("for you");
     await expect(sw.locator('[data-command="project/new"]')).toHaveText(/New project/);
+    // Every project's list, which a phone has no rail mark for.
+    await expect(sw.locator('[data-command="project/all"]')).toContainText("All projects");
     // Only projects: no places or boards.
     await expect(sw.locator('[data-command^="place/"], [data-command^="board/"]')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("match-desktop-open.png") });

@@ -21,6 +21,7 @@ import { current, go, pathOf, type Route } from "./router";
 import { session } from "./session";
 import { signOut } from "./signin";
 import { barProject } from "./where";
+import { recentPlaces } from "../shared/kit/frame/stack";
 
 /** Each project's boards and Docs as last read, and when. */
 const lists = new Map<string, { at: number; boards: { id: string; title: string }[]; docs: { id: string; title: string }[] }>();
@@ -81,6 +82,11 @@ function items(scope: "all" | "projects"): GoItem[] {
   ];
   if (scope === "projects") return [...out, ...commands];
 
+  // Where you were lately, across projects (the back stack), newest first.
+  const recent: GoItem[] = recentPlaces()
+    .slice(0, 9)
+    .map((r) => ({ key: `recent/${r.path}`, kind: "recent", project: session.project(r.project ?? undefined)?.name, title: leftAt(r.path), recent: true, run: () => go(r.path) }));
+
   // The project you're in: its places.
   if (here) {
     const place = (key: string, title: string, to: string) => out.push({ key: `place/${here.id}/${key}`, kind: "place", project: here.name, title, run: () => go(to) });
@@ -100,6 +106,7 @@ function items(scope: "all" | "projects"): GoItem[] {
       for (const b of l.boards) out.push({ key: `board/${b.id}`, kind: "board", project: p.name, title: b.title, run: () => go(pathOf({ page: "board", project: p.id, board: b.id }, names)) });
       for (const d of l.docs) out.push({ key: `doc/${d.id}`, kind: "doc", project: p.name, title: d.title, run: () => go(pathOf({ page: "doc", project: p.id, doc: d.id }, names)) });
     }
+  out.unshift(...recent);
   out.push(
     ...commands,
     { key: "account/feedback", kind: "command", title: "Send feedback…", command: true, run: openPlatformFeedback },
