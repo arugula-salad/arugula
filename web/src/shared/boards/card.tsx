@@ -12,7 +12,7 @@
 
 import { createContext } from "preact";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { RelationKind, BoardLane, BoardAttachment, BoardRow, BoardRowSession, BoardView, ForgeText } from "../proto";
+import type { RelationKind, BoardAttachment, BoardRow, BoardRowSession, BoardView, ForgeText } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
@@ -28,7 +28,7 @@ import { nudge, type Reorder, type stepPlace } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import { rowSessions, type RowSession } from "./row-sessions";
 import type { SessionsByCard } from "../project-sessions";
-import { MOVE_LANES, closedWithLine, laneSetLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
+import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
 
 export type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
@@ -311,7 +311,7 @@ function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFin
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; its live session; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-export function Drawer({ steps, r, platform, close, project, others, write, act, id, moveLane, nameOf, who = "steer", place = "sheet" }: { /** `sheet` (the default): a side sheet over the page. `column`: the board's right column, with ‹ Board controls to go back (Arugula #1129). */ place?: "sheet" | "column"; /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
+export function Drawer({ steps, r, platform, close, project, others, write, act, id, who = "steer", place = "sheet" }: { /** `sheet` (the default): a side sheet over the page. `column`: the board's right column, with ‹ Board controls to go back (Arugula #1129). */ place?: "sheet" | "column"; /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
   const [read, setRead] = useState<Read | null>(null);
   const phone = usePhone();
   const href = pointerHref(r, platform);
@@ -345,37 +345,11 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   const body = (
     <>
       {Ask && shown?.kind === "block" && <Ask key={shown.key} machine={shown.machine} pane={shown.pane} />}
+      {/* The lane follows the work, so it's said here and set nowhere (Arugula #1383). */}
       <div class="board-line board-drawer-lane">
-        {write ? (
-          <label class="dim">
-            Lane{" "}
-            <select
-              data-board-drawer-lane
-              value={r.lane}
-              onChange={(e) => {
-                const lane = e.currentTarget.value as BoardLane;
-                // The row's lane is what the board says: a move that waits on a confirm, or is refused, leaves it.
-                e.currentTarget.value = r.lane;
-                moveLane(r.id, lane);
-              }}
-            >
-              {MOVE_LANES.map((l) => (
-                <option key={l.lane} value={l.lane}>
-                  {l.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <span class="dim" data-board-drawer-lane-name>
-            {MOVE_LANES.find((l) => l.lane === r.lane)?.title}
-          </span>
-        )}
-        {laneSetLine(r, nameOf) && (
-          <Chip kind="tag" data-board-lane-set>
-            {laneSetLine(r, nameOf)}
-          </Chip>
-        )}
+        <span class="dim" data-board-drawer-lane-name title="A row's lane follows its work: its issue, its PRs and its sessions.">
+          {LANES.find((l) => l.lane === r.lane)?.title}
+        </span>
       </div>
       {steps?.place && phone && (
         <div class="board-line board-drawer-steps" data-board-drawer-steps>

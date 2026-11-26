@@ -11,7 +11,7 @@ decisions: ["aru-116", "aru-122", "aru-123", "aru-124", "aru-125"]
 # Boards
 
 ## What a person can do
-A project's board is an ordered list of rows, each one piece of work, shown in four lanes (Next, Doing, Review, Done) worked out from the state of that work. People and agents put rows in named groups, attach work and proof to them, link Docs and ask questions on them. A person can also move a row to another lane by hand.
+A project's board is an ordered list of rows, each one piece of work, shown in four lanes (Next, Doing, Review, Done) worked out from the state of that work. People and agents put rows in named groups, attach work and proof to them, link Docs and ask questions on them. Nobody sets a row's lane by hand.
 
 Boards are behind the `boards` Labs flag, resolved by `flag_on`: the account's own setting, else on if any of its teams turned it on. With it off, every board route answers 404.
 
@@ -24,9 +24,7 @@ Short paths below are under `crates/platform/src`.
 
 **A lane is worked out on read**, by `boards/lanes.rs` (`lane`). In order: Done when the primary issue is completed or canceled, or the primary PR merged or closed. Review when a PR is open, the issue is open and an attached PR merged, or a started Plane state's name says review. Doing when the issue is started, an attached agent block isn't closed, or a run is running. Otherwise Next. A row with no issue or PR is a note and stays in Next. A lane uses facts whoever may read them, so a reader who can't see a private PR still sees the row move, and its chip says nothing (`forge/lanes_tests.rs`).
 
-**A person's move** is `PUT /api/boards/{id}/rows/{row}/lane` (`set_lane`), for owners and editors. No agent has this route.
-- Next, Doing and Review store a `LaneSet` that shows until the row's derived lane changes.
-- Moving to Done closes a native issue, and moving out of Done reopens it. A GitHub or Plane item must be closed or reopened there (422).
+**Nobody moves a row to a lane** (Arugula #1383, which took back #494's move by hand). The page has no drag, menu item or select for it. `PUT /api/boards/{id}/rows/{row}/lane` is deprecated in the contract: it is refused (422), and `Row::lane_set` is never sent. A row still moves between groups, by dragging it onto one or from its menu, and is reordered within its step.
 
 **What attaches:**
 - `work` is a PR, an agent block or a run; `proof` is a run or a link (`AttachRole::takes`). Done rows are proven by CI, by evidence or not at all (`lanes::proof`).

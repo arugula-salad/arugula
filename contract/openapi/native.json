@@ -12530,7 +12530,7 @@
         ]
       },
       "LaneSet": {
-        "description": "A lane a person set on a row ([`Row::lane_set`]).",
+        "description": "A lane a person set on a row ([`Row::lane_set`]). Deprecated with\n[`BOARD_ROW_LANE`]: nothing sets one, and no board sends one.",
         "properties": {
           "at": {
             "format": "uint64",
@@ -14172,7 +14172,7 @@
                 "type": "null"
               }
             ],
-            "description": "Set when a person moved the row and the work hasn't changed its\nderived lane since (#494): `lane` is then the row's lane."
+            "description": "Never sent: a row's lane follows its work, and nobody sets it\n(Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from\n0.70.128 doesn't read it."
           },
           "live": {
             "anyOf": [
@@ -16133,7 +16133,7 @@
       },
       "SetLane": {
         "additionalProperties": false,
-        "description": "[`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:\n`completed` (when not given), `not_planned` or `duplicate`.",
+        "description": "[`BOARD_ROW_LANE`]'s body, which is refused. Deprecated with it.",
         "properties": {
           "lane": {
             "$ref": "#/components/schemas/Lane"
