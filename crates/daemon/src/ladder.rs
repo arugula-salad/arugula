@@ -601,9 +601,7 @@ mod tests {
         }
         // A repo's own folders aren't looked in.
         std::fs::create_dir_all(home.join("src/site/inner/.git")).unwrap();
-        let found: Vec<String> =
-            repos_under(&home).iter().map(|p| p.strip_prefix(&home).unwrap().display().to_string()).collect();
-        assert_eq!(found, ["src/site", "dev/acme/widgets"]);
+        assert_eq!(repos_under(&home), [home.join("src").join("site"), home.join("dev").join("acme").join("widgets")]);
         let _ = std::fs::remove_dir_all(&home);
     }
 
