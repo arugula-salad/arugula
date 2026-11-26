@@ -906,14 +906,14 @@ fn a_picture_that_isnt_one_is_refused_with_a_line_saying_what_to_fix() {
     // Over the cap as data; the cap itself is fine.
     refuse(asset_data(doc, "a.png", &png(&"x".repeat(2 * 1024 * 1024))), "the cap is 2097152");
     m.call("doc", asset_data(doc, "ok.png", &png(&"x".repeat(2 * 1024 * 1024 - 8)))).unwrap();
-    // At most 20 pictures.
-    for i in 1..20 {
+    // At most 60 pictures.
+    for i in 1..60 {
         m.call("doc", asset_data(doc, &format!("p{i}.png"), &png(&i.to_string()))).unwrap();
     }
-    refuse(asset_data(doc, "p20.png", &png("x")), "at most 20 assets");
+    refuse(asset_data(doc, "p60.png", &png("x")), "at most 60 assets");
     m.call("doc", asset_data(doc, "p1.png", &png("replaced"))).unwrap();
-    assert_eq!(asset_names(&d.state(doc)).len(), 20);
-    assert!(!library_dir(&d, doc).join("assets/p20.png").exists());
+    assert_eq!(asset_names(&d.state(doc)).len(), 60);
+    assert!(!library_dir(&d, doc).join("assets/p60.png").exists());
     // Only a Doc takes one.
     let file = d.sessions.join("notes.txt");
     std::fs::write(&file, "x").unwrap();

@@ -119,9 +119,11 @@ pub const SECTIONS_MAX: usize = 40;
 pub const DOC_MAX: usize = 1024 * 1024;
 /// The most Docs in a project.
 pub const DOCS_MAX: u64 = 1_000;
-/// One picture, in bytes, and the most a Doc keeps: as a machine Doc's.
+/// One picture, in bytes, the most a Doc keeps and all of them together:
+/// as a machine Doc's.
 pub const ASSET_MAX: usize = 2 * 1024 * 1024;
-pub const ASSETS_MAX: usize = 20;
+pub const ASSETS_MAX: usize = 60;
+pub const ASSETS_TOTAL_MAX: usize = 40 * 1024 * 1024;
 
 /// A Doc, without its sections: a list's row, and a view's head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
