@@ -499,6 +499,11 @@ button.ov-peek:disabled {
 .ov.phone .ov-needs {
   width: auto;
 }
+/* The page's `.platform .sw-page h2` outweighs `.ov-needs h2` and gave it
+   24px above: on a phone, a gap between the head and Needs you (#1384). */
+.ov.phone .ov-needs h2 {
+  margin: 0;
+}
 .ov-needs header {
   flex: none;
   display: flex;
@@ -886,6 +891,11 @@ button.ov-peek:disabled {
   font: var(--text-xs) / 1.5 var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+/* An agent's transcript (#1382): its Markdown in the page's type, as chat draws a message. */
+.ov-peek-tail.ov-peek-md {
+  font: inherit;
+  white-space: normal;
 }
 .ov-peek-acts {
   display: flex;

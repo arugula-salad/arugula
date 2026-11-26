@@ -1262,6 +1262,9 @@ test.describe("on a computer", () => {
     await expect(peek.locator("[data-ov-peek-said]")).toContainText("next tool call");
     await expect(reply).toHaveValue("");
     await expect(peek.locator("[data-ov-peek-tail]")).toContainText("ENV PEEK_1271", { timeout: 20_000 });
+    // Its transcript is Markdown, drawn as chat draws a message: a heading for what you said, not `## You` (#1382).
+    await expect(peek.locator("[data-ov-peek-tail][data-ov-peek-md] .md-chat h2").first()).toHaveText("You");
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toContainText("## You");
     // Silence holds its mentions, on its machine; Allow lets them in again.
     await peek.locator('[data-ov-peek-silence="silence"]').click();
     await expect(peek.locator('[data-ov-peek-silence="allow"]')).toBeVisible({ timeout: 10_000 });
@@ -2144,5 +2147,8 @@ test.describe("on a phone", () => {
     await expect(row.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
     const fits = await page.locator("[data-ov-needs]").evaluate((e) => e.scrollWidth <= e.clientWidth);
     expect(fits).toBe(true);
+    // Its heading sits right under the page's head: no page heading's margin above it (#1384).
+    const [head, heading] = await Promise.all([page.locator("[data-page-head]").boundingBox(), page.locator("[data-ov-needs] h2").boundingBox()]);
+    expect(heading!.y - (head!.y + head!.height)).toBeLessThan(32);
   });
 });
