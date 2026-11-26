@@ -13,7 +13,6 @@ import "../src/platform/platform.css";
 import "../src/platform/swarm.css";
 import "../src/shared/ui/settings-section.css";
 import "../src/platform/settings.css";
-import "../src/platform/finish.css";
 import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { PlatformApiContext } from "../src/shared/platform-api";

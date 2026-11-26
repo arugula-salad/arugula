@@ -245,8 +245,8 @@ test.describe("on a computer", () => {
     await expect(chip).toHaveAttribute("data-connection", "direct");
   });
 
-  test("the old New workspace switch is forgotten; a saved palette stays, and Slate is the dark default", async ({ page, browser }) => {
-    // Someone who picked Latte and had turned the new workspace off (M108–M112).
+  test("the old New workspace switch is forgotten; a saved light palette is Light, and Slate is the dark default", async ({ page, browser }) => {
+    // Someone who picked Latte and had turned the new workspace off (M108–M112), from before Look.
     await page.addInitScript(() => {
       try {
         localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "latte", finish: "flat", corners: "square", workspace: "classic" }));
@@ -258,16 +258,13 @@ test.describe("on a computer", () => {
     await expect(page.locator(".app-bar")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
-    expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square", density: "cozy" });
+    expect(saved).toEqual({ theme: "light", light: 0.5, warmth: 0.5, depth: 0.5 });
     // Appearance has no switch any more.
     await expect((await openSettingsPage(page)).locator("[data-appearance-controls]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
-    await page.getByRole("button", { name: "Use the Slate look" }).click();
+    await page.locator('[data-theme-choice="dark"]').click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
-    await expect(page.locator("html")).toHaveAttribute("data-finish", "flat");
-    await expect(page.locator("html")).toHaveAttribute("data-corners", "soft");
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!)))
-      .toEqual({ palette: "slate", finish: "flat", corners: "soft", density: "cozy" });
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!))).toEqual({ theme: "dark", light: 0.5, warmth: 0.5, depth: 0.5 });
 
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
@@ -469,44 +466,11 @@ test.describe("accessibility", () => {
     await expect(page.locator("[data-session-search]")).toBeFocused();
   });
 
-  test("on every palette the chrome's words read at 4.5:1", async ({ page }) => {
+  test("terminal text contrasts with explicit program backgrounds after a theme change", async ({ page }) => {
     await newWorkspace(page);
     await openSettingsPage(page);
-    const ids = await page.locator("[data-palette-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-palette-choice")!));
-    expect(ids.length).toBeGreaterThan(5);
-    for (const id of ids) {
-      await page.locator(`[data-palette-choice="${id}"]`).click();
-      const worst = await page.evaluate(() => {
-        const css = getComputedStyle(document.documentElement);
-        const v = (k: string) => css.getPropertyValue(`--${k}`).trim();
-        const lum = (hex: string) => {
-          const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-        };
-        const ratio = (a: string, b: string) => {
-          const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
-          return (x + 0.05) / (y + 0.05);
-        };
-        let min = Infinity;
-        let at = "";
-        for (const t of ["fg", "dim", "subtle", "accent", "warn", "ok", "danger", "info"])
-          for (const b of ["bg", "surface", "raised"]) {
-            const r = ratio(v(t), v(b));
-            if (r < min) [min, at] = [r, `${t} on ${b}`];
-          }
-        return { min, at };
-      });
-      expect(worst.min, `${id}: ${worst.at}`).toBeGreaterThanOrEqual(4.5);
-    }
-    // Back to nothing picked.
-    await page.locator('[data-settings-section="appearance"]').getByRole("button", { name: "Reset", exact: true }).click();
-  });
-
-  test("terminal text contrasts with explicit program backgrounds after a palette change", async ({ page }) => {
-    await newWorkspace(page);
-    await openSettingsPage(page);
-    for (const palette of ["latte", "slate"]) {
-      await page.locator(`[data-palette-choice="${palette}"]`).click();
+    for (const [theme, palette] of [["light", "latte"], ["dark", "slate"]]) {
+      await page.locator(`[data-theme-choice="${theme}"]`).click();
       await expect(page.locator("html")).toHaveAttribute("data-palette", palette);
       await page.evaluate(async () => {
         const v = window.__arugula.client.viewOf(window.__arugula.client.active()!)!;

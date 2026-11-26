@@ -11,9 +11,8 @@
 //   1. The tokens' own definitions: a custom property in a `:root` or an
 //      `html[data-…]` rule in shared/kit/tokens.css or shared/style.css. A custom property set to a
 //      raw colour anywhere else fails.
-//   2. The finish: a rule whose selectors all start with `html[data-finish`
-//      (or `[data-look`, the settings' swatch of a finish), and platform/finish.css and shared/buttons.css. There only white and
-//      black as an alpha base: `#fff`, `#000`, `rgb(255 255 255 / a)`,
+//   2. shared/buttons.css: white and black as an alpha base (a button's
+//      highlight and shade), `#fff`, `#000`, `rgb(255 255 255 / a)`,
 //      `rgb(0 0 0 / a)`. Any other colour there still fails.
 //   3. A mask: `mask`, `mask-image` and `-webkit-mask*` (`#000` is an alpha
 //      mask, not a colour).
@@ -32,9 +31,8 @@ const TINT = /var\(--[\w-]+\)[0-9a-fA-F]{2,8}(?![\w.%-])/g;
 const MARK = /lint:\s*literal\s*[—–-]+\s*\S/;
 const MASK = /^(?:-webkit-)?mask(?:-[\w-]+)?$/;
 const TOKEN_SELECTOR = /^(?::root|html\[data-[^\]]+\])$/;
-const FINISH_SELECTOR = /^(?:html)?\[data-(?:finish|look)\b/;
 const TOKEN_FILES = new Set(["shared/kit/tokens.css", "shared/style.css"]);
-const FINISH_FILES = new Set(["platform/finish.css", "shared/buttons.css"]);
+const ALPHA_FILES = new Set(["shared/buttons.css"]);
 // White or black, as the base of an alpha.
 const ALPHA_HEX = /^#(?:(?:fff|000)[0-9a-f]?|(?:ffffff|000000)(?:[0-9a-f]{2})?)$/i;
 const ALPHA_FUNC = /^rgba?\(\s*(?:255[\s,]+255[\s,]+255|0[\s,]+0[\s,]+0)\s*[/,]\s*[^)]+\)$/i;
@@ -66,7 +64,6 @@ export function offenders(css, file) {
   for (const rule of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const sels = rule[1].split(",").map((s) => s.trim().replace(/^[\s\S]*;\s*/, ""));
     const tokens = TOKEN_FILES.has(file) && sels.every((s) => TOKEN_SELECTOR.test(s));
-    const finish = FINISH_FILES.has(file) || sels.every((s) => FINISH_SELECTOR.test(s));
     const start = text.slice(0, rule.index + rule[1].length + 1).split("\n").length - 1;
     const body = rule[2];
     for (const d of body.matchAll(/(?:^|[;\s])([\w-]+)\s*:\s*([^;}]+)/g)) {
@@ -77,7 +74,7 @@ export function offenders(css, file) {
       const raw = colours(value);
       const tint = [...value.matchAll(TINT)].map((m) => m[0]);
       if (tokens && prop.startsWith("--") && !tint.length) continue;
-      const stray = finish ? raw.filter((c) => !ALPHA_HEX.test(c) && !ALPHA_FUNC.test(c)) : raw;
+      const stray = ALPHA_FILES.has(file) ? raw.filter((c) => !ALPHA_HEX.test(c) && !ALPHA_FUNC.test(c)) : raw;
       if (stray.length || tint.length) out.push({ file, line, prop, value, found: [...stray, ...tint] });
     }
   }

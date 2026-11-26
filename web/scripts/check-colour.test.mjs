@@ -23,7 +23,6 @@ test("rgb(), rgba(), hsl() and hsla() fail", () => {
 test("a token with hex digits after it fails", () => {
   assert.deepEqual(bad(".a { background: var(--accent)22; }"), [[1, "background"]]);
   assert.deepEqual(bad(".a { border: 1px solid var(--info)66; }"), [[1, "border"]]);
-  assert.deepEqual(bad("html[data-finish=\"x\"] .a { background: var(--accent)22; }"), [[1, "background"]]);
   assert.deepEqual(bad(":root { --tint: var(--accent)22; }", "shared/style.css"), [[1, "--tint"]]);
 });
 
@@ -44,20 +43,11 @@ test("the tokens' own definitions are allowed in shared/style.css's :root and ht
   assert.deepEqual(bad(":root { color: #000; }", "shared/style.css"), [[1, "color"]]);
 });
 
-test("the finish may use white and black as an alpha base, and nothing else", () => {
-  const rule = (sel, v) => `${sel} { box-shadow: ${v}; }`;
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a', "inset 0 1px 0 #fff8, 0 1px 3px rgb(0 0 0 / 0.3)")), []);
-  assert.deepEqual(bad(rule('[data-look="glass"] .a', "0 0 0 1px rgb(255 255 255 / 0.2)")), []);
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a, html[data-finish="glass"] .b', "0 0 0 1px #000")), []);
-  assert.deepEqual(bad("a { background: linear-gradient(#fff3, #0000); }", "platform/finish.css"), []);
-  assert.deepEqual(bad("a { background: rgb(255 255 255 / 0.1); }", "shared/buttons.css"), []);
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a', "0 1px 3px #3366ff")), [[1, "box-shadow"]]);
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a', "0 1px 3px rgb(51 102 255 / 0.5)")), [[1, "box-shadow"]]);
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a', "0 1px 3px rgb(0 0 0)")), [[1, "box-shadow"]]);
-  assert.deepEqual(bad("a { color: #3366ff; }", "platform/finish.css"), [[1, "color"]]);
+test("buttons.css may use white and black as an alpha base, and nothing else", () => {
+  assert.deepEqual(bad("a { background: rgb(255 255 255 / 0.1); box-shadow: inset 0 1px 0 #fff8; }", "shared/buttons.css"), []);
   assert.deepEqual(bad("a { color: #123; }", "shared/buttons.css"), [[1, "color"]]);
-  assert.deepEqual(bad(rule('html[data-finish="aqua"] .a, .b', "0 0 0 1px #fff8")), [[1, "box-shadow"]]);
-  assert.deepEqual(bad(rule(".a", "0 0 0 1px #fff8")), [[1, "box-shadow"]]);
+  assert.deepEqual(bad("a { box-shadow: 0 1px 3px rgb(51 102 255 / 0.5); }", "shared/buttons.css"), [[1, "box-shadow"]]);
+  assert.deepEqual(bad(".a { box-shadow: 0 0 0 1px #fff8; }"), [[1, "box-shadow"]]);
 });
 
 test("a mask's #000 is an alpha mask, not a colour", () => {

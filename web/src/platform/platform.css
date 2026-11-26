@@ -203,17 +203,9 @@ html[data-native-tabs] .platform {
   overflow: hidden;
 }
 
-html[data-corners="square"] .platform-chat > .platform-body > .chat > .chat-body {
-  border-radius: 0;
-}
-
 /* A page that's one panel fills the frame, as a lone pane does. */
 .platform-main > .platform-section:only-child {
   min-height: 100%;
-}
-
-html[data-corners="square"] .platform-section {
-  border-radius: 0;
 }
 
 /* The page's default h2. :where() keeps it at (0,0,1) so a component's own
@@ -1750,4 +1742,17 @@ span.untri-title {
 }
 .app-swarm > .swarm:not([data-wall]) {
   position: absolute;
+}
+
+/* Placeholders are --subtle, which reads where --dim doesn't (Latte). */
+.platform input::placeholder,
+.platform textarea::placeholder {
+  color: var(--subtle);
+}
+
+/* On a dark palette --subtle is nearly the typed text's brightness, so an
+   empty field looked filled; --dim reads there. */
+html[data-scheme="dark"] .platform input::placeholder,
+html[data-scheme="dark"] .platform textarea::placeholder {
+  color: var(--dim);
 }
