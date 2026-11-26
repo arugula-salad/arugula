@@ -359,6 +359,21 @@
       ],
       "type": "string"
     },
+    "CheckoutsAsk": {
+      "description": "`agents.checkouts`' ask (Arugula #1458): the project's repos\n(`owner/name`), the board's own first.",
+      "properties": {
+        "repos": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "type": "object"
+    },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
       "oneOf": [
@@ -550,6 +565,20 @@
           "properties": {
             "op": {
               "const": "agents.approved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CheckoutsAsk",
+          "description": "Which of a project's repos this machine has a clone of (Arugula\n#1458): control asks each machine a \"Run this board\" card offers,\nbefore the person approves, so the card says where agents can't\nstart. The daemon answers `checkout` with the first it has, found as\na ladder start finds one. An older daemon answers `unknown`.",
+          "properties": {
+            "op": {
+              "const": "agents.checkouts",
               "type": "string"
             }
           },
@@ -1210,6 +1239,26 @@
           "required": [
             "answer",
             "said"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.checkouts`' answer (Arugula #1458): the first of the\nrepos asked that this machine has a clone of; none: it has none.",
+          "properties": {
+            "answer": {
+              "const": "checkout",
+              "type": "string"
+            },
+            "repo": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "answer"
           ],
           "type": "object"
         },

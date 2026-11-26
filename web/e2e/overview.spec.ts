@@ -172,6 +172,11 @@ const RUN = {
       { id: "m_mini", name: "jake-mini" },
     ],
     cap: 3,
+    repo: "acme/app",
+    checkouts: [
+      { machine: "m_geek", repo: "acme/app" },
+      { machine: "m_mini" },
+    ],
   },
 };
 
@@ -1026,15 +1031,18 @@ test.describe("on a computer", () => {
     await expect(needs.locator("[data-ov-needs-count]")).toHaveCount(0);
   });
 
-  test("Run this board's card says the board, where its lead runs, where its agents may and how many, and until when; Approve sends it (Arugula #1416)", async ({ page }, info) => {
+  test("Run this board's card says the board, where its lead runs, where its agents may and how many, which machines lack a clone, and until when; Approve sends it (Arugula #1416, #1458)", async ({ page }, info) => {
     await overview(page);
     await proposing(page, RUN);
     const card = page.locator('[data-ov-needs] [data-proposal="prp_run"]');
     await expect(card).toHaveAttribute("data-proposal-action", "run_board");
     await expect(card).toContainText("Chief of staff · run a board");
     await expect(card.locator("[data-proposal-board]")).toHaveText("Run Later");
-    await expect(card.locator("[data-proposal-lead]")).toHaveText("Lead on geek");
+    await expect(card.locator("[data-proposal-lead]")).toHaveText("Lead on geek · in acme/app");
     await expect(card.locator("[data-proposal-machines]")).toHaveText("Issue agents on geek, jake-mini · up to 3 at once");
+    // A machine with no clone of the board's repo is said (Arugula #1458).
+    await expect(card.locator("[data-proposal-no-clone]")).toHaveText("No clone of acme/app on jake-mini: no issue agent starts there");
+    await expect(card.locator("[data-proposal-unasked]")).toHaveCount(0);
     await expect(card.locator("[data-proposal-lapse]")).toHaveText("Until the board closes");
     await expect(card.locator("[data-proposal-why]")).toContainText("Its plan is ready and nobody leads it.");
     await page.waitForTimeout(300);

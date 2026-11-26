@@ -6,7 +6,8 @@
 //! reaches it. Revoked, the grant refuses the next start. The lead works in
 //! a worktree of this machine's clone of the board's repo, found in its home
 //! folder; a machine with none of the project's repos says so and starts
-//! nothing (Arugula #1458). Against a fake
+//! nothing, and says which it has when control asks for the card (Arugula
+//! #1458). Against a fake
 //! control (it takes the card, plays the person's Approve on the relay
 //! socket, signs start tickets while the grant is live, and sends the
 //! board's thread to its lead) and a real daemon whose agents are the fake
@@ -291,6 +292,15 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     // What isn't a run_board's is refused here, before control.
     let why = mcp.call("ask_approval", json!({ "action": "start", "issue": "#1", "cap": 2, "why": "x" })).unwrap_err();
     assert!(why.contains("go with run_board"), "{why}");
+
+    // Before the person approves, control asks which of the project's repos
+    // this machine has a clone of, for the card to say.
+    f.send(json!({ "t": "op", "id": "clones-1", "op": { "op": "agents.checkouts",
+        "repos": ["acme/site", "acme/widgets"] } }));
+    f.send(json!({ "t": "op", "id": "clones-2", "op": { "op": "agents.checkouts", "repos": ["acme/site"] } }));
+    d.wait_for("its answers", || f.answer("clones-1").is_some() && f.answer("clones-2").is_some());
+    assert_eq!(f.answer("clones-1").unwrap(), json!({ "answer": "checkout", "repo": "acme/widgets" }));
+    assert_eq!(f.answer("clones-2").unwrap(), json!({ "answer": "checkout", "repo": null }));
 
     // The person approves: control writes the grant and asks the grant's
     // lead machine (this one) to start the lead. With no clone here of any

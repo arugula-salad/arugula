@@ -24,12 +24,16 @@
 //!   and the person's own settings. A machine with no clone of any refuses
 //!   it, saying so; a project that links no repo starts it in home.
 //!
-//! Remote input off here refuses both, as it refuses a ladder start: they
-//! type into terminals on this machine through control.
+//! - **`agents.checkouts`** (Arugula #1458): before the person approves a
+//!   "Run this board" card, control asks each machine it offers which of
+//!   the project's repos it has a clone of, and the card says where none is.
+//!
+//! Remote input off here refuses an approved card, as it refuses a ladder
+//! start: they type into terminals on this machine through control.
 
 use std::sync::Arc;
 
-use arugula_control_wire::forge::{AskApproved, OpAnswer};
+use arugula_control_wire::forge::{AskApproved, CheckoutsAsk, OpAnswer};
 use arugula_proto::{BlockType, PaneId, api::OpenRequest};
 use serde_json::json;
 use tracing::info;
@@ -56,6 +60,14 @@ pub async fn approved(app: &Arc<App>, a: &AskApproved) -> OpAnswer {
         }
         Err(error) => OpAnswer::Failed { error },
     }
+}
+
+/// `agents.checkouts` (Arugula #1458): the first of the project's repos
+/// this machine has a clone of, as a "Run this board" card shows it before
+/// the person approves; found as the lead's start finds it.
+pub async fn checkouts(app: &Arc<App>, c: &CheckoutsAsk) -> OpAnswer {
+    let repos: Vec<String> = c.repos.iter().map(|r| r.trim().to_owned()).filter(|r| !r.is_empty()).collect();
+    OpAnswer::Checkout { repo: crate::ladder::clone_among(app, &repos).await.map(|(repo, _)| repo) }
 }
 
 /// The tab an approved start opens in: its issue's.

@@ -5575,7 +5575,19 @@ cap: number,
 /**
  * None: until the board closes.
  */
-lapse_days?: number, };
+lapse_days?: number, 
+/**
+ * The board's repo (Arugula #1458): the first of the project's linked
+ * repos, the board's own first. None: the project links none, and
+ * agents start in their machine's home.
+ */
+repo?: string, 
+/**
+ * What each machine said when the card was raised: the first of the
+ * project's repos it has a clone of, or none. A machine that isn't here
+ * couldn't be asked (offline, or its Arugula is too old).
+ */
+checkouts: Array<RunCheckout>, };
 
 /**
  * One of [`ChatProposal::sessions`].
@@ -5823,6 +5835,20 @@ export type Role = "viewer" | "editor" | "owner";
  * Something a run left behind (M213).
  */
 export type RunArtifactView = { name: string, size: number, digest: string, created_at: number, };
+
+/**
+ * One machine's clone, for a "Run this board" card (Arugula #1458).
+ */
+export type RunCheckout = { 
+/**
+ * The machine, by id.
+ */
+machine: string, 
+/**
+ * The first of the project's repos it has a clone of (where its agents
+ * start); none: it has none, and no agent starts there.
+ */
+repo?: string, };
 
 /**
  * The deploy a deploy's run applies (M219, UI audit #145): which, to
