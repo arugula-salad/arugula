@@ -24,6 +24,14 @@ export const SCHEME = "arugula.scheme";
  * (a keydown there never reaches the Doc's page), so Full window can close (#507). */
 export const ESCAPE = "arugula.escape";
 
+/** From the prototype's page to its parent: the page is going to `url` (a
+ * link was clicked, or it set `location`). The frame can't say where it is
+ * going otherwise; the parent decides if that is one of the Doc's own
+ * prototypes (#1451). */
+export const NAV = "arugula.nav";
+/** The longest address it takes. */
+export const NAV_MAX = 2048;
+
 export type Scheme = "light" | "dark";
 
 export interface HtmlMessage {
@@ -47,6 +55,13 @@ export function readyFrom(e: { source: unknown; data: unknown }, win: unknown): 
 /** Whether `e` is the frame `win` saying Esc was pressed in it. */
 export function escapeFrom(e: { source: unknown; data: unknown }, win: unknown): boolean {
   return !!win && e.source === win && (e.data as { type?: unknown } | null)?.type === ESCAPE;
+}
+
+/** The address the frame `win` says it is going to, or null. */
+export function navFrom(e: { source: unknown; data: unknown }, win: unknown): string | null {
+  if (!win || e.source !== win) return null;
+  const m = e.data as { type?: unknown; url?: unknown } | null;
+  return m?.type === NAV && typeof m.url === "string" && m.url.length <= NAV_MAX ? m.url : null;
 }
 
 export const schemeMessage = (colorScheme: Scheme): SchemeMessage => ({ type: SCHEME, colorScheme });

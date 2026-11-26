@@ -518,6 +518,11 @@ async fn pages_refuse_to_be_framed_and_run_only_their_own_scripts() {
     assert!(runner.contains("content-security-policy: sandbox allow-scripts; default-src 'none'"), "{runner}");
     assert!(runner.contains("frame-ancestors 'self'") && !runner.contains("script-src 'self'"), "{runner}");
     assert!(body.contains("<title>prototype</title>"), "{body}");
+    // A page the prototype went to under it says where it is (Arugula #1451), under the same policy.
+    let (gone, body) = head("/proto/next-screen.html").await;
+    assert!(gone.starts_with("http/1.1 200"), "{gone}");
+    assert!(gone.contains("content-security-policy: sandbox allow-scripts; default-src 'none'"), "{gone}");
+    assert!(body.contains("arugula.nav") && body.contains("location.href"), "{body}");
 }
 
 #[tokio::test]
