@@ -11542,7 +11542,7 @@
           },
           "handled": {
             "default": 0,
-            "description": "How many asks agents are handling among themselves (Arugula #1393):\nshown as a line, never counted.",
+            "description": "How many asks agents are handling among themselves (Arugula #1393):\nthe reader's agents' asks that the agent that started them answers\nfirst, for ten minutes. Shown as a line, never counted.",
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
@@ -11730,7 +11730,7 @@
             "description": "How to answer it in place, when it can be."
           },
           "counts": {
-            "description": "Whether it's in `count`: false for `turn_finished`.",
+            "description": "Whether it's in `count`: false for `turn_finished`, for an alert\n(`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an\nitem `for` someone else.",
             "type": "boolean"
           },
           "done_at": {
@@ -11738,6 +11738,17 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "escalated": {
+            "description": "An agent's ask that another agent was to answer, and didn't within\nten minutes: it reached its person, and says so (Arugula #1393).",
+            "type": "boolean"
+          },
+          "for": {
+            "description": "The account it waits on (Arugula #1393): the reader, or a teammate\nwhose ask the reader sees folded (\"2 asks for Jake ›\"), never\ncounted for them. `None`: the reader's, as before it. An item\ncounts only when `counts` is true and `for` is the reader or absent.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -11751,7 +11762,7 @@
             "type": "string"
           },
           "id": {
-            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (a\nproposal), `ask_…` (a board ask), `dep_…` (a deploy), `room:<id>`\n(a DM, a thread or a chat mention), or an entry's item and reason\n(`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).\n`POST /api/inbox/{id}` marks it.",
+            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (a\nproposal), `ask_…` (a board ask), `dep_…` (a deploy), `ses_…:<since>`\n(a hosted session's open ask, Arugula #1393), `room:<id>`\n(a DM, a thread or a chat mention), or an entry's item and reason\n(`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).\n`POST /api/inbox/{id}` marks it.",
             "type": "string"
           },
           "kind": {

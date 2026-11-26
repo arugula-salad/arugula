@@ -27,6 +27,7 @@ import { RoomBody, type Between } from "../chat/room";
 import { ThreadBeside } from "../chat/thread-beside";
 import { Time } from "../ui/time";
 import { usePlatformApi } from "../platform-api";
+import { sessionLabel } from "../chief-of-staff";
 import { Markdown } from "../ui/markdown";
 import { PageHeader, type BackLink } from "../ui/page-header";
 import { Chip, StateChip } from "../ui/state-chip";
@@ -163,7 +164,7 @@ export function IssueView({
   class?: string;
 }) {
   const api = useContext(IssueApiContext);
-  const { toast } = usePlatformApi();
+  const { toast, projectName } = usePlatformApi();
   const phone = usePhone();
   const [issue, setIssue] = useState<NativeIssue | null>(api.known(id) ?? null);
   const [events, setEvents] = useState<IssueEvent[]>([]);
@@ -370,7 +371,7 @@ export function IssueView({
           </article>
           {room?.lead && (
             <p class="doc-meta issue-lead" data-issue-lead={room.lead.session} title="The comments here are told to it">
-              Led by <b>{room.lead.session}</b>
+              Led by <b>{sessionLabel(room.lead.session, projectName)}</b>
               {room.lead.machine_name && ` on ${room.lead.machine_name}`}
             </p>
           )}

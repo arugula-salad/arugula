@@ -24,6 +24,7 @@ export const platformApi: PlatformApi = {
   teams: (): PlatformTeam[] =>
     session.projects.flatMap((p) => (p.team ? [{ team: p.team.id, role: p.team.role, roster: { name: p.team.name, members: p.team.members } }] : [])),
   subscribe: (fn) => session.subscribe(fn),
+  projectName: (id) => session.project(id)?.name,
   toast,
   nav: {
     openChat() {

@@ -11,6 +11,7 @@
 
 import type { BoardLead, BoardRow, BoardView, OnIssue } from "../../shared/proto";
 import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
+import { chiefProject, sessionLabel } from "../../shared/chief-of-staff.ts";
 
 /** How a card or a session stands, most urgent first: a session waits on
  * you, the row's question asks you, a session failed, its PR's checks fail,
@@ -292,12 +293,25 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
 /** A board's lead as the row names it, or a staff room's (#1342): how it
  * stands from its session's panes on its machine, else from the hub's
  * sessions by card. */
-export function boardLead(l: Pick<BoardLead, "machine" | "machine_name" | "session" | "pane">, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
+export function boardLead(
+  l: Pick<BoardLead, "machine" | "machine_name" | "session" | "pane">,
+  panes: OvPane[],
+  byCard: SessionsByCard | null,
+  hostOf: (machine: string) => string | undefined,
+  projectName?: (id: string) => string | undefined,
+): OvLead {
+  // A chief of staff's session goes by its project's id, its block by its project's name (Arugula #1457): shown by that, and its pane found by either.
+  const shown = sessionLabel(l.session, projectName);
   // A pane whose machine has no id here (a daemon's own page) is matched by its name.
   const on = (p: OvPane) => (p.machine ? p.machine === l.machine : !!l.machine_name && p.host === l.machine_name);
+  // Two projects of one name have chiefs of staff of one title: of those, its project's, where a pane says it.
+  const chief = chiefProject(l.session);
+  const titles = panes.filter((p) => on(p) && p.session && (p.title === l.session || p.title === shown));
+  const ours = chief ? titles.filter((p) => p.project === chief) : [];
+  const called = ours.length ? ours : titles;
   // The daemon names a lead by its Claude Code conversation's title (#429), not by the session its pane sits in: a terminal's session is the tab group's own name. So a session by name, else the session of the pane with that title.
   const named = panes.filter((p) => on(p) && p.session?.name === l.session);
-  const titled = new Set(panes.filter((p) => on(p) && p.session && p.title === l.session).map((p) => `${p.host}#${p.session!.id}`));
+  const titled = new Set(called.map((p) => `${p.host}#${p.session!.id}`));
   const guessed = named.length ? named : panes.filter((p) => p.session && titled.has(`${p.host}#${p.session.id}`));
   // A lead that carries its pane (#1368) is that pane alone, standing and all: a terminal's session is its whole tab group, and the rest of it isn't the lead. Only a lead from an older daemon, or one whose pane isn't in this fleet, is guessed from the name or title, by its session.
   const pinned = l.pane === undefined ? undefined : panes.find((p) => on(p) && p.id === l.pane);
@@ -310,10 +324,10 @@ export function boardLead(l: Pick<BoardLead, "machine" | "machine_name" | "sessi
   // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row: by the hub's id where it names the session, except a lead that is one pane (#1390).
   const lead = pinned ?? (mine.length ? leadOf(mine) : undefined);
   const peek: OvSession = lead
-    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine, ...(pinned ? {} : hubId) }
+    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: shown, where: lead.host, standing: standing!, lead, panes: mine, ...(pinned ? {} : hubId) }
     : hub
-      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch, ...hubId }
-      : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
+      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: shown, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch, ...hubId }
+      : { key: `lead:${l.machine}:${l.session}`, name: shown, where: machineName || "its machine", standing: "idle", panes: [] };
   return { machine: l.machine, machineName, session: l.session, standing, peek };
 }
 

@@ -1309,9 +1309,10 @@ impl App {
 }
 
 /// The names of the sessions live in our panes, or only `pane`'s (#429):
-/// an agent block goes by its title, a terminal by the title of the Claude
-/// Code conversation in it. Display and addressing only: a name is no
-/// authority.
+/// an agent block goes by its title, or by the `session` its config names
+/// (a chief of staff's, by its project's id: Arugula #1457), a terminal by
+/// the title of the Claude Code conversation in it. Display and addressing
+/// only: a name is no authority.
 pub async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
     let mut out = vec![];
     let mut terminals = HashMap::new();
@@ -1324,7 +1325,9 @@ pub async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, Stri
             continue;
         }
         if p.info.kind.prompted() {
-            if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            if let Some(t) = config_session(app, id).await {
+                out.push((id, t));
+            } else if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
                 out.push((id, t.to_owned()));
             }
         } else if p.info.kind == arugula_proto::BlockType::Terminal {
@@ -1357,6 +1360,16 @@ pub async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, Stri
         out.extend(found.into_iter().filter(|(_, t)| !t.is_empty()));
     }
     out
+}
+
+/// The session name an agent block's config gives it apart from its title
+/// (Arugula #1457), if any.
+async fn config_session(app: &App, pane: PaneId) -> Option<String> {
+    let block = app.mux.api(|r| Api::Block(pane, r)).await.flatten()?;
+    if block.kind() != arugula_proto::BlockType::Agent {
+        return None;
+    }
+    block.config()["session"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 /// Keep only `only`'s conversation, when it is set (#512): process

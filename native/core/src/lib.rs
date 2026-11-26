@@ -18,6 +18,7 @@
 //! writes a file: [`control::Session`] crosses as JSON.
 
 pub mod chat_live;
+pub mod chief;
 pub mod control;
 pub mod ffi;
 #[cfg(feature = "jni")]

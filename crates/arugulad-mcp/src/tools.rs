@@ -66,10 +66,8 @@ const TAIL_LINES: usize = 40;
 use arugulad_base::ladder::SKIPS_CHECKS;
 
 /// A chief of staff's block's title (Arugula #1338), unless the caller
-/// names another: its session's name, which leads the staff room. The
-/// project's name follows it (Arugula #1340): a staff room's posts reach its
-/// lead by that name, so a machine with a chief of staff for two projects
-/// needs two names.
+/// names another, with the project's name after it (Arugula #1340): for
+/// people to read. Nothing goes by it: see [`chief_session`].
 const CHIEF_TITLE: &str = "Chief of staff";
 
 /// [`CHIEF_TITLE`] for the project named `project`.
@@ -78,6 +76,14 @@ fn chief_title(project: &str) -> String {
         "" => CHIEF_TITLE.to_owned(),
         p => format!("{CHIEF_TITLE} · {p}"),
     }
+}
+
+/// A chief of staff's session's name (Arugula #1457), which leads the staff
+/// room: its posts reach the lead by it. By the project's id, not its name:
+/// two of a person's projects may share a name, and a project may be
+/// renamed. It's the block's `session`, apart from its title.
+fn chief_session(project: &str) -> String {
+    format!("{CHIEF_TITLE} · {project}")
 }
 
 /// Who led the staff room before a chief of staff was started (Arugula
@@ -3527,11 +3533,12 @@ impl ToolCall<'_, '_> {
             true => Some(self.chosen_project(a.project.as_deref()).await?),
             false => None,
         };
-        let (mut before, mut closed) = (None, vec![]);
+        let (mut before, mut closed, mut chief_name) = (None, vec![], None);
         if let Some(p) = &staff {
             let title = a.title.take().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
             let title = title.unwrap_or_else(|| chief_title(&p.name));
-            (before, closed) = self.chief_before(&p.id, &title).await;
+            let session = chief_session(&p.id);
+            (before, closed) = self.chief_before(p, &session).await;
             let prompt = match before.as_ref().map(handover) {
                 Some(h) if a.prompt.trim().is_empty() => h,
                 Some(h) => format!("{h}\n\n{}", a.prompt),
@@ -3539,6 +3546,7 @@ impl ToolCall<'_, '_> {
             };
             a.prompt = crate::mcp::registry::chief_of_staff_prompt(&prompt)?;
             a.title = Some(title);
+            chief_name = Some(session);
             project = Some(p.id.clone());
         }
         // Any ACP agent server may have none of Arugula's tools, which
@@ -3576,6 +3584,9 @@ impl ToolCall<'_, '_> {
         }
         if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
             config["title"] = json!(t.trim());
+        }
+        if let Some(s) = &chief_name {
+            config["session"] = json!(s);
         }
         if let Some(c) = a.cwd.as_ref().filter(|_| a.worktree.is_none()) {
             config["cwd"] = json!(c);
@@ -3654,12 +3665,9 @@ impl ToolCall<'_, '_> {
         if let Some(on) = &on {
             tail.push_str(&format!(". {}", on.said));
         }
-        let chief_of_staff = match &staff {
-            Some(p) => {
-                let title = a.title.as_deref().unwrap_or(CHIEF_TITLE);
-                Some(self.lead_staff(block, p, title, before, closed).await)
-            }
-            None => None,
+        let chief_of_staff = match (&staff, &chief_name) {
+            (Some(p), Some(name)) => Some(self.lead_staff(block, p, name, before, closed).await),
+            _ => None,
         };
         if let Some(c) = &chief_of_staff {
             tail.push_str(&format!(". {}", c.said));
@@ -3674,7 +3682,7 @@ impl ToolCall<'_, '_> {
 
     /// `start_agent` `recipe` chief-of-staff (Arugula #1338): the block just
     /// started leads the person's staff room in the project, by its session's
-    /// name (its title). Here, not on its first turn: its first wake then
+    /// name (`name`, by the project's id). Here, not on its first turn: its first wake then
     /// finds itself the lead, and a person's post in staff reaches it from
     /// the start. If control refuses, the block stays, and its recipe takes
     /// the lead on its first wake, which says why if it can't.
@@ -3686,12 +3694,11 @@ impl ToolCall<'_, '_> {
         &self,
         block: arugula_proto::PaneId,
         project: &crate::mcp::issues::Chosen,
-        title: &str,
+        name: &str,
         before: Option<(String, Before)>,
         closed: Vec<arugula_proto::PaneId>,
     ) -> results::StartedChief {
-        let session =
-            arugulad_base::agent_mentions::session_name(self.app, block).await.unwrap_or_else(|| title.into());
+        let session = arugulad_base::agent_mentions::session_name(self.app, block).await.unwrap_or_else(|| name.into());
         let moved_from = match before {
             Some((room, b)) => Some(self.stand_down(&room, b, &session).await),
             None => None,
@@ -3723,30 +3730,47 @@ impl ToolCall<'_, '_> {
     /// Who leads the person's staff room in `project` now (Arugula #1340),
     /// with the room's id: None when nobody does, or control can't say.
     /// The lead's block, when it's on this machine, is closed here, before
-    /// the chief of staff about to start as `title` opens, and so is any
-    /// other agent block here going by `title`: posts reach a lead by its
-    /// session's name, and one name is one session. Answers those closed.
-    async fn chief_before(&self, project: &str, title: &str) -> (Option<(String, Before)>, Vec<PaneId>) {
+    /// the chief of staff about to start as `session` opens, and so is any
+    /// other agent block here going by `session`: posts reach a lead by its
+    /// session's name, and one name is one session. So is one of this
+    /// project's going by its name-based title, a chief of staff from before
+    /// sessions went by the project's id (Arugula #1457). Another project's
+    /// block is never closed. Answers those closed.
+    async fn chief_before(
+        &self,
+        project: &crate::mcp::issues::Chosen,
+        session: &str,
+    ) -> (Option<(String, Before)>, Vec<PaneId>) {
+        let (title, project) = (chief_title(&project.name), project.id.as_str());
         let Ok(room) = crate::mcp::registry::staff_room(self.app, project).await else { return (None, vec![]) };
         let Some(id) = room["id"].as_str().map(str::to_owned) else { return (None, vec![]) };
         let lead = &room["lead"];
-        let session = lead["session"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+        let led = lead["session"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
         let me = self.app.control.enrolled().map(|e| e.keys.id());
-        let here = session.is_some() && me.is_some() && lead["machine"].as_str() == me.as_deref();
-        let names = [Some(title), session.as_deref().filter(|_| here)];
+        let here = led.is_some() && me.is_some() && lead["machine"].as_str() == me.as_deref();
+        let names = [Some(session), led.as_deref().filter(|_| here)];
         let mut closed = vec![];
         for (pane, name) in arugulad_base::agent_mentions::session_names(self.app, None).await {
-            if Some(pane) == self.own_pane() || !names.iter().flatten().any(|n| n.eq_ignore_ascii_case(&name)) {
+            let by_name = names.iter().flatten().any(|n| n.eq_ignore_ascii_case(&name));
+            if Some(pane) == self.own_pane() || !(by_name || name.eq_ignore_ascii_case(&title)) {
                 continue;
             }
             let agent = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+            let theirs = agent.as_ref().and_then(|b| b.config()["work"]["project"].as_str().map(str::to_owned));
+            // Another project's is never this one's; one with none goes by
+            // its session's name alone.
+            let ours = match theirs.as_deref().filter(|p| !p.is_empty()) {
+                Some(p) => p == project,
+                None => by_name,
+            };
             if agent.is_some_and(|b| b.kind() == BlockType::Agent)
+                && ours
                 && crate::mcp::ops::call::<ClosePane>(self, json!({ "pane": pane })).await.is_ok()
             {
                 closed.push(pane);
             }
         }
-        let Some(session) = session else { return (None, closed) };
+        let Some(session) = led else { return (None, closed) };
         let before = if here {
             Before::Here { session }
         } else if session.starts_with("ses_") {
@@ -4897,6 +4921,10 @@ mod tests {
         assert!(text.contains(flags::ISSUES_STEERING), "{text}");
         // A board row is kept current.
         assert!(text.contains(flags::BOARDS_STEERING), "{text}");
+        // Work only the person can do is a to-do, not chat alone (Arugula
+        // #1463); a merge's closing rule is issue_write's.
+        assert!(text.contains(flags::TODOS_STEERING) && text.contains("add a to-do with todo"), "{text}");
+        assert!(!text.contains("On merge"), "{text}");
         // When to show a PR (AR-7).
         assert!(text.contains("show it (kind pr)"), "{text}");
     }
@@ -4914,10 +4942,12 @@ mod tests {
             assert!(!text.contains("thread"), "{text}");
         }
         assert!(joined.contains(flags::ISSUES_STEERING) && joined.contains(flags::BOARDS_STEERING), "{joined}");
-        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board"] {
+        assert!(joined.contains(flags::TODOS_STEERING), "{joined}");
+        for word in ["issue_write", "native_issues", "board_read", "board_write", "a board", "to-do"] {
             assert!(!alone.contains(word), "{word} in: {alone}");
         }
         let without = joined.replace(&format!(" {}", flags::ISSUES_STEERING), "");
+        let without = without.replace(&format!(" {}", flags::TODOS_STEERING), "");
         assert_eq!(without.replace(&format!(" {}", flags::BOARDS_STEERING), ""), alone);
     }
 

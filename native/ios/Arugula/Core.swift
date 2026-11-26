@@ -36,6 +36,8 @@ struct Shown: Equatable {
     var id: String
     /// The reader's personal project.
     var personal: Bool
+    /// Its name, for a chief of staff's session named by its id (Arugula #1457).
+    var name: String = ""
 
     /// Whether a pane (its session's project and its card's) or a session
     /// (no card) on a machine that's `yours` or not shows in `shown`; with
@@ -46,7 +48,14 @@ struct Shown: Equatable {
 }
 
 extension Projects.Project {
-    var shown: Shown { Shown(id: id, personal: team == nil) }
+    var shown: Shown { Shown(id: id, personal: team == nil, name: name) }
+}
+
+/// A session's name as people read it, as the core says (Arugula #1457): a
+/// chief of staff's, "Chief of staff · prj_…", by `shown`'s name when it's
+/// that project's; any other as it is. Display only: match by the name itself.
+func sessionLabel(_ session: String, in shown: Shown?) -> String {
+    takeString(aru_session_label(session, shown?.id, shown?.name)) ?? session
 }
 
 /// One machine as the core's `aru_machines` reads it.

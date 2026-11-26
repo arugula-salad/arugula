@@ -45,6 +45,7 @@
       "project_split",
       "watch",
       "ask_approval",
+      "todo",
       "feedback"
     ],
     "block, labs true": [
@@ -93,6 +94,7 @@
       "project_split",
       "watch",
       "ask_approval",
+      "todo",
       "feedback"
     ],
     "full, labs false": [
@@ -140,6 +142,7 @@
       "project_split",
       "watch",
       "ask_approval",
+      "todo",
       "feedback"
     ],
     "full, labs true": [
@@ -188,6 +191,7 @@
       "project_split",
       "watch",
       "ask_approval",
+      "todo",
       "feedback"
     ],
     "read, labs false": [
@@ -2771,7 +2775,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula cloud, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula cloud, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them. A merged PR closes a native issue it names as Closes #N or Arugula #N, or as (#N) in its title; any other #N in its body, or `part of Arugula #N`, links without closing.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -5130,7 +5134,7 @@
         "readOnlyHint": false,
         "title": "Start an agent session"
       },
-      "description": "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.",
+      "description": "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. Its questions come to you first: answer them with session_reply, since one you leave for 10 minutes goes to your person (a permission goes to them at once). prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6546,6 +6550,53 @@
       },
       "name": "start_run",
       "title": "Start a run"
+    },
+    "todo": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Hand your person a to-do"
+      },
+      "description": "Hand your person a task you can't do yourself: approve something on GitHub, run a script with their credentials, put a secret somewhere. It waits under Needs you, on their phone and on your card until they mark it Done or Can't, with a note. It's for the person this machine belongs to, on the card you're on: you don't name either. Don't wait or poll: watch event ask.answered with match {\"ask\": <its id>}, then end your turn or go on with other work. Call it from your agent block, or a terminal with Arugula's hooks.\n- add {what, why, how?}: Add one: what in the imperative, one line (at most 120 characters); why you can't do it yourself (at most 500); how as plain-text steps, commands verbatim (at most 4000), saying where a secret goes, never the secret. Returns its id (prp_…).\n- list: Your open to-dos, as this machine added them: id, what, its card and project. One answered since stays until you cancel it.\n- cancel {id}: Cancel one you no longer need (you found another way), by id: it leaves Needs you.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "how": {
+            "default": "",
+            "description": "add: The steps, plain text shown as written: commands verbatim, and where\na secret goes, never the secret itself. At most 4000 characters.",
+            "type": "string"
+          },
+          "id": {
+            "description": "cancel: The to-do (prp_…), as add returned it.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "add",
+              "list",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "what": {
+            "description": "add: What to do, in the imperative, one line: \"Approve the deploy on\nGitHub\". At most 120 characters.",
+            "type": "string"
+          },
+          "why": {
+            "description": "add: Why you can't do it yourself, in a sentence or two. At most 500\ncharacters.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "todo",
+      "title": "Hand your person a to-do"
     },
     "tracker_write": {
       "annotations": {

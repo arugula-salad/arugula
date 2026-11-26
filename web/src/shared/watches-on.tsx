@@ -8,6 +8,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { call } from "./chat-store";
+import { sessionLabel } from "./chief-of-staff";
+import { usePlatformApi } from "./platform-api";
 import type { WatchShown, WatchesOn as Watches } from "./proto";
 import { Time } from "./ui/time";
 import "./watches-on.css";
@@ -39,15 +41,17 @@ export function useWatchesOn(path: string | null): [WatchShown[], () => void] {
   return [watches, () => setAsked((n) => n + 1)];
 }
 
-/** Whose agent it is, as the reader may know it. */
-export function watcher(w: WatchShown): string {
-  return w.session ? `${w.owner_name}'s agent ${w.session}` : `${w.owner_name}'s agent`;
+/** Whose agent it is, as the reader may know it: a chief of staff by its
+ * project's name, with `projectName` (Arugula #1457). */
+export function watcher(w: WatchShown, projectName?: (id: string) => string | undefined): string {
+  return w.session ? `${w.owner_name}'s agent ${sessionLabel(w.session, projectName)}` : `${w.owner_name}'s agent`;
 }
 
 /** The watches on a PR or a thread; nothing when there are none. */
 export function WatchesOn({ path, compact }: { path: string | null; compact?: boolean }) {
   const [watches, again] = useWatchesOn(path);
   const [failed, setFailed] = useState<string | null>(null);
+  const { projectName } = usePlatformApi();
   if (!watches.length) return null;
   const cancel = (w: WatchShown) => {
     setFailed(null);
@@ -61,7 +65,7 @@ export function WatchesOn({ path, compact }: { path: string | null; compact?: bo
       {watches.map((w) => (
         <div key={w.id} class="watch-on" data-watch-on={w.id}>
           <span class="watch-on-text">
-            <span class="watch-on-who">{watcher(w)}</span>
+            <span class="watch-on-who">{watcher(w, projectName)}</span>
             <span class="watch-on-what">waits for {w.waits}</span>
             <span class="watch-on-until dim">
               until <Time at={w.expires_ms} />

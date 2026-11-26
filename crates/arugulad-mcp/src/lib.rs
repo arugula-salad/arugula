@@ -286,11 +286,12 @@ way, tell the Arugula team with feedback: say what you were trying to do; don't 
 /// and the hooks: the Doc sentence (`flags::DOCS_STEERING`, which
 /// `arugula hook` also gives on `SessionStart`, #1486; everyone's since
 /// Docs left Labs, native #204), the issues sentence
-/// (`flags::ISSUES_STEERING`), the feedback sentence while this machine's
-/// agents may send it (`feedback`, from `arugula_proto::feedback::agents_may`)
-/// and the boards sentence (`flags::BOARDS_STEERING`; everyone's since
-/// boards left Labs, native #191). The issues and boards sentences only
-/// once this machine has joined Arugula cloud (`joined`, from [`joined`]):
+/// (`flags::ISSUES_STEERING`), the to-dos sentence (`flags::TODOS_STEERING`,
+/// Arugula #1463), the feedback sentence while this machine's agents may
+/// send it (`feedback`, from `arugula_proto::feedback::agents_may`) and the
+/// boards sentence (`flags::BOARDS_STEERING`; everyone's since boards left
+/// Labs, native #191). The issues, to-dos and boards sentences only once
+/// this machine has joined Arugula cloud (`joined`, from [`joined`]):
 /// before, they would send an agent to tools it can't reach (Arugula
 /// #1403). A machine that joins mid-session tells its next session. Chat
 /// isn't in the instructions (#1095): how to reach a teammate's agent is
@@ -300,6 +301,7 @@ pub fn instructions(feedback: bool, joined: bool) -> String {
         Some(INSTRUCTIONS_HEAD),
         Some(flags::DOCS_STEERING),
         joined.then_some(flags::ISSUES_STEERING),
+        joined.then_some(flags::TODOS_STEERING),
         feedback.then_some(INSTRUCTIONS_FEEDBACK),
         joined.then_some(flags::BOARDS_STEERING),
         Some(INSTRUCTIONS_TOUR),

@@ -32,6 +32,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hook
 import type { BoardLane, BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
+import { sessionLabel } from "../chief-of-staff";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
 import { CheckCircleIcon, ChevronIcon, EditIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
@@ -816,7 +817,7 @@ function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
   return (
     <p class="doc-meta board-lead" data-board-lead={lead.session}>
       <span>
-        Led by <b>{lead.session}</b>
+        Led by <b>{sessionLabel(lead.session, api.projectName)}</b>
         {machine && ` on ${machine}`}
       </span>
       <button type="button" class="link" title="The board's thread: its lead reads it" data-board-lead-talk onClick={() => void talk()}>

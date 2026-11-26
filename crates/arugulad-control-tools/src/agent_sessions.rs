@@ -63,7 +63,7 @@ pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
     flag: None,
 };
 
-pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.";
+pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. Its questions come to you first: answer them with session_reply, since one you leave for 10 minutes goes to your person (a permission goes to them at once). prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula cloud (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
@@ -367,12 +367,15 @@ pub(crate) async fn session_start(c: &Call<'_>, a: SessionStartArgs) -> Out {
         let v = c.app().control.cloud(Method::POST, &agent_staff_room(&project), None).await.map_err(said)?;
         start.room = Some(v["id"].as_str().ok_or("Arugula cloud named no staff room")?.to_owned());
     }
+    // The block that asked (Arugula #1393): its session's asks come to it
+    // first.
+    start.block = c.me().map(|p| p.to_string());
     let body = serde_json::to_value(start).map_err(|e| e.to_string())?;
     let v = sessions_call(c, AGENT_SESSIONS, body).await?;
     let at = format!("seq {} in {}", v["seq"], v["room"].as_str().unwrap_or("?"));
     let s = match v["session"].as_str() {
         Some(ses) => format!(
-            "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it."
+            "Started session {ses} as your person, asked by their agent on this machine ({at}). Its answers come in that thread (read_thread); session_reply answers or prompts it. Its questions come to you first: one you leave for 10 minutes goes to your person."
         ),
         None => {
             let said: Vec<&str> = v["said"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();

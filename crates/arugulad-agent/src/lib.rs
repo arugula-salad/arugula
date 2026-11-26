@@ -171,6 +171,11 @@ pub struct Config {
     /// instead of the session's own title (#629).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The name its session goes by instead of its title (Arugula #1457):
+    /// a chief of staff's, by its project's id, so staff posts reach it
+    /// whatever the block or the project is called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
     /// The ACP session, once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,

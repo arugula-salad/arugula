@@ -334,6 +334,24 @@ pub extern "system" fn Java_io_arugula_core_Native_shown<'l>(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_sessionLabel<'l>(
+    env: EnvUnowned<'l>,
+    _: JClass<'l>,
+    session: JString<'l>,
+    project_id: JString<'l>,
+    project_name: JString<'l>,
+) -> jstring {
+    run(env, |env| {
+        let session = c(&text_or_null(env, &session)?.unwrap_or_default());
+        let id = text_or_null(env, &project_id)?.map(|s| c(&s));
+        let name = text_or_null(env, &project_name)?.map(|s| c(&s));
+        let p = |s: &Option<CString>| s.as_ref().map_or(ptr::null(), |s| s.as_ptr());
+        let got = unsafe { ffi::aru_session_label(session.as_ptr(), p(&id), p(&name)) };
+        taken(env, got)
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_io_arugula_core_Native_machines<'l>(
     env: EnvUnowned<'l>,
     _: JClass<'l>,

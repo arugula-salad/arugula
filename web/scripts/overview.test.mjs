@@ -251,6 +251,28 @@ test("a board's lead stands as its session's panes on its machine, else as the h
   assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
 });
 
+test("a chief of staff leading its staff room by its project's id is found by its block's title and named by its project (Arugula #1457)", () => {
+  const lead = { machine: "m_ws", machine_name: "workstation", session: "Chief of staff · prj_1" };
+  const chief = pane("workstation", 4, { machine: "m_ws", session: { id: 3, name: "main" }, title: "Chief of staff · Launch crew", agent: true, standing: "working" });
+  const projectName = (id) => (id === "prj_1" ? "Launch crew" : undefined);
+  const l = boardLead(lead, [chief], null, hostOf, projectName);
+  assert.equal(l.standing, "working");
+  assert.equal(l.peek.name, "Chief of staff · Launch crew");
+  assert.deepEqual(l.peek.panes.map((p) => p.key), ["workstation:4"]);
+  // It routes by its own name still.
+  assert.equal(l.session, "Chief of staff · prj_1");
+  // The project not loaded: its name as it is, and its pane by that name alone.
+  const raw = boardLead(lead, [chief], null, hostOf);
+  assert.equal(raw.peek.name, "Chief of staff · prj_1");
+  // Another project's chief of staff isn't this one's, though both projects are "Launch crew".
+  const other = pane("workstation", 5, { machine: "m_ws", session: { id: 4, name: "other" }, project: "prj_3", title: "Chief of staff · Launch crew", agent: true });
+  const ours = { ...chief, project: "prj_1" };
+  const both = boardLead(lead, [ours, other], null, hostOf, (id) => (id === "prj_1" || id === "prj_3" ? "Launch crew" : undefined));
+  assert.deepEqual(both.peek.panes.map((p) => p.key), ["workstation:4"]);
+  const theirs = boardLead({ ...lead, session: "Chief of staff · prj_3" }, [ours, other], null, hostOf, (id) => (id === "prj_1" || id === "prj_3" ? "Launch crew" : undefined));
+  assert.deepEqual(theirs.peek.panes.map((p) => p.key), ["workstation:5"]);
+});
+
 test("a lead's tab head says where it runs and whether it's awake: awake, idle, asleep on an offline machine or a paused Cloud workspace, or none (#1342)", () => {
   const panes = [pane("workstation", 1, { machine: "m_ws", session: { id: 3, name: "cos" }, standing: "working" })];
   const on = { name: "workstation", status: "online", state: "connected" };

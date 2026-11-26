@@ -28,6 +28,14 @@ object Core {
         Native.shown(atId, atPersonal, sessionProject, onIssueProject, yours)
 
     /**
+     * A session's name as people read it (Arugula #1457): a chief of staff's,
+     * "Chief of staff · prj_…", by [projectName] when its project is
+     * [projectId]; any other as it is. Display only: match by the name itself.
+     */
+    fun sessionLabel(session: String, projectId: String?, projectName: String?): String =
+        Native.sessionLabel(session, projectId, projectName)
+
+    /**
      * The machines as Machines lists them, as `aru_machines` (native/core's
      * ffi.rs): [input] is `{at, recent, hosts: [{id, name, online, owner,
      * hosted, panes}], pins}`; the answer `{order, machines, quiet, pinned}`.
