@@ -41,8 +41,8 @@
 use arugula_control_wire::events::{self, AGENT_EVENTS, EventsPage};
 use arugula_control_wire::watch::{
     AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled,
-    WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types,
-    every_ms, every_word, expires_ms as expires, until_word_parse as until,
+    WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, every_ms,
+    every_word, expires_ms as expires, until_word_parse as until,
 };
 use std::time::Duration;
 
@@ -293,7 +293,9 @@ fn said(e: CloudRefused) -> String {
 fn new_fields(e: CloudRefused) -> String {
     match e {
         CloudRefused::Said { status: 400 | 422, said, .. }
-            if ["standing", "every_ms", "exclude_self", "pane"].iter().any(|f| said.contains(&format!("unknown field `{f}`"))) =>
+            if ["standing", "every_ms", "exclude_self", "pane"]
+                .iter()
+                .any(|f| said.contains(&format!("unknown field `{f}`"))) =>
         {
             "Arugula cloud doesn't keep standing watches or exclude_self yet: make a watch without them".into()
         }
@@ -912,7 +914,9 @@ mod tests {
     #[test]
     fn an_old_control_refusing_standing_says_so() {
         let refused = |said: &str| new_fields(CloudRefused::Said { status: 422, said: said.into(), reason: None });
-        let e = refused("Failed to deserialize the JSON body into the target type: unknown field `standing`, expected one of …");
+        let e = refused(
+            "Failed to deserialize the JSON body into the target type: unknown field `standing`, expected one of …",
+        );
         assert!(e.contains("doesn't keep standing watches"), "{e}");
         assert!(refused("targets: 1 to 10").contains("targets: 1 to 10"));
     }
