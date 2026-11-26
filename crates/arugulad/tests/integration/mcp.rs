@@ -4180,8 +4180,9 @@ impl FakeStaff {
     }
 }
 
-/// The staff rooms of `prj_1` ("Launch crew"), `dm_staff`, and of `prj_2`
-/// ("Other crew"), `dm_staff2`, with their leads.
+/// The staff rooms of `prj_1` ("Launch crew"), `dm_staff`, of `prj_2`
+/// ("Other crew"), `dm_staff2`, and of `prj_3abcdef9` (another "Launch
+/// crew"), `dm_staff3`, with their leads.
 async fn fake_staff(f: FakeStaff) -> String {
     use arugula_control_wire::chat::{agent_messages, agent_room_lead, agent_staff_room};
     use arugula_control_wire::sessions::agent_session_stop;
@@ -4194,7 +4195,11 @@ async fn fake_staff(f: FakeStaff) -> String {
     };
     use std::sync::atomic::Ordering::Relaxed;
     fn room(f: &FakeStaff, id: &str) -> Value {
-        let (project, name) = if id == "dm_staff" { ("prj_1", "Launch crew") } else { ("prj_2", "Other crew") };
+        let (project, name) = match id {
+            "dm_staff" => ("prj_1", "Launch crew"),
+            "dm_staff3" => ("prj_3abcdef9", "Launch crew"),
+            _ => ("prj_2", "Other crew"),
+        };
         let mut r = json!({
             "id": id, "kind": "dm", "name": format!("Chief of staff · {name}"), "project": project, "staff": true,
             "last": 0, "powers": ["threads.read", "threads.post"], "writable": true,
@@ -4220,6 +4225,7 @@ async fn fake_staff(f: FakeStaff) -> String {
     let home = |Query(q): Query<std::collections::HashMap<String, String>>| async move {
         match q.get("project").map(String::as_str) {
             Some("prj_2") => Json(json!({ "project": "prj_2", "name": "Other crew", "home": "native" })),
+            Some("prj_3abcdef9") => Json(json!({ "project": "prj_3abcdef9", "name": "Launch crew", "home": "native" })),
             _ => Json(json!({ "project": "prj_1", "name": "Launch crew", "home": "native" })),
         }
     };
@@ -4237,7 +4243,7 @@ async fn fake_staff(f: FakeStaff) -> String {
                 Json(json!({ "id": ses, "card": { "state": "stopped" } }))
             }),
         );
-    for (project, id) in [("prj_1", "dm_staff"), ("prj_2", "dm_staff2")] {
+    for (project, id) in [("prj_1", "dm_staff"), ("prj_2", "dm_staff2"), ("prj_3abcdef9", "dm_staff3")] {
         app = app
             .route(
                 &agent_staff_room(project),
@@ -4458,6 +4464,51 @@ async fn starting_a_chief_of_staff_where_one_leads_moves_it() {
     assert_eq!(control.posts.lock().unwrap().len(), 1, "a hosted one is stopped, not told in staff");
     let prompt = first_prompt(&d, last);
     assert!(prompt.contains("You take over from hosted session ses_1") && prompt.contains("start from the log's head"));
+    s.cancel().await.unwrap();
+}
+
+/// Two of a person's projects with one name (Arugula #1457): their chiefs
+/// of staff on one machine go by two names, the second with its project's
+/// short id, so the second start leaves the first, and each leads its own
+/// staff room. Started again, each closes only its own.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn chiefs_of_staff_of_two_projects_with_one_name_each_keep_their_room() {
+    let control = FakeStaff::default();
+    let url = fake_staff(control.clone()).await;
+    let d = staff_daemon(&control, url);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let blocks = |title: &str| -> Vec<u64> {
+        let panes = d.get("/api/panes");
+        panes.as_array().unwrap().iter().filter(|p| p["title"] == title).filter_map(|p| p["id"].as_u64()).collect()
+    };
+    let (name, other) = ("Chief of staff · Launch crew", "Chief of staff · Launch crew · 3abcde");
+
+    let r = start_chief(&s, json!({})).await;
+    let first = r["block"].as_u64().unwrap();
+    assert_eq!(r["chief_of_staff"]["session"], name, "{r}");
+    let r = start_chief(&s, json!({ "project": "prj_3abcdef9" })).await;
+    let second = r["block"].as_u64().unwrap();
+    let c = &r["chief_of_staff"];
+    assert_eq!(c["session"], other, "{r}");
+    assert!(c.get("closed").is_none(), "{r}");
+    assert!(c.get("moved_from").is_none(), "{r}");
+    assert_eq!((blocks(name), blocks(other)), (vec![first], vec![second]), "the first stays");
+    assert_eq!(control.lead_of("dm_staff")["session"], name);
+    assert_eq!(control.lead_of("dm_staff3")["session"], other);
+
+    // Started again, each closes its own block only, and keeps its name.
+    let r = start_chief(&s, json!({ "project": "prj_3abcdef9" })).await;
+    let again = r["block"].as_u64().unwrap();
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["session"], &c["closed"]), (&json!(other), &json!([second])), "{r}");
+    let r = start_chief(&s, json!({})).await;
+    let c = &r["chief_of_staff"];
+    assert_eq!((&c["session"], &c["closed"]), (&json!(name), &json!([first])), "{r}");
+    assert_eq!((blocks(name).len(), blocks(other)), (1, vec![again]));
+    assert_eq!(control.lead_of("dm_staff")["session"], name);
+    assert_eq!(control.lead_of("dm_staff3")["session"], other);
+    assert!(control.posts.lock().unwrap().is_empty(), "nobody told to stand down");
     s.cancel().await.unwrap();
 }
 

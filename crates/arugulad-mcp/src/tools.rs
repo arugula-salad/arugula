@@ -80,6 +80,13 @@ fn chief_title(project: &str) -> String {
     }
 }
 
+/// `title` told apart from another project's (Arugula #1457): its project's
+/// id, short, after it. Two of a person's projects may share a name.
+fn chief_title_of(title: &str, project: &str) -> String {
+    let id = project.strip_prefix("prj_").unwrap_or(project);
+    format!("{title} · {}", id.get(..6).unwrap_or(id))
+}
+
 /// Who led the staff room before a chief of staff was started (Arugula
 /// #1340), and what becomes of it.
 enum Before {
@@ -3531,6 +3538,7 @@ impl ToolCall<'_, '_> {
         if let Some(p) = &staff {
             let title = a.title.take().map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
             let title = title.unwrap_or_else(|| chief_title(&p.name));
+            let title = self.chief_title_here(&p.id, title).await;
             (before, closed) = self.chief_before(&p.id, &title).await;
             let prompt = match before.as_ref().map(handover) {
                 Some(h) if a.prompt.trim().is_empty() => h,
@@ -3720,12 +3728,40 @@ impl ToolCall<'_, '_> {
         results::StartedChief { project: project.id.clone(), session, lead, said, moved_from, closed }
     }
 
+    /// The project an agent block here works in (its `work`), if any.
+    async fn block_project(&self, pane: PaneId) -> Option<String> {
+        let block = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten()?;
+        if block.kind() != BlockType::Agent {
+            return None;
+        }
+        block.config()["work"]["project"].as_str().filter(|p| !p.is_empty()).map(str::to_owned)
+    }
+
+    /// A chief of staff's `title` for `project`, unique here (Arugula
+    /// #1457): an agent block of another project going by it here (another
+    /// project's chief of staff, of the same name) keeps it, and this one
+    /// adds its project's short id. Posts reach a lead by its session's
+    /// name, so one name is one project's.
+    async fn chief_title_here(&self, project: &str, title: String) -> String {
+        for (pane, name) in arugulad_base::agent_mentions::session_names(self.app, None).await {
+            if Some(pane) == self.own_pane() || !name.eq_ignore_ascii_case(&title) {
+                continue;
+            }
+            if self.block_project(pane).await.is_some_and(|p| p != project) {
+                return chief_title_of(&title, project);
+            }
+        }
+        title
+    }
+
     /// Who leads the person's staff room in `project` now (Arugula #1340),
     /// with the room's id: None when nobody does, or control can't say.
     /// The lead's block, when it's on this machine, is closed here, before
     /// the chief of staff about to start as `title` opens, and so is any
     /// other agent block here going by `title`: posts reach a lead by its
-    /// session's name, and one name is one session. Answers those closed.
+    /// session's name, and one name is one session. Another project's block
+    /// stays (Arugula #1457): `title` was told apart from its name before.
+    /// Answers those closed.
     async fn chief_before(&self, project: &str, title: &str) -> (Option<(String, Before)>, Vec<PaneId>) {
         let Ok(room) = crate::mcp::registry::staff_room(self.app, project).await else { return (None, vec![]) };
         let Some(id) = room["id"].as_str().map(str::to_owned) else { return (None, vec![]) };
@@ -3740,7 +3776,9 @@ impl ToolCall<'_, '_> {
                 continue;
             }
             let agent = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten();
+            let theirs = agent.as_ref().and_then(|b| b.config()["work"]["project"].as_str().map(str::to_owned));
             if agent.is_some_and(|b| b.kind() == BlockType::Agent)
+                && theirs.is_none_or(|p| p.is_empty() || p == project)
                 && crate::mcp::ops::call::<ClosePane>(self, json!({ "pane": pane })).await.is_ok()
             {
                 closed.push(pane);
