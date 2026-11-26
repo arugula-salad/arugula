@@ -66,11 +66,14 @@ data class Project(val id: String, val name: String, val team: Team?) {
 
 data class Me(val account: String, val login: String, val name: String)
 
-data class Projects(val me: Me, val projects: List<Project>) {
+/** [names]: each teammate's name by account, as their teams list them: whom a folded ask waits on (Arugula #1393). */
+data class Projects(val me: Me, val projects: List<Project>, val names: Map<String, String> = emptyMap()) {
     companion object {
         fun of(o: JSONObject) = Projects(
             o.getJSONObject("me").let { Me(it.optString("account"), it.optString("login"), it.optString("name")) },
             o.list("projects", Project::of),
+            o.optJSONArray("projects").objects().flatMap { it.obj("team")?.optJSONArray("members").objects() }
+                .mapNotNull { m -> m.str("account")?.let { a -> m.str("name")?.takeIf { it.isNotEmpty() }?.let { a to it } } }.toMap(),
         )
     }
 }

@@ -84,7 +84,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /** What every place's heading does with its buttons: New, the bell, and the account's. Unset, the heading has the project's menu alone. */
-class Heading(val api: Api, val model: AppModel, val makeNew: () -> Unit, val showInbox: () -> Unit) {
+class Heading(
+    val api: Api, val model: AppModel, val makeNew: () -> Unit, val showInbox: () -> Unit,
+    /** The links to your machines and home's model, for an agent's ask answered in the Inbox (Arugula #1435). */
+    val fleet: HomeFleet, val home: HomeModel,
+) {
     /** The Inbox and the bell's count, the heading's and the rail's alike (Arugula #1365). */
     val inbox = InboxModel(api)
 }

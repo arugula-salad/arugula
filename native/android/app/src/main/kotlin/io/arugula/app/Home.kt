@@ -1,8 +1,8 @@
 // The Overview (#1255; Home until Arugula #1362): the project's
 // conversations, sorted by what needs you, as the iPhone's Home.swift and the
 // desktop's Overview read them. Needs you first,
-// merged from every machine's panes, the boards' rows and the hosted
-// sessions, worst first, each answered where it is (Answer.kt); then the New
+// merged from every machine's panes, the boards' rows, the hosted
+// sessions and the deploys waiting for you (the Inbox's), worst first, each answered where it is (Answer.kt); then the New
 // ideas; then one row per open board, with its lane bar, its count, its lead
 // and what's going on in words; then the people, its channels and DMs. A
 // board's row opens the board's thread, whose Board button opens its lanes.
@@ -46,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -231,6 +232,8 @@ data class Need(
         data class Pane(val m: MachineSession, val p: PaneRow) : Target
         data class OnBoard(val board: Board, val row: BoardDetail.Row?) : Target
         data class Session(val s: SessionRow) : Target
+        /** A deploy waiting for your approval (Arugula #1435): approved on the platform's page, where it opens. */
+        data class Deploy(val item: InboxItem) : Target
     }
 }
 
@@ -260,16 +263,16 @@ data class BoardLine(
 )
 
 /** What home shows, from what the machines, the boards and the hosted sessions say: worked out each time any of them moves. */
-class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
+class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel, inbox: List<InboxItem> = emptyList(), me: String? = null) {
     val needs = mutableListOf<Need>()
     val boards = mutableListOf<BoardLine>()
     val sessions = mutableMapOf<String, List<BoardSession>>()
 
     init {
-        if (project != null) build(project, fleet, model)
+        if (project != null) build(project, fleet, model, inbox, me)
     }
 
-    private fun build(project: Project, fleet: HomeFleet, model: HomeModel) {
+    private fun build(project: Project, fleet: HomeFleet, model: HomeModel, inbox: List<InboxItem>, me: String?) {
         // The project's panes: its sessions', its cards', or, in the personal
         // project, those placed nowhere on your own machines (the core's rule).
         val shown = project.shown
@@ -309,6 +312,14 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
                 "hosted:${s.session}", model.opened[s.session]?.request ?: waiting, if (asks) 1 else 2, s.updatedAt,
                 s.issueNumber?.let { "#$it ${s.issueTitle}" } ?: "A session", Standing.NEEDS, "Arugula cloud",
                 s.question ?: waiting, false, Need.Target.Session(s),
+            )
+        }
+        // The project's deploys waiting for your approval, as the Inbox lists them (as the iPhone's Needs you).
+        for (i in inbox) {
+            if (i.kind != "deploy_approval" || i.subject.project != project.id || !i.counted(me)) continue
+            needs += Need(
+                "deploy:${i.subject.id}", i.id, 1, i.since, i.title, Standing.NEEDS,
+                listOfNotNull("Waits for your approval", i.from.name?.let { "planned by $it" }).joinToString(" · "), "", false, Need.Target.Deploy(i),
             )
         }
         needs.sortWith(compareBy({ it.rank }, { it.since }, { it.id }))
@@ -397,7 +408,9 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
         }
     }
 
-    val state = HomeState(project, fleet, model)
+    val heading = LocalHeading.current
+    val context = LocalContext.current
+    val state = HomeState(project, fleet, model, heading?.inbox?.items.orEmpty(), scope.me?.account)
     val needs = state.needs.filter { folded["${it.id}|${it.ask}"] != true }
     val people = model.rooms.filter { it.isConversation && !it.archived && scope.showsRoom(it) }
         .sortedWith(compareByDescending<ChatRoom> { if (it.unread > 0) 1 else 0 }.thenByDescending { it.last })
@@ -433,6 +446,7 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
                                     is Need.Target.Pane -> peek = Peeked.Pane(t.m, t.p)
                                     is Need.Target.OnBoard -> nav.push(Dest.BoardThread(t.board))
                                     is Need.Target.Session -> peek = Peeked.Hosted(t.s)
+                                    is Need.Target.Deploy -> heading?.let { h -> h.inbox.later { openOnPlatform(context, h.model.url, t.item.subject.url) } }
                                 }
                             })
                             NeedAnswer(n, api, model) { said ->

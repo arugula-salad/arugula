@@ -105,6 +105,8 @@ fun NeedAnswer(need: Need, api: Api, model: HomeModel, done: (String) -> Unit) {
                     }
                 }
             }
+            // Approved with a passkey on the platform's page, where the row opens.
+            is Need.Target.Deploy -> {}
             is Need.Target.Session -> {
                 val v = model.opened[t.s.session]
                 when {
@@ -149,7 +151,7 @@ fun optionLabel(id: String): String {
 
 /** A button per choice, the first one prominent. */
 @Composable
-private fun Choices(all: List<String>, enabled: Boolean, pick: (String) -> Unit) {
+internal fun Choices(all: List<String>, enabled: Boolean, pick: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         all.forEachIndexed { i, c -> AnswerButton(c, Modifier.testTag("answer-$c"), primary = i == 0, enabled = enabled) { pick(c) } }
     }
@@ -157,7 +159,7 @@ private fun Choices(all: List<String>, enabled: Boolean, pick: (String) -> Unit)
 
 /** The asker's own words, sent with Send. */
 @Composable
-private fun Own(prompt: String, enabled: Boolean, send: (String) -> Unit) {
+internal fun Own(prompt: String, enabled: Boolean, send: (String) -> Unit) {
     var words by remember { mutableStateOf("") }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(words, { words = it }, Modifier.weight(1f).testTag("answer-words"), placeholder = { Text(prompt) }, singleLine = true, textStyle = Face.ui(14.sp))
@@ -188,7 +190,7 @@ private fun Questions(qs: List<PaneRow.Question>, enabled: Boolean, send: (JSONO
     }
 }
 
-private suspend fun act(m: MachineSession, p: PaneRow, body: JSONObject) {
+internal suspend fun act(m: MachineSession, p: PaneRow, body: JSONObject) {
     body.put("pane", p.id)
     val got = m.request("POST", "/api/attention/act", body) as? JSONObject
     got?.optJSONArray("results").objects().firstOrNull { it.has("ok") && !it.optBoolean("ok") }?.let {
