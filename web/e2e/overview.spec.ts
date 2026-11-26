@@ -34,7 +34,8 @@
 // lead's latest word (#1441); coming back to the page
 // after 30 seconds reading the boards once and the briefing once, and after
 // less reading nothing (#1297); the chief of staff's tab with no staff
-// room yet saying what it does and starting it on this computer (#1341);
+// room yet saying what it does and starting it on this computer (#1341),
+// and asleep on an offline machine, run on another one (#1453);
 // and on a phone, one list
 // with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
@@ -1008,6 +1009,97 @@ test.describe("on a computer", () => {
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toBeVisible();
     await expect(panel.locator('[data-ov-who="staff"] [data-agent-head]')).toHaveText(`Chief of staff · idle on ${host}`);
     expect(calls).toHaveLength(2);
+  });
+
+  test("a chief of staff asleep on an offline machine: its tab offers Run it on another machine, which asks for the grant, starts it on the machine picked and leaves the room led there (Arugula #1453)", async ({ page }) => {
+    // The suite's daemon is the machine `m_suite`, as control names it; pi, the reader's other machine, is offline.
+    await page.route("**/api/hosts", async (r) => {
+      const list = (await (await r.fetch()).json()) as { this: string; hosts: unknown[] };
+      const pi = { name: "pi", id: "m_pi", urls: ["http://127.0.0.1:9"], transport: "tailnet", added_ms: 0, last_seen_ms: null, status: "offline" };
+      await r.fulfill({ json: { ...list, hosts: [...list.hosts, { name: list.this, id: "m_suite", urls: [], transport: "tailnet", added_ms: 0, last_seen_ms: null }, pi] } });
+    });
+    await overview(page);
+    const panel = page.locator("[data-ov-panel]");
+    const host = (await page.locator("[data-ov-loose] [data-ov-panes]").getAttribute("data-ov-panes"))!.split(":")[0];
+    // And laptop, another of the reader's machines, online and new enough: reached here through the suite's daemon, its requests noted.
+    await page.evaluate((host) => {
+      type Fleet = { list: unknown[]; clientOf(h: string): unknown; request(h: string, ...rest: unknown[]): Promise<unknown> };
+      const w = window as unknown as { __app: { fleet: Fleet }; __asked: string[] };
+      const fleet = w.__app.fleet;
+      const proto = Object.getPrototypeOf(fleet) as Fleet;
+      const real = Object.getOwnPropertyDescriptor(proto, "list")!.get!.bind(fleet);
+      Object.defineProperty(fleet, "list", { configurable: true, get: () => [...(real() as unknown[]), { name: "laptop", id: "m_laptop", transport: "tailnet", state: "connected", lastSeen: null, summary: null, path: null }] });
+      w.__asked = [];
+      fleet.clientOf = (h) => proto.clientOf.call(fleet, h === "laptop" ? host : h);
+      fleet.request = (h, ...rest) => (w.__asked.push(h), proto.request.call(fleet, h === "laptop" ? host : h, ...rest));
+    }, host);
+    // The staff room, led by the chief of staff on pi.
+    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+    await page.evaluate(
+      (P) => {
+        const room = (lead: unknown) => ({ id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead });
+        const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+        let lead: unknown = { machine: "m_pi", machine_name: "pi", session: "Chief of staff · Arugula" };
+        const before = window.fetch;
+        window.fetch = async (input, init) => {
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+          // Once it's started there, the hub's staff room is led by its block on that machine.
+          if (url.pathname === `/api/chat/projects/${P}/staff` && init?.method === "POST") {
+            lead = { machine: "m_laptop", machine_name: "laptop", session: "Chief of staff · Arugula" };
+            return json(room(lead));
+          }
+          if (url.pathname === "/api/chat/rooms/dm_cos/messages") return json({ room: room(lead), messages: [], more: false });
+          return before(input, init);
+        };
+        const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+        c.on = true;
+        c.rooms = [...c.rooms, room(lead)];
+        c.emit();
+      },
+      P,
+    );
+    const head = panel.locator('[data-ov-who="staff"] [data-agent-head]');
+    await expect(head).toHaveText("Chief of staff · asleep: pi is offline");
+    await expect(head).toHaveAttribute("data-agent-state", "asleep");
+    // The offer, over the room: the reader's machines online to run it on, this computer first and picked; pi (asleep) not among them.
+    const move = panel.locator('[data-ov-staff="dm_cos"] [data-ov-staff-move="pi"]');
+    await expect(move).toBeVisible();
+    await expect(move).toContainText("the one on pi stands down");
+    const machine = move.locator("[data-ov-staff-machine]");
+    await expect(machine.locator("option")).toHaveText([`${host} (this computer)`, "laptop"]);
+    await expect(machine).toHaveValue(host);
+    await expect(move.locator("[data-ov-staff-cannot]")).toHaveCount(0);
+    const go = move.locator("[data-ov-staff-go]");
+    await expect(go).toHaveText("Run it on another machine");
+    await machine.selectOption("laptop");
+
+    // It needs the machine's conversation powers over the reader's DMs first: a card asks, and Allow gives them.
+    const given: unknown[] = [];
+    await page.route("**/api/grants", (r) => {
+      if (r.request().method() !== "POST") return r.fulfill({ json: { grants: [] } });
+      given.push(r.request().postDataJSON());
+      return r.fulfill({ json: {} });
+    });
+    const calls: unknown[] = [];
+    await page.route("**/api/mcp/call", (r) => {
+      calls.push(r.request().postDataJSON());
+      return r.fulfill({ json: { content: [{ type: "text", text: "Started an agent in %9" }], structuredContent: { block: 9, chief_of_staff: { project: P, session: "scratch", lead: true, said: "It leads your person's staff room in Arugula. Session Chief of staff · Arugula on pi led it before: it's told to stand down" } } } });
+    });
+    await go.click();
+    const card = move.locator('[data-ov-staff-grant="laptop"]');
+    await expect(card).toBeVisible();
+    expect(calls).toHaveLength(0);
+    await card.locator("[data-ov-staff-allow]").click();
+
+    // Started on laptop through the same start as Start: start_agent, recipe chief-of-staff, in the project, asked of laptop.
+    await expect.poll(() => calls).toEqual([{ tool: "start_agent", arguments: { agent: "claude", recipe: "chief-of-staff", project: P, prompt: "" }, client: "Overview" }]);
+    expect(await page.evaluate(() => (window as unknown as { __asked: string[] }).__asked)).toEqual(["laptop"]);
+    expect(given.length).toBeGreaterThan(0);
+    expect(new Set(given.map((g) => (g as { daemon: string }).daemon))).toEqual(new Set(["m_laptop"]));
+    // The room is led by its block on laptop now: its head says so, and the offer is gone.
+    await expect(head).toHaveText("Chief of staff · idle on laptop");
+    await expect(panel.locator("[data-ov-staff-move]")).toHaveCount(0);
+    await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
   });
 
   test("an agent's proposal to start one is under Needs you, counted; Approve sends it and it leaves (Arugula #1278)", async ({ page }) => {

@@ -12,7 +12,8 @@
 // field's open boards are. Under the tabs, the who-line (#1290) says who
 // the open tab talks to and where a message there goes; the chief of
 // staff's is its head (./agent-head.tsx, #1342): where it runs and whether
-// it's awake.
+// it's awake; while it's asleep, its tab offers to run it on another
+// machine (#1453).
 
 import type { ComponentChildren, JSX } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -26,7 +27,7 @@ import { CloseIcon, IconButton } from "../shared/ui/icons";
 import { leadAwake } from "../shell/swarm/overview";
 import { AgentHead, starterOf } from "./agent-head";
 import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
-import { StaffStart } from "./overview-staff-start";
+import { StaffMove, StaffStart } from "./overview-staff-start";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -280,17 +281,26 @@ function StaffStartTab({ project }: { project: string }) {
  * under it, its rung (#1441): the project it's for, and who started it.
  * Its parent is the reader, whose word to it is the room itself. */
 function StaffWho({ room }: { room: string }) {
+  const { lead, at, place } = useStaffLead(room);
+  const rung = lead && place && "peek" in lead ? { line: `for ${place.project ?? "this project"}`, started: starterOf(place.fleet, lead.peek) } : undefined;
+  return <AgentHead role="Chief of staff" at={at} rung={rung} />;
+}
+
+/** The staff room's lead and how it stands (#1342), from the fleet where the Overview gives it. */
+function useStaffLead(room: string) {
   const place = useContext(PeekContext);
   useSubscribe((fn) => (place ? place.fleet.subscribe(fn) : () => {}));
   const l = chat.rooms.find((r) => r.id === room)?.lead;
   const lead = !l ? null : place ? place.lead(l) : { machineName: l.machine_name, standing: null };
-  const rung = lead && place && "peek" in lead ? { line: `for ${place.project ?? "this project"}`, started: starterOf(place.fleet, lead.peek) } : undefined;
-  return <AgentHead role="Chief of staff" at={leadAwake(lead, l && place?.fleet.hostById(l.machine))} rung={rung} />;
+  return { lead, at: leadAwake(lead, l && place?.fleet.hostById(l.machine)), place };
 }
 
-/** The staff room: its messages, which its lead session hears, and the box. */
+/** The staff room: its messages, which its lead session hears, and the
+ * box; over them, while its chief of staff is asleep, Run it on another
+ * machine (#1453). */
 function StaffTab({ room, title, phone }: { room: string; title: string; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
+  const { at, place } = useStaffLead(room);
   const r = chat.rooms.find((x) => x.id === room);
   if (!r) return <p class="dim ov-talk-note">Loading the room…</p>;
   const why = r.lead
@@ -298,6 +308,7 @@ function StaffTab({ room, title, phone }: { room: string; title: string; phone: 
     : "No session leads this room yet, so what you write waits here. Only you and your agents read it.";
   return (
     <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>
+      {at.state === "asleep" && place && r.project && <StaffMove key={at.machine} project={r.project} fleet={place.fleet} hostedIn={place.hostedIn ?? (() => undefined)} asleepOn={at.machine} />}
       <RoomBody key={r.id} room={r} phone={phone} embedded name={title} empty={{ title: "Nothing said to your chief of staff yet.", why }} />
     </div>
   );
