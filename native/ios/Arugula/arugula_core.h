@@ -75,6 +75,8 @@ void aru_link_free(AruLink *l);
 
 // Which sessions show in a project (Arugula #1355): at_id NULL shows every one.
 int32_t aru_shown(const char *at_id, int32_t at_personal, const char *session_project, const char *on_issue_project, int32_t yours);
+// A session's name as people read it (Arugula #1457): a chief of staff's by project_name when its project is project_id; free it.
+char *aru_session_label(const char *session, const char *project_id, const char *project_name);
 // The machines as Machines lists them: {at, recent, hosts, pins} in, {order, machines, quiet, pinned} out.
 char *aru_machines(const char *input, char **err);
 // Where you were in a project (Arugula #1360), from its app.pane.<project>

@@ -466,14 +466,19 @@ struct LeadLine {
     let machine: String
     let standing: Standing?
     let peeked: Peeked?
+    /// Its session's name as people read it: a chief of staff's by its
+    /// project's (Arugula #1457).
+    let label: String
 
-    var name: String { who.map { "\($0)'s \(lead.session)" } ?? lead.session }
+    var name: String { who.map { "\($0)'s \(label)" } ?? label }
 
     /// `shown` is the board's project: a session of another, of the same
     /// name, isn't its lead's (Arugula #1353).
     @MainActor
     init(_ lead: Board.Lead, fleet: HomeFleet, in shown: Shown?) {
         self.lead = lead
+        let label = sessionLabel(lead.session, in: shown)
+        self.label = label
         let listed = fleet.directory.first { $0.id == lead.machine }
         // A team's own box has no one to name.
         who = listed.flatMap { $0.team_box == true ? nil : $0.owner_name }.flatMap { $0.isEmpty ? nil : $0 }
@@ -484,14 +489,16 @@ struct LeadLine {
             return
         }
         // The daemon names a lead by its Claude Code conversation's title (an
-        // agent block's own title), else as the web does, by its session's.
+        // agent block's own title), else as the web does, by its session's. A
+        // chief of staff's block is titled by its project's name, its session
+        // by the project's id (Arugula #1457).
         let yours = m.machine.yours
         let tabs = Set(m.sessions.filter { $0.name == lead.session && Shown.shows(shown, project: $0.project?.id, yours: yours) }.flatMap(\.tabs))
         let all = (m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } })
             .filter { Shown.shows(shown, project: $0.session_project?.id, card: $0.on_issue?.project, yours: yours) }
         let panes = all.filter { p in
             m.conversations[p.id] == lead.session
-                || (p.type == "agent" && p.title?.trimmingCharacters(in: .whitespaces) == lead.session)
+                || (p.type == "agent" && [lead.session, label].contains(p.title?.trimmingCharacters(in: .whitespaces) ?? ""))
                 || tabs.contains(p.tab)
         }
         standing = panes.map { m.standing(of: $0) }.min()
@@ -1258,11 +1265,13 @@ struct BoardLineRow: View {
         .padding(.vertical, 4)
     }
 
-    /// Who leads it, in words: a session on a machine, or nobody.
-    static func lead(_ l: Board.Lead?) -> String {
+    /// Who leads it, in words: a session on a machine, or nobody. A chief
+    /// of staff's session reads by `shown`'s name, when it's that project's
+    /// (Arugula #1457).
+    static func lead(_ l: Board.Lead?, in shown: Shown? = nil) -> String {
         guard let l else { return "No lead" }
         let on = (l.machine_name ?? "").isEmpty ? "" : " on \(l.machine_name!)"
-        return "Led by \(l.session)\(on)"
+        return "Led by \(sessionLabel(l.session, in: shown))\(on)"
     }
 }
 

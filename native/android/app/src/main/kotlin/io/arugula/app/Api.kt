@@ -255,6 +255,13 @@ val Project.shown get() = Shown(id, team == null)
 fun Shown?.shows(project: String?, card: String? = null, yours: Boolean) =
     Core.shown(this?.id, this?.personal ?: false, project, card, yours)
 
+/**
+ * A session's name as people read it, as the core says (Arugula #1457): a
+ * chief of staff's, "Chief of staff · prj_…", by [in]'s name when it's that
+ * project's; any other as it is. Display only: match by the name itself.
+ */
+fun sessionLabel(session: String, `in`: Project?): String = Core.sessionLabel(session, `in`?.id, `in`?.name)
+
 /** One of a session's tabs as the core keeps it: its panes' ids, in layout order. */
 data class SessionTab(val id: Int, val name: String?, val panes: List<Int>)
 

@@ -460,7 +460,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
       const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && is(b.lead.peek))?.lead?.peek;
       return s && { s, card: null };
     },
-    lead: (l) => boardLead(l, ovPanes, byCard, hostOf),
+    lead: (l) => boardLead(l, ovPanes, byCard, hostOf, (id) => platform.project(id)?.name),
     openPanes,
     openCard,
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,

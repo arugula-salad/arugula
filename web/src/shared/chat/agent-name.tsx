@@ -5,15 +5,17 @@
 // it is.
 
 import type { ChatAgent, ChatMessage } from "../proto";
+import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { authorLabel, machineHandle, sessionSlug } from "./agents";
 
 /** `machine/tab`, or the machine alone for a post that names no tab (an
- * older daemon, a machine-level post). */
-export function agentHandle(a: ChatAgent): string {
+ * older daemon, a machine-level post). With `projectName`, a chief of
+ * staff's tab reads by its project's name (Arugula #1457). */
+export function agentHandle(a: ChatAgent, projectName?: (id: string) => string | undefined): string {
   const machine = machineHandle(a.machine_name) || "a machine that left";
-  const tab = a.session ? sessionSlug(a.session) : "";
+  const tab = a.session ? sessionSlug(sessionLabel(a.session, projectName)) : "";
   return tab ? `${machine}/${tab}` : machine;
 }
 
@@ -32,7 +34,9 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
   useSubscribe((fn) => api.subscribe(fn));
   const agent = m.agent;
   if (!agent) return <Tag class={open ? "thread-name" : undefined}>{authorLabel(m)}</Tag>;
-  const handle = agentHandle(agent);
+  // As people read it; `data-agent-name` keeps the handle that reaches it.
+  const handle = agentHandle(agent, api.projectName);
+  const routes = agentHandle(agent);
   const owner = ownerTip(m);
   const target = open && agent.session ? api.agentPane(agent.machine, agent.session) : undefined;
   if (!open || !target) {
@@ -41,7 +45,7 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
     // reach whose tab is gone says so.
     const gone = open && !!agent.session && !!api.machine(agent.machine);
     return (
-      <Tag class={open ? "thread-name chat-agent-name" : "chat-agent-name"} title={gone ? `${owner}. Its tab isn't open now` : owner} data-agent-name={handle}>
+      <Tag class={open ? "thread-name chat-agent-name" : "chat-agent-name"} title={gone ? `${owner}. Its tab isn't open now` : owner} data-agent-name={routes} data-agent-shown={handle}>
         {handle}
       </Tag>
     );
@@ -51,7 +55,8 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
       type="button"
       class="thread-name chat-agent-name"
       title={target.up ? `${owner}. Open its pane` : `${owner}. ${agent.machine_name} is asleep`}
-      data-agent-name={handle}
+      data-agent-name={routes}
+      data-agent-shown={handle}
       data-opens="1"
       onClick={() => api.goToPane(agent.machine, target.pane, null)}
     >

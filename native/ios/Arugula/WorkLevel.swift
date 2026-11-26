@@ -254,7 +254,7 @@ struct WorkLevel: View {
     /// A lead's name, from its key, when its machine isn't here.
     private var leadName: String? {
         guard let key = session, key.hasPrefix("lead:") else { return nil }
-        return key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init)
+        return key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).dropFirst().first.map { sessionLabel(String($0), in: project.shown) }
     }
 
     /// Why a session on no card isn't here: a lead's machine, by name.

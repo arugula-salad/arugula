@@ -24,6 +24,8 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
+import { usePlatformApi } from "../shared/platform-api";
+import { sessionLabel } from "../shared/chief-of-staff";
 import { leadAwake } from "../shell/swarm/overview";
 import { AgentHead, starterOf } from "./agent-head";
 import { PeekContext, PeekTab, PeekWho, talkKeyOf } from "./overview-peek";
@@ -301,10 +303,11 @@ function useStaffLead(room: string) {
 function StaffTab({ room, title, phone }: { room: string; title: string; phone: boolean }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const { at, place } = useStaffLead(room);
+  const { projectName } = usePlatformApi();
   const r = chat.rooms.find((x) => x.id === room);
   if (!r) return <p class="dim ov-talk-note">Loading the room…</p>;
   const why = r.lead
-    ? `What you write here goes to ${r.lead.session} on ${r.lead.machine_name || "its machine"}. Only you and your agents read it.`
+    ? `What you write here goes to ${sessionLabel(r.lead.session, projectName)} on ${r.lead.machine_name || "its machine"}. Only you and your agents read it.`
     : "No session leads this room yet, so what you write waits here. Only you and your agents read it.";
   return (
     <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>

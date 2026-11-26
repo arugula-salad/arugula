@@ -1,6 +1,6 @@
 ---
 section: Fixed
 title: Same-named projects keep their own chief of staff
-line: A chief of staff's session is named by its project's id, so two projects with one name, or a renamed project, each keep their own chief of staff and staff posts.
+line: Each project's chief of staff now keeps its own staff room, even when two of your projects share a name or one is renamed. It still shows as "Chief of staff · <project name>".
 headline: no
 ---

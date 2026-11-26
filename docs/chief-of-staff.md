@@ -93,7 +93,10 @@ daemon as on any machine. That call:
    `chief_of_staff` says whether it leads. Its session is named by the
    project's id, "Chief of staff · prj_…", not by its title: two of your
    projects may share a name, and a project may be renamed, and your posts
-   in staff still reach the right one. Starting one again for the project
+   in staff still reach the right one. The web and the phones show it as
+   "Chief of staff · <the project's name>" wherever they know the project
+   (its posts, "Led by", its watches), else by that name as it is; only the
+   name routes. Starting one again for the project
    closes the one here by that name (or, from an older daemon, by the
    project's title), never another project's.
 

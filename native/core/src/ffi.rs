@@ -606,6 +606,23 @@ pub unsafe extern "C" fn aru_shown(
     shown::pane_shown(session.as_deref(), issue.as_deref(), yours != 0, at.as_ref()) as i32
 }
 
+/// A session's name as people read it (Arugula #1457): a chief of staff's,
+/// "Chief of staff · prj_…", by `project_name` when its project is
+/// `project_id`; any other, or with either NULL, as it is. Free it with
+/// `aru_string_free`. Display only: match by the name itself.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_session_label(
+    session: *const c_char,
+    project_id: *const c_char,
+    project_name: *const c_char,
+) -> *mut c_char {
+    let opt = |p: *const c_char| (!p.is_null()).then(|| unsafe { text(p) });
+    let session = opt(session).unwrap_or_default();
+    let (id, name) = (opt(project_id), opt(project_name));
+    let project = id.as_deref().zip(name.as_deref());
+    to_c(crate::chief::session_label(&session, project))
+}
+
 /// The machines as Machines lists them: `{"at": {id, personal} | null,
 /// "recent": id | null, "hosts": [{id, name, online, owner, hosted, panes}],
 /// "pins": [{machine, session}]}`, `panes` as `aru_link_panes` gives it, and
