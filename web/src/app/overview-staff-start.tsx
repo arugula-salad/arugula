@@ -15,6 +15,11 @@
 // tab is the room's, with its head (#1342). While the room's chief of staff
 // is asleep, the same pick and start move it to another machine (StaffMove,
 // #1453), and while no session leads the room, start one there (#1472).
+// While it runs, Restart (#1500) starts a new one on the machine it runs on,
+// after one confirm: start_agent there closes the lead's block on its own
+// machine before the new one opens and hands it the lead, and the new one
+// carries on from the machine's notes (`~/.chief-of-staff/`), so the page
+// closes nothing and sends no handoff.
 
 import { useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
@@ -52,18 +57,18 @@ async function grants(): Promise<Grant[]> {
   return ((await r.json()) as { grants: Grant[] }).grants;
 }
 
-type Step = { at: "idle" } | { at: "starting" } | { at: "grant"; spot: StaffSpot; powers: string[] } | { at: "failed"; why: string };
+type Step = { at: "idle" } | { at: "confirm"; spot: StaffSpot } | { at: "starting" } | { at: "grant"; spot: StaffSpot; powers: string[] } | { at: "failed"; why: string };
 
 /** Starting the chief of staff from the tab: where it can run, the one
  * chosen, and how the start stands. `except` is a machine left out (the
  * one it's asleep on, #1453). */
-function useStaffStart(project: string, fleet: Fleet, hostedIn: (id: string | undefined) => string | undefined, except?: string) {
+function useStaffStart(project: string, fleet: Fleet, hostedIn: (id: string | undefined) => string | undefined, except?: string, only?: string) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => directory.subscribe(fn));
   const spots = staffSpots(fleet.list, { project, here: directory.home, features: (n) => fleet.clientOf(n)?.features, hostedIn });
-  const can = spots.can.filter((s) => s.name !== except);
-  const cannot = spots.cannot.filter((c) => c.name !== except);
-  const pick = spots.pick !== except ? spots.pick : (can.find((s) => !s.cloud)?.name ?? null);
+  const can = spots.can.filter((s) => s.name !== except && (only === undefined || s.name === only));
+  const cannot = spots.cannot.filter((c) => c.name !== except && (only === undefined || c.name === only));
+  const pick = only !== undefined ? (can[0]?.name ?? null) : spots.pick !== except ? spots.pick : (can.find((s) => !s.cloud)?.name ?? null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [step, setStep] = useState<Step>({ at: "idle" });
   const on = can.find((s) => s.name === (chosen ?? pick)) ?? null;
@@ -174,6 +179,22 @@ function StaffAfter({ s }: { s: StaffStarting }) {
           </div>
         </div>
       )}
+      {step.at === "confirm" && (
+        <div class="ov-staff-grant" role="group" aria-label="Restart it" data-ov-staff-confirm={step.spot.name}>
+          <p>
+            <b>Restart your chief of staff?</b>
+          </p>
+          <p class="dim">Its turn stops; the new one carries on from its notes on {shortHost(step.spot.name)}.</p>
+          <div class="ov-staff-grant-acts">
+            <button type="button" class="primary" data-ov-staff-restart-go onClick={() => void s.start(step.spot)}>
+              Restart
+            </button>
+            <button type="button" class="secondary" data-ov-staff-restart-cancel onClick={() => s.setStep({ at: "idle" })}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {step.at === "failed" && (
         <p class="ov-staff-failed" role="alert" data-ov-staff-failed>
           {step.why}
@@ -218,6 +239,24 @@ export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: str
       )}
       {s.can.length > 0 && <StaffGo s={s} go={asleepOn ? "Run it on another machine" : "Start"} />}
       <StaffCannot s={s} />
+      <StaffAfter s={s} />
+    </div>
+  );
+}
+
+/** Over the staff room while its chief of staff runs on `runsOn` (Arugula
+ * #1500): Restart, to pick up a new recipe. Only if that machine can start
+ * one; the start is Start's, grant check and all, and a failed one says
+ * why and leaves the running one as it was. */
+export function StaffRestart({ project, fleet, hostedIn, runsOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; runsOn: string }) {
+  const s = useStaffStart(project, fleet, hostedIn, undefined, runsOn);
+  if (!s.on) return null;
+  const busy = s.step.at === "starting";
+  return (
+    <div class="ov-staff-restart" data-ov-staff-restart={runsOn}>
+      <button type="button" class="secondary" disabled={busy || s.step.at !== "idle" && s.step.at !== "failed"} data-ov-staff-restart-open onClick={() => s.setStep({ at: "confirm", spot: s.on! })}>
+        {busy ? "Restarting…" : "Restart"}
+      </button>
       <StaffAfter s={s} />
     </div>
   );
