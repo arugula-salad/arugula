@@ -55,6 +55,12 @@ Prompts:
                  later by an autonomous-origin usage_update. A prompt that
                  comes during it is folded into it and never answered, as
                  claude-agent-acp does (#716). "wake-open" never closes.
+  notified       as claude-agent-acp 0.85.0 after background shells (#1455):
+                 two started, one stopped, the other's output read, then
+                 the turn's result as a task notification's and no answer
+                 to the prompt until it's cancelled. "notified-busy": that
+                 result while a tool call runs, quiet for 6s, then the turn
+                 ends as usual
   held           as claude-agent-acp while background subagents live: the
                  result's usage_update, then the prompt's answer held for 30s
                  (a cancel answers it at once)
@@ -745,20 +751,33 @@ def prompt(mid, p):
         return
     elif text.startswith("bg "):
         task = f"bg{n}"
-        out = os.path.join(DIR, "tasks", f"{task}.output")
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        with open(out, "w") as f:
-            f.write("started\n")
-        tc = f"t{n}"
-        meta = {"claudeCode": {"toolName": "Bash"}}
-        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tc, "title": "sleep", "kind": "execute",
-                        "status": "pending", "rawInput": {"command": "sleep", "run_in_background": True}, "_meta": meta})
-        update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tc, "_meta": {"claudeCode": {
-            "toolName": "Bash", "toolResponse": {"backgroundTaskId": task, "stdout": "", "stderr": ""}}}})
-        said = f"Command running in background with ID: {task}. Output is being written to: {out}. You will be notified when it completes."
-        update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tc, "status": "completed", "_meta": meta,
-                        "content": [{"type": "content", "content": {"type": "text", "text": said}}]})
+        start_bg(sid, s, f"t{n}", task)
         msg("Waiting on the background task.")
+    elif text == "notified":
+        # #1455, as claude-agent-acp 0.85.0 did on 2026-11-25: two shells in
+        # the background, one stopped, the other's output read. Its results
+        # all came as a task notification's, never the prompt's own, and the
+        # prompt was never answered: here until it's cancelled.
+        first, second = start_bg(sid, s, f"t{n}a", f"bg{n}a"), start_bg(sid, s, f"t{n}b", f"bg{n}b")
+        with open(first, "a") as f:
+            f.write("\n[killed]\n")
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"s{n}", "title": "TaskStop", "kind": "other",
+                        "status": "completed", "_meta": {"claudeCode": {"toolName": "TaskStop"}}})
+        with open(second, "a") as f:
+            f.write("done\n\n[exited with code 0]\n")
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"r{n}", "title": f"Read {second}",
+                        "kind": "read", "status": "completed", "_meta": {"claudeCode": {"toolName": "Read"}}})
+        msg("Both checks are done; the report is above.")
+        notification(sid, s)
+    elif text == "notified-busy":
+        # ...and the same result while a tool call of the turn runs, quiet
+        # for longer than the block's quiet period: the turn is busy.
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"q{n}", "title": "just test", "kind": "execute",
+                        "status": "in_progress", "_meta": {"claudeCode": {"toolName": "Bash"}}})
+        notification(sid, s)
+        time.sleep(6)
+        update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": f"q{n}", "status": "completed"})
+        msg("The tests passed.")
     elif text.startswith("The finish step"):
         # A hosted session's finish step failed (M261): fix what it said,
         # if it's something this fake knows how to fix.
@@ -770,13 +789,13 @@ def prompt(mid, p):
             msg("I can't fix that.")
     else:
         msg("Hello! I am fake.")
-    if stop != "cancelled":
+    if stop != "cancelled" and text != "notified":
         s["cost"] = round(s.get("cost", 0) + 0.01, 4)
         update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000,
                         "cost": {"amount": s["cost"], "currency": "USD"}})
     save(sid, s)
-    if text == "held":
-        for _ in range(300):
+    if text in ("held", "notified"):
+        for _ in range(300 if text == "held" else 6000):
             if sid in cancelled:
                 cancelled.discard(sid)
                 stop = "cancelled"
@@ -802,6 +821,32 @@ def prompt(mid, p):
                 "sessionUpdate": "usage_update", "used": 12, "size": 1000,
                 "cost": {"amount": s["cost"], "currency": "USD"},
                 "_meta": {"_claude/origin": {"kind": "task-notification"}}}}})
+
+
+def notification(sid, s):
+    """A cycle's result as a task notification's, with its cost (#1455)."""
+    s["cost"] = round(s.get("cost", 0) + 0.01, 4)
+    update(sid, s, {"sessionUpdate": "usage_update", "used": 10, "size": 1000,
+                    "cost": {"amount": s["cost"], "currency": "USD"},
+                    "_meta": {"_claude/origin": {"kind": "task-notification", "producer": "session-task"}}})
+
+
+def start_bg(sid, s, tc, task):
+    """A shell command run in the background, as Claude Code reports one:
+    its task id, then where its output goes. Its output file."""
+    out = os.path.join(DIR, "tasks", f"{task}.output")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w") as f:
+        f.write("started\n")
+    meta = {"claudeCode": {"toolName": "Bash"}}
+    update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tc, "title": "sleep", "kind": "execute",
+                    "status": "pending", "rawInput": {"command": "sleep", "run_in_background": True}, "_meta": meta})
+    update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tc, "_meta": {"claudeCode": {
+        "toolName": "Bash", "toolResponse": {"backgroundTaskId": task, "stdout": "", "stderr": ""}}}})
+    said = f"Command running in background with ID: {task}. Output is being written to: {out}. You will be notified when it completes."
+    update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tc, "status": "completed", "_meta": meta,
+                    "content": [{"type": "content", "content": {"type": "text", "text": said}}]})
+    return out
 
 
 def background(sid, s, n, secs, task):
