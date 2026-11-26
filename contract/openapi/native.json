@@ -796,6 +796,55 @@
         }
       }
     },
+    "/api/boards/{id}/grant": {
+      "delete": {
+        "operationId": "DELETE_api_boards_id_grant",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardView"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/boards/{id}/reopen": {
       "post": {
         "operationId": "POST_api_boards_id_reopen",
@@ -1101,6 +1150,55 @@
             }
           }
         }
+      }
+    },
+    "/api/boards/{id}/run": {
+      "post": {
+        "operationId": "POST_api_boards_id_run",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardRunAsked"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/chat": {
@@ -7877,6 +7975,31 @@
         "required": [
           "done",
           "total"
+        ],
+        "type": "object"
+      },
+      "BoardRunAsked": {
+        "description": "[`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the\nperson's staff room. `again`: it was open already.",
+        "properties": {
+          "again": {
+            "default": false,
+            "type": "boolean"
+          },
+          "ask": {
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ask",
+          "room",
+          "seq"
         ],
         "type": "object"
       },

@@ -252,6 +252,11 @@ final class HomeModel: ObservableObject {
     }
     private var pending = false
 
+    /// A board as a write answered it (its grant revoked, Arugula #1456).
+    func put(_ id: String, view: BoardDetail) {
+        views[id] = view
+    }
+
     /// The reader's staff room in a project, as the rooms list has it: its
     /// lead and unread count. None until it's first opened.
     func staffListed(project: String) -> ChatRoom? {
@@ -800,7 +805,7 @@ struct PhoneHome: View {
                 switch opened {
                 case .board(let b):
                     if let p = scope.current {
-                        BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, askChief: askChief(b, in: p))
+                        BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, run: runBoard(b, in: p), revoke: { revokeGrant(b) })
                     }
                 case .thread(let b):
                     BoardThread(control: control, board: b, shown: scope.current?.shown, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
@@ -930,22 +935,37 @@ struct PhoneHome: View {
         }
     }
 
-    /// A board no one leads, in a team's project where the reader has a
-    /// staff room: ask the chief of staff to start a lead there, and open the
-    /// room to read the answer (Arugula #1306).
-    private func askChief(_ b: Board, in p: Projects.Project) -> (() -> Void)? {
-        guard p.team != nil, (model.boards.first { $0.id == b.id } ?? b).lead == nil,
-              let room = model.staffListed(project: p.id) else { return nil }
+    /// Run this board (Arugula #1416, #1456), on a board no one leads and
+    /// nothing is granted, in a team's project (a staff room is a team's):
+    /// its card, with the defaults filled in, goes in the reader's staff
+    /// room, under Needs you.
+    private func runBoard(_ b: Board, in p: Projects.Project) -> (() -> Void)? {
+        let line = model.boards.first { $0.id == b.id } ?? b
+        guard p.team != nil, line.lead == nil, line.closed_at == nil, model.views[b.id]?.grant == nil else { return nil }
         return {
             Task {
                 do {
-                    _ = try await control.call("POST", "/api/chat/rooms/\(room.id)/messages", body: [
-                        "text": "Please start a session to lead the board \"\(b.title)\" (\(b.id)): read its goal and open tickets, then lead it.",
-                    ])
-                    opened = .staff(project: p.id)
+                    let d = try await control.call("POST", "/api/boards/\(b.id)/run")
+                    let r = try JSONDecoder().decode(BoardRunAsked.self, from: d)
+                    show(r.again == true ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.")
+                    await refresh()
                 } catch {
-                    show("Couldn't ask the chief of staff: \(describe(error))")
+                    show("Couldn't ask to run it: \(describe(error))")
                 }
+            }
+        }
+    }
+
+    /// Revoke the board's grant: its lead and agents run on, and nothing
+    /// more starts under it.
+    private func revokeGrant(_ b: Board) {
+        Task {
+            do {
+                let d = try await control.call("DELETE", "/api/boards/\(b.id)/grant")
+                let view = try JSONDecoder().decode(BoardDetail.self, from: d)
+                model.put(b.id, view: view)
+            } catch {
+                show("Couldn't change it: \(describe(error))")
             }
         }
     }

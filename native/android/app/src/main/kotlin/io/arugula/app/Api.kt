@@ -29,6 +29,8 @@ class Api(val control: Control, val stored: String? = null, private val signedOu
         runCatching { JSONObject(it) }.getOrDefault(JSONObject())
     }
 
+    suspend fun delete(path: String) = JSONObject(call("DELETE", path))
+
     /** The thread of an object (a board, an issue): made the first time someone opens it. */
     suspend fun threadOf(target: String) =
         ChatRoom.of(post("/api/chat/targets", JSONObject().put("machine", "").put("kind", "object").put("target", target)))
@@ -98,8 +100,23 @@ data class Board(val id: String, val title: String, val goal: String?, val progr
     }
 }
 
-/** One board: its lanes (Next, Doing, Review, Done) with their rows, and its groups. */
-data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, val lanes: List<Lane>, val groups: Map<String, String>) {
+/** One board: its lanes (Next, Doing, Review, Done) with their rows, its groups, and its grant. */
+data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, val lanes: List<Lane>, val groups: Map<String, String>, val closedAt: Long? = null, val grant: Grant? = null) {
+    /**
+     * Its live grant to start agents (Arugula #1416, #1456): what its person
+     * approved on its Run this board card. [mine]: the reader gave it, so
+     * Revoke is theirs.
+     */
+    data class Grant(val id: String, val personName: String?, val leadMachine: String, val machines: List<String>, val cap: Int, val lapsesAt: Long?, val mine: Boolean) {
+        /** As the web's board page says it: "Grant: lead on geek · agents on geek, mini · up to 3 · until the board closes"; a teammate's is "Grant (Jo's): …". */
+        val line: String
+            get() {
+                val by = if (mine) "" else personName?.takeIf { it.isNotEmpty() }?.let { " ($it's)" } ?: ""
+                val until = lapsesAt?.let { "until " + java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "until the board closes"
+                return "Grant$by: lead on $leadMachine · agents on ${machines.joinToString(", ")} · up to $cap · $until"
+            }
+    }
+
     /** The issue's or PR's state as the board read it. */
     data class Live(val kind: String?, val number: Int?, val title: String?, val state: String?, val repo: String?)
 
@@ -141,6 +158,13 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
                 b.optString("title"), b.str("goal"), Board.lead(b.obj("lead")),
                 o.list("zones") { z -> Lane(z.getString("id"), z.optString("title"), z.list("rows", ::row)) },
                 o.optJSONArray("groups").objects().associate { it.getString("id") to it.optString("title") },
+                b.long("closed_at"),
+                o.obj("grant")?.let { g ->
+                    Grant(
+                        g.getString("id"), g.str("person_name"), g.obj("lead_machine")?.optString("name").orEmpty(),
+                        g.list("machines") { it.optString("name") }, g.optInt("cap"), g.long("lapses_at"), g.optBoolean("mine"),
+                    )
+                },
             )
         }
     }

@@ -69,9 +69,34 @@ struct BoardDetail: Decodable {
     }
     struct Lane: Decodable, Identifiable { var id: String; var title: String; var rows: [Row] }
     struct Group: Decodable, Identifiable { var id: String; var title: String }
+    /// Its live grant to start agents (Arugula #1416, #1456): what its person
+    /// approved on its Run this board card. `mine`: the reader gave it, so
+    /// Revoke is theirs.
+    struct Grant: Decodable {
+        struct Machine: Decodable { var id: String; var name: String }
+        var id: String
+        var person_name: String?
+        var lead_machine: Machine
+        var machines: [Machine]
+        var cap: Int
+        var lapses_at: Int?
+        var mine: Bool?
+
+        /// As the web's board page says it: "Grant: lead on geek · agents on
+        /// geek, mini · up to 3 · until the board closes"; a teammate's is
+        /// "Grant (Jo's): …".
+        var line: String {
+            let by = mine == true ? "" : person_name.flatMap { $0.isEmpty ? nil : " (\($0)'s)" } ?? ""
+            let until = lapses_at.map { at in
+                "until " + Date(timeIntervalSince1970: Double(at) / 1000).formatted(.dateTime.month(.abbreviated).day())
+            } ?? "until the board closes"
+            return "Grant\(by): lead on \(lead_machine.name) · agents on \(machines.map(\.name).joined(separator: ", ")) · up to \(cap) · \(until)"
+        }
+    }
     var board: Info
     var zones: [Lane]
     var groups: [Group]?
+    var grant: Grant?
 
     func groupTitle(_ id: String?) -> String? { id.flatMap { g in groups?.first { $0.id == g }?.title } }
 }
@@ -83,6 +108,10 @@ struct IssueRef: Hashable { var id: String }
 struct ProjectIssue: Hashable { var project: String; var number: String }
 
 struct BoardList: Decodable { var boards: [Board] }
+
+/// `POST /api/boards/{id}/run`'s answer: the card went in the reader's
+/// staff room; `again`, it was there already.
+struct BoardRunAsked: Decodable { var ask: String; var room: String; var again: Bool? }
 
 /// A project Doc on its project's list (the web's `ProjectDoc`), its times
 /// in milliseconds.
