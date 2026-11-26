@@ -16,7 +16,7 @@ import { Time } from "../../shared/ui/time";
 import { CopyText } from "../../shared/ui/copy";
 import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
-import { useEscape } from "./keys";
+import { useEscape } from "../../shared/keys";
 import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";

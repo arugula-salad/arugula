@@ -28,7 +28,7 @@ import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-edito
 import { GateWhy } from "../ui/gate-why";
 import { CloseIcon, IconButton, NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
-import { ariaKeys, keyHint, useBinding } from "../ui/keys";
+import { ariaKeys, keyHint, useBinding } from "../../shared/keys";
 import { useWall } from "./wall";
 import { finished, needsYou, needsYouRank, NEEDS_YOU, sortNeedsYou } from "../../shared/needs-you";
 import { NO_BOARD, boardGroup, onIssueChip } from "../../shared/boards/text";

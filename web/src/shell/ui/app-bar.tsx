@@ -15,7 +15,7 @@ import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
 import { openSettings } from "./settings-route";
-import { ariaKeys, keyHint } from "./keys";
+import { ariaKeys, keyHint } from "../../shared/keys";
 import { openPalette } from "./palette";
 import { openFeedback } from "./feedback";
 import { UpdateChip } from "./update";

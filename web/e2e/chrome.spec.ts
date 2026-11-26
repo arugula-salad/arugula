@@ -508,7 +508,7 @@ test.describe("accessibility", () => {
     const duration = await page.evaluate(() => {
       const el = document.createElement("span");
       el.className = "att needs_input";
-      document.querySelector(".ws-foot")!.append(el);
+      document.querySelector("[data-status-footer]")!.append(el);
       const d = getComputedStyle(el).animationDuration;
       el.remove();
       return parseFloat(d);

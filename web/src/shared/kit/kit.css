@@ -592,3 +592,75 @@
   background: var(--card-raised);
   color: var(--ink);
 }
+
+/* ---- The frame (Lift 3): the footer and the `?` sheet. */
+
+.k-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  height: 30px;
+  padding: 0 14px;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+.k-foot-place {
+  color: var(--ink);
+  font-weight: 600;
+}
+.k-foot-keys,
+.k-foot-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.k-foot-keys {
+  flex: 1;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+button.k-foot-key {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+button.k-foot-key:hover {
+  color: var(--ink);
+}
+.k-sheet:has(.k-keys) {
+  width: min(960px, calc(100vw - 24px));
+}
+.k-keys {
+  columns: 3 240px;
+  column-gap: 28px;
+}
+.k-keys-group {
+  break-inside: avoid;
+  margin-bottom: 14px;
+}
+.k-keys-group h3 {
+  margin: 0 0 6px;
+  font-weight: 500;
+}
+.k-keys-one {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 5px;
+  font-size: var(--text-meta);
+}
+.k-keys-chord {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  min-width: 92px;
+}

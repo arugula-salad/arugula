@@ -31,7 +31,7 @@ import { closeDocsPage, docsRoute, openDoc, openDocsPage } from "./docs-route";
 import { opPath, OPS } from "../ops";
 import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
-import { ariaKeys, keyHint } from "./keys";
+import { ariaKeys, keyHint } from "../../shared/keys";
 import { openYourWork } from "./conversations";
 import { helpItems, newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 import { currentAccount } from "./app-bar";

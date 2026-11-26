@@ -4,7 +4,7 @@
 
 import { paneIds, type Client } from "../../client";
 import type { PaneId, Preset, Rect, TabView } from "../../../shared/proto";
-import { keyHint } from "../keys";
+import { keyHint } from "../../../shared/keys";
 import type { MenuItem } from "../../../shared/ui/menu";
 import { offlineWhy } from "../shell/live";
 

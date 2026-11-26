@@ -1,13 +1,7 @@
-// The page's keyboard shortcuts, in one table (M107, #1022): each binding's
-// id, its chords per OS, when it applies and what it does. One capture-phase
-// listener on the window reads the table, so a chord is the page's before
-// the terminal sees it; a key no binding takes goes on to xterm untouched.
-// Menus, tooltips and the palette read their hints from here (`keyHint`).
-//
-// Chords are written `Mod+Mod+Key`: the modifiers are Ctrl, Meta (⌘ on a
-// Mac), Shift and Alt, matched exactly; `*+Key` takes any modifiers. Key is
-// an `event.code` (`KeyP`, `Digit1`, `Escape`), so the keyboard's layout
-// doesn't matter, or `key:x` for what the key types (`event.key`, any case).
+// The shell's keys (M107, #1022), in the page's one table (shared/keys.ts,
+// which says how chords are written): the palette, the picker, the panes'
+// and the desktop app's. Each takes its key only while the workspace is up
+// (`here`), so the app's other pages list none of them.
 //
 // Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
 // pane, Ctrl+Shift+E opens + Pane (the pane toolbar's), and
@@ -21,6 +15,7 @@
 // incognito.
 
 import { useLayoutEffect } from "preact/hooks";
+import { addBindings, both, keysChanged } from "../../shared/keys";
 import type { Client } from "../client";
 import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { swarmRoute } from "../swarm/route";
@@ -32,26 +27,6 @@ import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
 import { canPopOut, popOut } from "./panes/pop-out";
 import { addPane } from "./shell/add-pane";
-
-export type Os = "mac" | "other";
-
-export interface Binding {
-  id: string;
-  /** What it does, for lists of shortcuts. */
-  label: string;
-  /** Its chords on each OS; the first is the one hints show. */
-  keys: Record<Os, string[]>;
-  /** The hint, when the first chord doesn't say it (a range of keys). */
-  hint?: Partial<Record<Os, string>>;
-  /** Whether it exists on this page at all (the desktop app's Cmd keys
-   * only in the app on macOS): without it, no hint shows it. */
-  here?: () => boolean;
-  /** Whether it applies now; when it doesn't, the key goes on. */
-  when?: (e: KeyboardEvent) => boolean;
-  run: (e: KeyboardEvent) => void;
-}
-
-export const os: Os = /Mac|iPhone|iPad/.test(navigator.platform) ? "mac" : "other";
 
 /** The workspace (`App`) on the page, while it's there: its client and
  * whether it's laid out for a phone. */
@@ -66,12 +41,17 @@ const mac = desktopPlatform() === "macos";
 /** The desktop app's Cmd chords. `when` checks the app's platform, not the
  * browser's OS, so they're listed for both; `here` keeps their hints off
  * every other page (M113). */
-const appKey = (code: string) => ({ keys: { mac: [`Meta+${code}`], other: [`Meta+${code}`] }, here: () => mac });
+const appKey = (code: string) => ({ group: "app" as const, keys: both(`Meta+${code}`), here: () => mac });
+/** Only while the workspace is up. */
+const inWorkspace = () => !!workspace;
 
-const table: Binding[] = [
+addBindings([
   {
     id: "palette",
     label: "Command palette",
+    group: "go",
+    chip: "commands",
+    here: inWorkspace,
     // A Mac's Cmd too, for the desktop app (its menu leaves Cmd chords to
     // the page) and Safari. Again closes it.
     keys: { mac: ctrlOrCmd("KeyP"), other: ctrlOrCmd("KeyP") },
@@ -81,12 +61,18 @@ const table: Binding[] = [
   {
     id: "picker",
     label: "Go to directory",
-    keys: { mac: ["Ctrl+Shift+key:g"], other: ["Ctrl+Shift+key:g"] },
+    group: "go",
+    chip: "go to directory",
+    here: inWorkspace,
+    keys: both("Ctrl+Shift+key:g"),
     when: () => !!workspace,
     run: () => openPicker(workspace!.client, workspace!.client.active(), workspace!.phone),
   },
   {
     id: "pane.jump",
+    group: "panes",
+    chip: "go to pane",
+    here: inWorkspace,
     label: "Go to pane 1–9",
     // By code, so Shift's symbols and the layout don't matter. On a Mac,
     // Cmd+Shift+3, 4 and 5 are the system's screenshots: Ctrl+Shift works
@@ -109,6 +95,9 @@ const table: Binding[] = [
   },
   {
     id: "pane.focus",
+    group: "panes",
+    chip: "focus",
+    here: inWorkspace,
     label: "Focus pane / restore layout",
     keys: { mac: ctrlOrCmd("Enter"), other: ["Ctrl+Shift+Enter"] },
     when: () => focusTarget() !== null,
@@ -116,6 +105,8 @@ const table: Binding[] = [
   },
   {
     id: "pane.pop-out",
+    group: "panes",
+    here: inWorkspace,
     label: "Pop the pane out into its own window",
     keys: { mac: ctrlOrCmd("KeyO"), other: ["Ctrl+Shift+KeyO"] },
     when: () => {
@@ -130,6 +121,8 @@ const table: Binding[] = [
   },
   {
     id: "pane.add",
+    group: "panes",
+    here: inWorkspace,
     label: "Add a pane",
     keys: { mac: ctrlOrCmd("KeyE"), other: ["Ctrl+Shift+KeyE"] },
     when: () => addPane.available && focusTarget(true) !== null,
@@ -137,6 +130,8 @@ const table: Binding[] = [
   },
   {
     id: "pane.next-needs-you",
+    group: "panes",
+    here: inWorkspace,
     label: "Go to the next pane that needs you",
     keys: { mac: ctrlOrCmd("KeyL"), other: ["Ctrl+Shift+KeyL"] },
     // Taken only when a pane needs you, and not from under a dialog.
@@ -150,6 +145,8 @@ const table: Binding[] = [
   },
   {
     id: "pane.resize",
+    group: "panes",
+    here: inWorkspace,
     label: "Grow or shrink the pane",
     keys: {
       mac: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((k) => `Ctrl+Shift+Alt+${k}`),
@@ -212,7 +209,7 @@ const table: Binding[] = [
       else if (pane !== undefined && c.panes.has(pane) && c.mayType(pane)) void c.attachFiles(pane);
     },
   },
-];
+]);
 
 /** The pane Ctrl/Cmd+Shift+N goes to: the Nth of the shown tab's, in
  * reading order, when the workspace shows panes and has that many. */
@@ -240,68 +237,15 @@ function focusTarget(one = false) {
   return tab;
 }
 
-function matches(chord: string, e: KeyboardEvent): boolean {
-  const parts = chord.split("+");
-  const key = parts.pop()!;
-  const any = parts[0] === "*";
-  if (!any) {
-    const has = (m: string) => parts.includes(m);
-    if (e.ctrlKey !== has("Ctrl") || e.metaKey !== has("Meta") || e.shiftKey !== has("Shift") || e.altKey !== has("Alt")) return false;
-  }
-  return key.startsWith("key:") ? e.key.toLowerCase() === key.slice(4) : e.code === key;
-}
-
-function dispatch(e: KeyboardEvent) {
-  let ran = false;
-  // Every binding that takes the key runs, in the order they were added:
-  // two dialogs open each close on Escape, as their own listeners did.
-  for (const b of [...table]) {
-    if (!b.keys[os].some((k) => matches(k, e)) || (b.when && !b.when(e))) continue;
-    ran = true;
-    b.run(e);
-  }
-  if (!ran) return;
-  e.preventDefault();
-  e.stopPropagation();
-}
-
-let installed = false;
-function install() {
-  if (installed) return;
-  installed = true;
-  window.addEventListener("keydown", dispatch, true);
-}
-
 /** Take the keys for the page; `client` is read on each press (main.tsx
  * swaps it when the host changes). The answer gives them back: the app
  * (Arugula #989) holds them only while a machine's page or Swarm is shown,
  * so its other pages keep only their own keys. */
 export function installKeys(client: () => Client): () => void {
   appClient = client;
-  install();
   return () => {
     if (appClient === client) appClient = workspaceClient;
   };
-}
-
-/** Add a binding while something is up (a dialog's Escape), with the
- * same deps as an effect. Added as soon as it's drawn, before the
- * terminal can take the key. */
-export function useBinding(b: Binding | null, deps: unknown[]) {
-  useLayoutEffect(() => {
-    if (!b) return;
-    install();
-    table.push(b);
-    return () => {
-      const i = table.indexOf(b);
-      if (i !== -1) table.splice(i, 1);
-    };
-  }, deps);
-}
-
-/** Escape closes a dialog, before anything under it hears the key. */
-export function useEscape(id: string, close: (() => void) | null, deps: unknown[] = []) {
-  useBinding(close && { id, label: "Close", keys: { mac: ["*+key:escape"], other: ["*+key:escape"] }, run: close }, deps);
 }
 
 /** The workspace's keys (palette, picker, pane jumps) while it's up. */
@@ -309,40 +253,11 @@ export function useWorkspaceKeys(client: Client, phone: boolean) {
   useLayoutEffect(() => {
     const me = { client, phone };
     workspace = me;
-    install();
+    keysChanged();
     return () => {
-      if (workspace === me) workspace = null;
+      if (workspace !== me) return;
+      workspace = null;
+      keysChanged();
     };
   }, [client, phone]);
-}
-
-/** Every binding, for lists of shortcuts. */
-export function bindings(): readonly Binding[] {
-  return table;
-}
-
-/** How a binding's chord reads, as menus, tooltips and the palette show
- * it ("Ctrl+Shift+P", "⌘U"); undefined when it has none on this OS. */
-export function keyHint(id: string): string | undefined {
-  const b = table.find((x) => x.id === id);
-  if (!b || (b.here && !b.here())) return undefined;
-  return b.hint?.[os] ?? (b.keys[os][0] ? formatChord(b.keys[os][0]) : undefined);
-}
-
-/** `aria-keyshortcuts` for a hint: its names, not its glyphs. */
-export const ariaKeys = (hint: string | undefined) => hint?.replace("Ctrl", "Control");
-
-export function formatChord(chord: string): string {
-  const parts = chord.split("+");
-  const raw = parts.pop()!;
-  const key = raw.startsWith("key:")
-    ? raw.slice(4).toUpperCase()
-    : raw.replace(/^Key|^Digit/, "");
-  const mods = parts.filter((m) => m !== "*");
-  // A Mac's Cmd chords as its menus write them.
-  if (os === "mac" && mods.includes("Meta")) {
-    const glyph: Record<string, string> = { Ctrl: "⌃", Alt: "⌥", Shift: "⇧", Meta: "⌘" };
-    return ["Ctrl", "Alt", "Shift", "Meta"].filter((m) => mods.includes(m)).map((m) => glyph[m]).join("") + key;
-  }
-  return [...mods, key].join("+");
 }

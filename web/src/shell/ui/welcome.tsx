@@ -39,7 +39,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
 import { markSeen, seen, seenReady, subscribeSeen } from "../../shared/seen";
 import { currentAccount } from "./app-bar";
-import { keyHint } from "./keys";
+import { keyHint } from "../../shared/keys";
 import { openPanel } from "./control-panel";
 import { shareSession } from "./people";
 import { openSwarm } from "../swarm/route";
