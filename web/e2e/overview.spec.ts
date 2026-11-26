@@ -1673,6 +1673,27 @@ test.describe("on a computer", () => {
     expect(await page.evaluate((P) => JSON.parse(sessionStorage.getItem(`arugula.ov-talk:${P}`)!).active, P)).toBe("peek:ses_e2escratch");
   });
 
+  test("a session that leads a board is its lead on the board's row, not in Not on a card, which keeps the one that leads nothing (Arugula #1508)", async ({ page }) => {
+    // The hub names a second session on a machine this page doesn't reach, on no card and leading nothing.
+    const idle = { kind: "machine", id: "ses_e2eidle", name: "idle-one", on: { kind: "machine", id: "m_far", name: "far" }, panes: [{ pane: 3, kind: "terminal", work_item: null, state: null }], updated_at: 0 };
+    let led: unknown;
+    await overview(page, { project: P, groups: [{ card: null, sessions: [idle] }] }, false, () => led);
+    const loose = page.locator("[data-ov-loose] [data-ov-session]");
+    await expect(loose).toHaveCount(2);
+    const host = (await page.locator("[data-ov-loose] [data-ov-panes*=':']").first().getAttribute("data-ov-panes"))!.split(":")[0];
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    const lead = page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`);
+    await expect(lead).toHaveAttribute("data-ov-board-lead", "scratch");
+    await expect(lead.locator(".ov-lead-name")).toHaveText("scratch");
+    await expect(lead.locator(".ov-lead-machine")).toHaveText(host);
+    // Not on a card lists the idle one, and not the lead.
+    await expect(loose).toHaveCount(1);
+    await expect(page.locator("[data-ov-loose]")).toContainText("idle-one");
+    await expect(page.locator("[data-ov-loose]")).not.toContainText("scratch");
+  });
+
   test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {
     // Launch is led by the project's scratch session on the suite's daemon, which this page knows by its name; Later has no lead.
     let led: unknown;
@@ -1702,15 +1723,15 @@ test.describe("on a computer", () => {
     const selected = panel.locator('[role="tab"][aria-selected="true"]');
     await expect(selected).toHaveText("scratch");
     await expect(panel.locator(`[data-ov-tab="thread:${B}"]`)).toHaveCount(0);
-    // The peek is the scratch session's own: its shell, as its row on no card shows it.
+    // The peek is the scratch session's own: its shell, as its tile shows it.
     await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
     // Its who-line is its head (#1342, #1441): where it runs and how it stands, and its rung.
     await expect(panel.locator('[data-ov-who="peek"] [data-agent-head]')).toHaveText(`scratch · idle on ${host}`);
     await expect(panel.locator('[data-ov-who="peek"] [data-agent-rung]')).toHaveText("lead of Launch · started by you");
     await expect(panel.locator("[data-ov-peek-reply]")).toBeVisible();
     await expect(row).not.toHaveAttribute("data-ov-open", "");
-    // It's the same tab as the session's own row opens.
-    await page.locator("[data-ov-loose] [data-ov-session] [data-ov-row-open]").click();
+    // It leads a board, so it has no row of its own in Not on a card (#1508): the chip is its way in, and one tab is all it opened.
+    await expect(page.locator("[data-ov-loose]")).toHaveCount(0);
     await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(1);
     await page.screenshot({ path: info.outputPath("overview-lead.png") });
     // The thread is its own button, and the who-line says where a message goes there.
