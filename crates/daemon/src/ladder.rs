@@ -487,29 +487,88 @@ fn remote_is(url: &str, repo: &str) -> bool {
     matches!(tail, Some((before, r)) if r.eq_ignore_ascii_case(repo) && (before.ends_with('/') || before.ends_with(':')))
 }
 
-/// A clone of `repo` here: a repository this machine's panes work in, or
-/// one a hosted box's setup cloned, whose origin is it.
+/// A clone of `repo` here, as [`clone_among`] finds one.
 pub(crate) async fn clone_of(app: &App, repo: &str) -> Option<String> {
+    clone_among(app, &[repo.to_owned()]).await.map(|(_, dir)| dir)
+}
+
+/// The first of `repos` (`owner/name`) with a clone here, and that clone: a
+/// repository a hosted box's setup cloned or this machine's panes work in,
+/// else one in the home folder (Arugula #1458), whose origin is it. The
+/// home folder is looked in only when those have no clone of the first.
+pub(crate) async fn clone_among(app: &App, repos: &[String]) -> Option<(String, String)> {
+    let first = repos.first()?;
     let mut dirs: Vec<String> =
         crate::hosted::clones(app.control.state_dir()).into_iter().map(|(_, d)| d.display().to_string()).collect();
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
     dirs.extend(panes.into_iter().filter_map(|p| p.info.cwd));
-    let mut seen = std::collections::HashSet::new();
-    for d in dirs {
-        let Some(top) = git_out(&d, &["rev-parse", "--show-toplevel"]).await else { continue };
-        // A worktree's clone is the one its common dir belongs to.
-        let top = match git_out(&top, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).await {
-            Some(common) if common.ends_with("/.git") => common.trim_end_matches("/.git").to_owned(),
-            _ => top,
-        };
-        if !seen.insert(top.clone()) {
-            continue;
+    // Each clone once, with its origin.
+    let mut clones: Vec<(String, String)> = vec![];
+    for home in [false, true] {
+        if home {
+            let home = arugula_mux::sys::home();
+            let found = tokio::task::spawn_blocking(move || repos_under(&home)).await.unwrap_or_default();
+            dirs = found.into_iter().map(|d| d.display().to_string()).collect();
         }
-        if git_out(&top, &["remote", "get-url", "origin"]).await.is_some_and(|u| remote_is(&u, repo)) {
-            return Some(top);
+        for d in std::mem::take(&mut dirs) {
+            let Some(top) = git_out(&d, &["rev-parse", "--show-toplevel"]).await else { continue };
+            // A worktree's clone is the one its common dir belongs to.
+            let top = match git_out(&top, &["rev-parse", "--path-format=absolute", "--git-common-dir"]).await {
+                Some(common) if common.ends_with("/.git") => common.trim_end_matches("/.git").to_owned(),
+                _ => top,
+            };
+            if clones.iter().any(|(t, _)| *t == top) {
+                continue;
+            }
+            let origin = git_out(&top, &["remote", "get-url", "origin"]).await.unwrap_or_default();
+            if remote_is(&origin, first) {
+                return Some((first.clone(), top));
+            }
+            clones.push((top, origin));
         }
     }
-    None
+    repos.iter().skip(1).find_map(|repo| {
+        let (top, _) = clones.iter().find(|(_, origin)| remote_is(origin, repo))?;
+        Some((repo.clone(), top.clone()))
+    })
+}
+
+/// How deep under the home folder a clone is looked for (`~/dev/owner/name`
+/// is 3), and at most how many folders are read.
+const HOME_DEPTH: usize = 3;
+const HOME_DIRS_MAX: usize = 4000;
+
+/// The git repositories under `home`, nearest first: folders holding a
+/// `.git`, up to [`HOME_DEPTH`] down, past hidden folders and build output.
+fn repos_under(home: &std::path::Path) -> Vec<std::path::PathBuf> {
+    const SKIP: &[&str] = &["node_modules", "target", "Library", "vendor", "go"];
+    let (mut found, mut read) = (vec![], 0);
+    let mut level = vec![home.to_path_buf()];
+    for _ in 0..HOME_DEPTH {
+        let mut next = vec![];
+        for dir in level {
+            if read >= HOME_DIRS_MAX {
+                return found;
+            }
+            read += 1;
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let mut subs: Vec<std::path::PathBuf> = entries
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                .filter(|e| e.file_name().to_str().is_some_and(|n| !n.starts_with('.') && !SKIP.contains(&n)))
+                .map(|e| e.path())
+                .collect();
+            subs.sort();
+            for sub in subs {
+                match sub.join(".git").exists() {
+                    true => found.push(sub),
+                    false => next.push(sub),
+                }
+            }
+        }
+        level = next;
+    }
+    found
 }
 
 #[cfg(test)]
@@ -530,6 +589,22 @@ mod tests {
         assert!(!remote_is("https://github.com/acme/widgets-two", "acme/widgets"));
         assert!(!remote_is("https://github.com/notacme/widgets", "acme/widgets"));
         assert!(!remote_is("widgets", "acme/widgets"));
+    }
+
+    #[test]
+    fn repos_under_home_are_found_nearest_first_past_hidden_and_build_folders() {
+        let home = std::env::temp_dir().join(format!("arugula-repos-under-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        for d in ["dev/acme/widgets/.git", "src/site/.git", ".cache/x/.git", "code/node_modules/y/.git", "a/b/c/d/.git"]
+        {
+            std::fs::create_dir_all(home.join(d)).unwrap();
+        }
+        // A repo's own folders aren't looked in.
+        std::fs::create_dir_all(home.join("src/site/inner/.git")).unwrap();
+        let found: Vec<String> =
+            repos_under(&home).iter().map(|p| p.strip_prefix(&home).unwrap().display().to_string()).collect();
+        assert_eq!(found, ["src/site", "dev/acme/widgets"]);
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]

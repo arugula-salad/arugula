@@ -19,8 +19,10 @@
 //!   the board's grant on Approve and sends this to the grant's lead
 //!   machine, whichever asked; the lead starts as a ladder start does
 //!   (`ladder.rs`: a start ticket under the grant, then the board's lead),
-//!   in a worktree of the project's repo when there's a clone of it here,
-//!   in mode `auto` with [`LEAD_ALLOW`] and the person's own settings.
+//!   in a worktree of this machine's clone of the project's repo (the
+//!   board's own first, Arugula #1458), in mode `auto` with [`LEAD_ALLOW`]
+//!   and the person's own settings. A machine with no clone of any refuses
+//!   it, saying so; a project that links no repo starts it in home.
 //!
 //! Remote input off here refuses both, as it refuses a ladder start: they
 //! type into terminals on this machine through control.
@@ -184,10 +186,13 @@ pub const LEAD_ALLOW: &[&str] = &["Bash", "Read", "Edit", "Write", "Glob", "Grep
 /// control just wrote.
 async fn run_board(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId>), String> {
     let board = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()).ok_or("a run_board names its board")?;
-    // The project's repo, when this machine has a clone of it; else its home.
-    let repo = match a.repo.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
-        Some(r) if crate::ladder::clone_of(app, r).await.is_some() => Some(r.to_owned()),
-        _ => None,
+    // Arugula #1458: in this machine's clone of the project's repo, the
+    // board's own first. A project with no repo: its home.
+    let repos = repos_of(a);
+    let repo = match crate::ladder::clone_among(app, &repos).await {
+        Some((repo, _)) => Some(repo),
+        None if repos.is_empty() => None,
+        None => return Err(no_clone(app.hosts.name(), &repos)),
     };
     let prompt = match a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => p.to_owned(),
@@ -211,6 +216,31 @@ async fn run_board(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<Pa
         started.block, started.session, started.machine, started.cwd, started.said
     );
     Ok((said, Some(started.block)))
+}
+
+/// A `run_board`'s repos, in order: its `repos`, then its `repo` (an older
+/// control's), each once.
+fn repos_of(a: &AskApproved) -> Vec<String> {
+    let mut repos: Vec<String> = vec![];
+    for r in a.repos.iter().chain(&a.repo).map(|r| r.trim()).filter(|r| !r.is_empty()) {
+        if !repos.iter().any(|x| x.eq_ignore_ascii_case(r)) {
+            repos.push(r.to_owned());
+        }
+    }
+    repos
+}
+
+/// Why a board's lead didn't start on `machine`: it has no clone of the
+/// project's repos.
+fn no_clone(machine: &str, repos: &[String]) -> String {
+    let which = match repos {
+        [one] => one.clone(),
+        [first, rest @ ..] => format!("{first} (or the project's {} other repos)", rest.len()),
+        [] => "the project's repo".into(),
+    };
+    format!(
+        "{machine} has no clone of {which}, so the board's lead didn't start: clone it there, or run the board with its lead on a machine that has one"
+    )
 }
 
 /// The asking agent's directory: its block's, if it's still the agent of
@@ -293,5 +323,22 @@ mod tests {
         assert_eq!(prompt_of(12, "Fix it", Some("  only the tests ")), "only the tests");
         assert!(prompt_of(12, "Fix it", Some(" ")).starts_with("Work on #12"));
         assert!(lead_prompt_of("brd_1").contains("board_read {board: \"brd_1\"}"));
+    }
+
+    #[test]
+    fn a_run_board_tries_its_repos_in_order_and_says_when_none_is_here() {
+        let a = AskApproved {
+            repos: vec!["acme/widgets".into(), " acme/site ".into(), "ACME/Widgets".into()],
+            repo: Some("acme/old".into()),
+            ..Default::default()
+        };
+        assert_eq!(repos_of(&a), ["acme/widgets", "acme/site", "acme/old"]);
+        let old = AskApproved { repo: Some("acme/widgets".into()), ..Default::default() };
+        assert_eq!(repos_of(&old), ["acme/widgets"]);
+        assert!(repos_of(&AskApproved::default()).is_empty());
+        let one = no_clone("geek", &["acme/widgets".into()]);
+        assert!(one.starts_with("geek has no clone of acme/widgets, so the board's lead didn't start"), "{one}");
+        let three = no_clone("geek", &repos_of(&a));
+        assert!(three.starts_with("geek has no clone of acme/widgets (or the project's 2 other repos)"), "{three}");
     }
 }

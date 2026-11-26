@@ -236,11 +236,18 @@
           ]
         },
         "repo": {
-          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it.",
+          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it. Control sends it when the\nproject links one repo, for a machine that doesn't read `repos`.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "repos": {
+          "description": "`run_board` (Arugula #1458): the project's linked repos, the board's\nown first (the ones its rows' PRs go to). The lead starts in a clone\nof the first this machine has; with none of them, it doesn't start.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "session": {
           "description": "The agent that asked: its session's name and its block.",

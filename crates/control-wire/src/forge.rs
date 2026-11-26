@@ -506,9 +506,15 @@ pub struct AskApproved {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board_title: Option<String>,
     /// `run_board`: the project's repo (`owner/name`), for the lead to work
-    /// in when this machine has a clone of it.
+    /// in when this machine has a clone of it. Control sends it when the
+    /// project links one repo, for a machine that doesn't read `repos`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// `run_board` (Arugula #1458): the project's linked repos, the board's
+    /// own first (the ones its rows' PRs go to). The lead starts in a clone
+    /// of the first this machine has; with none of them, it doesn't start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
 }
 
 /// `sessions.set_project`'s ask (Arugula #1166).
