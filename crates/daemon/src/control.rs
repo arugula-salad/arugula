@@ -3486,7 +3486,7 @@ impl Control {
                 return Err(CloudRefused::Maintenance);
             }
             let v: serde_json::Value = serde_json::from_slice(&got).unwrap_or_default();
-            let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
+            let said = refusal_said(status, &v, &got);
             return Err(CloudRefused::Said { status, said, reason: v["reason"].as_str().map(str::to_owned) });
         }
     }
@@ -3525,7 +3525,7 @@ impl Control {
         if maintenance::is_maintenance(status, &got) {
             return Err(CloudRefused::Maintenance);
         }
-        let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
+        let said = refusal_said(status, &v, &got);
         Err(match (status, said.as_str()) {
             (404, "hosted workspaces aren't set up on this control") => CloudRefused::Off,
             // A control from before #1094 takes only people there.
@@ -3991,6 +3991,23 @@ impl CloudFile {
             reason: None,
         }
     }
+}
+
+/// What a refused call says: control's own `error` when its body is JSON
+/// with one. Failing that, a 400 or 422 carries the text control's JSON
+/// extractor answers with (which field, and why), on one line and cut;
+/// any other refusal is the bare status, which callers match on.
+fn refusal_said(status: u16, v: &serde_json::Value, body: &[u8]) -> String {
+    if let Some(said) = v["error"].as_str() {
+        return said.to_owned();
+    }
+    if matches!(status, 400 | 422) && v.is_null() {
+        let text = String::from_utf8_lossy(body).split_whitespace().collect::<Vec<_>>().join(" ");
+        if !text.is_empty() {
+            return format!("control answered {status}: {}", text.chars().take(300).collect::<String>());
+        }
+    }
+    format!("control answered {status}")
 }
 
 /// The plain-ASCII name in a `Content-Disposition` (`filename="…"`), as
@@ -5066,6 +5083,29 @@ impl crate::mux::People for Control {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::refusal_said;
+
+    #[test]
+    fn a_refusal_without_json_says_its_text_for_400_and_422_only() {
+        let text = b"Failed to deserialize the JSON body into the target type: unknown field `standing`, expected one of `event`, `match`";
+        let said = |status, body: &[u8]| refusal_said(status, &serde_json::from_slice(body).unwrap_or_default(), body);
+        assert_eq!(said(422, text), format!("control answered 422: {}", String::from_utf8_lossy(text)),);
+        // On one line, trimmed, and cut.
+        assert_eq!(said(400, b"  one\n two\r\n  three \n"), "control answered 400: one two three");
+        let long = said(422, "x".repeat(900).as_bytes());
+        assert_eq!(long, format!("control answered 422: {}", "x".repeat(300)));
+        // Control's own JSON words win.
+        assert_eq!(said(422, br#"{"error":"no such board"}"#), "no such board");
+        // Everything else is the bare form, body or not.
+        assert_eq!(said(404, b"not found"), "control answered 404");
+        assert_eq!(said(405, b"nope"), "control answered 405");
+        assert_eq!(said(422, b""), "control answered 422");
+        assert_eq!(said(422, b"  \n "), "control answered 422");
+        assert_eq!(said(500, b"boom"), "control answered 500");
+        // JSON without an `error` isn't text to show.
+        assert_eq!(said(422, br#"{"x":1}"#), "control answered 422");
+    }
+
     use arugula_e2e::{DeviceKeys, Kind};
 
     use super::*;

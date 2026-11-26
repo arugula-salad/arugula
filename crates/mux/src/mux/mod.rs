@@ -302,6 +302,13 @@ pub enum Api {
     HeldDeliver(PaneId, oneshot::Sender<Result<String, String>>),
     /// The owner dismissed the held follow-ups' card (#579): how many went.
     HeldDrop(PaneId, oneshot::Sender<usize>),
+    /// The agent in a pane raised a card or a to-do on its person (Arugula
+    /// #1464): its id (`prp_…`) and one line of what it waits for. The pane
+    /// waits on them while it's open. False: no such pane.
+    WaitsOn(PaneId, String, String, oneshot::Sender<bool>),
+    /// A card or to-do was answered or cancelled, by its id: no pane waits
+    /// on it now.
+    WaitsSettled(String, oneshot::Sender<()>),
     /// Silence tagged follow-ups for a pane, or not (#579). It lasts as
     /// long as the pane. False: no such terminal.
     SilenceTagged(PaneId, bool, oneshot::Sender<bool>),
@@ -564,6 +571,10 @@ struct Daemon {
     /// The card for the follow-ups held on each terminal whose hooks aren't
     /// listening (#579): typed only when the owner taps deliver.
     held: HashMap<PaneId, Reason>,
+    /// The cards and to-dos each pane's agent raised on its person that
+    /// are still open (Arugula #1464), and whether the owner dismissed what
+    /// they show.
+    waits: HashMap<PaneId, attention::Waits>,
     /// What Claude Code in each pane said of its session from inside it
     /// (#450), while it runs there (`PaneInfo.live`).
     live: HashMap<PaneId, serde_json::Value>,
@@ -779,6 +790,7 @@ pub fn start(
         midturn_told: Default::default(),
         last_tools: Default::default(),
         held: Default::default(),
+        waits: Default::default(),
         live: HashMap::new(),
         live_pid: HashMap::new(),
         links: Default::default(),

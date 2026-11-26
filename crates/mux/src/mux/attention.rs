@@ -154,7 +154,13 @@ impl Daemon {
     }
 
     /// [`Self::set_attention_with`], pushing a notification only if `push`.
+    /// A pane whose agent waits on a card or a to-do (Arugula #1464) needs
+    /// you for it when it would be idle or done, unpushed: its card was.
     fn set_attention_as(&mut self, pane: PaneId, state: Attention, why: &str, reason: Option<Reason>, push: bool) {
+        let (state, reason, push) = match self.waits_reason(pane) {
+            Some(r) if matches!(state, Attention::Idle | Attention::Done) => (Attention::NeedsInput, Some(r), false),
+            _ => (state, reason, push),
+        };
         let old = self.attention.get(&pane).copied().unwrap_or_default();
         if !(self.panes.contains_key(&pane) || self.blocks.contains_key(&pane)) {
             return;
@@ -1089,6 +1095,107 @@ impl Daemon {
                     self.touch(pane);
                 }
             }
+        }
+    }
+}
+
+/// What a pane's agent raised on its person and waits on (Arugula #1464).
+#[derive(Default)]
+pub(super) struct Waits {
+    /// Each open card or to-do: its id (`prp_…`), one line of it, and since
+    /// when, oldest first.
+    open: Vec<(String, String, u64)>,
+    /// The owner dismissed what the pane showed: it shows again for the
+    /// next one.
+    pub(super) dismissed: bool,
+}
+
+impl Daemon {
+    /// Pane `pane`'s agent raised card `id` on its person. False: no such
+    /// pane.
+    pub(super) fn waits_on(&mut self, pane: PaneId, id: String, what: String) -> bool {
+        if !(self.panes.contains_key(&pane) || self.blocks.contains_key(&pane)) {
+            return false;
+        }
+        let w = self.waits.entry(pane).or_default();
+        if !w.open.iter().any(|(i, _, _)| *i == id) {
+            w.open.push((id, what, now_ms()));
+            w.dismissed = false;
+        }
+        self.refresh_waits(pane);
+        true
+    }
+
+    /// Card `id` was answered or cancelled: whichever pane waited on it
+    /// doesn't now.
+    pub(super) fn waits_settled(&mut self, id: &str) {
+        let mut settled = vec![];
+        self.waits.retain(|pane, w| {
+            let n = w.open.len();
+            w.open.retain(|(i, _, _)| i != id);
+            if w.open.len() != n {
+                settled.push(*pane);
+            }
+            !w.open.is_empty()
+        });
+        for pane in settled {
+            self.refresh_waits(pane);
+        }
+    }
+
+    /// Why pane `pane` waits on its person, while it does and the owner
+    /// hasn't dismissed it: the oldest card, and how many more.
+    fn waits_reason(&self, pane: PaneId) -> Option<Reason> {
+        let w = self.waits.get(&pane).filter(|w| !w.dismissed)?;
+        let (_, what, since) = w.open.first()?;
+        let more = if w.open.len() > 1 { format!(" (+{} more)", w.open.len() - 1) } else { String::new() };
+        let mut r = plain_reason(ReasonKind::Input, &format!("Waits on you: {what}{more}"));
+        r.since_ms = *since;
+        r.bundle = Some(format!("{}{}", arugula_proto::WAITS_BUNDLE, self.project_of(pane)));
+        Some(r)
+    }
+
+    /// The project a pane's asks bundle by: its block's, else its
+    /// directory's.
+    fn project_of(&self, pane: PaneId) -> String {
+        let local = self.meta.get(&pane).and_then(|m| m.host).is_none();
+        if let Some(b) = self.blocks.get(&pane) {
+            let s = b.summary();
+            return match s.project {
+                Some(p) => p.root,
+                None => project_key(s.cwd.as_deref(), local),
+            };
+        }
+        let cwd =
+            self.panes.get(&pane).and_then(|h| h.status().cwd.or_else(|| h.cwd().map(|c| c.display().to_string())));
+        project_key(cwd.as_deref(), local)
+    }
+
+    /// Keep what pane `pane` shows true to what it waits on: shown while it
+    /// would be idle or done, gone once nothing waits. A pane at work, or
+    /// wanting you for something else, is left alone: it shows when that
+    /// ends ([`Self::set_attention_as`]).
+    fn refresh_waits(&mut self, pane: PaneId) {
+        let state = self.attention.get(&pane).copied().unwrap_or_default();
+        let shown = state == Attention::NeedsInput
+            && self
+                .reasons
+                .get(&pane)
+                .and_then(|r| r.bundle.as_deref())
+                .is_some_and(|b| b.starts_with(arugula_proto::WAITS_BUNDLE));
+        match self.waits_reason(pane) {
+            Some(r) if shown => {
+                self.reasons.insert(pane, r);
+                self.emit(Some(pane), EventKind::Attention { state, reason: self.live_reason(pane) });
+                self.touch(pane);
+            }
+            Some(r) if matches!(state, Attention::Idle | Attention::Done) => {
+                let why = r.headline.clone();
+                self.set_attention_as(pane, Attention::NeedsInput, &why, Some(r), false);
+            }
+            Some(_) => {}
+            None if shown => self.set_attention(pane, Attention::Idle, "nothing waits on you now"),
+            None => {}
         }
     }
 }

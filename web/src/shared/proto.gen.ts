@@ -516,7 +516,8 @@ progress: BoardProgress, };
 export type BoardLane = "next" | "doing" | "review" | "done";
 
 /**
- * A lane a person set on a row ([`Row::lane_set`]).
+ * A lane a person set on a row ([`Row::lane_set`]). Deprecated with
+ * [`BOARD_ROW_LANE`]: nothing sets one, and no board sends one.
  */
 export type BoardLaneSet = { 
 /**
@@ -772,8 +773,9 @@ status: BoardStatus,
  */
 lane: BoardLane, 
 /**
- * Set when a person moved the row and the work hasn't changed its
- * derived lane since (#494): `lane` is then the row's lane.
+ * Never sent: a row's lane follows its work, and nobody sets it
+ * (Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from
+ * 0.70.128 doesn't read it.
  */
 lane_set?: BoardLaneSet, 
 /**
@@ -907,8 +909,7 @@ pr?: string, };
 export type BoardRunAsked = { ask: string, room: string, seq: number, again: boolean, };
 
 /**
- * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
- * `completed` (when not given), `not_planned` or `duplicate`.
+ * [`BOARD_ROW_LANE`]'s body, which is refused. Deprecated with it.
  */
 export type BoardSetLane = { lane: BoardLane, reason: string | null, };
 
@@ -5759,7 +5760,8 @@ duration_ms?: number,
 /**
  * Reasons with the same key are one card on a "needs you" rail ("11
  * failed on build-03"): `failed:<machine>`, `exited:<machine>`,
- * `ask:<project>:<agent>`. `None` never bundles.
+ * `ask:<project>:<agent>`, [`WAITS_BUNDLE`]`<project>`. `None` never
+ * bundles.
  */
 bundle?: string, 
 /**

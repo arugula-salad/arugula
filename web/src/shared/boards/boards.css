@@ -1072,14 +1072,10 @@
   font-size: var(--text-md);
 }
 
-/* A card dragged to another lane (#494) or group (#664): the one under it takes it
-   (`.drop-target`, shared/style.css). */
+/* A card dragged to another group (#664): the group under it takes it
+   (`.drop-target`, shared/style.css). No lane does: it follows the work. */
 .board-row[draggable="true"] {
   cursor: grab;
-}
-
-.board-drawer-lane select {
-  font: inherit;
 }
 
 /* The find bar (#546, #614): under the header, always there. */

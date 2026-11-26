@@ -1,0 +1,32 @@
+{
+  "max": {
+    "duplicateComponentNames": 30,
+    "cssLines": 27386,
+    "cssFiles": 51,
+    "customPropertiesDefined": 130,
+    "customPropertiesReferenced": 150,
+    "important": 25,
+    "looks": 216,
+    "htmlEntries": 5,
+    "dependencies": 21
+  },
+  "headroom": {
+    "duplicateComponentNames": 2,
+    "cssLines": 270,
+    "cssFiles": 1,
+    "customPropertiesDefined": 3,
+    "customPropertiesReferenced": 3,
+    "important": 2,
+    "looks": 0,
+    "htmlEntries": 0,
+    "dependencies": 1
+  },
+  "report": [
+    "tsLines",
+    "tsCoreLines",
+    "components",
+    "exportedComponents",
+    "e2eSpecs",
+    "e2eLines"
+  ]
+}

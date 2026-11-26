@@ -3,7 +3,10 @@
 // name, how it stands, where it runs and its branch, and its last lines,
 // read from its machine through the page's own connection (as a row's
 // preview reads its last line) only while the tab is open: terminal
-// content never goes through control. Under them, a box to write to it: an
+// content never goes through control. An agent's lines are its
+// transcript, which is Markdown (`## You`, `**Asked**`, fences): they're
+// drawn as chat draws a message (#1382); a terminal's stay as they are.
+// Under them, a box to write to it: an
 // agent block takes it as its composer does (`call/send`, in at its next
 // tool call), a terminal (Claude Code or a shell) has it typed, with Enter.
 // Silence/Allow and Stop are the thread strip's (#653), on the same
@@ -23,11 +26,12 @@
 // runs, whether it's awake, its rung, who started it and its parent's
 // latest word to it.
 
-import { createContext, type JSX } from "preact";
+import { createContext, type JSX, type RefObject } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardLead, ChatRoom, SessionView } from "../shared/proto";
 import { pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
+import { ChatMarkdown } from "../shared/chat/chat-markdown";
 import { RoomBody } from "../shared/chat/room";
 import { call, saidOf } from "../shared/chat/session-card";
 import { useSubscribe } from "../shared/ui/hooks";
@@ -229,7 +233,9 @@ function Peek({ place, s, card, reply = true }: { place: PeekPlace; s: OvSession
   const block = hosted?.card.block && /^\d+$/.test(hosted.card.block) ? Number(hosted.card.block) : null;
   // Where its lines are read: its pane, else its cloud workspace's block while the box runs.
   const read = pane ? { host: pane.host, id: pane.id } : box?.state === "connected" && block !== null && !hosted?.card.parked ? { host: box.name, id: block } : null;
-  const lines = useLines(fleet, read);
+  // An agent block's lines (a cloud workspace's too) are its transcript, in Markdown.
+  const md = pane ? pane.info.type === "agent" : !!s.hosted;
+  const lines = useLines(fleet, read, md);
   const branch = pane?.info.branch ?? hosted?.card.branch ?? s.branch ?? null;
   const team = !!pane && !yours(fleet, pane);
   const far = !pane && !s.hosted;
@@ -262,7 +268,7 @@ function Peek({ place, s, card, reply = true }: { place: PeekPlace; s: OvSession
   );
 
   // The tail keeps its newest line in sight.
-  const foot = useRef<HTMLPreElement>(null);
+  const foot = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     const el = foot.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -283,9 +289,15 @@ function Peek({ place, s, card, reply = true }: { place: PeekPlace; s: OvSession
   const tailEl = (
     <>
       {!read && s.hosted && hosted && tail?.length ? <p class="dim ov-peek-why">Its box isn't running: what it last said.</p> : null}
-      <pre ref={foot} class="ov-peek-tail" data-ov-peek-tail data-ov-peek-live={read ? "" : undefined}>
-        {tail?.length ? tail.join("\n") : <span class="dim">{tailSays}</span>}
-      </pre>
+      {md && tail?.length ? (
+        <div ref={foot as RefObject<HTMLDivElement>} class="ov-peek-tail ov-peek-md" data-ov-peek-tail data-ov-peek-md data-ov-peek-live={read ? "" : undefined}>
+          <ChatMarkdown text={tail.join("\n")} />
+        </div>
+      ) : (
+        <pre ref={foot as RefObject<HTMLPreElement>} class="ov-peek-tail" data-ov-peek-tail data-ov-peek-live={read ? "" : undefined}>
+          {tail?.length ? tail.join("\n") : <span class="dim">{tailSays}</span>}
+        </pre>
+      )}
     </>
   );
 
@@ -437,8 +449,8 @@ export function Reply({ placeholder, disabled, send }: { placeholder: string; di
   );
 }
 
-/** A pane's last lines, read from its machine while the peek is open and the page is shown. */
-function useLines(fleet: Fleet, at: { host: string; id: number } | null): string[] | null {
+/** A pane's last lines, read from its machine while the peek is open and the page is shown; `md`: they're Markdown. */
+function useLines(fleet: Fleet, at: { host: string; id: number } | null, md: boolean): string[] | null {
   const [lines, setLines] = useState<string[] | null>(null);
   const key = at ? `${at.host}:${at.id}` : "";
   useEffect(() => {
@@ -452,7 +464,7 @@ function useLines(fleet: Fleet, at: { host: string; id: number } | null): string
         const text = res.ok && res.text ? await res.text() : "";
         const all = text.split("\n").map((l) => l.trimEnd());
         while (all.length && !all[all.length - 1]) all.pop();
-        if (live) setLines(all.slice(-LINES));
+        if (live) setLines(lastLines(all, md));
       } catch {
         // Its machine isn't reachable now: the lines it had stay.
       }
@@ -463,7 +475,7 @@ function useLines(fleet: Fleet, at: { host: string; id: number } | null): string
       live = false;
       clearInterval(t);
     };
-  }, [key]);
+  }, [key, md]);
   return lines;
 }
 
@@ -498,6 +510,21 @@ export function useHosted(ses: string | null): SessionView | null {
 export function lastAnswer(v: SessionView): string[] {
   const t = chat.on ? chat.threads.get(v.card.room, v.card.parent) : undefined;
   const answer = t?.replies.findLast((m) => saidOf(m) === v.card.session);
-  if (answer) return answer.text.split("\n").slice(-LINES);
+  if (answer) return lastLines(answer.text.split("\n"), true);
   return v.events.slice(-LINES).map((e) => e.text);
+}
+
+/** The last `LINES` of `all`. Markdown cut inside a fenced block opens the
+ * fence again, so the block's closing line doesn't open one that runs to
+ * the end. */
+function lastLines(all: string[], md: boolean): string[] {
+  const tail = all.slice(-LINES);
+  if (!md || all.length <= LINES) return tail;
+  let fence: string | null = null;
+  for (const l of all.slice(0, -LINES)) {
+    const m = /^ {0,3}(`{3,}|~{3,})/.exec(l)?.[1];
+    if (m && !fence) fence = m;
+    else if (m && fence && m[0] === fence[0] && m.length >= fence.length && !l.trim().slice(m.length)) fence = null;
+  }
+  return fence ? [fence, ...tail] : tail;
 }

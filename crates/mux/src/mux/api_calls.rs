@@ -171,6 +171,13 @@ impl Daemon {
             }
             Api::Attention(pane, state, why, reply) => {
                 let known = self.panes.contains_key(&pane) || self.blocks.contains_key(&pane);
+                // The owner dismissed it: what it waits on shows again only
+                // for the next card or to-do.
+                if state == arugula_proto::Attention::Idle
+                    && let Some(w) = self.waits.get_mut(&pane)
+                {
+                    w.dismissed = true;
+                }
                 self.set_attention(pane, state, why.as_deref().unwrap_or("set by the API"));
                 let _ = reply.send(known);
             }
@@ -476,6 +483,13 @@ impl Daemon {
                 let n = self.queued.drop_held(pane);
                 self.refresh_held(pane);
                 let _ = reply.send(n);
+            }
+            Api::WaitsOn(pane, id, what, reply) => {
+                let _ = reply.send(self.waits_on(pane, id, what));
+            }
+            Api::WaitsSettled(id, reply) => {
+                self.waits_settled(&id);
+                let _ = reply.send(());
             }
             Api::SilenceTagged(pane, on, reply) => {
                 // A terminal's Claude Code, or an agent block's session

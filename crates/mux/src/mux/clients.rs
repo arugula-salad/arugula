@@ -422,6 +422,7 @@ impl Daemon {
                     self.hooked.remove(&pane);
                     self.tagged_off.remove(&pane);
                     self.held.remove(&pane);
+                    self.waits.remove(&pane);
                     self.queued.gone(pane);
                     self.midturn_told.remove(&pane);
                     self.last_tools.remove(&pane);

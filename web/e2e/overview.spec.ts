@@ -1140,6 +1140,8 @@ test.describe("on a computer", () => {
     await expect(machine).toHaveValue(host);
     await expect(move.locator("[data-ov-staff-cannot]")).toHaveCount(0);
     await expect(move.locator("[data-ov-staff-go]")).toHaveText("Run it on another machine");
+    // Restart is for one that runs: not while it's asleep.
+    await expect(page.locator("[data-ov-staff-restart]")).toHaveCount(0);
     await machine.selectOption("laptop");
     await startsOnLaptop(page, move, head, "It leads your person's staff room in Arugula. Session Chief of staff · Arugula on pi led it before: it's told to stand down");
     await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
@@ -1162,6 +1164,55 @@ test.describe("on a computer", () => {
     await machine.selectOption("laptop");
     await startsOnLaptop(page, move, head, "It leads your person's staff room in Arugula");
     await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("a running chief of staff has Restart: after one confirm it starts a new one on the same machine through Start's path, closes nothing itself, and the room ends led by the new block (Arugula #1500)", async ({ page }) => {
+    const { head } = await staffRoomOn(page, { machine: "m_laptop", machine_name: "laptop", session: "old chief" });
+    const panel = page.locator("[data-ov-panel]");
+    await expect(head).toHaveText("Chief of staff · idle on laptop");
+    const restart = panel.locator('[data-ov-staff="dm_cos"] [data-ov-staff-restart="laptop"]');
+    await expect(panel.locator("[data-ov-staff-move]")).toHaveCount(0);
+    const calls: { tool: string; arguments: unknown }[] = [];
+    await page.route("**/api/mcp/call", (r) => {
+      calls.push(r.request().postDataJSON());
+      return r.fulfill({ json: { content: [{ type: "text", text: "Started an agent in %9" }], structuredContent: { block: 9, chief_of_staff: { project: P, session: "Chief of staff · Arugula", lead: true, said: "It leads your person's staff room in Arugula", closed: [4] } } } });
+    });
+    await page.route("**/api/grants", (r) => r.fulfill({ json: r.request().method() === "POST" ? {} : { grants: [] } }));
+    const lead = () => page.evaluate(() => (window as unknown as { __chat: { rooms: { staff?: boolean; lead: { session: string; machine_name: string } }[] } }).__chat.rooms.find((x) => x.staff)!.lead);
+    // One confirm first: Cancel starts nothing.
+    await restart.locator("[data-ov-staff-restart-open]").click();
+    await expect(restart.locator("[data-ov-staff-confirm]")).toContainText("Restart your chief of staff?");
+    await restart.locator("[data-ov-staff-restart-cancel]").click();
+    await expect(restart.locator("[data-ov-staff-confirm]")).toHaveCount(0);
+    expect(calls).toHaveLength(0);
+    await restart.locator("[data-ov-staff-restart-open]").click();
+    await restart.locator("[data-ov-staff-restart-go]").click();
+    await restart.locator("[data-ov-staff-allow]").click();
+    await expect.poll(() => calls.map((c) => c.tool)).toEqual(["start_agent"]);
+    expect(calls[0].arguments).toEqual({ agent: "claude", recipe: "chief-of-staff", project: P, prompt: "" });
+    expect(await page.evaluate(() => (window as unknown as { __asked: string[] }).__asked)).toEqual(["laptop"]);
+    await expect.poll(lead).toEqual({ machine: "m_laptop", machine_name: "laptop", session: "Chief of staff · Arugula" });
+    await expect(head).toHaveText("Chief of staff · idle on laptop");
+    await expect(restart.locator("[data-ov-staff-restart-open]")).toBeEnabled();
+  });
+
+  test("a Restart that fails to start says why and leaves the room led by the running chief of staff (Arugula #1500)", async ({ page }) => {
+    const { head } = await staffRoomOn(page, { machine: "m_laptop", machine_name: "laptop", session: "old chief" });
+    const restart = page.locator('[data-ov-panel] [data-ov-staff="dm_cos"] [data-ov-staff-restart="laptop"]');
+    const calls: { tool: string }[] = [];
+    await page.route("**/api/mcp/call", (r) => {
+      calls.push(r.request().postDataJSON());
+      return r.fulfill({ json: { isError: true, content: [{ type: "text", text: "no agent adapter here" }] } });
+    });
+    await page.route("**/api/grants", (r) => r.fulfill({ json: r.request().method() === "POST" ? {} : { grants: [] } }));
+    await restart.locator("[data-ov-staff-restart-open]").click();
+    await restart.locator("[data-ov-staff-restart-go]").click();
+    await restart.locator("[data-ov-staff-allow]").click();
+    await expect(restart.locator("[data-ov-staff-failed]")).toHaveText("no agent adapter here");
+    expect(calls.map((c) => c.tool)).toEqual(["start_agent"]);
+    const session = await page.evaluate(() => (window as unknown as { __chat: { rooms: { staff?: boolean; lead: { session: string } }[] } }).__chat.rooms.find((x) => x.staff)!.lead.session);
+    expect(session).toBe("old chief");
+    await expect(head).toHaveText("Chief of staff · idle on laptop");
   });
 
   test("an agent's proposal to start one is under Needs you, counted; Approve sends it and it leaves (Arugula #1278)", async ({ page }) => {
@@ -1262,6 +1313,9 @@ test.describe("on a computer", () => {
     await expect(peek.locator("[data-ov-peek-said]")).toContainText("next tool call");
     await expect(reply).toHaveValue("");
     await expect(peek.locator("[data-ov-peek-tail]")).toContainText("ENV PEEK_1271", { timeout: 20_000 });
+    // Its transcript is Markdown, drawn as chat draws a message: a heading for what you said, not `## You` (#1382).
+    await expect(peek.locator("[data-ov-peek-tail][data-ov-peek-md] .md-chat h2").first()).toHaveText("You");
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toContainText("## You");
     // Silence holds its mentions, on its machine; Allow lets them in again.
     await peek.locator('[data-ov-peek-silence="silence"]').click();
     await expect(peek.locator('[data-ov-peek-silence="allow"]')).toBeVisible({ timeout: 10_000 });
@@ -2144,5 +2198,8 @@ test.describe("on a phone", () => {
     await expect(row.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
     const fits = await page.locator("[data-ov-needs]").evaluate((e) => e.scrollWidth <= e.clientWidth);
     expect(fits).toBe(true);
+    // Its heading sits right under the page's head: no page heading's margin above it (#1384).
+    const [head, heading] = await Promise.all([page.locator("[data-page-head]").boundingBox(), page.locator("[data-ov-needs] h2").boundingBox()]);
+    expect(heading!.y - (head!.y + head!.height)).toBeLessThan(32);
   });
 });

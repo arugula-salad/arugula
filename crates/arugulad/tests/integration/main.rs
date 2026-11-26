@@ -31,6 +31,7 @@ mod chief_of_staff_wakes;
 #[cfg(unix)]
 mod client_fixtures;
 mod control_moves;
+mod control_refusal_words;
 mod control_state;
 mod conversations;
 mod crash;

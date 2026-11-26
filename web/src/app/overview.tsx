@@ -42,7 +42,7 @@
 import "./overview.css";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLane, BoardRow, BoardView, ChatAsk } from "../shared/proto";
+import type { BoardRow, BoardView, ChatAsk } from "../shared/proto";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
@@ -435,13 +435,6 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
       return false;
     }
   };
-  // Done closes the card's issue, which the board asks about first: the board, on this card.
-  const moveLane = (row: string, lane: BoardLane) => {
-    if (!board) return;
-    if (lane === "done") return go(`${pathOf({ page: "board", project, board }, names)}#row=${row}`);
-    void act(() => boards.setLane(board, row, lane));
-  };
-  const nameOf = (account: string) => p?.team?.members.find((m) => m.account === account)?.name;
   // An assignee's picture: a native issue names them, a member by that name (or login) has one.
   const faceOf = (name: string) => (chat.on ? p?.team?.members.find((m) => m.name === name || m.account === name)?.account : undefined);
 
@@ -742,8 +735,6 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           write={!!p && mayWrite(p)}
           act={act}
           id={shownView.board.id}
-          moveLane={moveLane}
-          nameOf={nameOf}
         />
       )}
     </div>
