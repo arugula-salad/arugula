@@ -943,8 +943,17 @@
           "type": "object"
         },
         {
-          "description": "The reader's Inbox changed (Arugula #1430): its one `count` now, and\nthe ids of the items that came, went or changed (empty when it\nisn't known which): read `GET /api/inbox` again. Sent to that\naccount only.",
+          "description": "The reader's Inbox changed (Arugula #1430): its one `count` now, and\nby project (`Inbox::by_project`, Arugula #1433), and the ids of the\nitems that came, went or changed (empty when it isn't known which):\nread `GET /api/inbox` again. Sent to that account only.",
           "properties": {
+            "by_project": {
+              "additionalProperties": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "default": {},
+              "type": "object"
+            },
             "changed": {
               "default": [],
               "items": {

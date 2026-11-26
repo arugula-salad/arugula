@@ -1519,11 +1519,13 @@ pub enum ChatLive {
         github: ChatToGithub,
     },
     /// The reader's Inbox changed (Arugula #1430): its one `count` now, and
-    /// the ids of the items that came, went or changed (empty when it
-    /// isn't known which): read `GET /api/inbox` again. Sent to that
-    /// account only.
+    /// by project (`Inbox::by_project`, Arugula #1433), and the ids of the
+    /// items that came, went or changed (empty when it isn't known which):
+    /// read `GET /api/inbox` again. Sent to that account only.
     Inbox {
         count: u32,
+        #[serde(default)]
+        by_project: std::collections::BTreeMap<String, u32>,
         #[serde(default)]
         changed: Vec<String>,
     },
