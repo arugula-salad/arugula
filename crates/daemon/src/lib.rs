@@ -68,6 +68,7 @@ use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
 use arugula_mux::pane;
+mod pane_asks;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub mod peer;
 use arugula_mux::perm;

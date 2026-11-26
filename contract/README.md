@@ -191,7 +191,7 @@ sessions is `deny_unknown_fields` on purpose (aru-116), so no message text,
 file name or prompt can ride along: `boards`' `BlockStateReport` (with its
 `DiffstatReport` and the `PutBlockState` around it) and
 `MachineSessionsReport` (with its `MachineSession` and
-`MachineSessionPane`). Their schemas are closed (`additionalProperties:
+`MachineSessionPane`), and `PaneAsksReport` (with its `PaneAsk`). Their schemas are closed (`additionalProperties:
 false`). An older control refuses a field these don't list yet, so a new
 one ships in control and deploys before any daemon sends it. An externally tagged enum's wrapper object (`TokenAnswer`'s
 `{"token": ...}`) takes no other key, because serde's reader doesn't.

@@ -191,7 +191,8 @@ pub fn lead_prompt_of(board: &str) -> String {
 /// The tools a board's lead uses without asking. It starts in mode `auto`
 /// with these and the person's own settings, as the board-lead recipe starts
 /// its issue agents (Arugula #1440): in the default mode every command it
-/// runs is a card for its person.
+/// runs is a card for its person. A chief of staff starts with them too
+/// (Arugula #1490). Mode `auto` already lets Arugula's own MCP tools through.
 pub const LEAD_ALLOW: &[&str] = &["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch"];
 
 /// `run_board`: the board's lead here, as a ladder start under the grant

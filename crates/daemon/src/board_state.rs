@@ -46,7 +46,8 @@
 //!   them until every block is sent again, when they are tried once more
 //!   (control may have been upgraded). So no report is lost to an older
 //!   control. Beside the block states, on the same tick, goes the list of
-//!   every session on the machine ([`crate::machine_sessions`]).
+//!   every session on the machine ([`crate::machine_sessions`]), and of
+//!   every pane that waits on someone ([`crate::pane_asks`], Arugula #1431).
 //!
 //! Rows are not added here: a person or a lead adds them (`board_write`
 //! with an agent block's pointer), and this keeps their state current.
@@ -70,6 +71,7 @@ use crate::{
     control::CloudRefused,
     machine_sessions::{self, Pane, Place, Sessions},
     mux::Api,
+    pane_asks,
     server::App,
 };
 
@@ -81,7 +83,7 @@ const NO_GRANT: Duration = Duration::from_secs(600);
 /// How long after control couldn't be reached or failed.
 pub(crate) const TROUBLE: Duration = Duration::from_secs(30);
 /// The longest one request may take.
-const REQUEST: Duration = Duration::from_secs(20);
+pub(crate) const REQUEST: Duration = Duration::from_secs(20);
 
 /// What the daemon last knew of a pane's repo.
 #[derive(Clone, Default)]
@@ -291,6 +293,7 @@ pub async fn keep_reporting(app: Arc<App>) {
     // What each agent block that needs input asks for, as last read.
     let mut needs: HashMap<PaneId, NeedsKind> = HashMap::new();
     let mut sessions = Sessions::default();
+    let mut asks = pane_asks::Asks::default();
     let mut tick = tokio::time::interval(EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -306,6 +309,9 @@ pub async fn keep_reporting(app: Arc<App>) {
                 };
                 if matches!(ev.kind, EventKind::Layout { .. } | EventKind::Opened | EventKind::Closed) {
                     sessions.changed();
+                }
+                if matches!(ev.kind, EventKind::Attention { .. } | EventKind::Prompted | EventKind::Closed) {
+                    asks.changed();
                 }
                 let (Some(id), Some(word)) = (ev.pane, word_of(&ev.kind)) else { continue };
                 // Not joined: nothing is kept, and joining sends every block.
@@ -334,9 +340,11 @@ pub async fn keep_reporting(app: Arc<App>) {
                 if !on {
                     pending.0.clear();
                     sessions.left();
+                    asks.left();
                     continue;
                 }
                 tell_sessions(&app, &mut sessions).await;
+                pane_asks::tell(&app, &mut asks).await;
                 if quiet_until.is_some_and(|t| Instant::now() < t) {
                     continue;
                 }
@@ -344,6 +352,7 @@ pub async fn keep_reporting(app: Arc<App>) {
                 if again.due(Instant::now()) {
                     takes = Takes::default();
                     sessions.again();
+                    asks.again();
                     send_again(&app, &mut pending, &mut agents, &mut others).await;
                 }
                 let mut failed = false;

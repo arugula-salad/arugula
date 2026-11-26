@@ -2215,6 +2215,91 @@
       ],
       "type": "object"
     },
+    "PaneAsk": {
+      "additionalProperties": false,
+      "description": "One pane's open ask in a [`PaneAsksReport`].",
+      "properties": {
+        "for_person": {
+          "description": "Only a person may answer it (a gate, an invite, a Doc's share): no\nagent that started the pane answers it first.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/$defs/PaneAskKind"
+        },
+        "pane": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "parent": {
+          "description": "The agent block on the same machine that started this pane, while\nit's there: it answers first.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "since": {
+          "description": "When it began waiting, in milliseconds since the epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pane",
+        "kind",
+        "since"
+      ],
+      "type": "object"
+    },
+    "PaneAskKind": {
+      "description": "What a pane waits for ([`PaneAsk::kind`]).",
+      "oneOf": [
+        {
+          "const": "question",
+          "description": "It asks a question, or waits on a prompt some other way.",
+          "type": "string"
+        },
+        {
+          "const": "permission",
+          "description": "To approve something: a tool's use, an edit.",
+          "type": "string"
+        },
+        {
+          "const": "failure",
+          "description": "An agent's command or program failed.",
+          "type": "string"
+        },
+        {
+          "const": "gate",
+          "description": "A release or an op waits at a gate (M34).",
+          "type": "string"
+        },
+        {
+          "const": "finished",
+          "description": "An agent finished its turn: nothing asked, never counted.",
+          "type": "string"
+        }
+      ]
+    },
+    "PaneAsksReport": {
+      "additionalProperties": false,
+      "description": "[`AGENT_PANE_ASKS`]'s body: every pane on the machine that signs it that\nwaits on someone now, the whole list each time (Arugula #1431). Kinds,\ntimes and pane numbers only (aru-116): never what is asked, which the\napps read from the machine. `deny_unknown_fields`, at every level, as\n[`MachineSessionsReport`] is.",
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/PaneAsk"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "asks"
+      ],
+      "type": "object"
+    },
     "Pointer": {
       "description": "What a row points at. `None` is free text. The ids are the platform's:\n`fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a\nproject Doc).",
       "oneOf": [
