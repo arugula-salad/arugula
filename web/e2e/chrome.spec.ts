@@ -418,23 +418,23 @@ test.describe("accessibility", () => {
     // And the ones with a key say it.
     await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
     await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
-    await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\(Ctrl\+Shift\+P\)$/);
+    await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\((Ctrl\+K|⌘K)\)$/);
     // Named by what it shows: the label, a space, the chord (#458).
-    await expect(page.getByRole("button", { name: /^Commands Ctrl\+Shift\+P$/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Go to… (Ctrl\+K|⌘K)$/ })).toBeVisible();
   });
 
-  test("from the keyboard: out of the terminal by the palette, along the tabs, and back", async ({ page }) => {
+  test("from the keyboard: out of the terminal by Go to…, along the tabs, and back", async ({ page }) => {
     await newWorkspace(page);
     await page.locator(".ws-tabs .new-tab").click();
     await expect.poll(() => tabsInSession(page)).toHaveLength(2);
     const [t1, t2] = await tabsInSession(page);
     await expect.poll(() => tab(page).then((t) => t.id)).toBe(t2);
 
-    // The terminal has the keys; the palette moves them to the tabs.
-    await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
+    // The terminal has the keys; Go to… moves them to the tabs.
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(page.getByRole("combobox", { name: "Go to", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
-    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
+    await expect(page.locator('[role="option"][aria-selected="true"]')).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
     const shown = page.locator(`[data-tab-id="${t2}"]`);
     await expect(shown).toBeFocused();
@@ -448,20 +448,20 @@ test.describe("accessibility", () => {
     await page.keyboard.press("Enter");
     await expect.poll(() => tab(page).then((t) => t.id)).toBe(t1);
     // A state change doesn't take the keys from a tab a keyboard is on.
-    await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(page.getByRole("combobox", { name: "Go to", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
-    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
+    await expect(page.locator('[role="option"][aria-selected="true"]')).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
     await page.evaluate((t) => window.__arugula.client.intent({ op: "rename_tab", tab: t, name: "renamed" }), t2);
     await expect(page.locator(`[data-tab-id="${t2}"]`)).toContainText("renamed");
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
-    // And the sidebar: the palette puts the keys in its search.
-    await page.keyboard.press("Control+Shift+KeyP");
-    await expect(page.getByRole("combobox", { name: "Command", exact: true })).toBeFocused();
+    // And the sidebar: Go to… puts the keys in its search.
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(page.getByRole("combobox", { name: "Go to", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the sessions");
-    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the sessions");
+    await expect(page.locator('[role="option"][aria-selected="true"]')).toContainText("Move the keyboard to the sessions");
     await page.keyboard.press("Enter");
     await expect(page.locator("[data-session-search]")).toBeFocused();
   });

@@ -1,7 +1,7 @@
 // The workspace: on a computer, the rail, the session sidebar, the header,
 // the tab strip and the footer around the panes (ui/shell/, M108–M113); on
 // a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
-// the layers over them (menus, dialogs, the palette).
+// the layers over them (menus, dialogs; Go to… is the frame's).
 
 import { EmptyState } from "../../shared/ui/block-states";
 import { PageGuard } from "../../shared/ui/guard";
@@ -36,7 +36,6 @@ import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
 import { GettingStartedLayer, gettingStartedFor } from "./welcome";
 import { machineSettingsItems, machineShown, remoteInputItems } from "./commands";
-import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { MovingNote } from "./moving-note";
 import { LinkNote } from "./link-note";
@@ -48,6 +47,7 @@ import { NvimBlockColors } from "../nvim-block";
 import { WhatsNewLayer } from "./whats-new";
 import { PhoneOfferLayer } from "./phone-offer";
 import { useWorkspaceKeys } from "./keys";
+import { useGoToSource } from "./goto-source";
 import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
 import { StatusPill } from "./shell/status-pill";
@@ -103,6 +103,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   useHoverToSwitchTabs(client);
   useReportFocus(client, phone);
   useWorkspaceKeys(client, phone);
+  useGoToSource(client, phone);
   gettingStartedFor(client);
   useTabTitle(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
@@ -176,7 +177,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <SharingLayer />
       <AccessLayer />
       <PickerLayer />
-      <PaletteLayer />
       <GettingStartedLayer />
       <DragGhost />
       {/* An ask to drive shows over the share dialog (#551). */}
@@ -272,7 +272,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <SharingLayer />
       <AccessLayer />
       <PickerLayer />
-      <PaletteLayer />
       <GettingStartedLayer />
       <DragGhost />
       {/* An ask to drive shows over the share dialog (#551). */}

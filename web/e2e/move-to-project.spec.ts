@@ -267,12 +267,12 @@ test("only the project's owner sees the way in, or the page", async ({ page }) =
   await expect(page.getByText("Only the project's owner moves work out of it.")).toBeVisible();
 });
 
-test("New project from…, in the switcher: one of the reader's own projects, then its move, into a new project", async ({ page }) => {
+test("New project from…, in Go to…'s projects: one of the reader's own projects, then its move, into a new project", async ({ page }) => {
   await open(page, "/p/prj_aaaa0002", () => moved);
   await page.locator(".ws-rail [data-project-switcher]").click();
-  await expect(page.locator("[data-switcher-new-from]")).toHaveText("New project from…");
-  if (SHOTS) await page.locator("[data-switcher]").screenshot({ path: `${SHOTS}/followup-switcher.png` });
-  await page.locator("[data-switcher-new-from]").click();
+  await expect(page.locator('[data-command="project/new-from"]')).toContainText("New project from…");
+  if (SHOTS) await page.locator("[data-goto]").screenshot({ path: `${SHOTS}/followup-switcher.png` });
+  await page.locator('[data-command="project/new-from"]').click();
   // Only those the reader owns: Site is Friends', where they're an editor.
   const source = page.locator("[data-new-project-from-source]");
   await expect(source.locator("option")).toHaveText(["Default", "Arugula"]);
@@ -288,8 +288,8 @@ test("New project from…, in the switcher: one of the reader's own projects, th
 test("a reader who owns no project isn't offered New project from…", async ({ page }) => {
   await open(page, "/p/prj_aaaa0003", () => moved, () => projects(false).filter((p) => p.id === "prj_aaaa0003"));
   await page.locator(".ws-rail [data-project-switcher]").click();
-  await expect(page.locator("[data-switcher-new]")).toBeVisible();
-  await expect(page.locator("[data-switcher-new-from]")).toHaveCount(0);
+  await expect(page.locator('[data-command="project/new"]')).toBeVisible();
+  await expect(page.locator('[data-command="project/new-from"]')).toHaveCount(0);
 });
 
 test("the project's sessions, by machine: a repo brings those it placed, others are picked, and the page says who sees them (Arugula #1166)", async ({ page }) => {

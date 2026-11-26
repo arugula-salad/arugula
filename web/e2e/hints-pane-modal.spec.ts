@@ -344,7 +344,7 @@ test("Don't show tips like this again: every pane modal stops, chips don't; Sett
   await expect(tip(page, block)).toBeVisible();
   await tip(page, block).locator("[data-hint-act]").click();
   await expect(tip(page, block)).toHaveCount(0);
-  await expect(page.locator(".palette-search")).toBeVisible();
+  await expect(page.locator("[data-goto]")).toBeVisible();
   expect(await seenHere(page)).toHaveProperty("seen:test-tip-agent");
   await page.keyboard.press("Escape");
   // Then the browser's.

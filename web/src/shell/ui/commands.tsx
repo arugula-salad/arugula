@@ -1,6 +1,6 @@
 // What the menus offer, in one place (#139): the pane menu, a tab's menu,
 // the `+` button's menu and the session menu are built here, and the
-// command palette reads the same lists, so the two can't drift.
+// Go to… reads the same lists (25 of their rows), so the two can't drift.
 
 import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
@@ -18,7 +18,7 @@ import { startAgent } from "./agent-dialog";
 import { openYourWork, pickConversation } from "./conversations";
 import { pinDoc } from "./docs-route";
 import { openPicker } from "./picker";
-import { openPalette } from "./palette";
+import { openGoTo } from "../../shared/kit/frame/goto";
 import { agentNotifyItems, notificationItems, notificationParts, notifyThisDevice } from "./notify";
 import { openGettingStarted, openTailscale } from "./welcome";
 import { turnOnHooks } from "./agents-setup";
@@ -364,13 +364,13 @@ function preferenceItems(): MenuItem[] {
   ];
 }
 
-/** How to learn what's here: the command palette's Help, not a part of
+/** How to learn what's here: Go to…'s Help, not a part of
  * Settings (Arugula #1108). */
 export function helpItems(client: Client): MenuItem[] {
   return [
     { label: "Getting started", run: () => openGettingStarted(undefined, client) },
     // Features' help cards, opened on purpose (Tips on or off). Not the
-    // pane menu's "nvim help" (that pane's), so the palette lists both.
+    // pane menu's "nvim help" (that pane's), so Go to… lists both.
     { label: "nvim in Arugula", hint: "The help card, over an nvim pane of the tab", run: () => openHelpCard(client, undefined) },
     { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) },
     // Arugula #1217: through this machine's daemon.
@@ -414,16 +414,16 @@ export function settingsGroups(client: Client): SettingsGroup[] {
 }
 
 /** Settings as a menu, where there's no rail to open the page from (a phone,
- * no machine shown), and for the command palette, which lists every row.
+ * no machine shown), and for Go to…, which lists every row.
  * Where there's an app, its Settings is one row, with this device's push
  * beside it (control's own page keeps that, aru-141): no dialogs. */
 export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
   const push = client?.state ? notificationParts(client) : { device: [], everywhere: [] };
-  const palette: MenuItem[] = client?.state
-    ? ["separator", { label: "Command palette…", hint: "Help is there too", shortcut: keyHint("palette"), run: () => openPalette(client) }]
+  const goTo: MenuItem[] = client?.state
+    ? ["separator", { label: "Go to…", hint: "Help is there too", shortcut: keyHint("goto"), run: () => openGoTo() }]
     : [];
   if (platformOrigin())
-    return [{ label: "Settings", run: () => openSettings() }, ...(push.device.length ? ["separator" as const, { header: "This device" } as MenuItem, ...push.device] : []), ...palette];
+    return [{ label: "Settings", run: () => openSettings() }, ...(push.device.length ? ["separator" as const, { header: "This device" } as MenuItem, ...push.device] : []), ...goTo];
   // The machine's own settings are in the machine menu, where there is
   // one; else (a daemon's page with no other machine) here.
   const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
@@ -437,8 +437,8 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
     "separator",
     { header: "Preferences" },
     ...preferenceItems(),
-    // Help is the palette's (Arugula #1108).
-    ...palette,
+    // Help is Go to…'s (Arugula #1108).
+    ...goTo,
   ];
 }
 
@@ -451,7 +451,7 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
     const mine = client.machine(Number(pane));
     openPortAt(client, { split: Number(pane), host: mine?.id, local: !mine }, Number(port));
   },
-  "palette.open": (client) => openPalette(client),
+  "palette.open": () => openGoTo(),
   /** Send feedback (Arugula #1217). */
   "feedback.open": (client) => openFeedback(client),
   /** Getting started at its Agents step: Use Claude Code with Arugula. */

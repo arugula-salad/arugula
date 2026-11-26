@@ -58,18 +58,18 @@ test("a first visit gets neither What's new nor Getting started", async ({ page 
   await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
 });
 
-test("the command palette's What's new; Try it opens the thing and closes it", async ({ page }) => {
+test("Go to…'s What's new; Try it opens the thing and closes it", async ({ page }) => {
   await reset(page);
   await expect(panel(page)).toHaveCount(0);
   await paletteCommand(page, "Help/What's new");
   await expect(panel(page)).toBeVisible();
   const tries = panel(page).locator("[data-whats-new-try]");
   if ((await tries.count()) === 0) return;
-  // The pane menu's headline opens the command palette.
+  // The pane menu's headline opens Go to….
   const palette = panel(page).locator('[data-whats-new-item="pane-menu-shorter"] [data-whats-new-try]');
   if (await palette.count()) {
     await palette.click();
-    await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Go to…" })).toBeVisible();
     await page.keyboard.press("Escape");
   } else await tries.first().click();
   await expect(panel(page)).toHaveCount(0);

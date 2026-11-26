@@ -2,7 +2,7 @@
 // drawn from the one table (shared/keys.ts), so a binding can't be missing
 // from it. `?` opens and closes it; so does the footer's `?`.
 
-import { bindings, both, GROUPS, hintOf, subscribeKeys, useBinding, useEscape } from "../../keys";
+import { bindings, both, GROUPS, hintOf, subscribeKeys, useBinding } from "../../keys";
 import { useSubscribe } from "../../ui/hooks";
 import { Kbd } from "../kbd";
 import { Sheet } from "../sheet";
@@ -26,8 +26,6 @@ export function KeysSheetLayer() {
   });
   useSubscribe(subscribeKeys);
   useBinding({ id: "keys", label: "Every shortcut", group: "app", keys: both("key:?"), run: () => set(!open) }, []);
-  // Focus stays where it was (the sheet has nothing to focus): Escape is the table's.
-  useEscape("keys.close", open ? () => set(false) : null, [open]);
   if (!open) return null;
   const all = bindings();
   return (

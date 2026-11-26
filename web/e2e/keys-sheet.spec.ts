@@ -17,7 +17,7 @@ test("`?` lists every binding in the table, each with its key", async ({ page })
   const footer = page.locator("[data-status-footer]");
   await expect(footer).toContainText("Machines");
   // The workspace's keys are the footer's chips.
-  await expect(footer.locator('[data-chip="palette"]')).toBeVisible();
+  await expect(footer.locator('[data-chip="pane.jump"]')).toBeVisible();
 
   await footer.locator("[data-open-keys]").click();
   const sheet = page.locator("[data-keys-sheet]");

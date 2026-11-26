@@ -1,20 +1,18 @@
 // The app's rail (#377; the project-rooted rail of Arugula #989; one
 // button per place since Arugula #1345): the same one as a machine's own
 // page's (shared/ui/rail), down the left on a computer. The project tile at
-// the top is the switcher. Then the places: Overview, Boards, Docs,
+// the top opens Go to…'s projects. Then the places: Overview, Boards, Docs,
 // Machines and Chat; at the foot the Inbox, Settings and you. A place's
 // views are the bar's (`PlaceViews`), beside the path to where you are
 // (./bar). A phone has no rail: the places are a bar along the bottom
 // (`PhoneTabs`), and the Inbox a bell in the top bar (`PhoneInbox`).
 
 import type { ComponentChildren } from "preact";
-import { useRef, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, OverviewIcon, SettingsIcon } from "../shared/ui/icons";
-import { pressedShut } from "../shared/ui/menu";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { Count } from "../shared/ui/state-chip";
 import { AccountButton, chatPath, sectionOf } from "./bar";
@@ -22,10 +20,9 @@ import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
 import { useInboxCount } from "./inbox-count";
 import { names } from "./links";
-import { ownerKey } from "./owners";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
-import { Switcher } from "./switcher";
+import { openGoTo } from "../shared/kit/frame/goto";
 import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
@@ -156,32 +153,17 @@ export function PlaceViews() {
   );
 }
 
-/** The project tile at the top of the rail: the project you're in, and the
- * switcher to every other. */
+/** The project tile at the top of the rail: the project you're in; it
+ * opens Go to…'s projects. */
 function ProjectTile({ project, shown }: { project: ReturnType<typeof session.project>; shown: string | undefined }) {
-  const [picking, setPicking] = useState(false);
-  const tile = useRef<HTMLButtonElement>(null);
   const name = shown && project ? project.name : "All projects";
   const initial = shown && project ? (project.name.trim()[0] ?? "?").toUpperCase() : "∗";
   return (
-    <>
-      <button
-        ref={tile}
-        class="ws-brand ws-project-tile"
-        data-project-switcher
-        title={`${name}: switch project`}
-        aria-label={`Project: ${name}`}
-        aria-haspopup="dialog"
-        aria-expanded={picking}
-        // A press on it shut the switcher: this click is the same tap.
-        onClick={() => pressedShut(tile.current) || setPicking(!picking)}
-      >
-        <span class="ws-project-initial" aria-hidden="true">
-          {initial}
-        </span>
-      </button>
-      {picking && <Switcher beside from={tile} project={shown} owner={project ? ownerKey(project) : undefined} close={() => setPicking(false)} />}
-    </>
+    <button class="ws-brand ws-project-tile" data-project-switcher title={`${name}: switch project`} aria-label={`Project: ${name}`} aria-haspopup="dialog" onClick={() => openGoTo("projects")}>
+      <span class="ws-project-initial" aria-hidden="true">
+        {initial}
+      </span>
+    </button>
   );
 }
 

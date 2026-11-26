@@ -16,7 +16,7 @@ import { useRef } from "preact/hooks";
 import { settingsItems } from "./commands";
 import { openSettings } from "./settings-route";
 import { ariaKeys, keyHint } from "../../shared/keys";
-import { openPalette } from "./palette";
+import { openGoTo } from "../../shared/kit/frame/goto";
 import { openFeedback } from "./feedback";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
@@ -38,7 +38,7 @@ export function setAccount(a: Account) {
   account = a;
 }
 
-/** The account now, for the command palette's Account commands (UI audit
+/** The account now, for Go to…'s Account commands (UI audit
  * #176); null on a daemon's own page. */
 export const currentAccount = (): Account | null => account;
 
@@ -94,7 +94,7 @@ export function AppBar({
       {rail && <MachinePlaces client={client} at={at} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      {client.state && <CommandsButton client={client} />}
+      {client.state && <CommandsButton />}
       <UpdateChip client={client} />
       {/* What waits on you, on every machine, in every bar (Arugula #637). */}
       {rail && <AttentionBell client={client} />}
@@ -105,26 +105,26 @@ export function AppBar({
   );
 }
 
-/** The command palette, where it can be seen: most of what a pane can do
- * is in it (and in a pane's right-click menu). */
-export function CommandsButton({ client, search }: { client: Client; search?: boolean }) {
+/** Go to…, where it can be seen: a place, a pane, or a command a pane can do
+ * (the rest are in its right-click menu). */
+export function CommandsButton({ search }: { search?: boolean }) {
   return (
     <button
       class={search ? "commands-button ws-search-button" : "commands-button"}
       data-open-palette
       // One label and title in every bar (UI audit #170); the panes' head
       // draws it as a search field.
-      title={`Every command for this pane, tab and session (${keyHint("palette")})`}
-      // No aria-label: its name is what it shows, "Commands" and the chord,
-      // so voice control's "click Commands" and a screen reader agree.
-      aria-keyshortcuts={ariaKeys(keyHint("palette"))}
-      onClick={() => openPalette(client)}
+      title={`Go to a place, a pane or a command (${keyHint("goto")})`}
+      // No aria-label: its name is what it shows, "Go to…" and the chord,
+      // so voice control's "click Go to" and a screen reader agree.
+      aria-keyshortcuts={ariaKeys(keyHint("goto"))}
+      onClick={() => openGoTo()}
     >
       {search && <SearchIcon />}
-      <span>Commands</span>
-      {/* A space between them, so the name reads "Commands Ctrl+Shift+P". */}
+      <span>Go to…</span>
+      {/* A space between them, so the name reads "Go to… Ctrl+K". */}
       {" "}
-      <kbd>{keyHint("palette")}</kbd>
+      <kbd>{keyHint("goto")}</kbd>
     </button>
   );
 }
@@ -146,7 +146,7 @@ export function AccountButton({ client }: { client: Client | null }) {
     if (!rail) countView("settings");
     // Your presence is Chat's "you" row (Arugula #1079), not this menu's.
     const items: MenuItem[] = [...mine, ...settings];
-    // Arugula #1217; the palette's Help has it too.
+    // Arugula #1217; Go to… has it too.
     if (client?.state) items.push("separator", { label: "Send feedback…", run: () => openFeedback(client) });
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.

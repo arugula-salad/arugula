@@ -1,6 +1,6 @@
 // The shell's keys (M107, #1022), in the page's one table (shared/keys.ts,
-// which says how chords are written): the palette, the picker, the panes'
-// and the desktop app's. Each takes its key only while the workspace is up
+// which says how chords are written): the panes' and the desktop app's.
+// Go to… (⌘K) is the frame's. Each takes its key only while the workspace is up
 // (`here`), so the app's other pages list none of them.
 //
 // Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
@@ -21,8 +21,7 @@ import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { swarmRoute } from "../swarm/route";
 import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
-import { nextNeedingYou, togglePalette } from "./palette";
-import { openPicker } from "./picker";
+import { nextNeedingYou } from "./goto-source";
 import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
 import { canPopOut, popOut } from "./panes/pop-out";
@@ -46,28 +45,6 @@ const appKey = (code: string) => ({ group: "app" as const, keys: both(`Meta+${co
 const inWorkspace = () => !!workspace;
 
 addBindings([
-  {
-    id: "palette",
-    label: "Command palette",
-    group: "go",
-    chip: "commands",
-    here: inWorkspace,
-    // A Mac's Cmd too, for the desktop app (its menu leaves Cmd chords to
-    // the page) and Safari. Again closes it.
-    keys: { mac: ctrlOrCmd("KeyP"), other: ctrlOrCmd("KeyP") },
-    when: () => !!workspace,
-    run: () => togglePalette(workspace!.client, workspace!.phone),
-  },
-  {
-    id: "picker",
-    label: "Go to directory",
-    group: "go",
-    chip: "go to directory",
-    here: inWorkspace,
-    keys: both("Ctrl+Shift+key:g"),
-    when: () => !!workspace,
-    run: () => openPicker(workspace!.client, workspace!.client.active(), workspace!.phone),
-  },
   {
     id: "pane.jump",
     group: "panes",
@@ -216,7 +193,7 @@ addBindings([
 function jumpTarget(e: KeyboardEvent): number | null {
   const w = workspace;
   if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute()) return null;
-  // Not from under a dialog (the palette, the picker, a prompt).
+  // Not from under a dialog (Go to…, the picker, a prompt).
   if (document.querySelector(".prompt-backdrop")) return null;
   const n = Number(e.code.slice("Digit".length));
   // In reading order, also the panes a focused tab doesn't show.
@@ -248,7 +225,7 @@ export function installKeys(client: () => Client): () => void {
   };
 }
 
-/** The workspace's keys (palette, picker, pane jumps) while it's up. */
+/** The workspace's keys (pane jumps, focus, + Pane) while it's up. */
 export function useWorkspaceKeys(client: Client, phone: boolean) {
   useLayoutEffect(() => {
     const me = { client, phone };

@@ -1,28 +1,28 @@
-// #139: the command palette in Chrome, on a desktop and a phone. The
-// checks are in palette-steps.ts, shared with palette.webkit.spec.ts.
+// Go to… (Lift 3, #1479) on a machine's page, in Chrome, on a desktop and a
+// phone. The checks are in goto-steps.ts, shared with goto.webkit.spec.ts.
 
 import { devices, expect, test } from "@playwright/test";
-import { desktop, docs, phone } from "./palette-steps";
+import { desktop, docs, field, goTo, phone } from "./goto-steps";
 import { active, paneEl, reset } from "./helpers";
 
-test("the chord opens the palette from a terminal; it runs every pane-menu action", async ({ page }) => {
+test("Ctrl+Shift+K opens it from a terminal; it runs the pane menu's kept actions", async ({ page }) => {
   await desktop(page);
 });
 
-test("Docs opens the Docs page, and a Doc that was closed opens by its title", async ({ page }) => {
+test("the Docs page is a place, and a Doc that was closed opens by its title", async ({ page }) => {
   await docs(page);
 });
 
 test.describe("on a phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
-  test("a full-height sheet from the sheet's Commands button", async ({ page }) => {
+  test("from the sheet's Go to… button", async ({ page }) => {
     await phone(page);
   });
 });
 
-// M111 (#1026): the palette jumps to this machine's sessions, tabs and
-// panes, a pane in another session included; Escape gives the focus back.
+// M111 (#1026): Go to… jumps to this machine's sessions, tabs and panes, a
+// pane in another session included; Escape gives the focus back.
 test("a jump to a pane in another session, and Escape gives the focus back", async ({ page }) => {
   await reset(page);
   const home = await page.evaluate(() => window.__arugula.client.session!);
@@ -46,28 +46,27 @@ test("a jump to a pane in another session, and Escape gives the focus back", asy
   await expect.poll(() => active(page)).toBe(first);
   await paneEl(page, first).click({ position: { x: 60, y: 60 } });
 
-  const mod = process.platform === "darwin" ? "Meta" : "Control";
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  const filter = palette.getByRole("combobox", { name: "Command" });
-  await page.keyboard.press(`${mod}+Shift+KeyP`);
+  const dialog = goTo(page);
+  const filter = field(page);
+  await page.keyboard.press("Control+Shift+KeyK");
   await filter.fill("jumps");
   const key = `Go/pane ${target}`;
-  const row = palette.locator(`[data-command="${key}"]`);
+  const row = dialog.locator(`[data-command="${key}"]`);
   await expect(row).toBeVisible();
-  const at = await palette.getByRole("option").evaluateAll((els, k) => els.findIndex((e) => (e as HTMLElement).dataset.command === k), key);
+  const at = await dialog.getByRole("option").evaluateAll((els, k) => els.findIndex((e) => (e as HTMLElement).dataset.command === k), key);
   for (let i = 0; i < at; i++) await filter.press("ArrowDown");
   await expect(row).toHaveAttribute("aria-selected", "true");
   await filter.press("Enter");
-  await expect(palette).toBeHidden();
+  await expect(dialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(sid);
   await expect.poll(() => active(page)).toBe(target);
   // The keys are the pane's.
   await expect.poll(() => paneEl(page, target!).evaluate((el) => el.contains(document.activeElement))).toBe(true);
 
   // Opened and dismissed: the focus is back where it was.
-  await page.keyboard.press(`${mod}+Shift+KeyP`);
+  await page.keyboard.press("Control+Shift+KeyK");
   await expect(filter).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(palette).toBeHidden();
+  await expect(dialog).toBeHidden();
   await expect.poll(() => paneEl(page, target!).evaluate((el) => el.contains(document.activeElement))).toBe(true);
 });

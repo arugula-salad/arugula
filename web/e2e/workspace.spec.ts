@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menu, open, paneEl, closeContexts } from "./helpers";
+import { goToDirectory, menu, open, paneEl, closeContexts } from "./helpers";
 import type { PaneId, Reason } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
@@ -388,7 +388,7 @@ test("Open as workspace, from a pane's menu and the picker, in a workspace's dir
   await post(`/api/panes/${term}/send`, { text: `cd ${dir}`, enter: true });
   await expect.poll(async () => (await panesOf(page)).find((p) => p.id === term)?.cwd).toBe(dir);
   await page.evaluate((t) => window.__arugula.client.setActive(t), term);
-  await page.keyboard.press("Control+Shift+G");
+  await goToDirectory(page);
   await expect(page.locator(".picker")).toBeVisible();
   await expect(page.locator("[data-open-workspace]")).toHaveCount(0);
   await page.locator(`.picker-row:not(.recent)[data-path="${ws}"]`).click();

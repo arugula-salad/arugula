@@ -2878,83 +2878,13 @@ button.agent-image {
   flex-basis: 100%;
 }
 
-/* ---- command palette (#139) */
-
-.picker.palette {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(620px, calc(100vw - 32px));
-  height: min(460px, 70vh);
-}
-
-/* The palette's box, here so the platform page's room switcher draws it
-   too (the shell's interaction-chrome.css sizes the palette itself). */
-.picker.palette {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--panel-radius);
-  background: var(--surface);
-  overflow: hidden;
-  box-shadow: var(--shadow-lg);
-}
-
-.picker.palette.phone {
-  width: auto;
-  height: var(--app-height);
-}
-
-.palette-row {
-  font-family: inherit;
-}
-
-.palette-group {
-  flex: none;
-  min-width: 4.5em;
-  font-size: var(--text-xs);
-  color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
-}
-
-.palette-row .picker-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.palette-row.danger .picker-label {
-  color: var(--danger);
-}
-
-.palette-row.disabled .picker-label {
-  color: var(--dim);
-}
-
-.palette-detail,
-.palette-recent {
-  flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--text-xs);
-  color: var(--dim);
-}
-
-.palette-recent {
-  color: var(--accent);
-}
+/* ---- a menu row's key */
 
 .menu-key {
   float: right;
   margin-left: 2em;
   font: var(--text-xs) var(--font-mono);
   color: var(--dim);
-}
-
-.palette-row .menu-key {
-  float: none;
-  margin-left: 0;
 }
 
 /* ---- questions and forms from agents (M6c) ---- */
@@ -4064,8 +3994,6 @@ button.agent-image {
   align-items: center;
   font-weight: 400;
 }
-
-
 
 .pane-private {
   position: absolute;
@@ -8937,10 +8865,6 @@ button.thread-quote:hover {
 }
 
 /* The room switcher is the palette's box (a Modal, .picker.palette) at 560px. */
-.picker.palette.chat-switcher {
-  width: min(560px, calc(100vw - 32px));
-  height: auto;
-}
 
 .chat-switcher input {
   /* The box around it is the field: not the kit's (shared/fields.css). */
@@ -9395,8 +9319,6 @@ button.thread-quote:hover {
   margin-top: 10px;
 }
 
-
-
 .chat-people li .dim {
   margin-left: auto;
   font-size: var(--text-sm);
@@ -9773,8 +9695,6 @@ button.thread-quote:hover {
   gap: 6px;
   font-size: var(--text-sm);
 }
-
-
 
 /* On a phone the main buttons share the row, big enough to tap. */
 @container (max-width: 460px) {
@@ -10826,7 +10746,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
     display: none;
   }
 }
-
 
 /* ---- M111 (#1026): the bell, the attention drawer and the session
    overview. */

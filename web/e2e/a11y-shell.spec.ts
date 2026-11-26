@@ -157,11 +157,11 @@ test("settings: Appearance", async ({ page }) => {
   await everyWay(page, "appearance", async () => {
     await home(page);
     // The command palette has the settings menu's items at any width.
-    await page.keyboard.press("ControlOrMeta+Shift+KeyP");
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByRole("combobox", { name: "Command" }).fill("Appearance");
+    await page.keyboard.press("Control+Shift+KeyK");
+    const palette = page.getByRole("dialog", { name: "Go to…" });
+    await palette.getByRole("combobox", { name: "Go to" }).fill("Appearance");
     await expect(palette.getByRole("option").first()).toContainText("Appearance");
-    await palette.getByRole("combobox", { name: "Command" }).press("Enter");
+    await palette.getByRole("combobox", { name: "Go to" }).press("Enter");
     await expect(page.locator("[data-appearance]")).toBeVisible();
   });
 });

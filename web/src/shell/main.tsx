@@ -58,6 +58,7 @@ import { fakeSwarm } from "./swarm/fake";
 import { followChatBadge, setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { KeysSheetLayer } from "../shared/kit/frame/keys-sheet";
+import { GoToLayer } from "../shared/kit/frame/goto";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
 import { accountBackend, localBackend, setSeenBackend } from "../shared/seen";
@@ -328,6 +329,7 @@ const draw = () => {
       <FeedbackLayer />
       <MachineTelemetryLayer />
       <KeysSheetLayer />
+      <GoToLayer />
     </PlatformApiContext.Provider>,
     root,
   );

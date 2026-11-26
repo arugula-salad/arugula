@@ -258,7 +258,6 @@ html[data-native-tabs] .platform {
   font-family: var(--font-mono);
 }
 
-
 .platform-toast {
   position: fixed;
   z-index: 70;
@@ -1492,94 +1491,6 @@ span.untri-title {
   align-self: center;
   margin-left: 8px;
   flex: none;
-}
-
-/* The project switcher (Arugula #895; the prototype's, #989, ./switcher):
-   one list under small headings, each project with its letter tile and a
-   count of what wants you there; the current one in the accent. */
-.menu.popover:not(.sheet):has(.switcher) {
-  width: 280px;
-}
-
-.switcher {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: var(--space-1);
-}
-
-.switcher-group {
-  display: flex;
-  flex-direction: column;
-}
-
-/* A caps label (docs/design/today.md), as the prototype's headings. */
-.switcher-head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-}
-
-.switcher .menu-item {
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.switcher-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.switcher-tile {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--tag-radius);
-  background: var(--bg);
-  color: var(--fg);
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
-
-.switcher-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.switcher-row[aria-current="page"],
-.switcher-row[aria-current="page"] .switcher-tile {
-  color: var(--accent);
-}
-
-.switcher-count {
-  margin-left: auto;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  box-sizing: border-box;
-  border-radius: 9px;
-  background: var(--accent-fill);
-  color: var(--on-color);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-}
-
-.switcher-new {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--dim);
 }
 
 /* A team's page (Arugula #895): its tabs under the header. */

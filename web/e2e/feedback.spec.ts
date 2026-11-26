@@ -72,13 +72,13 @@ test.describe("on a phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  test("the sheet's Commands reach it, and it's a sheet along the bottom", async ({ page }) => {
+  test("the sheet's Go to… reaches it, and it's a sheet along the bottom", async ({ page }) => {
     await reset(page);
     await page.locator(".sheet-button").click();
     await sheetTab(page, "More");
-    await page.getByRole("button", { name: "Commands", exact: true }).click();
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByRole("combobox", { name: "Command" }).fill("Send feedback");
+    await page.getByRole("button", { name: "Go to…", exact: true }).click();
+    const palette = page.getByRole("dialog", { name: "Go to…" });
+    await palette.getByRole("combobox", { name: "Go to" }).fill("Send feedback");
     await palette.locator('[data-command="Help/Send feedback…"]').click();
     const d = dialog(page);
     await expect(d).toHaveClass(/\bphone\b/);
