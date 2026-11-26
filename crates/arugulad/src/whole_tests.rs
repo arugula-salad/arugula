@@ -106,6 +106,26 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
     }
 }
 
+/// A board's lead that asks for a wider grant hears the answer in the
+/// board's thread, never in staff (Arugula #1461): the chief of staff leads
+/// staff, so a post there reaches only itself. Both recipes say so.
+#[test]
+fn the_chief_of_staff_answers_a_leads_ask_in_the_boards_thread() {
+    register();
+    let text = arugulad_control_tools::chief_of_staff_on_a_machine(None);
+    let from = text.find("- **When a board's lead asks for more**").expect("the past-grant section");
+    let rest = &text[from..];
+    let section = &rest[..rest[1..].find("\n- **").map_or(rest.len(), |n| n + 1)];
+    assert!(section.contains("`post_thread` with `room` = the board's `brd_…` id"), "{section}");
+    assert!(section.contains("never in `staff`"), "{section}");
+    for step in ["1. **Decide.**", "2. **Ask your person**", "3. **Tell the lead**"] {
+        let line = section.lines().find(|l| l.trim_start().starts_with(step)).expect(step);
+        assert!(line.contains("the board's thread"), "{line}");
+    }
+    let lead = arugulad_control_tools::board_lead_on_a_machine(None);
+    assert!(lead.contains("The chief of staff answers in the board's thread"), "{lead}");
+}
+
 /// A board's lead (Arugula #1440), rendered as its first prompt, names only
 /// tools and kinds an agent block has, and the ones it runs a board with:
 /// it starts visible issue agents with `start_agent`, never sub-agents.
