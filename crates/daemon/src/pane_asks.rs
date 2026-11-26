@@ -61,9 +61,11 @@ fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
         ReasonKind::Done if agent => PaneAskKind::Finished,
         _ => return None,
     };
-    let parent = i.started_by.as_ref().and_then(|s| s.block).filter(|b| {
-        *b != i.id && panes.iter().any(|q| q.info.id == *b && q.info.kind == BlockType::Agent)
-    });
+    let parent = i
+        .started_by
+        .as_ref()
+        .and_then(|s| s.block)
+        .filter(|b| *b != i.id && panes.iter().any(|q| q.info.id == *b && q.info.kind == BlockType::Agent));
     Some(PaneAsk {
         pane: i.id,
         kind,
