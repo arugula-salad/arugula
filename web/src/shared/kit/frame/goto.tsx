@@ -40,6 +40,9 @@ export interface GoItem {
   danger?: boolean;
   /** "7 for you", in the projects list. */
   note?: string;
+  /** A place you were lately (the back stack's), newest first: first when
+   * nothing's typed. */
+  recent?: boolean;
   run: () => unknown;
 }
 
@@ -114,9 +117,10 @@ export function rank(list: GoItem[], query: string, recent: string[]): GoItem[] 
     return i < 0 ? Infinity : i;
   };
   if (!q) {
-    const first = list.filter((c) => at(c) < Infinity).sort((a, b) => at(a) - at(b));
-    const rest = list.filter((c) => at(c) === Infinity);
-    return [...first, ...rest.filter((c) => !c.command), ...rest.filter((c) => c.command)];
+    const lately = list.filter((c) => c.recent);
+    const first = list.filter((c) => !c.recent && at(c) < Infinity).sort((a, b) => at(a) - at(b));
+    const rest = list.filter((c) => !c.recent && at(c) === Infinity);
+    return [...lately, ...first, ...rest.filter((c) => !c.command), ...rest.filter((c) => c.command)];
   }
   const scored = list
     .map((c) => {
@@ -125,7 +129,7 @@ export function rank(list: GoItem[], query: string, recent: string[]): GoItem[] 
       const b = fuzzy(q, named);
       const d = a === null && b === null && c.also ? fuzzy(q, `${named} ${c.also}`) : null;
       const s = a === null ? (b ?? (d === null ? null : d - 2)) : b === null ? a : Math.max(a, b);
-      return { c, s: s === null ? null : s + (at(c) < Infinity ? 4 : 0) - (c.disabled ? 20 : 0) - (c.command ? 6 : 0) };
+      return { c, s: s === null ? null : s + (at(c) < Infinity || c.recent ? 4 : 0) - (c.disabled ? 20 : 0) - (c.command ? 6 : 0) };
     })
     .filter((x): x is { c: GoItem; s: number } => x.s !== null);
   scored.sort((a, b) => b.s - a.s);
