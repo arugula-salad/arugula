@@ -93,6 +93,11 @@ class HomeModel(private val api: Api) {
     var ideas by mutableStateOf<List<Issue>>(emptyList())
         private set
 
+    /** A board as a write answered it (its grant revoked, Arugula #1456). */
+    fun put(id: String, view: BoardDetail) {
+        views = views + (id to view)
+    }
+
     /** Each open board's thread, by the board's id: its changes come on it. */
     val threads = mutableStateMapOf<String, ChatRoom>()
     private var project: String? = null
@@ -520,9 +525,10 @@ fun leadWords(l: Lead?): String {
 // ---- a board's thread
 
 /**
- * A board's thread: its lane bar and who leads it over the conversation,
- * which reaches the session that leads it, and the sessions on its cards,
- * each opening its peek. Board opens its lanes.
+ * A board's thread: its lane bar, who leads it and its grant (with Revoke,
+ * or Run this board) over the conversation, which reaches the session that
+ * leads it, and the sessions on its cards, each opening its peek. Board
+ * opens its lanes.
  */
 @Composable
 fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
@@ -531,6 +537,7 @@ fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet
     val snack = remember { SnackbarHostState() }
     val coroutines = rememberCoroutineScope()
     val sessions = HomeState(LocalScope.current.current, fleet, model).sessions[board.id] ?: emptyList()
+    val toast: (String) -> Unit = { t -> coroutines.launch { snack.showSnackbar(t) } }
     val boardButton: @Composable () -> Unit = {
         Text("BOARD", Modifier.clickable { nav.push(Dest.Lanes(board)) }.padding(6.dp).testTag("open-board"), style = Face.mono(12.sp, FontWeight.Bold), color = Palette.accent)
     }
@@ -538,16 +545,16 @@ fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet
         Column(Modifier.fillMaxSize()) {
             DetailBar(board.title, trailing = boardButton)
             Loaded(key = board.id, load = { model.thread(board) }) { room, _ ->
-                ChatRoomScreen(api, room, live, title = board.title, bar = false, heading = { BoardThreadHeading(board, model, sessions) { peek = it } })
+                ChatRoomScreen(api, room, live, title = board.title, bar = false, heading = { BoardThreadHeading(api, board, model, sessions, toast) { peek = it } })
             }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
     }
-    peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = { t -> coroutines.launch { snack.showSnackbar(t) } }) }
+    peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = toast) }
 }
 
 @Composable
-private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<BoardSession>, peek: (Peeked) -> Unit) {
+private fun BoardThreadHeading(api: Api, board: Board, model: HomeModel, sessions: List<BoardSession>, toast: (String) -> Unit, peek: (Peeked) -> Unit) {
     val line = model.boards.firstOrNull { it.id == board.id } ?: board
     val p = line.progress
     val total = p?.total ?: 0
@@ -558,6 +565,7 @@ private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<Bo
         LaneBar(done, review, doing, total.coerceAtLeast(1))
         Text("$done done · $review review · $doing doing · ${(total - done - review - doing).coerceAtLeast(0)} next", style = Face.mono(11.sp), color = Palette.dim)
         Text(leadWords(line.lead), Modifier.testTag("board-lead"), style = Face.mono(11.sp), color = Palette.subtle)
+        BoardGrantLine(api, line, model, toast)
         if (sessions.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (s in sessions) {
@@ -568,6 +576,61 @@ private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<Bo
                         }
                         Text("${s.card} · ${s.word}", style = Face.mono(10.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                }
+            }
+        }
+    }
+}
+
+/** What Run this board says once its card is asked for: the web's words (Arugula #1416), on the web until the phone shows the card (#1459). One place, so the phone's wording is one change. */
+const val RUN_BOARD_ASKED = "Run this board: approve its card in Needs you on the web."
+const val RUN_BOARD_AGAIN = "Its Run this board card is waiting in Needs you on the web."
+
+/**
+ * The board's grant to start agents, under who leads it (Arugula #1456, the
+ * web's #1416): where its lead runs, which machines its issue agents may use,
+ * how many at once and until when, with Revoke for the person who gave it.
+ * A board with no lead and no grant, in a team's project (a staff room is a
+ * team's), offers Run this board, whose card goes in the reader's Needs you on the web (#1459).
+ */
+@Composable
+private fun BoardGrantLine(api: Api, board: Board, model: HomeModel, toast: (String) -> Unit) {
+    val team = LocalScope.current.current?.team != null
+    val coroutines = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    val g = model.views[board.id]?.grant
+    if (g == null) {
+        if (board.lead != null || board.closedAt != null || !team) return
+        AnswerButton("Run this board", Modifier.testTag("board-run"), primary = true, enabled = !busy) {
+            busy = true
+            coroutines.launch {
+                try {
+                    val r = api.post("/api/boards/${board.id}/run")
+                    toast(if (r.optBoolean("again")) RUN_BOARD_AGAIN else RUN_BOARD_ASKED)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    toast("Couldn't ask to run it: ${describe(e)}")
+                } finally {
+                    busy = false
+                }
+            }
+        }
+        return
+    }
+    Text(g.line, Modifier.testTag("board-grant-line"), style = Face.mono(11.sp), color = Palette.subtle)
+    if (g.mine) {
+        AnswerButton("Revoke", Modifier.testTag("board-grant-revoke"), enabled = !busy) {
+            busy = true
+            coroutines.launch {
+                try {
+                    model.put(board.id, BoardDetail.of(api.delete("/api/boards/${board.id}/grant")))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    toast("Couldn't change it: ${describe(e)}")
+                } finally {
+                    busy = false
                 }
             }
         }

@@ -1,8 +1,8 @@
 // The app as a person takes it, on a simulator against a real control
 // (native/ios/test-sim.sh): sign in, the tab bar, home, the project's issues,
 // the zoom to a board and a card's work and back, by taps and by address,
-// a board's thread and its lanes,
-// an agent's permission prompt and question answered from home, projects,
+// a board's thread and its lanes, a board's grant revoked and Run this board
+// pressed (Arugula #1456), an agent's permission prompt and question answered from home, projects,
 // a Doc in a room, chat, a terminal, a deploy approved and a project's runs
 // (Arugula #604). The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
@@ -424,6 +424,23 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(leadCard.exists, "no lead card on the led board: \(app.debugDescription)")
             XCTAssertTrue(leadCard.label.contains(lead), "the lead card says: \(leadCard.label)")
             shot(app, "5-board-level-led")
+            // Its grant (Arugula #1456): the script approved a Run this
+            // board card for it, so the lead card says where its lead and
+            // agents run, with Revoke, which takes the line away.
+            if env["ARUGULA_GRANT_BOARD"] == led {
+                let grant = app.staticTexts["board-grant-line"]
+                XCTAssertTrue(grant.shows(within: 15), "no grant on the led board: \(app.debugDescription)")
+                XCTAssertTrue(grant.label.hasPrefix("Grant: lead on "), "the grant line says: \(grant.label)")
+                shot(app, "5-board-grant")
+                let revoke = app.buttons["board-grant-revoke"]
+                XCTAssertTrue(revoke.shows(within: 5), "no Revoke on your grant")
+                clearAlerts()
+                revoke.tap()
+                let by = Date().addingTimeInterval(15)
+                while grant.exists && Date() < by { sleep(1) }
+                XCTAssertFalse(grant.exists, "Revoke left the grant: \(grant.label)")
+                shot(app, "5-board-revoked")
+            }
             app.buttons["lead-talk"].tap()
             XCTAssertTrue(leadNamed.shows(within: 30), "Talk to the lead didn't open the lead: \(app.debugDescription)")
             shot(app, "5-lead-talk")
@@ -530,6 +547,32 @@ final class FlowTests: XCTestCase {
                 _ = chip.shows(within: 5)
             }
             XCTAssertTrue(chip.shows(within: 10), "not back on Boards: \(app.debugDescription)")
+            // Run this board (Arugula #1456): a board in the team's project
+            // with no lead and no grant offers it on its lead card, and its
+            // card goes in the reader's Needs you.
+            if let unled = env["ARUGULA_RUN_BOARD"], !unled.isEmpty {
+                go(app, "Overview")
+                let row = app.buttons["home-board-\(unled)"]
+                let run = app.buttons["board-run"]
+                for _ in 0..<3 where !run.exists {
+                    guard row.shows(within: 30) else { break }
+                    _ = row.waitFor(hittable: true, timeout: 5)
+                    clearAlerts()
+                    row.tap()
+                    _ = run.shows(within: 10)
+                }
+                if !run.exists { shot(app, "fail-board-run") }
+                XCTAssertTrue(run.exists, "no Run this board on \(unled): \(app.debugDescription)")
+                XCTAssertEqual(run.label, "Run this board")
+                XCTAssertFalse(app.staticTexts["board-grant-line"].exists, "a board with no grant shows one")
+                shot(app, "5-board-run")
+                run.tap()
+                let asked = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "in Needs you")).firstMatch
+                XCTAssertTrue(asked.shows(within: 10), "Run this board didn't say where its card went: \(app.debugDescription)")
+                shot(app, "5-board-run-asked")
+                try "asked".write(to: handoff.appendingPathComponent("run-board"), atomically: true, encoding: .utf8)
+                if app.buttons["zoom-path-overview"].exists { app.buttons["zoom-path-overview"].tap() }
+            }
             pick(app, "Default")
             go(app, "Overview")
         }

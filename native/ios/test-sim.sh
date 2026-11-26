@@ -18,6 +18,10 @@
 # ARUGULA_STAFF_LEAD (cos) leads the person's staff room and the board
 # ARUGULA_STAFF_BOARD (Arugula #1279): the test asks the chief of staff, opens
 # the board's thread from its lead on Boards, and peeks at the lead from both.
+# ARUGULA_GRANT_BOARD, the same board, has a grant the person gave: the test
+# revokes it from the lead card. ARUGULA_RUN_BOARD, a board in that project
+# with no lead and no grant: the test presses Run this board on it and writes
+# HANDOFF/run-board (Arugula #1456).
 # ARUGULA_DEPLOY is a deploy waiting on the person (Arugula #604): the test
 # opens it from Needs you and writes the address Approve opens to
 # HANDOFF/approve; something else approves it with the account's passkey and
@@ -81,6 +85,7 @@ TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TE
   TEST_RUNNER_ARUGULA_DOC_PARA="${ARUGULA_DOC_PARA:-}" TEST_RUNNER_ARUGULA_DOC_PROTO="${ARUGULA_DOC_PROTO:-}" \
   TEST_RUNNER_ARUGULA_STAFF_PROJECT="${ARUGULA_STAFF_PROJECT:-}" TEST_RUNNER_ARUGULA_STAFF_BOARD="${ARUGULA_STAFF_BOARD:-}" \
   TEST_RUNNER_ARUGULA_STAFF_LEAD="${ARUGULA_STAFF_LEAD:-}" TEST_RUNNER_ARUGULA_DEPLOY="${ARUGULA_DEPLOY:-}" \
+  TEST_RUNNER_ARUGULA_GRANT_BOARD="${ARUGULA_GRANT_BOARD:-}" TEST_RUNNER_ARUGULA_RUN_BOARD="${ARUGULA_RUN_BOARD:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \

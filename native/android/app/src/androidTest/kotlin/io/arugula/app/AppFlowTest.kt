@@ -32,7 +32,9 @@ import org.junit.runner.RunWith
  * Arguments (`-e`): `control` (control's address, as this device reaches it),
  * `machine` (a machine's name there), `room` (a chat room's id), and `board`
  * and `ask` (a board in the personal project, and its row's question to the
- * person signing in). Something else allows the sign-in: the app writes its
+ * person signing in). `team` names a team's project with `grant_board`, a
+ * board with a grant the person gave, and `run_board`, one with no lead and
+ * no grant (Arugula #1456). Something else allows the sign-in: the app writes its
  * ticket to `files/handoff/ticket`, and the test waits for the address the
  * Allow was sent to in `files/handoff/callback` and types it in. Screenshots
  * go to `files/handoff` as PNGs.
@@ -88,6 +90,7 @@ class AppFlowTest {
             inbox(bell)
             args.getString("board")?.takeIf { it.isNotEmpty() }?.let { board -> home(board, args.getString("ask")) }
             shot("2-home")
+            args.getString("team")?.takeIf { it.isNotEmpty() }?.let { team -> runAndRevoke(team, args.getString("grant_board"), args.getString("run_board")) }
 
             // The project's issues, from its menu.
             tap("project-switcher")
@@ -193,6 +196,58 @@ class AppFlowTest {
         tap("back")
         tap("back")
         wait("home-list")
+    }
+
+    /**
+     * In the team's project (Arugula #1456): a board's grant, under who leads
+     * it on its thread's heading, with Revoke, which takes it away; and Run
+     * this board on a board with no lead and no grant, whose card goes in
+     * Needs you. Then back to the personal project, where the rest is.
+     */
+    private fun runAndRevoke(team: String, grantBoard: String?, runBoard: String?) {
+        val start = runBlocking { App.model.control!!.get("/api/projects") }.list("projects", Project::of).firstOrNull { it.team == null }?.name
+        tap("project-switcher")
+        until("$team in the switcher", 10_000) { rule.onAllNodes(hasText(team)).fetchSemanticsNodes().isNotEmpty() }
+        rule.onAllNodes(hasText(team)).onFirst().performClick()
+        rule.waitForIdle()
+        if (!grantBoard.isNullOrEmpty()) {
+            openBoard(grantBoard)
+            wait("board-grant-line", 20_000)
+            val line = rule.onAllNodes(hasTestTag("board-grant-line")).fetchSemanticsNodes().first()
+                .config.getOrElse(SemanticsProperties.Text) { emptyList() }.joinToString()
+            check(line.startsWith("Grant: lead on ")) { "the grant line says: $line" }
+            shot("2-board-grant")
+            tap("board-grant-revoke")
+            until("the grant gone", 15_000) { rule.onAllNodes(hasTestTag("board-grant-line")).fetchSemanticsNodes().isEmpty() }
+            shot("2-board-revoked")
+            tap("back")
+            wait("home-list")
+        }
+        if (!runBoard.isNullOrEmpty()) {
+            openBoard(runBoard)
+            wait("board-run", 20_000)
+            check(rule.onAllNodes(hasTestTag("board-grant-line")).fetchSemanticsNodes().isEmpty()) { "a board with no grant shows one" }
+            shot("2-board-run")
+            tap("board-run")
+            until("where its card went", 10_000) { rule.onAllNodes(hasText("in Needs you", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+            shot("2-board-run-asked")
+            tap("back")
+            wait("home-list")
+        }
+        start?.let { name ->
+            tap("project-switcher")
+            until("$name in the switcher", 10_000) { rule.onAllNodes(hasText(name)).fetchSemanticsNodes().isNotEmpty() }
+            rule.onAllNodes(hasText(name)).onFirst().performClick()
+            rule.waitForIdle()
+        }
+    }
+
+    /** A board's row on the Overview opens its thread, with who leads it at its head. */
+    private fun openBoard(title: String) {
+        until("$title on home", 45_000) { rule.onAllNodes(hasTestTag("home-board-$title")).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNode(hasTestTag("home-list")).performScrollToNode(hasTestTag("home-board-$title"))
+        tap("home-board-$title")
+        wait("board-lead", 15_000)
     }
 
     private fun chat(room: String) {
