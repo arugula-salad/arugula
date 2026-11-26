@@ -16,7 +16,7 @@
 }
 
 .grid.pane-chrome .pane-header.live.active {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 7%, var(--surface));
   color: var(--fg);
   box-shadow: none;
 }

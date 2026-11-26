@@ -35,7 +35,7 @@
 
 .weekdays > button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 18%, var(--bg));
   color: var(--accent);
 }
 
@@ -162,7 +162,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 55%, transparent);
 }
 
 .week-ticks {

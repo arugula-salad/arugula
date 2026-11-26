@@ -5,7 +5,7 @@
 // with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { contrast, oklch, paint, PRESETS, preset, sliders, tooClose } from "../src/shared/kit/look.ts";
+import { contrast, mix, oklch, paint, PRESETS, preset, sliders, tooClose } from "../src/shared/kit/look.ts";
 
 // appearance.ts's Slate and Latte: the legacy hues no role covers.
 const slate = {
@@ -78,6 +78,12 @@ test("whatever the preset, theme and sliders, every word reads at 4.5:1 and need
                 assert.ok(r >= 4.5, `${at}: --${word} on --${on} is ${r.toFixed(2)}`);
               }
             assert.ok(contrast(t["on-accent"], t["accent-fill"]) >= 4.5, `${at}: on-accent`);
+            // The accent's words on its own tints: selected, "on", under the pointer.
+            for (const on of ["canvas", "section", "card"])
+              for (const k of [0.14, 0.18, 0.26]) {
+                const r = contrast(t.accent, mix(t[on], t["accent-fill"], k));
+                assert.ok(r >= 4.5, `${at}: --accent on its ${k * 100}% tint over --${on} is ${r.toFixed(2)}`);
+              }
             assert.ok(contrast(t["on-needs"], t.needs) >= 4.5, `${at}: on-needs`);
             assert.ok(contrast(t["well-ink"], t.well) >= 4.5 && contrast(t["well-dim"], t.well) >= 4.5, `${at}: the well`);
             const [, , h] = oklch(t.needs);

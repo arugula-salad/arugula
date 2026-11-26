@@ -196,7 +196,7 @@ button.chip-object:disabled {
 
 .chip-object[aria-pressed="true"] {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 22%, var(--surface));
 }
 
 .chip-object.failed {
@@ -270,7 +270,7 @@ button.chip-object:disabled {
   box-sizing: border-box;
   padding: 0 2px 0 8px;
   border-radius: min(var(--chip-radius), 12px);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 12%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--fg);
   font-size: var(--text-xs);

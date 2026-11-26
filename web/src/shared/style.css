@@ -11,13 +11,13 @@
      accent bar and a 1px accent edge, both drawn inset so a row never moves.
      `--selected-edge` is the box-shadow for a row with its own radius; a
      flat row's bar is its ::before. */
-  --selected: color-mix(in srgb, var(--accent) 14%, transparent);
+  --selected: color-mix(in srgb, var(--accent-fill) 14%, transparent);
   --selected-edge: inset 0 0 0 1px var(--accent);
   --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
   /* A place to drop on (#696): the dashed edge and the tint, the same on
      every target (see `.drop-target`). */
   --drop-edge: var(--accent);
-  --drop-fill: color-mix(in srgb, var(--accent) 10%, transparent);
+  --drop-fill: color-mix(in srgb, var(--accent-fill) 10%, transparent);
   /* The menu, dialog or prompt over the page: a shadow no role covers
      yet (kit/tokens.css has the card's and a raised thing's). */
   --shadow-lg: var(--shadow-raised);
@@ -591,7 +591,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   position: absolute;
   z-index: 6;
   pointer-events: none;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 22%, transparent);
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   border-radius: var(--tag-radius);
@@ -705,7 +705,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .pane-header.active {
   color: var(--fg);
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 22%, var(--surface));
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
@@ -1230,12 +1230,12 @@ button.att {
 
 /* Pressed on the selected row keeps the selection: a deeper tint. */
 .sheet-item.current:active {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 22%, transparent);
 }
 
 .needs-you.sheet-card {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 10%, var(--surface));
 }
 
 /* Buttons: a grid, so each is a target of its own. */
@@ -1636,7 +1636,7 @@ button.att {
   font-weight: 600;
   pointer-events: auto;
   cursor: default;
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 13%, transparent);
   color: var(--accent);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   opacity: 0.85;
@@ -2124,7 +2124,7 @@ button.att {
   max-width: 85%;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--panel-radius) var(--panel-radius) 2px var(--panel-radius);
-  background: color-mix(in srgb, var(--accent) 22%, var(--raised));
+  background: color-mix(in srgb, var(--accent-fill) 22%, var(--raised));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -2270,7 +2270,7 @@ button.att {
   padding: 10px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--panel-radius);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 12%, var(--surface));
   /* #421: a card taller than the pane scrolls, so its buttons are reachable. */
   flex-shrink: 0;
   max-height: calc(100% - 8px);
@@ -2970,7 +2970,7 @@ button.agent-image {
   padding: 10px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--panel-radius);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 12%, var(--surface));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -3041,7 +3041,7 @@ button.agent-image {
 
 .ask-option.on {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 30%, var(--raised));
+  background: color-mix(in srgb, var(--accent-fill) 30%, var(--raised));
 }
 
 .ask-label {
@@ -5544,7 +5544,7 @@ label.edit-in-nvim {
   border: 1px solid var(--accent);
   border-radius: var(--card-radius);
   padding: 8px 10px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 8%, transparent);
 }
 
 .ws-gate {
@@ -5751,7 +5751,7 @@ label.edit-in-nvim {
 .app-gates {
   border-bottom: 1px solid var(--accent);
   padding: 4px 10px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 8%, transparent);
   font-size: var(--text-md);
 }
 
@@ -7927,12 +7927,12 @@ html[data-scheme="light"] .doc {
    reads the same on Latte as on the dark palettes (the amber it was is a
    beige band on Latte). The bar follows the row's own corners. */
 .thread-msg.for-me {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 7%, transparent);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .thread-msg.for-me:hover {
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 11%, transparent);
 }
 
 .msg-gutter {
@@ -8235,7 +8235,7 @@ html[data-scheme="light"] .doc {
 
 .reaction.mine {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 18%, transparent);
   color: var(--fg);
 }
 
@@ -8297,7 +8297,7 @@ html[data-scheme="light"] .doc {
 }
 
 .react-menu > button.mine {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 18%, transparent);
 }
 
 .react-menu > .more {
@@ -9034,7 +9034,7 @@ button.thread-quote:hover {
 }
 
 .chat-resize:hover {
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 40%, transparent);
 }
 
 .chat.phone {
@@ -9356,7 +9356,7 @@ button.thread-quote:hover {
   border-radius: var(--field-radius);
   outline: 1px dashed var(--accent);
   outline-offset: -2px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 12%, transparent);
 }
 
 .chat-row.dragging {
@@ -10067,7 +10067,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-rail-button.here {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 12%, transparent);
 }
 
 .ws-rail-button.here::before {
@@ -10535,7 +10535,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-sidebar-resize:hover,
 .ws-sidebar-resize:focus-visible {
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 40%, transparent);
   outline: none;
 }
 
@@ -10611,7 +10611,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 
 .ws-activity-resize:hover,
 .ws-activity-resize:focus-visible {
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 40%, transparent);
   outline: none;
 }
 

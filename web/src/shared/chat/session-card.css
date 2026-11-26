@@ -424,7 +424,7 @@ a.session-card-id:hover {
 
 .msg-avatar.said-avatar {
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 14%, transparent);
   color: var(--accent);
   font: 700 var(--text-xs) var(--font-mono);
   box-sizing: border-box;

@@ -1275,7 +1275,7 @@ html[data-native-tabs] .platform {
 }
 
 .untri-facet[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 14%, transparent);
   font-weight: 600;
 }
 
@@ -1337,7 +1337,7 @@ html[data-native-tabs] .platform {
 }
 
 .untri-row[data-selected] {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 14%, transparent);
 }
 
 .untri-row input[type="checkbox"],

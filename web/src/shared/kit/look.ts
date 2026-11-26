@@ -211,12 +211,19 @@ function lift(c: Rgb, on: Rgb[], dark: boolean): Rgb {
   return c;
 }
 
+/** The accent's tints, as the page draws them under the accent's words:
+ * the selected row (14%), an "on" control (18%) and one under the pointer
+ * (26%), of the fill over a surface. */
+const tints = (fill: Rgb, on: Rgb[]) => [0.14, 0.18, 0.26].flatMap((t) => on.map((b) => b.map((v, i) => Math.round(v + (fill[i] - v) * t))));
+
 /** The accent's words: its hue held, its lightness stepped until it reads
- * on every surface it sits on. */
-function accentText(h: number, C: number, dark: boolean, on: Rgb[]): Rgb {
+ * on every surface it sits on, and on its own tints over them (the fill's,
+ * or, where the fill is the words, its own). */
+function accentText(h: number, C: number, dark: boolean, on: Rgb[], fill?: Rgb): Rgb {
   let L = dark ? 0.771 : 0.519;
   let c = lch(L, C, h);
-  for (let i = 0; i < 60 && worst(c, on) < FLOOR; i++) {
+  const all = (c: Rgb) => [...on, ...tints(fill ?? c, on.slice(0, 3))];
+  for (let i = 0; i < 60 && worst(c, all(c)) < FLOOR; i++) {
     L += dark ? 0.01 : -0.01;
     c = lch(L, C, h);
   }
@@ -368,12 +375,13 @@ const n = (v: number) => +v.toFixed(3);
 export function paint(ui: Ui, dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record<string, string> {
   const hue = dark ? p.dark : p.light;
   const b = neutrals(dark, s, hue);
-  const accent = accentText(hue.hue, (dark ? 0.126 : 0.14) * hue.chroma, dark, [...b.on, b.well]);
-  // A fill (a primary button, send, a bar, the logo) can be brighter than
-  // the accent's words: in light, a loud or yellow-green accent stays
-  // bright, with dark words on it, rather than going olive.
+  // A fill (a primary button, send, a bar, the logo, a tint) can be
+  // brighter than the accent's words: in light, a loud or yellow-green
+  // accent stays bright, with dark words on it, rather than going olive.
   const lit = !dark && (hue.chroma > 1.3 || (hue.hue >= 85 && hue.hue <= 118));
-  const fill = lit ? lch(0.86, (0.14 + 0.02 * hue.chroma) * hue.chroma, hue.hue) : accent;
+  const bright = lit ? lch(0.86, (0.14 + 0.02 * hue.chroma) * hue.chroma, hue.hue) : undefined;
+  const accent = accentText(hue.hue, (dark ? 0.126 : 0.14) * hue.chroma, dark, [...b.on, b.well], bright);
+  const fill = bright ?? accent;
   let onAccent: Rgb = [255, 255, 255];
   if (dark || lit) {
     let l = 0.26;
