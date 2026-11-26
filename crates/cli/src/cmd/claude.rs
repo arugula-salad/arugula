@@ -64,8 +64,14 @@ pub fn run(cmd: ClaudeCmd, ctx: Ctx) -> anyhow::Result<i32> {
             }
         }
         ClaudeCmd::Open { id, session, split } => {
-            let body =
-                OpenConversationRequest { id, then: None, session, split: split.map(|p| p.0), from_pane: env_pane() };
+            let body = OpenConversationRequest {
+                id,
+                then: None,
+                session,
+                split: split.map(|p| p.0),
+                from_pane: env_pane(),
+                prompt: None,
+            };
             let (opened, v) = call_raw::<ConversationOpen>(&sock, &(), &body)?;
             if json_out {
                 print_json(&v);

@@ -444,6 +444,14 @@ The chief of staff on one of your machines asks the same way (Arugula
    idle one is woken with it. A board ask (`board_write` `ask`) names its
    conversation the same way, and its answer goes the same way, by its
    `ask_…`.
+6. When the session that asked has ended, so no pane of the machine holds
+   the conversation (Arugula #1466), the answer's `first_prompt` continues
+   it there: Claude Code's conversation opens as an agent block, or the
+   stopped one that has it goes on, with that as its first message. A
+   to-do's Done sends its note (or a plain line saying it's done), a card
+   or board ask its answer as told; a Can't sends none, and starts nothing.
+   A Codex conversation, or one open outside Arugula, isn't continued: the
+   daemon answers `away`, as for one it can't find.
 
 A start on another of your machines isn't a card's: it's a ladder start,
 with control's start ticket (aru-143, #1415), under the board's grant. The

@@ -1406,6 +1406,10 @@ pub struct OpenConversationRequest {
     pub split: Option<PaneId>,
     #[serde(default)]
     pub from_pane: Option<PaneId>,
+    /// With `then` `continue` (Arugula #1466): the first prompt it goes on
+    /// with. An older daemon ignores it and only continues.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 /// What opening a conversation answers: its block (`opened`: made now, not

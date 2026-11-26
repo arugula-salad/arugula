@@ -793,6 +793,7 @@ mod tests {
             session: session.map(Into::into),
             split,
             from_pane: Some(2),
+            prompt: None,
         };
         assert_eq!(
             serde_json::to_value(open(None, None, None)).unwrap().to_string(),
