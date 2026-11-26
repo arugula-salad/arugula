@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 
 /** The kit: the only files that draw a field. */
 export const KIT = new Set([
+  "shared/kit/kit.css",
   "shared/fields.css",
   "shared/switch.css",
   "shared/ui/search-field.css",

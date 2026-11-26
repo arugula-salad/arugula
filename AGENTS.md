@@ -314,9 +314,16 @@ lints the daemon with neither, and with each alone.
 ## Building UI
 
 Read [docs/design/language.md](docs/design/language.md) before you build or
-restyle a page, pane, dialog, list or menu in `web/`: it names the shared
-component for each piece (type, colour, buttons, headers, rows, chips,
-dialogs, menus, empty states) and what not to invent.
+restyle a page, pane, dialog, list or menu in `web/`: it names the kit's part
+(`web/src/shared/kit/`, drawn on `/design`) for each piece and what not to
+invent. The design lift moves screens onto the kit one lift at a time; a
+screen that hasn't moved keeps today's pieces
+([docs/design/today.md](docs/design/today.md)) until its lift merges.
+
+| Screen | Look | Since |
+|---|---|---|
+| `/design` | the kit | Lift 2 (#1478) |
+| everything else | today's pieces | |
 
 The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase
 at a time. Until a screen's row says otherwise, work on it keeps today's look.

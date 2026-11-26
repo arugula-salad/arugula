@@ -1,0 +1,47 @@
+// Tabs (kit §4.1, 11, the tabs half; panes come with the board in Lift 5b):
+// an icon, a title, a count and a close. The arrow keys, Home and End move
+// between them; Delete closes the focused one.
+
+import type { ComponentChildren } from "preact";
+import { CloseIcon } from "../ui/icons";
+import "./kit.css";
+
+export interface TabItem {
+  id: string;
+  title: string;
+  icon?: ComponentChildren;
+  count?: number;
+  /** It can be closed. */
+  closes?: boolean;
+}
+
+export function Tabs({ label, tabs, current, onPick, onClose }: { label: string; tabs: TabItem[]; current: string; onPick: (id: string) => void; onClose?: (id: string) => void }) {
+  const key = (e: KeyboardEvent, i: number) => {
+    const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+    if (to !== undefined) {
+      e.preventDefault();
+      const t = tabs[(to + tabs.length) % tabs.length]!;
+      onPick(t.id);
+      (e.currentTarget as HTMLElement).parentElement?.querySelector<HTMLElement>(`[data-tab="${t.id}"]`)?.focus();
+    } else if (e.key === "Delete" && tabs[i]!.closes) onClose?.(tabs[i]!.id);
+  };
+  return (
+    <div class="k-tabs" role="tablist" aria-label={label} data-kit="tabs">
+      {tabs.map((t, i) => {
+        const on = t.id === current;
+        return [
+          <button key={t.id} type="button" class="k-tab" role="tab" data-tab={t.id} aria-selected={on} tabIndex={on ? 0 : -1} onClick={() => onPick(t.id)} onKeyDown={(e) => key(e, i)}>
+            {t.icon}
+            <span class="k-tab-title">{t.title}</span>
+            {t.count ? <span class="m-meta">{t.count}</span> : null}
+          </button>,
+          t.closes && onClose ? (
+            <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} onClick={() => onClose(t.id)}>
+              <CloseIcon size="xs" />
+            </button>
+          ) : null,
+        ];
+      })}
+    </div>
+  );
+}

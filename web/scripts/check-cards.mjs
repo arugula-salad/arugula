@@ -14,6 +14,8 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOME = "shared/ui/card.css";
+/** The kit (design lift §4.1): its Surface is the card from here on. */
+const KIT = "shared/kit/kit.css";
 
 /** `-card` classes that predate the rule: each is a card of its own, to move
  * onto `Card` in a follow-up. Don't add one; the list only gets shorter. */
@@ -56,7 +58,7 @@ export function offenders(css, file) {
     const at = (i) => text.slice(0, i).split("\n").length;
     const line = at(rule.index + rule[1].length - selector.length + lead);
     const sels = selector.split(",").map((s) => s.trim());
-    if (file !== HOME) {
+    if (file !== HOME && file !== KIT) {
       for (const m of selector.matchAll(CARD_CLASS)) {
         if (m[1] !== "sw-card" && !ALLOWED.has(m[1])) out.push({ file, line, rule: "card", found: `.${m[1]}` });
       }
