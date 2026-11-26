@@ -947,7 +947,7 @@ struct PhoneHome: View {
                 do {
                     let d = try await control.call("POST", "/api/boards/\(b.id)/run")
                     let r = try JSONDecoder().decode(BoardRunAsked.self, from: d)
-                    show(r.again == true ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.")
+                    show(r.again == true ? RunBoardSaid.again : RunBoardSaid.asked)
                     await refresh()
                 } catch {
                     show("Couldn't ask to run it: \(describe(error))")
@@ -1629,4 +1629,11 @@ extension View {
     func backBesideTabs(_ title: String, back: @escaping () -> Void) -> some View {
         modifier(BackBesideTabs(title: title, back: back))
     }
+}
+
+/// What Run this board says once its card is asked for (the web's words,
+/// Arugula #1416): one place, so the phone's wording is one change.
+enum RunBoardSaid {
+    static let asked = "Run this board: approve its card in Needs you."
+    static let again = "Its Run this board card is waiting in Needs you."
 }

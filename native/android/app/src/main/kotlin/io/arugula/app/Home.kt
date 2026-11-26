@@ -582,6 +582,10 @@ private fun BoardThreadHeading(api: Api, board: Board, model: HomeModel, session
     }
 }
 
+/** What Run this board says once its card is asked for (the web's words, Arugula #1416): one place, so the phone's wording is one change. */
+const val RUN_BOARD_ASKED = "Run this board: approve its card in Needs you."
+const val RUN_BOARD_AGAIN = "Its Run this board card is waiting in Needs you."
+
 /**
  * The board's grant to start agents, under who leads it (Arugula #1456, the
  * web's #1416): where its lead runs, which machines its issue agents may use,
@@ -602,7 +606,7 @@ private fun BoardGrantLine(api: Api, board: Board, model: HomeModel, toast: (Str
             coroutines.launch {
                 try {
                     val r = api.post("/api/boards/${board.id}/run")
-                    toast(if (r.optBoolean("again")) "Its Run this board card is waiting in Needs you." else "Run this board: approve its card in Needs you.")
+                    toast(if (r.optBoolean("again")) RUN_BOARD_AGAIN else RUN_BOARD_ASKED)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
