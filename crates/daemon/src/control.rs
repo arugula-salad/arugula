@@ -3993,8 +3993,6 @@ impl CloudFile {
     }
 }
 
-/// The plain-ASCII name in a `Content-Disposition` (`filename="…"`), as
-/// control writes it for a chat file: None without one.
 /// What a refused call says: control's own `error` when its body is JSON
 /// with one. Failing that, a 400 or 422 carries the text control's JSON
 /// extractor answers with (which field, and why), on one line and cut;
@@ -4012,6 +4010,8 @@ fn refusal_said(status: u16, v: &serde_json::Value, body: &[u8]) -> String {
     format!("control answered {status}")
 }
 
+/// The plain-ASCII name in a `Content-Disposition` (`filename="…"`), as
+/// control writes it for a chat file: None without one.
 fn disposition_name(v: &str) -> Option<String> {
     let at = v.find("filename=\"")? + "filename=\"".len();
     let name = &v[at..at + v[at..].find('"')?];
