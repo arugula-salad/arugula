@@ -11562,7 +11562,7 @@
         "type": "object"
       },
       "InboxAnswer": {
-        "description": "How to answer an item in place. `via` is `attention_act`,\n`session_action`, `proposal`, `board_answer`, `deploy` or\n`chat_reply`; `options` only where the server holds them (a board ask's\nand a proposal's).",
+        "description": "How to answer an item in place. `via` is `attention_act`,\n`session_action`, `card` (an `approval`), `todo`, `board_answer`,\n`deploy` or `chat_reply`; `options` only where the server holds them (a\nboard ask's, an approval's and a to-do's). An approval or a to-do is\nanswered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and\na to-do's `note`), as its staff card is.",
         "properties": {
           "options": {
             "default": [],
@@ -11755,19 +11755,26 @@
           "from": {
             "$ref": "#/components/schemas/InboxFrom",
             "default": {},
-            "description": "Who asks or wrote."
+            "description": "Who asks or wrote. An agent's card is from its agent (`agent`, the\nsession's id or a machine's agent's name, and `machine`); a chief of\nstaff's `name` is `Chief of staff · <the project's name>`."
           },
           "group": {
             "description": "One of [`INBOX_GROUPS`].",
             "type": "string"
           },
           "id": {
-            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (a\nproposal), `ask_…` (a board ask), `dep_…` (a deploy), `ses_…:<since>`\n(a hosted session's open ask, Arugula #1393), `room:<id>`\n(a DM, a thread or a chat mention), or an entry's item and reason\n(`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).\n`POST /api/inbox/{id}` marks it.",
+            "description": "Stable and unique for the reader, and a push's tag: `prp_…` (an\nagent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`\n(a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula\n#1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's\nitem and reason (`fi_…:review_requested`, `iss_…:mentioned`,\n`run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an\napproval or a to-do.",
             "type": "string"
           },
           "kind": {
             "description": "One of [`INBOX_KINDS`].",
             "type": "string"
+          },
+          "lines": {
+            "description": "The card's decision lines, as plain text (Arugula #1467): what its\nstaff card says, by the same words, so a client shows the expanded\nrow without reading the card. An `approval`'s are its terms (a Run\nthis board's lead, its issue agents' machines, the cap, the lapse\nand what each machine said of its clone; a close's blocks; a start's\nrepo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its\nhow when it has one: its steps as written, in one line with its\nnewlines, for the mono well. Never a secret, never a to-do's note.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "seen_at": {
             "format": "uint64",
@@ -11813,10 +11820,24 @@
       "InboxMark": {
         "description": "Mark an item's entries: `true` sets seen or done (now, if it wasn't),\n`false` clears it, and one not given stays as it is.",
         "properties": {
+          "choice": {
+            "description": "Answers an `approval` or a `todo` (Arugula #1467) with one of its\n`answer.options`, as its staff card's buttons do, and by the same\npath: only its person, once. `seen` and `done` are then ignored.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "done": {
             "default": null,
             "type": [
               "boolean",
+              "null"
+            ]
+          },
+          "note": {
+            "description": "A to-do's answer's note: kept on the to-do for its person, never in\nan item, a push or a live event. One that looks like a secret is\nrefused. Only with `choice`, and only a to-do's.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -11889,12 +11910,14 @@
             "type": "string"
           },
           "machine": {
+            "description": "The asker's machine: an agent's card's is the machine its agent\nasked from, never what it would act on (a close's blocks are in\n`lines`).",
             "type": [
               "string",
               "null"
             ]
           },
           "pane": {
+            "description": "The asker's block on `machine`, as `%N`.",
             "type": [
               "string",
               "null"

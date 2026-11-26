@@ -3658,9 +3658,11 @@ handled: number, };
 
 /**
  * How to answer an item in place. `via` is `attention_act`,
- * `session_action`, `proposal`, `board_answer`, `deploy` or
- * `chat_reply`; `options` only where the server holds them (a board ask's
- * and a proposal's).
+ * `session_action`, `card` (an `approval`), `todo`, `board_answer`,
+ * `deploy` or `chat_reply`; `options` only where the server holds them (a
+ * board ask's, an approval's and a to-do's). An approval or a to-do is
+ * answered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and
+ * a to-do's `note`), as its staff card is.
  */
 export type InboxAnswer = { via: string, options: Array<string>, };
 
@@ -3731,12 +3733,13 @@ agent?: string, machine?: string, };
  */
 export type InboxItem = { 
 /**
- * Stable and unique for the reader, and a push's tag: `prp_…` (a
- * proposal), `ask_…` (a board ask), `dep_…` (a deploy), `ses_…:<since>`
- * (a hosted session's open ask, Arugula #1393), `room:<id>`
- * (a DM, a thread or a chat mention), or an entry's item and reason
- * (`fi_…:review_requested`, `iss_…:mentioned`, `run_…:run_failed`).
- * `POST /api/inbox/{id}` marks it.
+ * Stable and unique for the reader, and a push's tag: `prp_…` (an
+ * agent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`
+ * (a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula
+ * #1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's
+ * item and reason (`fi_…:review_requested`, `iss_…:mentioned`,
+ * `run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an
+ * approval or a to-do.
  */
 id: string, 
 /**
@@ -3775,7 +3778,20 @@ title: string,
  */
 snippet?: string, 
 /**
- * Who asks or wrote.
+ * The card's decision lines, as plain text (Arugula #1467): what its
+ * staff card says, by the same words, so a client shows the expanded
+ * row without reading the card. An `approval`'s are its terms (a Run
+ * this board's lead, its issue agents' machines, the cap, the lapse
+ * and what each machine said of its clone; a close's blocks; a start's
+ * repo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its
+ * how when it has one: its steps as written, in one line with its
+ * newlines, for the mono well. Never a secret, never a to-do's note.
+ */
+lines?: Array<string>, 
+/**
+ * Who asks or wrote. An agent's card is from its agent (`agent`, the
+ * session's id or a machine's agent's name, and `machine`); a chief of
+ * staff's `name` is `Chief of staff · <the project's name>`.
  */
 from: InboxFrom, 
 /**
@@ -3799,7 +3815,19 @@ export type InboxMark = {
 /**
  * Only this reason's entry; all of the item's when `None`.
  */
-reason: string | null, seen: boolean | null, done: boolean | null, };
+reason: string | null, seen: boolean | null, done: boolean | null, 
+/**
+ * Answers an `approval` or a `todo` (Arugula #1467) with one of its
+ * `answer.options`, as its staff card's buttons do, and by the same
+ * path: only its person, once. `seen` and `done` are then ignored.
+ */
+choice?: string, 
+/**
+ * A to-do's answer's note: kept on the to-do for its person, never in
+ * an item, a push or a live event. One that looks like a secret is
+ * refused. Only with `choice`, and only a to-do's.
+ */
+note?: string, };
 
 export type InboxMarked = { item: string, 
 /**
@@ -3812,7 +3840,17 @@ marked: number, };
  * `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
  * where Open goes (a path on the platform's page, or the item on GitHub).
  */
-export type InboxSubject = { type: string, id: string, url: string, project?: string, machine?: string, pane?: string, 
+export type InboxSubject = { type: string, id: string, url: string, project?: string, 
+/**
+ * The asker's machine: an agent's card's is the machine its agent
+ * asked from, never what it would act on (a close's blocks are in
+ * `lines`).
+ */
+machine?: string, 
+/**
+ * The asker's block on `machine`, as `%N`.
+ */
+pane?: string, 
 /**
  * The chat room it's in: a proposal's card, a thread, a DM.
  */

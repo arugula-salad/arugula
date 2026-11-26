@@ -68,7 +68,7 @@ use arugulad_base::ladder::SKIPS_CHECKS;
 /// A chief of staff's block's title (Arugula #1338), unless the caller
 /// names another, with the project's name after it (Arugula #1340): for
 /// people to read. Nothing goes by it: see [`chief_session`].
-const CHIEF_TITLE: &str = "Chief of staff";
+const CHIEF_TITLE: &str = arugula_control_wire::sessions::CHIEF_OF_STAFF;
 
 /// [`CHIEF_TITLE`] for the project named `project`.
 fn chief_title(project: &str) -> String {
@@ -83,7 +83,7 @@ fn chief_title(project: &str) -> String {
 /// two of a person's projects may share a name, and a project may be
 /// renamed. It's the block's `session`, apart from its title.
 fn chief_session(project: &str) -> String {
-    format!("{CHIEF_TITLE} · {project}")
+    arugula_control_wire::sessions::chief_session(project)
 }
 
 /// Who led the staff room before a chief of staff was started (Arugula
