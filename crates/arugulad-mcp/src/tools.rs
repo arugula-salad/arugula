@@ -2233,6 +2233,29 @@ impl ToolCall<'_, '_> {
         )
     }
 
+    /// `prompt_agent` at its limit (#1455). A prompt still queued behind
+    /// the turn says so, and when the turn last showed anything: one quiet
+    /// for long may be stuck, not busy.
+    async fn turn_not_yet(&self, pane: PaneId, waited: Duration) -> Out {
+        let mut out = self.not_yet(pane, waited, Some("end of its turn")).await?;
+        let Some(b) = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten() else { return Ok(out) };
+        let s = b.state();
+        let queued = s["queued"].as_array().map_or(0, Vec::len);
+        if queued == 0 {
+            return Ok(out);
+        }
+        let waiting = if queued == 1 { "queued".to_owned() } else { format!("queued, one of {queued}") };
+        let quiet = match s["heard_ms"].as_u64() {
+            Some(ms) => format!("its last output was {}", ago(ms)),
+            None => "it has shown no output".to_owned(),
+        };
+        out["summary"] = json!(format!(
+            "%{pane} is mid-turn, so your prompt is {waiting}: it goes when the turn ends. The turn is still running after {}s; {quiet}. Wait until idle, or read_output for where it is",
+            waited.as_secs()
+        ));
+        Ok(out)
+    }
+
     /// An agent block's last messages, in `read_output`'s messages form.
     async fn block_tail(&self, pane: PaneId) -> Option<String> {
         let b = self.app.mux.api(|r| Api::Block(pane, r)).await.flatten()?;
@@ -4117,10 +4140,10 @@ impl ToolCall<'_, '_> {
         // fires first, the answer at the limit is the same.
         let r = match r {
             Some(r) => r.map_err(|e| e.http().1)?,
-            None => return self.not_yet(pane, limit, Some("end of its turn")).await,
+            None => return self.turn_not_yet(pane, limit).await,
         };
         if r == PromptResult::StillRunning {
-            return self.not_yet(pane, limit, Some("end of its turn")).await;
+            return self.turn_not_yet(pane, limit).await;
         }
         let summary = match &r {
             PromptResult::Done { turn: Some(t) } => {

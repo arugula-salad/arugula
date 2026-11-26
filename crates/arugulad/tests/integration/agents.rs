@@ -776,6 +776,52 @@ fn a_prompt_during_a_woken_cycle_goes_when_the_cycle_ends() {
     assert_eq!(s["recent_turns"][0]["prompt"], "hello", "{s}");
 }
 
+/// #1455: after shells in the background (two started, one stopped, the
+/// other's output read), claude-agent-acp took the turn's result for a task
+/// notification's and never answered the prompt: the block showed working
+/// for good, with prompts queued behind it. prompt_agent now says its
+/// prompt is queued and when the turn last showed anything; the turn, quiet
+/// after that result, is let go, ends done, and the prompt goes.
+#[test]
+fn a_turn_ended_as_a_task_notification_goes_idle_and_takes_the_next_prompt() {
+    let d = Daemon::child_env(&[], &[("ARUGULA_AUTONOMOUS_QUIET_MS", "4000")]);
+    // It builds the CLI: before the turn, whose quiet is short.
+    let mcp = Mcp::bridge(&d, None);
+    let id = open_claude(&d, "notified");
+    d.wait_for("the turn's report", || {
+        let s = d.state(id);
+        s["status"] == "working"
+            && entries(&s).iter().any(|e| e["text"] == "Both checks are done; the report is above.")
+    });
+    let v = mcp.call("prompt_agent", json!({ "pane": id, "text": "hello", "timeout": 1 })).unwrap();
+    let summary = v["summary"].as_str().unwrap_or_default();
+    assert!(summary.contains("your prompt is queued") && summary.contains("its last output was"), "{v}");
+    d.wait_for("the queued prompt's turn", || {
+        entries(&d.state(id)).iter().any(|e| e["type"] == "agent" && e["text"] == "Hello! I am fake.")
+    });
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.state(id);
+    assert_eq!(s["queued"], json!([]), "{s}");
+    assert_eq!(s["recent_turns"][0]["prompt"], "hello", "{s}");
+    assert_eq!(s["recent_turns"][1]["prompt"], "notified", "{s}");
+    assert_eq!(s["recent_turns"][1]["stop"], "end_turn", "let go, not stopped: {s}");
+}
+
+/// ...but not a turn that is busy and quiet: the same result while a tool
+/// call of the turn runs (a long build that prints nothing) for longer than
+/// the quiet period. It ends as it always did.
+#[test]
+fn a_task_notification_during_a_quiet_tool_call_leaves_the_turn_alone() {
+    let d = Daemon::child_env(&[], &[("ARUGULA_AUTONOMOUS_QUIET_MS", "2000")]);
+    let id = open_claude(&d, "notified-busy");
+    d.wait_for("the build's end", || entries(&d.state(id)).iter().any(|e| e["text"] == "The tests passed."));
+    assert_eq!(d.wait(id, "idle"), "done");
+    let s = d.state(id);
+    assert_eq!(s["recent_turns"][0]["stop"], "end_turn", "{s}");
+    let let_go = entries(&s).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("Arugula closed it")));
+    assert!(!let_go, "let go mid-build: {s}");
+}
+
 /// ...and one that never closes holds it only until its quiet period ends.
 #[test]
 fn a_prompt_during_a_woken_cycle_that_never_closes_goes_after_the_quiet() {
