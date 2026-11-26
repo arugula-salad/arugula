@@ -477,6 +477,35 @@ pub const TODO_HOW_MAX: usize = 4000;
 /// The longest note a to-do's person answers with, in characters.
 pub const TODO_NOTE_MAX: usize = 1000;
 
+/// What a chief of staff's session name starts with (Arugula #1457).
+pub const CHIEF_OF_STAFF: &str = "Chief of staff";
+
+/// A chief of staff's session's name (Arugula #1457): by its project's id,
+/// `Chief of staff · prj_…`, so its person's staff posts reach it however
+/// the project is named.
+pub fn chief_session(project: &str) -> String {
+    format!("{CHIEF_OF_STAFF} · {project}")
+}
+
+/// The project a chief of staff's session name is by, or `None` for any
+/// other session's name (web's `chiefProject`).
+pub fn chief_project(session: &str) -> Option<&str> {
+    let p = session.strip_prefix(CHIEF_OF_STAFF)?.strip_prefix(" · ")?;
+    let id = p.strip_prefix("prj_")?;
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric())).then_some(p)
+}
+
+/// A session's name as people read it (web's `sessionLabel`): a chief of
+/// staff's by its project's name, when `project_name` knows it; any other
+/// as it is. Display only: match and route by the name itself.
+pub fn session_label(session: &str, project_name: impl FnOnce(&str) -> Option<String>) -> String {
+    let name = chief_project(session).and_then(project_name);
+    match name.as_deref().map(str::trim) {
+        Some(n) if !n.is_empty() => format!("{CHIEF_OF_STAFF} · {n}"),
+        _ => session.to_owned(),
+    }
+}
+
 /// What an agent session asks its asker to approve (Arugula #1278): it
 /// does nothing itself. The proposal is an ask in their staff room
 /// (`via` `ask:prp_…`) that mentions them, so it's under Needs you and
@@ -1326,6 +1355,21 @@ pub struct AgentSessionsWaited {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// As `web/src/shared/chief-of-staff.ts` reads it.
+    #[test]
+    fn a_chief_of_staff_shows_by_its_projects_name() {
+        let named = |id: &str| (id == "prj_1").then(|| "Launch crew".to_owned());
+        assert_eq!(chief_session("prj_1"), "Chief of staff · prj_1");
+        assert_eq!(chief_project("Chief of staff · prj_1"), Some("prj_1"));
+        assert_eq!(session_label("Chief of staff · prj_1", named), "Chief of staff · Launch crew");
+        assert_eq!(session_label("Chief of staff · prj_2", named), "Chief of staff · prj_2", "a name it doesn't know");
+        for other in ["Chief of staff", "Chief of staff · Launch crew", "Chief of staff · prj_", "board lead", "prj_1"]
+        {
+            assert_eq!(chief_project(other), None, "{other}");
+            assert_eq!(session_label(other, named), other);
+        }
+    }
 
     #[test]
     fn a_card_message_names_its_session() {

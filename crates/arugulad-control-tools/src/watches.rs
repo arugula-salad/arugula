@@ -27,6 +27,12 @@
 //!   rules. `list` shows them with the cloud's, and `cancel` takes either.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
 //!   days) with one last message saying it ended without firing.
+//! - **Standing** (Arugula #1280): an event watch with `standing` stays live
+//!   after it fires, until it expires or is cancelled, and fires at most
+//!   once per `every` (5m unless told), with every event that matched since
+//!   its last fire. `exclude_self` skips what this session caused itself:
+//!   its own block (this pane) asking or going idle. The cloud keeps both;
+//!   the daemon's own types fire once.
 //! - **Waits.** `wait` with an event is a short-lived watch, made and
 //!   checked as `create`'s ([`wait_event`],
 //!   https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e):
@@ -34,9 +40,9 @@
 
 use arugula_control_wire::events::{self, AGENT_EVENTS, EventsPage};
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled, WatchCreate, WatchList,
-    WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, expires_ms as expires,
-    until_word_parse as until,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled,
+    WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, every_ms,
+    every_word, expires_ms as expires, until_word_parse as until,
 };
 use std::time::Duration;
 
@@ -54,7 +60,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours (expires, at most 7d), with a message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (green and mergeable), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}). note (any target: why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new output lines) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it). When it fires, you get a follow-up saying what happened (ids and states only). It fires once, unless standing: an event watch that stays live, firing at most once per every (5m) with every event since; exclude_self skips your own block's. It expires after 24h (expires, at most 7d), saying so. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (green and mergeable), in a repo linked to Arugula's GitHub App (else wait with pr); session (ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of its match fields, like {\"issue\": \"#12\"}). note (why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new lines) need no account. If it already happened, create says so and makes no watch. A watch belongs to this Claude Code session, not its pane. Works from a terminal with Arugula's hooks, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -135,6 +141,19 @@ pub struct CreateArgs {
     /// 24h, at most 7d.
     #[serde(default)]
     pub expires: Option<String>,
+    /// With event alone: stay live after it fires, until it expires or is
+    /// cancelled, firing at most once per every with every event that
+    /// matched since. Don't make it again after it fires.
+    #[serde(default)]
+    pub standing: bool,
+    /// With standing: the least time between two fires: 1m to 24h, like
+    /// 5m or 1h. Default 5m.
+    #[serde(default)]
+    pub every: Option<String>,
+    /// Skip events this session caused itself: its own block asking for
+    /// input or going idle.
+    #[serde(default)]
+    pub exclude_self: bool,
 }
 
 /// One id, or several. Whichever target happens first fires the watch.
@@ -196,6 +215,9 @@ fn local_ask(a: CreateArgs, on: On) -> Result<local_watches::Ask, String> {
         return Err(format!(
             "event {name} is watched by this machine, on its own: make another watch for pr, session, run or room"
         ));
+    }
+    if a.standing || a.every.is_some() || a.exclude_self {
+        return Err(format!("event {name} is this machine's own, and fires once: standing is for the cloud's events"));
     }
     let EventTarget { matches, note, .. } = event_target(Watcher::Machine, Some(name.into()), a.matches, a.note)?;
     let mut matches = matches.unwrap_or_default();
@@ -263,6 +285,21 @@ fn said(e: CloudRefused) -> String {
             NO_WATCHES.into()
         }
         e => e.to_string(),
+    }
+}
+
+/// [`said`], but a control from before standing watches (Arugula #1280),
+/// which refuses a field it doesn't know, says so plainly.
+fn new_fields(e: CloudRefused) -> String {
+    match e {
+        CloudRefused::Said { status: 400 | 422, said, .. }
+            if ["standing", "every_ms", "exclude_self", "pane"]
+                .iter()
+                .any(|f| said.contains(&format!("unknown field `{f}`"))) =>
+        {
+            "Arugula cloud doesn't keep standing watches or exclude_self yet: make a watch without them".into()
+        }
+        e => said(e),
     }
 }
 
@@ -344,7 +381,26 @@ fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
         targets.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
     }
     let expires_in_ms = a.expires.as_deref().map(expires).transpose()?;
-    Ok(WatchCreate { session: String::new(), session_name: None, targets, expires_in_ms, event, matches, note })
+    let every_ms = match (a.standing, a.every.as_deref()) {
+        (false, Some(_)) => return Err("every goes with standing".into()),
+        (true, _) if event.is_none() || !targets.is_empty() => {
+            return Err("standing is for an event watch alone: a pr, session, run or room fires once".into());
+        }
+        (_, every) => every.map(every_ms).transpose()?,
+    };
+    Ok(WatchCreate {
+        session: String::new(),
+        session_name: None,
+        targets,
+        expires_in_ms,
+        event,
+        matches,
+        note,
+        standing: a.standing,
+        every_ms,
+        exclude_self: a.exclude_self,
+        pane: None,
+    })
 }
 
 /// Whether `body`'s event target wants the current project in its match:
@@ -383,17 +439,26 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
         }
     }
     (body.session, body.session_name) = session(c).await?;
+    // What `exclude_self` skips: this pane's block, as the machine reports
+    // it. Sent only with it, so a control from before takes the rest.
+    if body.exclude_self {
+        body.pane = c.own_pane().map(|p| p.to_string());
+    }
     // Without one, the watch goes as asked: the cloud says if it needs one.
     if wants_project(&body)
         && let Ok(project) = c.current_project(None).await
     {
         body.matches.get_or_insert_default().insert("project".into(), Value::String(project));
     }
+    let every = body.standing.then(|| body.every_ms.unwrap_or(EVERY_DEFAULT_MS));
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
-    let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;
+    let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(new_fields)?;
     let made: WatchMade =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
-    made_said(made, "Arugula cloud made no watch, and said nothing of why")
+    match every {
+        Some(ms) => standing_said(made, ms),
+        None => made_said(made, "Arugula cloud made no watch, and said nothing of why"),
+    }
 }
 
 /// How much longer than its call a wait's watch lives: it's cancelled when
@@ -605,6 +670,20 @@ fn made_said(made: WatchMade, nothing: &str) -> Out {
     done(text, made)
 }
 
+/// What `create` says of a standing watch (Arugula #1280). One that isn't
+/// live (it happened already) is said as any watch's.
+fn standing_said(made: WatchMade, every: u64) -> Out {
+    let Some(id) = made.id.clone().filter(|_| made.state == WatchState::Live) else {
+        return made_said(made, "Arugula cloud made no watch, and said nothing of why");
+    };
+    let text = format!(
+        "Standing watch {id} is live until {}, firing at most every {} with what matched since. End your turn now; don't make it again after it fires.",
+        made.expires_ms.map(when).unwrap_or_else(|| "it expires".into()),
+        every_word(every)
+    );
+    done(text, made)
+}
+
 async fn list(c: &Call<'_>, a: ListArgs) -> Out {
     let session = match a.all {
         true => None,
@@ -636,7 +715,11 @@ async fn list(c: &Call<'_>, a: ListArgs) -> Out {
         .map(|w| {
             let whose =
                 if a.all { format!(" ({})", w.session_name.as_deref().unwrap_or(&w.session)) } else { "".into() };
-            format!("{}{whose}: {}, until {}", w.id, w.targets.join(" or "), when(w.expires_ms))
+            let every = w
+                .every_ms
+                .and_then(|ms| u64::try_from(ms).ok())
+                .map_or(String::new(), |ms| format!(", standing: at most every {}", every_word(ms)));
+            format!("{}{whose}: {}{every}, until {}", w.id, w.targets.join(" or "), when(w.expires_ms))
         })
         .collect();
     let mut text = match lines.len() {
@@ -800,6 +883,42 @@ mod tests {
         let old = serde_json::to_value(create_body(args(json!({ "session": "ses_1" }))).unwrap()).unwrap();
         let keys: Vec<&str> = old.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(keys, ["expires_in_ms", "session", "session_name", "targets"]);
+    }
+
+    /// A standing watch (Arugula #1280) is an event watch alone; every goes
+    /// with it, and the daemon's own types fire once.
+    #[test]
+    fn standing_is_an_event_watch_alone() {
+        let body = create_body(args(json!({
+            "event": "session.needs_input", "match": { "by": "me" }, "standing": true, "every": "10m", "exclude_self": true,
+        })))
+        .unwrap();
+        assert!(body.standing && body.exclude_self);
+        assert_eq!(body.every_ms, Some(10 * 60_000));
+        let plain = create_body(args(json!({ "event": "board.closed", "standing": true }))).unwrap();
+        assert_eq!((plain.standing, plain.every_ms), (true, None), "the cloud's default gap");
+        let err = |v| create_body(args(v)).err().unwrap();
+        assert_eq!(err(json!({ "event": "board.closed", "every": "5m" })), "every goes with standing");
+        assert!(err(json!({ "run": "run_1", "standing": true })).contains("event watch alone"));
+        assert!(err(json!({ "event": "run.ended", "run": "run_1", "standing": true })).contains("event watch alone"));
+        assert!(err(json!({ "event": "board.closed", "standing": true, "every": "10s" })).contains("like 5m"));
+        let local = args(json!({ "event": "agent.idle", "match": { "pane": "4" }, "standing": true }));
+        let on = local_ask_on(&local);
+        assert!(local_ask(local, on).unwrap_err().contains("standing is for the cloud's events"));
+    }
+
+    fn local_ask_on(a: &CreateArgs) -> On {
+        local(a).expect("a daemon's own type")
+    }
+
+    #[test]
+    fn an_old_control_refusing_standing_says_so() {
+        let refused = |said: &str| new_fields(CloudRefused::Said { status: 422, said: said.into(), reason: None });
+        let e = refused(
+            "Failed to deserialize the JSON body into the target type: unknown field `standing`, expected one of …",
+        );
+        assert!(e.contains("doesn't keep standing watches"), "{e}");
+        assert!(refused("targets: 1 to 10").contains("targets: 1 to 10"));
     }
 
     #[test]

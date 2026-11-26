@@ -82,6 +82,19 @@
             "null"
           ]
         },
+        "every_ms": {
+          "description": "With `standing`: the least time between two of its fires, in\nmilliseconds. None: [`EVERY_DEFAULT_MS`]; from [`EVERY_MIN_MS`] to\n[`EVERY_MAX_MS`].",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "exclude_self": {
+          "description": "Skip events the watching session caused itself: its own agent block\n(`pane`) asking or going idle. Its own chat replies never fire a\nwatch anyway.",
+          "type": "boolean"
+        },
         "expires_in_ms": {
           "default": null,
           "description": "How long it lives, in milliseconds. None: [`EXPIRES_DEFAULT_MS`];\nat most [`EXPIRES_MAX_MS`].",
@@ -107,6 +120,13 @@
             "null"
           ]
         },
+        "pane": {
+          "description": "The pane the watching session runs in, as the machine names its\nblocks: what `exclude_self` skips. Sent only with it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "session": {
           "description": "The Claude Code session to wake, by its id.",
           "type": "string"
@@ -118,6 +138,10 @@
             "string",
             "null"
           ]
+        },
+        "standing": {
+          "description": "Standing (Arugula #1280): an event watch, with no other target, that\nstays live after it fires, until it expires or is cancelled. Left out\nwhen false, so a watch that isn't reads as before.",
+          "type": "boolean"
         },
         "targets": {
           "description": "Any one of these fires it: at least one, at most\n[`TARGETS_MAX`].",
@@ -204,6 +228,14 @@
         "created_ms": {
           "format": "int64",
           "type": "integer"
+        },
+        "every_ms": {
+          "description": "A standing watch's gap (Arugula #1280), in milliseconds; none for one\nthat fires once.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "expires_ms": {
           "format": "int64",

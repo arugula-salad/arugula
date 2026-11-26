@@ -6342,6 +6342,14 @@
           "format": "int64",
           "type": "integer"
         },
+        "every_ms": {
+          "description": "A standing watch's gap (Arugula #1280), in milliseconds; none for one\nthat fires once.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "expires_ms": {
           "format": "int64",
           "type": "integer"

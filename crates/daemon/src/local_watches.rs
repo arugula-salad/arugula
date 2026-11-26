@@ -555,6 +555,7 @@ impl Store {
                 state: WatchState::Live,
                 created_ms: w.created_ms,
                 expires_ms: w.expires_ms,
+                every_ms: None,
             })
             .collect();
         rows.sort_by_key(|r| std::cmp::Reverse(r.created_ms));

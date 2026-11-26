@@ -102,6 +102,8 @@ async function overview(page: Page, byCard: unknown = null, live = false, lead?:
   await serve(page, byCard, live ? term : undefined, lead, hold);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
+  // Nothing in the Inbox until a test says so (`say`).
+  await page.addInitScript(() => void ((window as unknown as { __inbox?: unknown[] }).__inbox ??= []));
   await page.goto(`/p/${P}`);
   await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => page.evaluate(() => (window as unknown as { __app?: { client: { state: unknown } } }).__app?.client.state !== null)).toBe(true);
@@ -227,6 +229,8 @@ async function proposing(page: Page, proposal: typeof START | typeof CLOSE | typ
     },
     { P, proposal },
   );
+  // And the Inbox lists it (Arugula #1433).
+  await say(page, [{ id: proposal.id, kind: "proposal", group: "decide", counts: true, for: "acct_a", title: proposal.why, from: {}, subject: { type: "proposal", id: proposal.id, url: "/", project: P }, since: 1 }]);
 }
 
 /** Launch's room on control, its messages and what's posted in it (in
@@ -436,6 +440,23 @@ async function expectSpaced(page: Page) {
 
 type AskSpec = { host: string; person: { id: string; name: string; kind: "me" | "person" | "team" }; owner?: string; ask: string; watch?: boolean };
 /** Asks of made-up panes on the Overview's project, beside the daemon's own: the fleet takes them as it takes a fake one. A `watch` one is a session you only view. */
+/** What the platform's Inbox lists (Arugula #1433), said to the page as
+ * its stream says the Inbox changed. */
+const say = (page: Page, items: unknown[]) => page.evaluate((items) => (window as unknown as { __inboxSay(i: unknown[]): void }).__inboxSay(items), items);
+/** The Inbox's item for pane `pane` on `host` (#1431's): the reader's, or
+ * `who`'s, not counted. */
+const paneItem = (host: string, pane: number, who?: string) => ({
+  id: `${host}.${pane}:1`,
+  kind: "agent_ask",
+  group: "decide",
+  counts: !who,
+  for: who ?? "acct_a",
+  title: "An agent asks",
+  from: {},
+  subject: { type: "pane", id: `${host}.${pane}`, url: "/", project: P, machine: host, pane: String(pane) },
+  since: pane,
+});
+
 async function asking(page: Page, specs: AskSpec[]) {
   await page.evaluate(
     ({ specs, P }) => {
@@ -471,6 +492,8 @@ async function asking(page: Page, specs: AskSpec[]) {
     },
     { specs, P },
   );
+  // And the Inbox lists them: a teammate's (or a team's box) for them.
+  await say(page, specs.map((s, i) => paneItem(s.host, i + 1, s.person.kind === "me" ? undefined : (s.owner ?? s.person.name))));
 }
 const ME = { id: "me", name: "me", kind: "me" as const };
 const SAM = { id: "account:sam", name: "sam", kind: "person" as const };
@@ -724,6 +747,9 @@ test.describe("on a computer", () => {
       ({ term, line }) => fetch(`/api/panes/${term}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, enter: true }) }),
       { term, line: `out=$(${cli} ask < ${hookInput}); echo "ONE[\${#out}]"; echo "$out" | grep -o '"Which [a-z ]*?":"[^"]*"'` },
     );
+    // The Inbox lists it (#1431's item for the pane).
+    const host = await page.evaluate((t) => (window as unknown as { __app: { fleet: { panes: { id: number; host: string }[] } } }).__app.fleet.panes.find((p) => p.id === t)!.host, term);
+    await say(page, [paneItem(host, term)]);
     const row = needs.locator('[data-ov-ask][data-kind="ask"]');
     await expect(row).toHaveCount(1, { timeout: 20_000 });
     // A row is two lines until it's opened: its card is the row's body.
@@ -759,7 +785,7 @@ test.describe("on a computer", () => {
     await expect.poll(() => page.evaluate((t) => (window as unknown as { __app: { text(p: number): string } }).__app.text(t), term)).toContain('"Which colour do you prefer?":"Blue"');
   });
 
-  test("Needs you groups the asks by owner: yours first, then each person with a count, a team's box under its starter else its name (Arugula #1333)", async ({ page }) => {
+  test("Needs you lists yours, and folds each teammate's under N asks for them, the most first, a team's box under its starter else its name, never counted (Arugula #1333, #1433)", async ({ page }) => {
     await overview(page);
     await asking(page, [
       { host: "jo-box", person: JO, ask: "ls jo" },
@@ -771,9 +797,13 @@ test.describe("on a computer", () => {
     ]);
     // The daemon's own agent may add a Finished row of yours: yours is counted by the asks only.
     const heads = page.locator("[data-ov-needs] [data-ov-asks-head]");
-    await expect(heads.locator("> span:first-child")).toHaveText(["Yours", "sam", "infra", "jo"]);
-    await expect(heads.locator(".ov-asks-n")).toContainText(["", "3", "1", "1"]);
+    await expect(heads).toHaveText(["3 asks for sam ›", "1 ask for jo ›", "1 ask for infra ›"]);
     await expect(page.locator('[data-ov-asks="me"] [data-ov-ask][data-kind="ask"]')).toHaveCount(1);
+    await expect(page.locator("[data-ov-needs] [data-ov-needs-count]")).toHaveText("1");
+    // Folded until opened.
+    await expect(page.locator('[data-ov-asks="sam"] [data-ov-ask]')).toHaveCount(0);
+    await heads.first().getByRole("button").click();
+    await expect(heads.first().getByRole("button")).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator('[data-ov-asks="sam"] [data-ov-ask]')).toHaveCount(3);
   });
 
@@ -857,6 +887,7 @@ test.describe("on a computer", () => {
   test("a teammate's ask you only watch says an editor answers it, and has no action", async ({ page }) => {
     await overview(page);
     await asking(page, [{ host: "sam-box", person: SAM, ask: "ls sam", watch: true }]);
+    await page.locator('[data-ov-asks-for="sam"]').click();
     const row = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
     await row.locator(".ov-ask-row").click();
     await expect(row.locator(".ask-viewer")).toHaveText("You're watching this session: an editor answers it.");
@@ -972,8 +1003,10 @@ test.describe("on a computer", () => {
     });
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
     await expect(page.locator(`[data-ov-talk-open="thread:${B}"] .thread-list`)).toContainText("Message 60 of a long thread.");
-    // No ask, only a finished session: Needs you's heading and that row.
+    // No ask, only a mention: Needs you's heading and that row.
+    await say(page, [{ id: "iss_9:mentioned", kind: "mention", group: "named", counts: true, for: "acct_a", title: "#9 Thing 9", from: { name: "Jo" }, subject: { type: "issue", id: "iss_9", url: "/", project: P }, since: 1 }]);
     const needs = page.locator("[data-ov-panel] > [data-ov-needs]");
+    await expect(needs.locator('[data-ov-ask][data-kind="mention"]')).toHaveCount(1);
     await expect(needs.getByRole("heading", { name: "Needs you" })).toBeVisible();
     await expect(needs.locator('[data-ov-ask][data-kind="ask"]')).toHaveCount(0);
     // It isn't squeezed into a box shorter than itself, and neither its heading nor its row reaches the tabs.
@@ -2105,6 +2138,7 @@ test.describe("on a phone", () => {
   test("on a phone an ask's two lines fit the column and open in it (Arugula #1333)", async ({ page }) => {
     await overview(page);
     await asking(page, [{ host: "sam-box", person: SAM, ask: "a long command that goes on and on and on and on and on and on and on" }]);
+    await page.locator('[data-ov-asks-for="sam"]').click();
     const row = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
     await row.locator(".ov-ask-row").click();
     await expect(row.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
