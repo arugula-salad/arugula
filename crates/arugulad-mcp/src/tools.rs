@@ -34,7 +34,7 @@ use crate::{
         Scope,
         tools::{
             Args, Call, Def, DelegateArgs, Human, Kind, ListTeamAgentsArgs, Needs, NoArgs, OpenAppArgs, Out, PAGE,
-            PAGE_MAX, PaneArg, PaneOnly, Schema, ago, confine, done, entry, line, one_line, output_schema, parse,
+            PAGE_MAX, PaneArg, PaneOnly, Schema, ago, confine, done, entry, line, one_line, output_schema, parse, span,
             table,
         },
     },
@@ -2245,9 +2245,11 @@ impl ToolCall<'_, '_> {
             return Ok(out);
         }
         let waiting = if queued == 1 { "queued".to_owned() } else { format!("queued, one of {queued}") };
-        let quiet = match s["heard_ms"].as_u64() {
-            Some(ms) => format!("its last output was {}", ago(ms)),
-            None => "it has shown no output".to_owned(),
+        let quiet = match (s["turn_started_ms"].as_u64(), s["heard_ms"].as_u64()) {
+            (Some(start), Some(ms)) => format!("its turn has run {}, its last output was {}", span(start), ago(ms)),
+            (Some(start), None) => format!("its turn has run {} with no output", span(start)),
+            (None, Some(ms)) => format!("its last output was {}", ago(ms)),
+            (None, None) => "it has shown no output".to_owned(),
         };
         out["summary"] = json!(format!(
             "%{pane} is mid-turn, so your prompt is {waiting}: it goes when the turn ends. The turn is still running after {}s; {quiet}. Wait until idle, or read_output for where it is",
