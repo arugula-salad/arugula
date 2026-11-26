@@ -824,6 +824,9 @@ mod tests {
         // The chief of staff's "main went red" (#1291): main's own head, not a PR's base.
         let red = json!({ "event": "github.check.failed", "match": { "heads": "main" } });
         assert_eq!(create_body(args(red)).unwrap().event.as_deref(), Some("github.check.failed"));
+        // A chief of staff's "my person's sessions" (#1489): `me` is the cloud's to resolve.
+        let mine = json!({ "event": "session.needs_input", "match": { "by": "me" } });
+        assert_eq!(create_body(args(mine)).unwrap().event.as_deref(), Some("session.needs_input"));
         assert!(
             create_body(args(json!({ "event": "issue.labeled", "match": { "issue": "#3", "label": "bug" } }))).is_ok()
         );
