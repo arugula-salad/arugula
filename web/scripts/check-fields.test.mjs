@@ -55,3 +55,7 @@ test("a class only ever on a field is read as one", () => {
   assert.deepEqual(bad(".note-box { min-height: 9em; border: 0; }", "x.css", classes), [[1, "border"]]);
   assert.deepEqual(bad(".row { border: 1px solid; } .field { min-height: 40px; }", "x.css", classes), []);
 });
+
+test("the kit may draw a field", () => {
+  assert.deepEqual(bad(".k-field-box input { border: 0; background: none; }", "shared/kit/kit.css"), []);
+});

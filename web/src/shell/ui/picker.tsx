@@ -42,7 +42,7 @@ export function PickerLayer() {
   if (!open) return null;
   const { client, pane, phone, choose } = open;
   return (
-    <Picker
+    <DirPicker
       key={pane}
       client={client}
       pane={pane}
@@ -60,7 +60,7 @@ type Row = { path: string; label: string; recent?: boolean; up?: boolean };
 
 const base = (p: string) => p.split("/").filter(Boolean).pop() ?? "/";
 
-function Picker({ client, pane, phone, close, choose }: { client: Client; pane: PaneId; phone: boolean; close: () => void; choose?: (path: string) => void }) {
+function DirPicker({ client, pane, phone, close, choose }: { client: Client; pane: PaneId; phone: boolean; close: () => void; choose?: (path: string) => void }) {
   const info = client.info(pane);
   const machine = client.machine(pane);
   const tab = client.tabOfPane(pane);

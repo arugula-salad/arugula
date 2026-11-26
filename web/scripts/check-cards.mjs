@@ -1,6 +1,7 @@
-// The card rule (#698): a card is drawn once, by `Card` (src/shared/ui/card.tsx,
-// card.css). Three things fail:
-//   1. a rule for a class ending in `-card` outside shared/ui/card.css (a
+// The card rule (#698): a card is drawn once, by the kit's Surface
+// (src/shared/kit/), or by today's `Card` (src/shared/ui/card.tsx, card.css)
+// until the last screen's lift. Three things fail:
+//   1. a rule for a class ending in `-card` outside those (a
 //      second card look). Style a card's place (its width, its grid) in a
 //      class of your own that doesn't end in `-card`.
 //   2. a literal `border-radius` on a `.card` (or `.card-…`): its corners are
@@ -13,9 +14,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const HOME = "shared/ui/card.css";
-/** The kit (design lift §4.1): its Surface is the card from here on. */
-const KIT = "shared/kit/kit.css";
+/** Only the kit draws a surface (design lift §4.1: Surface). card.css is
+ * today's card, kept until the last screen's lift moves off it. */
+const home = (file) => file.startsWith("shared/kit/") || file === "shared/ui/card.css";
 
 /** `-card` classes that predate the rule: each is a card of its own, to move
  * onto `Card` in a follow-up. Don't add one; the list only gets shorter. */
@@ -58,7 +59,7 @@ export function offenders(css, file) {
     const at = (i) => text.slice(0, i).split("\n").length;
     const line = at(rule.index + rule[1].length - selector.length + lead);
     const sels = selector.split(",").map((s) => s.trim());
-    if (file !== HOME && file !== KIT) {
+    if (!home(file)) {
       for (const m of selector.matchAll(CARD_CLASS)) {
         if (m[1] !== "sw-card" && !ALLOWED.has(m[1])) out.push({ file, line, rule: "card", found: `.${m[1]}` });
       }

@@ -186,6 +186,24 @@ test("Not on a card: the project's sessions that work on none, each a tile", () 
   assert.equal(o.cardOf.get("workstation:2"), null);
 });
 
+test("a session that leads a board is its lead, not on no card; an idle one that leads nothing stays in Not on a card (#1508)", () => {
+  const led = view("brd_l", "Launch", [row("r1", "doing", 1)], { lead: { machine: "m_ws", machine_name: "workstation", session: "Product Improvements", at: 1 } });
+  const panes = [pane("workstation", 5, { machine: "m_ws", session: { id: 9, name: "Product Improvements" } }), pane("workstation", 6, { machine: "m_ws", session: { id: 4, name: "Product mode" } })];
+  const o = overviewOf(P, [led], panes, null, hostOf);
+  assert.equal(o.boards[0].lead.session, "Product Improvements");
+  assert.deepEqual(o.loose.map((s) => s.lead.id), [6]);
+  // A lead that is one pane of a tab group (#1368) takes the group's tile, which is keyed by the session.
+  const pinned = view("brd_p", "Pinned", [row("r3", "doing", 3)], { lead: { machine: "m_ws", machine_name: "workstation", session: "Product Improvements", pane: 5, at: 1 } });
+  assert.deepEqual(overviewOf(P, [pinned], panes, null, hostOf).loose.map((s) => s.lead.id), [6]);
+  // A lead the hub names and no pane here shows leaves it too; another of the hub's sessions stays.
+  const hub = (id, name) => ({ kind: "machine", id, name, on: { kind: "machine", id: "m_b1", name: "build-01" }, panes: [{ pane: 9, kind: "agent", work_item: null, state: null }], updated_at: 1 });
+  const byCard = { project: P, groups: [{ card: null, sessions: [hub("s1", "Product Improvements"), hub("s2", "docs")] }] };
+  const far = view("brd_f", "Far", [row("r2", "doing", 2)], { lead: { machine: "m_b1", machine_name: "build-01", session: "Product Improvements", at: 1 } });
+  assert.deepEqual(overviewOf(P, [far], [], byCard, hostOf).loose.map((s) => s.name), ["docs"]);
+  // A board that is closed has no lead drawn: its session is on no card.
+  assert.deepEqual(overviewOf(P, [{ ...led, board: { ...led.board, closed_at: 5 } }], panes, null, hostOf).loose.map((s) => s.lead.id).sort(), [5, 6]);
+});
+
 test("the hub's sessions by card place panes the machines report, and name the sessions they don't", () => {
   const rows = [row("r983", "doing", 983), row("r987", "review", 987)];
   const panes = [pane("workstation", 12, { session: { id: 7, name: "i983" }, project: null, agent: true, standing: "needs" }), pane("workstation", 13, { session: { id: 7, name: "i983" }, project: null }), pane("build-01", 4, { session: { id: 5, name: "s" }, project: null, agent: true })];

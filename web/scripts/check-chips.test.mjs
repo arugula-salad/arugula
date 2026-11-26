@@ -12,3 +12,7 @@ test("the chip file, the shared tag, a comment and a container are fine", () => 
   assert.deepEqual(offenders(".board .chip-tag { margin: 0; }", "shared/boards/boards.css"), []);
   assert.deepEqual(offenders("/* .old-tag was here */ .ws-tags {} .board-chips {}", "shared/style.css"), []);
 });
+
+test("the kit may draw a chip", () => {
+  assert.deepEqual(offenders(".k-state-chip {}", "shared/kit/kit.css"), []);
+});

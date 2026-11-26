@@ -9,7 +9,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Modal } from "../../shared/ui/modal";
-import { HintChip as Hint_ } from "../../shared/ui/state-chip";
+import { HintChip } from "../../shared/ui/state-chip";
 import { act, dismiss, mountPlace, shownHint, subscribeHints, watchHints, type Fact, type Hint, type Line, type ModalButton, type Place } from "../hints";
 import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
@@ -31,11 +31,11 @@ const label = (a: { label: string | ((f: Fact) => string) }, f: Fact) => (typeof
 
 function Body({ client, cls }: { client: Client; cls: string }) {
   const s = shownHint()!;
-  return <Hint_ id={s.hint.id} class={cls} copy={s.hint.copy(s.fact)} action={s.hint.action && label(s.hint.action, s.fact)} onAct={() => act(client)} onDismiss={() => dismiss()} />;
+  return <HintChip id={s.hint.id} class={cls} copy={s.hint.copy(s.fact)} action={s.hint.action && label(s.hint.action, s.fact)} onAct={() => act(client)} onDismiss={() => dismiss()} />;
 }
 
 /** In pane `pane`'s header. */
-export function HintChip({ client, pane }: { client: Client; pane: PaneId }) {
+export function PaneHint({ client, pane }: { client: Client; pane: PaneId }) {
   return useHint("chip", pane) ? <Body client={client} cls="hint-header" /> : null;
 }
 

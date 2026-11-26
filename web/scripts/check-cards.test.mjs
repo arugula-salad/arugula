@@ -53,3 +53,7 @@ test("a .sw-card or .sw-cards fails, in a stylesheet and in a component", () => 
 test("comments are ignored", () => {
   assert.deepEqual(bad("/* .thing-card { border-radius: 8px } */\n.a { color: red; }"), []);
 });
+
+test("the kit may draw a card", () => {
+  assert.deepEqual(bad(".k-surface.is-card { padding: 4px; }", "shared/kit/kit.css"), []);
+});

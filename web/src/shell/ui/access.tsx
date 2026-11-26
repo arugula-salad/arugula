@@ -94,7 +94,7 @@ export function whereLine(r: AccessRow, v: AccessView): string {
 
 const WORDS: Record<string, string> = { this_machine: "this machine", roster: "the team's roster", control: "Arugula cloud" };
 
-function Row({ r, v }: { r: AccessRow; v: AccessView }) {
+function AccessLine({ r, v }: { r: AccessRow; v: AccessView }) {
   return (
     <li data-access-row={r.kind} data-access-who={r.who}>
       <div class="access-row-head">
@@ -224,7 +224,7 @@ function AccessRows({ view }: { view: AccessView }) {
       {view.rows.length ? (
         <ul class="rules-list access-rows" data-access-rows>
           {view.rows.map((r, i) => (
-            <Row key={`${r.kind}-${r.principal ?? r.who}-${r.session ?? ""}-${r.pane ?? ""}-${i}`} r={r} v={view} />
+            <AccessLine key={`${r.kind}-${r.principal ?? r.who}-${r.session ?? ""}-${r.pane ?? ""}-${i}`} r={r} v={view} />
           ))}
         </ul>
       ) : (

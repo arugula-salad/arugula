@@ -49,7 +49,7 @@ export function AppsLayer() {
   if (!open) return null;
   const { client, where, phone } = open;
   return (
-    <Picker
+    <AppsPicker
       client={client}
       where={where}
       phone={phone}
@@ -78,7 +78,7 @@ export async function openApp(client: Client, app: string, where: AppsWhere): Pr
   return (await res.json<OpenResponse>()).block;
 }
 
-function Picker({ client, where, phone, close }: { client: Client; where: AppsWhere; phone: boolean; close: () => void }) {
+function AppsPicker({ client, where, phone, close }: { client: Client; where: AppsWhere; phone: boolean; close: () => void }) {
   const [list, setList] = useState<StudioApp[] | null>(null);
   const [studio, setStudio] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

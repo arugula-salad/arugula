@@ -128,7 +128,7 @@ export interface OvLead {
 export interface Overview {
   /** The open boards, the most urgent first, those with nothing in flight last. */
   boards: OvBoard[];
-  /** Not on a card: the project's sessions that work on none. */
+  /** Not on a card: the project's sessions that work on none and lead no board. */
   loose: OvSession[];
   /** Where each of the project's panes is: its card, or none. */
   cardOf: Map<string, { board: string; row: BoardRow } | null>;
@@ -287,7 +287,10 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   }
   const still = (b: OvBoard) => Number(!b.doing.length && !b.review.length);
   boards.sort((a, b) => still(a) - still(b) || rank(a.standing) - rank(b.standing) || a.title.localeCompare(b.title));
-  return { boards, loose: sortSessions(loose), cardOf };
+  // A session that leads an open board is shown as its lead, not as one on no card (#1508): by its panes, or by the hub's session the lead stands as.
+  const leads = boards.flatMap((b) => (b.lead ? [b.lead.peek] : []));
+  const leading = (s: OvSession) => leads.some((l) => l.key === s.key || l.panes.some((p) => s.panes.some((q) => q.key === p.key)));
+  return { boards, loose: sortSessions(loose.filter((s) => !leading(s))), cardOf };
 }
 
 /** A board's lead as the row names it, or a staff room's (#1342): how it

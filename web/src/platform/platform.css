@@ -1794,7 +1794,7 @@ html[data-scheme="dark"] .platform textarea::placeholder {
   color: var(--ink-dim);
   font-size: var(--text-body);
 }
-.design-row,
+.design-line,
 .design-look {
   display: flex;
   flex-wrap: wrap;
