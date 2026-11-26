@@ -1102,6 +1102,12 @@ pub struct AgentSessionStart {
     /// it.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// The agent block on the signing machine that asked (its pane), when
+    /// an agent block did (Arugula #1393): the session's asks go to it
+    /// first while it's live, and reach its person after ten minutes
+    /// without an answer. Ignored by a control from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block: Option<String>,
 }
 
 /// [`AGENT_SESSIONS`]'s answer: the ask's message (`room`, `seq`), and the

@@ -107,6 +107,13 @@
     "AgentSessionStart": {
       "description": "[`AGENT_SESSIONS`]'s body: where to ask, and what. On a native issue\n(`issue`: its id, `iss_…`; or `number` in `project`), or in a project's\nchannel (`room`), in the thread of one of its messages (`thread`, its\nseq) or as a message of its own.",
       "properties": {
+        "block": {
+          "description": "The agent block on the signing machine that asked (its pane), when\nan agent block did (Arugula #1393): the session's asks go to it\nfirst while it's live, and reach its person after ten minutes\nwithout an answer. Ignored by a control from before it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "issue": {
           "default": null,
           "type": [
