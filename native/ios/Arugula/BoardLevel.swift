@@ -15,7 +15,7 @@ struct BoardLevel: View {
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     /// Run this board: on a board with no lead and no grant, in a team's
-    /// project. Its card goes in the reader's Needs you.
+    /// project. Its card goes in the reader's Needs you on the web (#1459).
     var run: (() -> Void)?
     /// Revoke the board's grant, when the reader gave it.
     var revoke: (() -> Void)?
@@ -196,7 +196,7 @@ struct LeadCard: View {
                 } else if grant == nil, let run {
                     Button("Run this board", action: run)
                         .buttonStyle(AnswerButton(primary: true))
-                        .accessibilityHint("Its card goes in your Needs you: Approve starts its lead and grants it agents")
+                        .accessibilityHint("Its card goes in your Needs you on the web: Approve starts its lead and grants it agents")
                         .accessibilityIdentifier("board-run")
                 }
                 if grant?.mine == true, let revoke {

@@ -1631,9 +1631,10 @@ extension View {
     }
 }
 
-/// What Run this board says once its card is asked for (the web's words,
-/// Arugula #1416): one place, so the phone's wording is one change.
+/// What Run this board says once its card is asked for: the web's words
+/// (Arugula #1416), on the web until the phone shows the card (#1459). One
+/// place, so the phone's wording is one change.
 enum RunBoardSaid {
-    static let asked = "Run this board: approve its card in Needs you."
-    static let again = "Its Run this board card is waiting in Needs you."
+    static let asked = "Run this board: approve its card in Needs you on the web."
+    static let again = "Its Run this board card is waiting in Needs you on the web."
 }

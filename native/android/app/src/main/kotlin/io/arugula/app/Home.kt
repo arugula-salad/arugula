@@ -582,16 +582,16 @@ private fun BoardThreadHeading(api: Api, board: Board, model: HomeModel, session
     }
 }
 
-/** What Run this board says once its card is asked for (the web's words, Arugula #1416): one place, so the phone's wording is one change. */
-const val RUN_BOARD_ASKED = "Run this board: approve its card in Needs you."
-const val RUN_BOARD_AGAIN = "Its Run this board card is waiting in Needs you."
+/** What Run this board says once its card is asked for: the web's words (Arugula #1416), on the web until the phone shows the card (#1459). One place, so the phone's wording is one change. */
+const val RUN_BOARD_ASKED = "Run this board: approve its card in Needs you on the web."
+const val RUN_BOARD_AGAIN = "Its Run this board card is waiting in Needs you on the web."
 
 /**
  * The board's grant to start agents, under who leads it (Arugula #1456, the
  * web's #1416): where its lead runs, which machines its issue agents may use,
  * how many at once and until when, with Revoke for the person who gave it.
  * A board with no lead and no grant, in a team's project (a staff room is a
- * team's), offers Run this board, whose card goes in the reader's Needs you.
+ * team's), offers Run this board, whose card goes in the reader's Needs you on the web (#1459).
  */
 @Composable
 private fun BoardGrantLine(api: Api, board: Board, model: HomeModel, toast: (String) -> Unit) {
