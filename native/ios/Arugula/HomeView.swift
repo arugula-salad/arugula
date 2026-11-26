@@ -61,7 +61,7 @@ struct HomeView: View {
             // Anything else in the Inbox (a PR, a run): the Inbox, at it.
             case .inbox(let item):
                 push.route = nil
-                focus = item
+                focus = item.isEmpty ? nil : item
                 inbox = true
             case nil: break
             }
@@ -96,7 +96,7 @@ struct HomeView: View {
             .environmentObject(scope)
         }
         .sheet(isPresented: $inbox, onDismiss: { focus = nil }) {
-            InboxSheet(control: control, live: live, focus: focus) { inbox = false }.environmentObject(scope)
+            InboxSheet(control: control, live: live, fleet: fleet, model: model, focus: focus) { inbox = false }.environmentObject(scope)
         }
         .overlay(alignment: .bottom) {
             if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
@@ -109,17 +109,18 @@ struct HomeView: View {
         .environment(\.showInbox, { inbox = true })
         .environment(\.sidebarFoot, sidebar)
         .task { await scope.load(control) }
-        // The bell's count (Arugula #1365): the current project's, again
-        // every minute, and when the app comes back.
+        // The bell's count (Arugula #1434): the current project's, again
+        // when chat's live stream says it moved or opens anew, and when the
+        // app comes back.
         .task(id: scope.current?.id) {
+            live.start()
             guard let p = scope.current?.id else { return }
-            while !Task.isCancelled {
-                await InboxModel.shared.load(control, project: p)
-                try? await Task.sleep(for: .seconds(60))
-            }
+            await InboxModel.shared.load(control, project: p)
         }
+        .onChange(of: live.inbox) { _, _ in reloadInbox() }
+        .onChange(of: live.epoch) { _, _ in reloadInbox() }
         .onChange(of: phase) { _, now in
-            if now == .active, let p = scope.current?.id { Task { await InboxModel.shared.load(control, project: p) } }
+            if now == .active { reloadInbox() }
         }
     }
 
@@ -180,6 +181,11 @@ struct HomeView: View {
 
     /// A notification about a pane: its card's Work level when it's on one,
     /// else its own, once the machine is reached; else Machines opens it.
+    private func reloadInbox() {
+        guard let p = scope.current?.id else { return }
+        Task { await InboxModel.shared.load(control, project: p) }
+    }
+
     private func open(machine: String, pane: UInt32) {
         tab = .overview
         Task {

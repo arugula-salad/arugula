@@ -504,12 +504,14 @@ struct CodeBlock: View {
 /// rooms do, `changed[room]` when a room's messages do, and `epoch` when a
 /// new stream starts (its `hello`: anything could have been missed). A
 /// dropped stream is opened again; the room on screen is told to control, so
-/// nobody is pushed for what they're reading.
+/// nobody is pushed for what they're reading. `inbox` moves when the reader's
+/// Inbox count or items do (the one Inbox, Arugula #1434).
 @MainActor
 final class LiveChat: ObservableObject {
     @Published private(set) var rooms = 0
     @Published private(set) var changed: [String: Int] = [:]
     @Published private(set) var epoch = 0
+    @Published private(set) var inbox = 0
     @Published private(set) var connected = false
     private let control: Control
     nonisolated(unsafe) private var live: OpaquePointer?
@@ -589,6 +591,8 @@ final class LiveChat: ObservableObject {
                 if type == "message" { rooms += 1 }
             case "room", "read":
                 rooms += 1
+            case "inbox":
+                inbox += 1
             case "closed":
                 aru_chat_live_free(l)
                 live = nil

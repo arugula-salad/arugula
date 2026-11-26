@@ -5,7 +5,14 @@ import Foundation
 
 struct Projects: Decodable {
     struct Me: Decodable { var account: String; var login: String; var name: String }
-    struct Team: Decodable { var id: String; var name: String; var role: String }
+    struct Team: Decodable {
+        struct Member: Decodable { var account: String; var name: String }
+        var id: String
+        var name: String
+        var role: String
+        /// Its roster: names a teammate's asks folded in the Inbox.
+        var members: [Member]?
+    }
     struct Project: Decodable, Identifiable, Hashable {
         var id: String
         var name: String
