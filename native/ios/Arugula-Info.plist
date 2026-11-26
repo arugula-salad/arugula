@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Release builds, merged into the generated Info.plist: the app's
      addresses, arugula://p/… (Arugula #1304), which open a level of the
-     Overview. Arugula-Debug-Info.plist has them too. -->
+     Overview. Arugula-Debug-Info.plist has them too. And remote-notification,
+     so a quiet update (Arugula #1432) wakes the app to take away the
+     notifications of items that cleared from the Inbox. -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleURLTypes</key>
@@ -14,6 +16,10 @@
 			<array>
 				<string>arugula</string>
 			</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 		</dict>
 	</array>
 </dict>

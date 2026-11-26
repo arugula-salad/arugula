@@ -6,6 +6,7 @@
 
 import { useRef, useState } from "preact/hooks";
 import type { ChatMentionStatus, ChatMessage, ChatRoom } from "../proto";
+import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import { ChevronIcon, MachineIcon } from "../ui/icons";
 import { Popover, pressedShut } from "../ui/menu";
@@ -41,8 +42,12 @@ export function mentionTone(state: ChatMentionStatus["state"]): Tone {
   }
 }
 
-/** The line's words: what the daemon said, in the sender's terms. */
-export function mentionStatusText(s: ChatMentionStatus): string {
+/** The line's words: what the daemon said, in the sender's terms. With
+ * `projectName`, a chief of staff's session reads by its project's name
+ * (Arugula #1457). */
+export function mentionStatusText(m: ChatMentionStatus, projectName?: (id: string) => string | undefined): string {
+  const label = (n: string | null | undefined) => (n ? sessionLabel(n, projectName) : n);
+  const s = { ...m, session: label(m.session), for_session: label(m.for_session) };
   const who = s.machine_name || "the machine";
   // The session the post named, so two lines for one machine differ.
   const named = s.for_session ? `${who}/${s.for_session}` : who;
@@ -88,6 +93,7 @@ export function mentionStatusText(s: ChatMentionStatus): string {
 /** A `no_such_session` line with names to offer: the chip opens a list of
  * them, and a pick puts `@machine/session` in the composer (#1167). */
 function NamesChip({ s, insert }: { s: ChatMentionStatus; insert: (text: string) => void }) {
+  const { projectName } = usePlatformApi();
   const [open, setOpen] = useState(false);
   const from = useRef<HTMLSpanElement | null>(null);
   const handle = machineHandle(s.machine_name ?? "");
@@ -95,7 +101,7 @@ function NamesChip({ s, insert }: { s: ChatMentionStatus; insert: (text: string)
     <>
       <span ref={from} class="mention-names">
         <Chip tone={mentionTone(s.state)} dot class="mention-link" title="Sessions on this machine" onClick={() => !pressedShut(from.current) && setOpen(true)}>
-          {mentionStatusText(s)} <ChevronIcon dir="down" />
+          {mentionStatusText(s, projectName)} <ChevronIcon dir="down" />
         </Chip>
       </span>
       {open && (
@@ -127,7 +133,7 @@ function NamesChip({ s, insert }: { s: ChatMentionStatus; insert: (text: string)
  * machine the poster didn't type (routing put it there) isn't shown (#1167).
  * `insert` writes into the composer this message is answered in. */
 export function MentionStatus({ room, m, insert }: { room: ChatRoom; m: ChatMessage; insert?: (text: string) => void }) {
-  const { nav } = usePlatformApi();
+  const { nav, projectName } = usePlatformApi();
   const lines = (m.mention_status ?? []).filter((s) => mentionTone(s.state) !== "warn" || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
   if (!lines.length || m.deleted !== null) return null;
   return (
@@ -137,13 +143,13 @@ export function MentionStatus({ room, m, insert }: { room: ChatRoom; m: ChatMess
           <MachineIcon size="xs" />
           {s.state === "answered" ? (
             <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, s.reply, m.parent ?? m.seq)}>
-              {mentionStatusText(s)} <ChevronIcon dir="right" />
+              {mentionStatusText(s, projectName)} <ChevronIcon dir="right" />
             </Chip>
           ) : s.state === "no_such_session" && s.names?.length && insert ? (
             <NamesChip s={s} insert={insert} />
           ) : (
             <Chip tone={mentionTone(s.state)} dot>
-              {mentionStatusText(s)}
+              {mentionStatusText(s, projectName)}
             </Chip>
           )}
         </div>

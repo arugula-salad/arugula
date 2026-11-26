@@ -249,44 +249,15 @@ pub fn remote_input_said(state_dir: &Path) -> Option<bool> {
     doc(state_dir).get("remote_input").and_then(Value::as_bool)
 }
 
-/// What a join sets [`remote_input`] to (Arugula #1194): the answer to the
-/// question, when there is one; else off, for a machine that isn't joined
-/// yet and where nobody has said. A machine already joined, or whose owner
-/// already said, keeps what it has: an unanswered join never flips one
-/// that was set up before. `None`: leave the file alone.
-pub fn join_sets(answer: Option<bool>, joined: bool, said: Option<bool>) -> Option<bool> {
-    match answer {
-        Some(on) => Some(on),
-        None if joined || said.is_some() => None,
-        None => Some(false),
-    }
-}
-
-/// What `arugulad join` asks before it joins (Arugula #1194), on a
-/// terminal: the answer sets [`remote_input`].
-pub const REMOTE_INPUT_QUESTION: &str = "\
-  May people type into this machine through Arugula cloud?
-  Yes: whoever reaches it through Arugula cloud may type here as their role
-  allows: you from your other devices, and people you share a session with.
-  No: nobody types here through Arugula cloud, you included. You can still
-  watch from your other devices, and others watch what's shared with them.
-  It doesn't cover this machine's own terminals and page, the tailnet, or a
-  device of yours this machine trusts by its own key (`arugula login
-  --device`, older apps).
-  Unanswered, it's no. Change it later, here: arugulad sharing remote-input
-  on (or off).";
-
-/// The question's prompt line.
-pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing through Arugula cloud? [y/N] ";
-
-/// An answer to [`REMOTE_INPUT_PROMPT`]: yes, or no (or nothing, the
-/// default); `None` for anything else, which asks again.
-pub fn remote_input_answer(line: &str) -> Option<bool> {
-    match line.trim().to_ascii_lowercase().as_str() {
-        "y" | "yes" => Some(true),
-        "" | "n" | "no" => Some(false),
-        _ => None,
-    }
+/// What a finished join, or a move into a team, sets [`remote_input`] to
+/// when nobody said as it joined (Arugula issue
+/// iss_d8ce0c357cf0902c51dec39378ef7a1b): nothing on a machine whose owner
+/// already said; nothing on the account's own machine either, so it stays
+/// on and its owner types from their phone; off on a team's, where
+/// teammates watch until the owner turns it on here. `None`: leave the
+/// file alone.
+pub fn joined_sets(said: Option<bool>, team: bool) -> Option<bool> {
+    (said.is_none() && team).then_some(false)
 }
 
 /// Turns remote input on or off, keeping the rest of the file.
@@ -366,38 +337,17 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
-    /// Joining asks (Arugula #1194): nothing is no; anything but yes or no
-    /// asks again.
+    /// A join nobody answered leaves the account's own machine on and
+    /// turns a team's off; whatever the owner said before stands.
     #[test]
-    fn the_join_question_reads_yes_no_and_nothing() {
-        for (said, means) in [
-            ("", Some(false)),
-            ("\n", Some(false)),
-            ("y", Some(true)),
-            (" Yes \n", Some(true)),
-            ("n", Some(false)),
-            ("NO\n", Some(false)),
-            ("maybe", None),
-            ("yess", None),
-        ] {
-            assert_eq!(remote_input_answer(said), means, "{said:?}");
-        }
-    }
-
-    /// An unanswered join turns remote input off on a machine joining for
-    /// the first time where nobody has said, and leaves every other one
-    /// as it is; an answer always counts.
-    #[test]
-    fn an_unanswered_join_is_off_and_flips_nothing_set_up_before() {
-        for joined in [false, true] {
-            for said in [None, Some(false), Some(true)] {
-                assert_eq!(join_sets(Some(true), joined, said), Some(true));
-                assert_eq!(join_sets(Some(false), joined, said), Some(false));
+    fn an_unanswered_join_is_on_for_the_account_and_off_for_a_team() {
+        assert_eq!(joined_sets(None, false), None, "the account's own: on, as unsaid");
+        assert_eq!(joined_sets(None, true), Some(false), "a team's: off");
+        for team in [false, true] {
+            for said in [false, true] {
+                assert_eq!(joined_sets(Some(said), team), None, "said before: as it was");
             }
         }
-        assert_eq!(join_sets(None, false, None), Some(false));
-        assert_eq!(join_sets(None, true, None), None, "joined before: as it was");
-        assert_eq!(join_sets(None, false, Some(true)), None, "said before: as it was");
         let d = dir("said");
         assert_eq!((remote_input_said(&d), remote_input(&d)), (None, true));
         set_remote_input(&d, false).unwrap();

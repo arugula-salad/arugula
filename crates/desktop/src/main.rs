@@ -466,16 +466,34 @@ fn target(app: &AppHandle) -> WebviewUrl {
 }
 
 fn home(app: &AppHandle) -> tauri::Url {
-    let local = cloud::local();
-    match local.control {
-        Some(c) if !cloud::local_only() => {
-            if cloud::signed_in(app, &c) {
-                format!("{c}/").parse().unwrap()
+    let control = cloud::local().control;
+    let to = home_of(control.as_deref(), |c| cloud::local_only(app, c), |c| cloud::signed_in(app, c));
+    match to {
+        Home::Control(c) => format!("{c}/").parse().unwrap(),
+        Home::SignIn => cloud::app_url(cloud::SIGNIN),
+        Home::Page => page_at("/"),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Home {
+    Control(String),
+    SignIn,
+    Page,
+}
+
+/// `home` without the app: the machine's `control`, whether "Just this
+/// machine" was chosen for it, and whether the window is signed in to it.
+fn home_of(control: Option<&str>, local_only: impl Fn(&str) -> bool, signed_in: impl Fn(&str) -> bool) -> Home {
+    match control {
+        Some(c) if !local_only(c) => {
+            if signed_in(c) {
+                Home::Control(c.to_owned())
             } else {
-                cloud::app_url(cloud::SIGNIN)
+                Home::SignIn
             }
         }
-        _ => page_at("/"),
+        _ => Home::Page,
     }
 }
 
@@ -582,7 +600,7 @@ fn follow_join(app: AppHandle) {
         }
         eprintln!("arugula: this machine's control is now {}", now.as_deref().unwrap_or("none"));
         // A new control: "just this machine" was said of the old one.
-        cloud::set_local_only(false);
+        cloud::set_local_only(&app, None);
         allow_control(&app);
         let home = home(&app);
         // The old control's platform page, still known until the new
@@ -1700,6 +1718,26 @@ mod tests {
         assert!(!pop("https://app.arugula.io/machines?pane=9&popular"));
         assert!(pop("https://app.arugula.io/#pop=9"));
         assert!(!pop("https://control.arugula.io/#pane=da5b.9"));
+    }
+
+    /// "Just this machine" opens the daemon's page, signed in or not; else
+    /// a joined machine opens control's page, or the sign-in.
+    #[test]
+    fn home_follows_just_this_machine() {
+        use super::{Home, home_of};
+        let c = "https://control.arugula.io";
+        let on = |_: &str| true;
+        let off = |_: &str| false;
+        assert_eq!(home_of(None, on, on), Home::Page);
+        assert_eq!(home_of(None, off, off), Home::Page);
+        assert_eq!(home_of(Some(c), off, off), Home::SignIn);
+        assert_eq!(home_of(Some(c), off, on), Home::Control(c.into()));
+        assert_eq!(home_of(Some(c), on, off), Home::Page);
+        assert_eq!(home_of(Some(c), on, on), Home::Page);
+        // Chosen for another control: this one's sign-in.
+        let settings =
+            crate::settings::Settings { local_only: Some("https://old.example".into()), ..Default::default() };
+        assert_eq!(home_of(Some(c), |c| settings.local_only_on(c), off), Home::SignIn);
     }
 
     fn file(p: &str) -> String {

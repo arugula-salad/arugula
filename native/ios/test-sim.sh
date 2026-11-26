@@ -18,6 +18,14 @@
 # ARUGULA_STAFF_LEAD (cos) leads the person's staff room and the board
 # ARUGULA_STAFF_BOARD (Arugula #1279): the test asks the chief of staff, opens
 # the board's thread from its lead on Boards, and peeks at the lead from both.
+# ARUGULA_GRANT_BOARD, the same board, has a grant the person gave: the test
+# revokes it from the lead card. ARUGULA_RUN_BOARD, a board in that project
+# with no lead and no grant: the test presses Run this board on it and writes
+# HANDOFF/run-board (Arugula #1456).
+# ARUGULA_DEPLOY is a deploy waiting on the person (Arugula #604): the test
+# opens it from Needs you and writes the address Approve opens to
+# HANDOFF/approve; something else approves it with the account's passkey and
+# writes HANDOFF/approved.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -38,13 +46,46 @@ print(ios[-1]["identifier"], kinds[-1]["identifier"])
 read -r runtime type <<<"$pick"
 device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
 trap 'xcrun simctl shutdown "$device" 2>/dev/null || true; xcrun simctl delete "$device"' EXIT
+# XCTest's own queries and Accessibility's answers to them log in the app's
+# process, over a hundred thousand lines in a run on an iPad: enough that iOS
+# quarantines the app for logging volume, and XCTest's runtime-issue callback
+# then crashes it (Arugula #1282). Off for this device, as `log config` would
+# set it, before xcodebuild boots it; the test's own record is xcodebuild's log.
+logging="$HOME/Library/Developer/CoreSimulator/Devices/$device/data/Library/Preferences/Logging/Subsystems"
+mkdir -p "$logging"
+for subsystem in com.apple.dt.xctest com.apple.Accessibility; do
+  cat > "$logging/$subsystem.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict><key>DEFAULT-OPTIONS</key><dict><key>Level</key><dict><key>Enable</key><string>off</string><key>Persist</key><string>off</string></dict></dict></dict>
+</plist>
+PLIST
+done
+# A notification the UI test asks for (HANDOFF/push.json: what it says, as
+# the Notification Service Extension leaves it for the app), delivered as
+# APNs would.
+(
+  while kill -0 $$ 2>/dev/null; do
+    if [ -f "$handoff/push.json" ]; then
+      python3 -c 'import json, sys
+said = open(sys.argv[1]).read()
+s = json.loads(said)
+print(json.dumps({"aps": {"alert": {"title": s["title"], "body": s["body"]}, "sound": "default"}, "said": said}))' \
+        "$handoff/push.json" > "$handoff/push.apns" && rm -f "$handoff/push.json"
+      xcrun simctl push "$device" io.arugula.ios "$handoff/push.apns" >/dev/null
+    fi
+    sleep 1
+  done
+) &
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
   TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
   TEST_RUNNER_ARUGULA_CARD_AGENT="${ARUGULA_CARD_AGENT:-}" \
   TEST_RUNNER_ARUGULA_DOC="${ARUGULA_DOC:-}" TEST_RUNNER_ARUGULA_DOC_ROOM="${ARUGULA_DOC_ROOM:-}" \
   TEST_RUNNER_ARUGULA_DOC_PARA="${ARUGULA_DOC_PARA:-}" TEST_RUNNER_ARUGULA_DOC_PROTO="${ARUGULA_DOC_PROTO:-}" \
   TEST_RUNNER_ARUGULA_STAFF_PROJECT="${ARUGULA_STAFF_PROJECT:-}" TEST_RUNNER_ARUGULA_STAFF_BOARD="${ARUGULA_STAFF_BOARD:-}" \
-  TEST_RUNNER_ARUGULA_STAFF_LEAD="${ARUGULA_STAFF_LEAD:-}" \
+  TEST_RUNNER_ARUGULA_STAFF_LEAD="${ARUGULA_STAFF_LEAD:-}" TEST_RUNNER_ARUGULA_DEPLOY="${ARUGULA_DEPLOY:-}" \
+  TEST_RUNNER_ARUGULA_GRANT_BOARD="${ARUGULA_GRANT_BOARD:-}" TEST_RUNNER_ARUGULA_RUN_BOARD="${ARUGULA_RUN_BOARD:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \

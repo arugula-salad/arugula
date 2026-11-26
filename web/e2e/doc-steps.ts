@@ -550,3 +550,46 @@ async function loadOn(page: Page, term: PaneId) {
   await page.waitForFunction((t) => !!window.__arugula.client.info(t), term);
   await page.evaluate((t) => window.__arugula.client.setActive(t), term);
 }
+
+/** Arugula #1451: two ```prototype sections of one Doc that link to each
+ * other by file name. A click on a link, and (where the engine has the
+ * Navigation API) `location.assign`, swap the first frame to the other
+ * section's page in place; a link to anything else is still leaving. `page`
+ * has `term` in front. */
+export async function protoNavigates(page: Page, post: Post, term: PaneId) {
+  const doc = await newDoc(post, term, "Two screens");
+  await fill(
+    post,
+    doc,
+    "s1",
+    "```prototype height=200 Home screen\n<p id=at>home</p><a id=go href=\"next-screen.html\">next</a> <button id=jump onclick=\"location.assign('next-screen.html')\">jump</button> <a id=out href=\"https://example.com/x\">out</a>\n```",
+  );
+  await fill(post, doc, "s2", "```prototype height=200 Next screen\n<p id=at>next</p><a id=back href=\"/path/Home%20screen.html?x=1#y\">back</a>\n```");
+  await bring(page, doc);
+  const frames = page.locator(`[data-doc-block="${doc}"] [data-prototype-frame]`);
+  await expect(frames).toHaveCount(2, { timeout: 15_000 });
+  const first = page.frameLocator(`[data-doc-block="${doc}"] [data-prototype-frame] >> nth=0`);
+  await expect(first.locator("#at")).toHaveText("home", { timeout: 15_000 });
+  await first.locator("#go").click();
+  await expect(first.locator("#at")).toHaveText("next", { timeout: 15_000 });
+  await page.waitForTimeout(1500);
+  await expect(page.locator("[data-prototype-left]"), "after the click").toHaveCount(0);
+  await expect(frames.first()).toHaveAttribute("title", "Next screen");
+  await first.locator("#back").click();
+  await expect(first.locator("#at")).toHaveText("home", { timeout: 15_000 });
+  if (await page.evaluate(() => "navigation" in window)) {
+    await first.locator("#jump").click();
+    await expect(first.locator("#at")).toHaveText("next", { timeout: 15_000 });
+    await page.waitForTimeout(1500);
+    await expect(page.locator("[data-prototype-left]"), "after location.assign").toHaveCount(0);
+    await first.locator("#back").click();
+    await expect(first.locator("#at")).toHaveText("home", { timeout: 15_000 });
+  }
+  // Nothing was cancelled, and the second prototype is where it was.
+  await expect(page.locator("[data-prototype-left]")).toHaveCount(0);
+  await expect(page.frameLocator(`[data-doc-block="${doc}"] [data-prototype-frame] >> nth=1`).locator("#at")).toHaveText("next");
+  // A link to anything else is left as it was: the prototype is stopped.
+  await first.locator("#out").click();
+  await expect(page.locator("[data-prototype-left]")).toHaveText(/This prototype tried to leave the page\. Reload it\./, { timeout: 15_000 });
+  return doc;
+}

@@ -18,8 +18,10 @@ the binary, not the daemon:
   tokens at API list prices (`arugula-prices`, #398), and `signals.rs` what
   Claude Code's arugula-live mod says from inside each session, kept by its
   id, and the pane it shows on (#453);
-- `src/ops.rs`: listing and opening them (`ConversationsList`,
-  `ConversationOpen`) as `Handle<AgentBlock>`, routed with `op_of`, and
+- `src/ops.rs`: listing them, continuing one in a terminal pane running
+  `claude --resume` (`ConversationContinue`, Continue here) and opening one
+  as an agent block (`ConversationsList`, `ConversationOpen`) as
+  `Handle<AgentBlock>`, routed with `op_of`, and
   MCP's `list` kind `conversations` and `show` kind `conversation`; the
   mod's signals (`ConversationSessionSignal`, and `PaneSessionSignal` for
   an older CLI).

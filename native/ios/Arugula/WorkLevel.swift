@@ -238,7 +238,7 @@ struct WorkLevel: View {
                 let line = model.boards.first { $0.id == b.id } ?? b
                 if let lead = line.lead {
                     Button("Ask the lead to start one") {
-                        openAgent(LeadLine(lead, fleet: fleet).key, talkTo: talkTo, project: project.id)
+                        openAgent(LeadLine(lead, fleet: fleet, in: project.shown).key, talkTo: talkTo, project: project.id)
                     }
                     .buttonStyle(AnswerButton(primary: true))
                     .accessibilityIdentifier("work-ask-lead")
@@ -254,7 +254,7 @@ struct WorkLevel: View {
     /// A lead's name, from its key, when its machine isn't here.
     private var leadName: String? {
         guard let key = session, key.hasPrefix("lead:") else { return nil }
-        return key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init)
+        return key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).dropFirst().first.map { sessionLabel(String($0), in: project.shown) }
     }
 
     /// Why a session on no card isn't here: a lead's machine, by name.
@@ -331,7 +331,7 @@ struct WorkPane: View {
         case .hosted:
             break
         }
-        bits.append(standing == .idle ? "quiet" : standing.word)
+        bits.append(standing == .idle ? "quiet" : standing.word(asks: slot.peeked.owner))
         return bits.joined(separator: " · ")
     }
 }

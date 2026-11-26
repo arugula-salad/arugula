@@ -83,8 +83,6 @@ fn place(host: &Value) -> Option<String> {
 }
 
 static LOCAL: Mutex<Option<Local>> = Mutex::new(None);
-/// "Just this machine" for the rest of this run.
-static LOCAL_ONLY: Mutex<bool> = Mutex::new(false);
 
 pub fn local() -> Local {
     let read = || -> Option<Local> {
@@ -200,12 +198,19 @@ fn name_for(machine: &str, appimage: bool) -> String {
     if machine.is_empty() { app.into() } else { format!("{app} on {machine}") }
 }
 
-pub fn set_local_only(on: bool) {
-    *LOCAL_ONLY.lock().unwrap() = on;
+/// Remember "Just this machine" for `control` in the app's settings
+/// (`settings.rs`), or forget it (`None`).
+pub fn set_local_only(app: &AppHandle, control: Option<&str>) {
+    let mut s = crate::settings::load(app);
+    if s.local_only.as_deref() == control {
+        return;
+    }
+    s.local_only = control.map(str::to_owned);
+    crate::settings::save(app, &s);
 }
 
-pub fn local_only() -> bool {
-    *LOCAL_ONLY.lock().unwrap()
+pub fn local_only(app: &AppHandle, control: &str) -> bool {
+    crate::settings::load(app).local_only_on(control)
 }
 
 /// Beside the window's profile when it has one of its own (`profile.rs`):
@@ -602,6 +607,7 @@ pub async fn cloud_signin(app: AppHandle, window: tauri::WebviewWindow, keys: Op
         };
         let redeem: tauri::Url = redeem.parse().unwrap();
         set_signed_in(&app, &control, true);
+        set_local_only(&app, None);
         let a = app.clone();
         let _ = app.run_on_main_thread(move || {
             if let Some(w) = a.get_webview_window(&label) {
@@ -668,10 +674,11 @@ fn await_grant(listener: &std::net::TcpListener, id: &str, control: &str) -> Opt
     None
 }
 
-/// "Just this machine": the local page, for the rest of this run.
+/// "Just this machine": the local page, at this launch and the next ones,
+/// until the person signs in.
 #[tauri::command]
-pub fn cloud_local(window: tauri::WebviewWindow) -> Result<(), String> {
-    set_local_only(true);
+pub fn cloud_local(app: AppHandle, window: tauri::WebviewWindow) -> Result<(), String> {
+    set_local_only(&app, control().as_deref());
     window.navigate(crate::page_at("/")).map_err(|e| e.to_string())
 }
 

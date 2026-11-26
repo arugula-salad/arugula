@@ -1,6 +1,9 @@
 // The one activity: sign-in, or the app's tabs once signed in. It's
 // singleTask, so the browser's Allow (`arugula://signin?ticket=…&grant=…`)
 // comes back here, and the model the process keeps swaps it for a session.
+// A link into the app (`arugula://inbox`, `arugula://inbox/<item>`,
+// `arugula://overview` and the other places, Arugula #1365) waits on the
+// model for the shell to follow.
 
 package io.arugula.app
 
@@ -60,10 +63,15 @@ class MainActivity : ComponentActivity() {
         callback(intent)
     }
 
-    /** The browser's Allow, sent to `arugula://signin`. */
+    /** The browser's Allow, sent to `arugula://signin`; any other `arugula://` link, to the shell. */
     private fun callback(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme != "arugula" || data.host != "signin") return
+        if (data.scheme != "arugula") return
+        if (data.host != "signin") {
+            intent.data = null
+            model.link = data.toString()
+            return
+        }
         intent.data = null
         lifecycleScope.launch {
             SignInState.busy = true

@@ -57,9 +57,16 @@ pub const MOVE_OWNER_ONLY: &str = "only the owner and their own agents can move 
 /// How much of a Doc its list's preview shows.
 const PREVIEW_PARAGRAPHS: usize = 4;
 
-/// The blocks that show a Doc, by the Doc's id.
+/// The blocks that show a Doc, by the Doc's id: the last, if a Doc has
+/// more than one (an agent that can't drive the first is given another,
+/// Arugula #1446).
 pub(crate) async fn open_blocks(app: &App) -> HashMap<String, PaneId> {
-    let mut out = HashMap::new();
+    open_blocks_all(app).await.into_iter().filter_map(|(doc, b)| Some((doc, *b.last()?))).collect()
+}
+
+/// Every block that shows a Doc, by the Doc's id, in pane order.
+pub(crate) async fn open_blocks_all(app: &App) -> HashMap<String, Vec<PaneId>> {
+    let mut out: HashMap<String, Vec<PaneId>> = HashMap::new();
     for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
         if p.info.kind != BlockType::Doc {
             continue;
@@ -67,7 +74,7 @@ pub(crate) async fn open_blocks(app: &App) -> HashMap<String, PaneId> {
         if let Some(b) = app.mux.api(|r| Api::Block(p.info.id, r)).await.flatten()
             && let Some(doc) = b.config()["doc"].as_str()
         {
-            out.insert(doc.to_owned(), p.info.id);
+            out.entry(doc.to_owned()).or_default().push(p.info.id);
         }
     }
     out
@@ -170,9 +177,12 @@ impl McpOp<Docs> for DocsList {
 
 /// Open a Doc in a block, or find the block that has it: the block, and
 /// whether it was made now. `who` is the person who asks, over HTTP.
+/// `fit` is the blocks the asker may use, best first: a Doc whose blocks
+/// aren't among them gets another (Arugula #1446); `None` takes any.
 pub(crate) async fn open_doc(
     app: &App,
     who: Option<crate::acl::Principal>,
+    fit: Option<&[PaneId]>,
     req: DocOpenRequest,
 ) -> Result<(PaneId, bool), OpError> {
     // One at a time, so two opens of one Doc can't both find none.
@@ -197,8 +207,8 @@ pub(crate) async fn open_doc(
         ),
         None => (meta.id.clone(), serde_json::json!({ "doc": meta.id, "title": meta.title })),
     };
-    if let Some(block) = open_blocks(app).await.get(&doc) {
-        return Ok((*block, false));
+    if let Some(block) = reusable(open_blocks_all(app).await.get(&doc), fit) {
+        return Ok((block, false));
     }
     let open = OpenRequest {
         kind: BlockType::Doc,
@@ -220,13 +230,23 @@ pub(crate) async fn open_doc(
     }
 }
 
+/// The block of `blocks` the asker may use: the first of `fit` that
+/// shows the Doc, or any if `fit` is `None`.
+pub(crate) fn reusable(blocks: Option<&Vec<PaneId>>, fit: Option<&[PaneId]>) -> Option<PaneId> {
+    let blocks = blocks?;
+    match fit {
+        None => blocks.last().copied(),
+        Some(fit) => fit.iter().copied().find(|b| blocks.contains(b)),
+    }
+}
+
 impl Handle<Docs> for DocOpen {
     async fn handle(cx: &Cx<'_>, _: (), req: DocOpenRequest) -> Result<DocOpened, OpError> {
         let who = match &cx.via {
             Via::Http { who, .. } => Some(who.clone()),
             Via::Mcp(_) => None,
         };
-        Ok(DocOpened { pane: open_doc(cx.app, who, req).await?.0 })
+        Ok(DocOpened { pane: open_doc(cx.app, who, None, req).await?.0 })
     }
 }
 
@@ -297,7 +317,9 @@ impl Handle<Docs> for DocDelete {
             }
         }
         // The block first, so nothing writes into the folder as it goes.
-        if let Some(b) = block {
+        // Every block that shows it: a Doc may have one an agent can't drive
+        // beside the one it can.
+        for b in open_blocks_all(cx.app).await.remove(&meta.id).unwrap_or_default() {
             cx.app.mux.api(|r| Api::Close(b, r)).await;
         }
         let id = meta.id;

@@ -35,7 +35,7 @@ import { NO_BOARD, boardGroup, onIssueChip } from "../../shared/boards/text";
 import { boardFocus, rowChip } from "./board-focus";
 import { useBoardView } from "./board-live";
 import { closeSwarmBoard, openSwarmBoard } from "./route";
-import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, legendKinds, REASON_COL, reasonOf, type GroupBy } from "./model";
 import { ObjectChip } from "../../shared/ui/state-chip";
 
 const BY_KEY = "arugula.swarm.by";
@@ -626,10 +626,10 @@ export function SwarmView({
       <div class="swarm-foot">
         <div>
           <div class="swarm-legend">
-            {Object.entries(KINDS).map(([k, c]) => (
+            {legendKinds((f) => fleet.flag(f)).map((k) => (
               <span key={k}>
-                <i style={{ background: `rgb(${c})` }} />
-                {KIND_LABEL[k as keyof typeof KINDS]}
+                <i style={{ background: `rgb(${KINDS[k]})` }} />
+                {KIND_LABEL[k]}
               </span>
             ))}
           </div>

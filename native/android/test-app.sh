@@ -6,12 +6,16 @@
 #
 # It signs in, goes through the tabs (Home answers the board's question in
 # its row, Boards opens the board, the project's menu its issues), posts in
-# ROOM from Chat, types into a new terminal on MACHINE, and signs out.
+# ROOM from Chat, types into a new terminal on MACHINE, lists Docs and opens
+# one if the project has any, and signs out.
 # Something else allows the sign-in: the ticket is written to HANDOFF/ticket,
 # and the address the Allow was sent to is read from HANDOFF/callback. The
 # cloud repository's testnet `native-android` claim drives it. ARUGULA_BOARD
 # names a board home should show, and ARUGULA_ASK its row's question to the
-# person signing in. Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
+# person signing in. ARUGULA_TEAM names a team's project with
+# ARUGULA_GRANT_BOARD, a board with a grant the person gave, whose Revoke the
+# test presses, and ARUGULA_RUN_BOARD, one with no lead and no grant, whose
+# Run this board it presses (Arugula #1456). Screenshots land in HANDOFF. A URL on 127.0.0.1 is the
 # host's: its port is reversed onto the device.
 #
 # It uses the device adb already has (ANDROID_SERIAL), else boots the AVD
@@ -59,7 +63,7 @@ args=(-e control "$url" -e machine "$machine" -e room "$room")
 # adb shell joins its arguments into one command line: an empty one would
 # vanish, and a question's words would split, so each is quoted for the
 # device's shell, and left out when empty.
-for kv in "board=${ARUGULA_BOARD:-}" "ask=${ARUGULA_ASK:-}"; do
+for kv in "board=${ARUGULA_BOARD:-}" "ask=${ARUGULA_ASK:-}" "team=${ARUGULA_TEAM:-}" "grant_board=${ARUGULA_GRANT_BOARD:-}" "run_board=${ARUGULA_RUN_BOARD:-}"; do
   [ -z "${kv#*=}" ] || args+=(-e "${kv%%=*}" "'${kv#*=}'")
 done
 

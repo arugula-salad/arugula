@@ -13,11 +13,14 @@
 //! - **The desktop app** also keeps `claude-code-sessions/<account>/<org>/
 //!   local_<uuid>.json` per session: its title and whether it's archived.
 //!
-//! [`convert`] turns a transcript into an agent block's entries.
+//! [`convert`] turns a transcript into an agent block's entries. Codex's
+//! sessions are listed beside them ([`codex`]).
 
 pub mod branch;
+pub mod codex;
 pub mod context;
 pub mod convert;
+pub mod moving;
 pub mod signals;
 pub mod spend;
 
@@ -47,7 +50,9 @@ pub enum Source {
     /// VS Code's Claude Code extension (#453), and the editors on it.
     #[serde(rename = "vscode")]
     VsCode,
-    /// Anything else: `claude -p`, SDK clients, agent blocks.
+    /// Codex, in a terminal or an editor ([`codex`]).
+    Codex,
+    /// Anything else: `claude -p`, SDK clients, agent blocks, `codex exec`.
     Other,
 }
 
@@ -79,6 +84,11 @@ pub struct Live {
     pub block: Option<PaneId>,
     /// Where, for people ([`Live::place`]).
     pub place: String,
+    /// The terminal app it runs in, when it runs in none of ours and its
+    /// ancestors say (`iTerm`, `Terminal`; [`moving::terminal_of`]): what
+    /// Move here's question names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<String>,
     /// The directory it runs in (#146: where to resume it).
     #[serde(skip)]
     pub cwd: Option<String>,
@@ -111,6 +121,8 @@ impl Live {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Conversation {
     pub id: String,
+    /// Whose it is: `claude`, or `codex` ([`codex`]).
+    pub agent: &'static str,
     pub path: PathBuf,
     pub cwd: String,
     /// The folder is still there.
@@ -177,6 +189,8 @@ pub struct Dirs {
     /// The desktop app's (`~/.config/Claude`, or `~/Library/Application
     /// Support/Claude`).
     pub desktop: PathBuf,
+    /// Codex's: `~/.codex` (or `$CODEX_HOME`), only ever read.
+    pub codex: PathBuf,
 }
 
 impl Dirs {
@@ -196,7 +210,7 @@ impl Dirs {
                 .unwrap_or_else(|| home.join(".config"))
                 .join("Claude")
         };
-        Self { claude, desktop }
+        Self { claude, desktop, codex: codex::home() }
     }
 }
 
@@ -237,13 +251,15 @@ pub struct Index {
     dirs: Dirs,
     /// By transcript path: its size and mtime when read, and what it said.
     cache: HashMap<PathBuf, (u64, u64, Head)>,
+    /// The same for Codex's rollouts.
+    codex: HashMap<PathBuf, (u64, u64, codex::Rollout)>,
     /// As last told ([`Index::set_ours`]).
     ours: Ours,
 }
 
 impl Index {
     pub fn new(dirs: Dirs) -> Self {
-        Self { dirs, cache: HashMap::new(), ours: Ours::default() }
+        Self { dirs, cache: HashMap::new(), codex: HashMap::new(), ours: Ours::default() }
     }
 
     /// Our panes' and agent blocks' processes now. A listing passes them;
@@ -305,6 +321,7 @@ impl Index {
                 .unwrap_or_else(|| h.id.clone());
             out.push(Conversation {
                 id: h.id.clone(),
+                agent: "claude",
                 path: path.clone(),
                 cwd_exists: !cwd.is_empty() && Path::new(&cwd).is_dir(),
                 cwd,
@@ -327,6 +344,7 @@ impl Index {
                 context: None,
             });
         }
+        out.extend(codex::scan(&self.dirs.codex, &mut self.codex, &self.ours));
         out.sort_by(|a, b| b.updated_ms.cmp(&a.updated_ms).then_with(|| a.id.cmp(&b.id)));
         out
     }
@@ -340,7 +358,7 @@ impl Index {
         let hits: Vec<&Conversation> = all.iter().filter(|c| !id.is_empty() && c.id.starts_with(id)).collect();
         match hits.as_slice() {
             [c] => Ok((*c).clone()),
-            [] => Err(format!("no Claude Code conversation {id}")),
+            [] => Err(format!("no Claude Code or Codex conversation {id}")),
             _ => Err(format!("{id} could be {} conversations; give more of the id", hits.len())),
         }
     }
@@ -371,7 +389,7 @@ pub struct ClaudeConversations;
 impl crate::mux::Conversations for ClaudeConversations {
     fn transcript(&self, id: &str) -> Option<PathBuf> {
         let mut ix = Index::new(Dirs::from_env());
-        ix.find(id).ok().map(|c| c.path)
+        ix.find(id).ok().filter(|c| c.agent == "claude").map(|c| c.path)
     }
 
     fn live(&self, panes: HashMap<u32, PaneId>) -> HashMap<PaneId, (String, Option<String>)> {
@@ -448,11 +466,19 @@ fn is_under(pid: u32, ancestor: u32) -> bool {
     false
 }
 
-/// Is a conversation on the default list (`all`: everything)? Terminal,
-/// desktop and VS Code ones (#453), unarchived, whose folder is still
-/// there; a desktop one whose scratch workspace went with it stays.
+/// Is a conversation on the default list (`all`: everything)? Every one a
+/// person had, whatever it came from (Arugula #1396: one from an
+/// entrypoint we don't name is someone's too), unarchived, whose folder is
+/// still there; a desktop one whose scratch workspace went with it stays.
+/// Not a program's runs: `claude -p` and SDK clients, `codex exec`.
 pub fn shown(c: &Conversation, all: bool) -> bool {
-    all || (c.source != Source::Other && !c.archived && (c.cwd_exists || c.source == Source::Desktop))
+    all || (!run(c) && !c.archived && (c.cwd_exists || c.source == Source::Desktop))
+}
+
+/// Did a program start it, not a person: `claude -p` or an SDK client
+/// (`sdk-cli`, `sdk-ts`: agent blocks too), or `codex exec`?
+fn run(c: &Conversation) -> bool {
+    c.entrypoint.starts_with("sdk") || (c.agent == "codex" && c.source == Source::Other)
 }
 
 fn short(s: &str, max: usize) -> String {
@@ -468,16 +494,25 @@ fn short(s: &str, max: usize) -> String {
 
 /// Read a transcript's two ends.
 fn read_head(path: &Path) -> Option<Head> {
+    let mut h = Head { id: path.file_stem()?.to_string_lossy().into_owned(), ..Default::default() };
+    for v in edges(path, EDGE, EDGE)? {
+        h.take(&v);
+    }
+    Some(h)
+}
+
+/// The whole JSON lines in the first `head` bytes of a file and its last
+/// `tail`, in order.
+fn edges(path: &Path, head: u64, tail: u64) -> Option<Vec<Value>> {
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
     let mut start = vec![];
-    f.by_ref().take(EDGE).read_to_end(&mut start).ok()?;
+    f.by_ref().take(head).read_to_end(&mut start).ok()?;
     let mut end = vec![];
-    if len > EDGE {
-        f.seek(SeekFrom::Start(len.saturating_sub(EDGE).max(EDGE))).ok()?;
+    if len > head {
+        f.seek(SeekFrom::Start(len.saturating_sub(tail).max(head))).ok()?;
         f.read_to_end(&mut end).ok()?;
     }
-    let mut h = Head { id: path.file_stem()?.to_string_lossy().into_owned(), ..Default::default() };
     // Whole lines only: the first chunk's last line and the second's first
     // may be cut.
     let whole = |b: &[u8], cut_front: bool, cut_back: bool| -> Vec<Value> {
@@ -490,12 +525,11 @@ fn read_head(path: &Path) -> Option<Head> {
         }
         lines.into_iter().filter_map(|l| serde_json::from_slice(l).ok()).collect()
     };
-    let first = whole(&start, false, len > EDGE);
-    let last = if end.is_empty() { vec![] } else { whole(&end, true, false) };
-    for v in first.iter().chain(last.iter()) {
-        h.take(v);
+    let mut out = whole(&start, false, len > head);
+    if !end.is_empty() {
+        out.extend(whole(&end, true, false));
     }
-    Some(h)
+    Some(out)
 }
 
 impl Head {
@@ -586,9 +620,13 @@ fn live(dir: &Path, ours: &Ours) -> HashMap<String, Live> {
             pane,
             block,
             place: String::new(),
+            terminal: None,
             cwd: v["cwd"].as_str().map(str::to_owned),
             started: v["startedAt"].as_u64().unwrap_or(0),
         };
+        if l.pane.is_none() && l.block.is_none() && l.entrypoint == "cli" {
+            l.terminal = moving::terminal_of(pid).map(str::to_owned);
+        }
         l.place = l.place();
         out.insert(session.to_owned(), l);
     }
@@ -718,6 +756,7 @@ mod tests {
             pane: Some(76),
             block: None,
             place: String::new(),
+            terminal: None,
             cwd: None,
             started: 0,
         };
@@ -755,7 +794,8 @@ mod tests {
         .unwrap();
         // A session with no prompt isn't a conversation.
         std::fs::write(proj.join("empty.jsonl"), "{\"type\":\"queue-operation\"}\n").unwrap();
-        let mut ix = Index::new(Dirs { claude: claude.clone(), desktop: root.join("desktop") });
+        let mut ix =
+            Index::new(Dirs { claude: claude.clone(), desktop: root.join("desktop"), codex: root.join("codex") });
         let all = ix.scan();
         assert_eq!(all.len(), 2, "{all:#?}");
         let orig = all.iter().find(|c| c.id.starts_with("a683")).unwrap();
@@ -808,7 +848,8 @@ mod tests {
         text.push_str(&json!({"type":"ai-title","aiTitle":"Late title"}).to_string());
         text.push('\n');
         std::fs::write(proj.join("s1.jsonl"), &text).unwrap();
-        let mut ix = Index::new(Dirs { claude: root.join("claude"), desktop: root.join("d") });
+        let mut ix =
+            Index::new(Dirs { claude: root.join("claude"), desktop: root.join("d"), codex: root.join("codex") });
         let c = &ix.scan()[0];
         assert_eq!((c.title.as_str(), c.first_prompt.as_deref()), ("Late title", Some("first thing")));
         assert_eq!(c.source, Source::Desktop);
@@ -828,11 +869,12 @@ mod tests {
         let proj = root.join("claude/projects/-work");
         std::fs::create_dir_all(&work).unwrap();
         std::fs::create_dir_all(&proj).unwrap();
-        for (id, entry) in [("v1", "claude-vscode"), ("p1", "sdk-cli")] {
+        for (id, entry) in [("v1", "claude-vscode"), ("p1", "sdk-cli"), ("u1", ""), ("j1", "claude-jetbrains")] {
             let line = json!({"type":"user","cwd":work,"entrypoint":entry,"timestamp":"2026-11-01T00:00:00Z","message":{"role":"user","content":"hello"}});
             std::fs::write(proj.join(format!("{id}.jsonl")), format!("{line}\n")).unwrap();
         }
-        let mut ix = Index::new(Dirs { claude: root.join("claude"), desktop: root.join("d") });
+        let mut ix =
+            Index::new(Dirs { claude: root.join("claude"), desktop: root.join("d"), codex: root.join("codex") });
         let all = ix.scan();
         let v = all.iter().find(|c| c.id == "v1").unwrap();
         assert_eq!(v.source, Source::VsCode);
@@ -841,6 +883,13 @@ mod tests {
         let p = all.iter().find(|c| c.id == "p1").unwrap();
         assert_eq!(p.source, Source::Other);
         assert!(!shown(p, false) && shown(p, true));
+        // Arugula #1396: one from an entrypoint we don't name, or none, is a
+        // person's: on the default list, as Other.
+        for id in ["u1", "j1"] {
+            let o = all.iter().find(|c| c.id == id).unwrap();
+            assert_eq!(o.source, Source::Other);
+            assert!(shown(o, false), "{id}");
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -1046,6 +1095,7 @@ mod tests {
             pane,
             block: None,
             place: String::new(),
+            terminal: None,
             cwd: None,
             started,
         }

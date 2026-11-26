@@ -14,8 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_control_wire::machine_token::{
-    BLOCK_USE, BlockClaims, CLOCK_SKEW_SECS, Jwk, Jwks, MAX_LIFETIME_SECS, MachineClaims, USE,
+use arugula_control_wire::{
+    ladder::{START_USE, StartClaims},
+    machine_token::{BLOCK_USE, BlockClaims, CLOCK_SKEW_SECS, Jwk, Jwks, MAX_LIFETIME_SECS, MachineClaims, USE},
 };
 use base64::Engine as _;
 use serde::Deserialize;
@@ -37,6 +38,8 @@ pub enum Refused {
     NotMachine,
     /// Not a block grant (a machine token, say) where one was wanted.
     NotBlock,
+    /// Not a start ticket (aru-143) where one was wanted.
+    NotStart,
     Expired,
     Lifetime,
     Replayed,
@@ -57,6 +60,7 @@ impl std::fmt::Display for Refused {
             Refused::Audience => "issued for another machine",
             Refused::NotMachine => "not a machine token",
             Refused::NotBlock => "not a block grant",
+            Refused::NotStart => "not a start ticket",
             Refused::Expired => "expired: ask control for a new one",
             Refused::Lifetime => "outside the lifetime control gives",
             Refused::Replayed => "already used",
@@ -196,6 +200,25 @@ pub fn verify_block(
     Ok(c)
 }
 
+/// Checks a start ticket (aru-143) as [`verify`] checks a machine token, but
+/// for `use: "start"`. Whether it starts what it's sent with is the ladder's
+/// to say (`ladder.rs`); [`Verifier::take_start`] takes it once.
+pub fn verify_start(
+    token: &str,
+    jwks: &Jwks,
+    iss_ok: impl Fn(&str) -> bool,
+    aud: &str,
+    now: u64,
+) -> Result<StartClaims, Refused> {
+    let v = signed(token, jwks, START_USE, Refused::NotStart)?;
+    let c: StartClaims = serde_json::from_value(v).map_err(|_| Refused::Malformed)?;
+    Common { iss: &c.iss, aud: &c.aud, sub: &c.sub, iat: c.iat, exp: c.exp, jti: &c.jti }.check(iss_ok, aud, now)?;
+    if c.from.is_empty() || c.board.is_empty() {
+        return Err(Refused::Malformed);
+    }
+    Ok(c)
+}
+
 /// The hub's keys as last fetched, and the tokens already taken.
 pub struct Verifier {
     keys: Mutex<Option<(Jwks, Instant)>>,
@@ -251,15 +274,25 @@ impl Verifier {
     /// restart through again. `iat` is whole seconds, so a token issued in
     /// the second this daemon started is taken.
     pub fn take(&self, claims: &MachineClaims, now: u64) -> Result<(), Refused> {
-        if claims.iat < self.started {
+        self.take_once(claims.iat, &claims.jti, claims.exp, now)
+    }
+
+    /// [`take`](Self::take), for a start ticket (aru-143). Its `jti` is the
+    /// hub's, unique among every token it signs, so one set holds both.
+    pub fn take_start(&self, claims: &StartClaims, now: u64) -> Result<(), Refused> {
+        self.take_once(claims.iat, &claims.jti, claims.exp, now)
+    }
+
+    fn take_once(&self, iat: u64, jti: &str, exp: u64, now: u64) -> Result<(), Refused> {
+        if iat < self.started {
             return Err(Refused::BeforeStart);
         }
         let mut seen = self.seen.lock().unwrap();
         seen.retain(|_, exp| *exp > now);
-        if seen.contains_key(&claims.jti) {
+        if seen.contains_key(jti) {
             return Err(Refused::Replayed);
         }
-        seen.insert(claims.jti.clone(), claims.exp);
+        seen.insert(jti.to_owned(), exp);
         Ok(())
     }
 

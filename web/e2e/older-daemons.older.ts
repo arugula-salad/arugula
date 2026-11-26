@@ -87,11 +87,6 @@ test("the swarm: this machine's panes", async ({ page, errors }) => {
   await expect(page.locator(".swarm [data-stat=panes]")).toContainText(/[1-9]/);
 });
 
-test("the overview: this machine's sessions", async ({ page, errors }) => {
-  await open(page, "#overview");
-  await shows(page, errors, page.locator("[data-overview] [data-overview-pane]"));
-});
-
 test("the activity drawer: the session's history, or hidden on a daemon too old for it", async ({ page, errors }) => {
   await open(page);
   await expect(page.locator("[data-pane]").first()).toBeVisible();

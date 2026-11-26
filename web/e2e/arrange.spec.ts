@@ -243,7 +243,7 @@ test("+ Pane opens a web page, and hands a pull request, an issue or a conversat
   for (const [kind, dialog] of [
     ["pr", "Open a pull request"],
     ["issue", "Open an issue"],
-    ["conversation", "Claude Code conversations"],
+    ["conversation", "Your work"],
   ] as const) {
     await paneEl(page, first).click({ position: { x: 40, y: 40 } });
     await openDrawer();

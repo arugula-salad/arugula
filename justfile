@@ -782,7 +782,8 @@ screenshots:
     [ -d "$site/apps/site/public/img" ] || { echo "$site isn't a checkout of arugula-salad/site: set SITE_DIR" >&2; exit 1; }
     img="$(cd "$site/apps/site/public/img" && pwd)"
     (cd web && pnpm run build)
-    {{cargo}} build -p arugulad -p arugula
+    # As the specs' daemons: ../target/debug, a link to CARGO_TARGET_DIR's.
+    {{just_executable()}} e2e-build
     (cd web && SHOTS_OUT="$img" pnpm exec playwright test -c screenshots.config.ts)
     scripts/webp "$img"
 
@@ -858,6 +859,7 @@ test-scripts:
     scripts/tests/pr-crates.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
+    scripts/tests/flaky-quarantine.sh
     scripts/tests/ci-velocity.sh
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh

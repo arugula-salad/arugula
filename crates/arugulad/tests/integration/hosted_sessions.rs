@@ -1350,12 +1350,23 @@ fn a_finish_step_runs_after_each_turn() {
         std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
         std::fs::write(home.join(f), "kept\n").unwrap();
     }
+    // Its build dirs, in either shape (the env's, and the one AGENTS.md
+    // names), which go with the session though the cache around them stays
+    // (#1410).
+    let builds = [".cache/arugula/cargo-target/debug/x", &format!(".cache/arugula-{}-target/debug/x", &x[..12])];
+    for f in builds {
+        std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
+        std::fs::write(home.join(f), "big\n").unwrap();
+    }
     // And what its push left: the daemon's own repo for it.
     let pushed = state.join("work").join("sessions").join(format!("{x}.push"));
     assert!(pushed.join("repo.git").exists(), "{pushed:?}");
     f.stop(&x);
     let checkout = home.join("work").join(&x);
-    wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
+    // The build dirs go beside the rest of the slot's cleaning, not before it.
+    wait(&marks, &f, "x's slot cleaned", || {
+        !checkout.exists() && !claude.exists() && !pushed.exists() && builds.iter().all(|f| !home.join(f).exists())
+    });
     for f in planted.iter().chain(&[".config/locked"]) {
         assert!(!home.join(f).exists(), "{f} went with the session");
     }
@@ -1367,6 +1378,9 @@ fn a_finish_step_runs_after_each_turn() {
     }
     for f in [".cache/sccache/a", ".cargo/registry/index/b"] {
         assert!(home.join(f).exists(), "{f}: a build cache stays for the slot's next session of the same asker");
+    }
+    for f in builds {
+        assert!(!home.join(f).exists(), "{f}: a session's build dir goes with it");
     }
     assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
 }

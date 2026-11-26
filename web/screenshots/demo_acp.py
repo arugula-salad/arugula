@@ -38,7 +38,7 @@ def request(method, params):
 
 
 TESTS = (
-    "\x1b[1m\x1b[32m   Compiling\x1b[0m auth v0.4.2 (/home/demo/src/auth)\r\n"
+    "\x1b[1m\x1b[32m   Compiling\x1b[0m game-night v0.4.2 (/home/priya/src/game-night)\r\n"
     "\x1b[1m\x1b[32m    Finished\x1b[0m `test` profile [unoptimized + debuginfo] target(s) in 2.31s\r\n"
     "\x1b[1m\x1b[32m     Running\x1b[0m unittests src/lib.rs\r\n\r\n"
     "running 6 tests\r\n"
@@ -89,12 +89,12 @@ def prompt(mid, p):
     up({"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": text}})
     if text.startswith("fix"):
         up({"sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": "Run the session tests first to see which one fails, and how."}})
-        terminal(f"t{mid}a", "cargo test -p auth session", TESTS, 101)
-        tool(f"t{mid}b", "Read src/session.rs", "read", locations=[{"path": "/home/demo/src/auth/src/session.rs", "line": 198}])
+        terminal(f"t{mid}a", "cargo test session", TESTS, 101)
+        tool(f"t{mid}b", "Read src/session.rs", "read", locations=[{"path": "/home/priya/src/game-night/src/session.rs", "line": 198}])
         msg("`expires_after_ttl` sleeps 100 ms and expects the session to be gone, so it fails whenever the expiry "
             "sweep runs late. I'll give `Store` a clock and advance it in the test instead of sleeping.")
-        tool(f"t{mid}c", "Edit src/session.rs", "edit", locations=[{"path": "/home/demo/src/auth/src/session.rs"}])
-        terminal(f"t{mid}d", "cargo test -p auth session",
+        tool(f"t{mid}c", "Edit src/session.rs", "edit", locations=[{"path": "/home/priya/src/game-night/src/session.rs"}])
+        terminal(f"t{mid}d", "cargo test session",
                  "running 6 tests\r\n......\r\ntest result: \x1b[32mok\x1b[0m. 6 passed; 0 failed; 0 ignored; finished in 0.02s\r\n", 0)
         cmd = 'git commit -am "session: advance a test clock instead of sleeping"'
         tid = f"t{mid}e"

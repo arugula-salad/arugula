@@ -28,7 +28,13 @@ impl ToolCall<'_, '_> {
         let forges = forges(app, on).await;
         let hooks = self.hooks().await;
         let feedback = arugula_proto::feedback::agents_may(app.control.state_dir());
-        let offered = tools::listed_names(self.scope(), on, feedback);
+        // Before this machine joins Arugula cloud, what needs it isn't
+        // offered (Arugula #1403): `tools/list` still lists it, but an agent
+        // planning from here isn't sent to issues or boards it can't reach.
+        let joined = crate::joined(app);
+        let cloud_only = if joined { Vec::new() } else { tools::cloud_only(on) };
+        let mut offered = tools::listed_names(self.scope(), on, feedback);
+        offered.retain(|n| !cloud_only.contains(n));
         // Boards' reach is asked only where boards are offered and there is
         // a control to ask: the one call `tool_status` needs, and none else.
         let boards = async {
@@ -40,7 +46,13 @@ impl ToolCall<'_, '_> {
         let ((cloud, threads, runs, trackers), boards) = tokio::join!(crate::mcp::registry::reach(app), boards);
         let tool_status = self.tool_status(&offered, &threads, &runs, boards.as_ref());
         let control = control(app, cloud, threads, runs, trackers);
-        let tools = tools::list(self.scope(), on, feedback).into_iter().map(|t| t.name.to_string()).collect();
+        let tools = tools::list(self.scope(), on, feedback)
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .filter(|n| !cloud_only.contains(n))
+            .collect();
+        let mut blocks = tools::block_offers(on);
+        blocks.retain(|b| joined || b.kind != "board");
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
             "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}; conversations: {}; runs: {}",
@@ -67,7 +79,7 @@ impl ToolCall<'_, '_> {
             Capabilities {
                 version: arugula_core::version::get().into(),
                 flags: on.names().map(str::to_owned).collect(),
-                blocks: tools::block_offers(on),
+                blocks,
                 tools,
                 tool_status,
                 forges,

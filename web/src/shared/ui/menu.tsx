@@ -639,12 +639,14 @@ export function MenuLayer() {
     .filter(([item]) => !(filtered && q) || (typeof item === "object" && "label" in item && item.label.toLowerCase().includes(q)));
   const sheet = matchMedia(SHEET).matches;
   const popover = current.content !== undefined;
+  // Opened from inside a dialog (a row's ⋯ in Your work): over it, not under.
+  const over = current.from?.closest(".prompt-backdrop") ? " over-dialog" : "";
   return (
     <>
-      {sheet && <div class="menu-backdrop" data-menu-backdrop onClick={closeAndReturn} />}
+      {sheet && <div class={`menu-backdrop${over}`} data-menu-backdrop onClick={closeAndReturn} />}
       <div
         ref={ref}
-        class={`menu${sheet ? " sheet" : ""}${popover ? " popover" : ""}`}
+        class={`menu${sheet ? " sheet" : ""}${popover ? " popover" : ""}${over}`}
         role={popover ? "dialog" : "menu"}
         tabIndex={popover ? -1 : undefined}
         aria-label={current.label}

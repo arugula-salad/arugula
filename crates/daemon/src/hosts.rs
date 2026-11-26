@@ -343,6 +343,8 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         guest_ssh: Some(crate::lab_flags::BUILT && arugula_proto::sharing::guest_ssh(dir)),
         // Arugula #1194: the machine menu says whether people may type here.
         remote_input: Some(arugula_proto::sharing::remote_input(dir)),
+        // Arugula #1341: the Overview's Start calls start_agent here.
+        chief_of_staff: Some(true),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }

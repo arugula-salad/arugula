@@ -1,11 +1,12 @@
-// Home (#1255): the project's conversations, sorted by what needs you, as the
-// iPhone's Home.swift and the desktop's Overview read them. Needs you first,
-// merged from every machine's panes, the boards' rows and the hosted
-// sessions, worst first, each answered where it is (Answer.kt); then the New
+// The Overview (#1255; Home until Arugula #1362): the project's
+// conversations, sorted by what needs you, as the iPhone's Home.swift and the
+// desktop's Overview read them. Needs you first,
+// merged from every machine's panes, the boards' rows, the hosted
+// sessions and the deploys waiting for you (the Inbox's), worst first, each answered where it is (Answer.kt); then the New
 // ideas; then one row per open board, with its lane bar, its count, its lead
 // and what's going on in words; then the people, its channels and DMs. A
 // board's row opens the board's thread, whose Board button opens its lanes.
-// New tells a board or starts a New idea (New.kt).
+// New, in every place's heading, tells a board or starts a New idea (New.kt).
 
 package io.arugula.app
 
@@ -45,6 +46,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -92,6 +94,11 @@ class HomeModel(private val api: Api) {
     var ideas by mutableStateOf<List<Issue>>(emptyList())
         private set
 
+    /** A board as a write answered it (its grant revoked, Arugula #1456). */
+    fun put(id: String, view: BoardDetail) {
+        views = views + (id to view)
+    }
+
     /** Each open board's thread, by the board's id: its changes come on it. */
     val threads = mutableStateMapOf<String, ChatRoom>()
     private var project: String? = null
@@ -121,14 +128,23 @@ class HomeModel(private val api: Api) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (this@HomeModel.project != project) return@coroutineScope
             problem = describe(e)
         }
-        r.await()?.let { rooms = it }
-        hosted = s.await()
-        opened = hosted.filter { it.waiting != null }.mapNotNull { w ->
+        // Everything else is read first and written at once, and only while
+        // the project is still this one (Arugula #1354): a project picked
+        // meanwhile gets nothing of this one.
+        val rooms = r.await()
+        val hosted = s.await()
+        val asks = hosted.filter { it.waiting != null }.mapNotNull { w ->
             runCatching { w.session to SessionView.of(api.get("/api/sessions/${w.session}")) }.getOrNull()
         }.toMap()
-        ideas = i.await().filter { it.title.startsWith("Idea: ") }
+        val ideas = i.await().filter { it.title.startsWith("Idea: ") }
+        if (this@HomeModel.project != project) return@coroutineScope
+        rooms?.let { this@HomeModel.rooms = it }
+        this@HomeModel.hosted = hosted
+        opened = asks
+        this@HomeModel.ideas = ideas
         loaded = true
         // Each board's thread, once, as the web's Overview opens them: a board's change comes as a change on its thread.
         for (b in boards) if (b.id !in threads) runCatching { thread(b) }
@@ -159,7 +175,7 @@ class HomeModel(private val api: Api) {
 /** What a row says of itself, besides its sessions. */
 fun BoardDetail.Row.says(): List<Standing> {
     val out = mutableListOf<Standing>()
-    if (ask?.mine == true) out += Standing.ASKS
+    ask?.let { if (it.mine) out += Standing.ASKS else if (!it.who.isNullOrEmpty()) out += Standing.WAITS }
     if ("stalled" in marks) out += Standing.QUIET
     val work = attachments.filter { it.role == "work" && !it.released }.mapNotNull { it.live }
     for (l in listOfNotNull(live) + work) if (l.kind == "pr") {
@@ -216,11 +232,27 @@ data class Need(
         data class Pane(val m: MachineSession, val p: PaneRow) : Target
         data class OnBoard(val board: Board, val row: BoardDetail.Row?) : Target
         data class Session(val s: SessionRow) : Target
+        /** A deploy waiting for your approval (Arugula #1435): approved on the platform's page, where it opens. */
+        data class Deploy(val item: InboxItem) : Target
     }
 }
 
+/** What a pane that needs you asks, as Needs you lists it and answers it in the row (and Machines, in the pane). */
+fun paneNeed(m: MachineSession, p: PaneRow) = Need(
+    "pane:${m.machine.id}:${p.id}", p.asking?.id ?: "${p.reasonKind}:${p.sinceMs}", p.needsYouRank,
+    p.sinceMs ?: p.askAt ?: 0, m.conversations[p.id] ?: p.name, p.standing, m.machine.name + (p.onIssue?.let { " · $it" } ?: ""),
+    p.headline?.takeIf { it.isNotEmpty() } ?: p.askMessage ?: "", p.asking?.approve == true || p.failed,
+    Need.Target.Pane(m, p),
+)
+
 /** A session working on one of a board's cards, as its thread lists it. */
-data class BoardSession(val peeked: Peeked, val name: String, val card: String, val standing: Standing)
+/** [asks]: whom it waits on, when that's someone else ([Standing.WAITS]). */
+data class BoardSession(val peeked: Peeked, val name: String, val card: String, val standing: Standing, val asks: String? = null) {
+    val word get() = if (standing == Standing.IDLE) "quiet" else standing.word(asks)
+}
+
+/** How a pane stands for the reader: one on someone else's machine that needs them waits on them, not on you (Arugula #1392). */
+fun MachineSession.standing(p: PaneRow): Standing = if (p.standing == Standing.NEEDS && machine.ownerName != null) Standing.WAITS else p.standing
 
 /** One open board as home's row reads it. */
 data class BoardLine(
@@ -231,34 +263,24 @@ data class BoardLine(
 )
 
 /** What home shows, from what the machines, the boards and the hosted sessions say: worked out each time any of them moves. */
-class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
+class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel, inbox: List<InboxItem> = emptyList(), me: String? = null) {
     val needs = mutableListOf<Need>()
     val boards = mutableListOf<BoardLine>()
     val sessions = mutableMapOf<String, List<BoardSession>>()
 
     init {
-        if (project != null) build(project, fleet, model)
+        if (project != null) build(project, fleet, model, inbox, me)
     }
 
-    private fun build(project: Project, fleet: HomeFleet, model: HomeModel) {
-        val personal = project.team == null
-        // The project's panes: its sessions', its cards', or none's in the personal project.
+    private fun build(project: Project, fleet: HomeFleet, model: HomeModel, inbox: List<InboxItem>, me: String?) {
+        // The project's panes: its sessions', its cards', or, in the personal
+        // project, those placed nowhere on your own machines (the core's rule).
+        val shown = project.shown
         val panes = fleet.machines.flatMap { m ->
-            (m.panes + m.agents).filter { p ->
-                p.sessionProject == project.id || p.onIssueProject == project.id ||
-                    (personal && p.sessionProject == null && p.onIssueProject == null)
-            }.map { m to it }
+            (m.panes + m.agents).filter { p -> shown.shows(p.sessionProject, p.onIssueProject, m.machine.yours) }.map { m to it }
         }
 
-        for ((m, p) in panes) if (p.needsYou) {
-            val card = p.onIssue?.let { " · $it" } ?: ""
-            needs += Need(
-                "pane:${m.machine.id}:${p.id}", p.asking?.id ?: "${p.reasonKind}:${p.sinceMs}", p.needsYouRank,
-                p.sinceMs ?: p.askAt ?: 0, m.conversations[p.id] ?: p.name, p.standing, m.machine.name + card,
-                p.headline?.takeIf { it.isNotEmpty() } ?: p.askMessage ?: "", p.asking?.approve == true || p.failed,
-                Need.Target.Pane(m, p),
-            )
-        }
+        for ((m, p) in panes) if (p.needsYou) needs += paneNeed(m, p)
 
         for (b in model.boards) {
             val v = model.views[b.id] ?: continue
@@ -292,6 +314,14 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
                 s.question ?: waiting, false, Need.Target.Session(s),
             )
         }
+        // The project's deploys waiting for your approval, as the Inbox lists them (as the iPhone's Needs you).
+        for (i in inbox) {
+            if (i.kind != "deploy_approval" || i.subject.project != project.id || !i.counted(me)) continue
+            needs += Need(
+                "deploy:${i.subject.id}", i.id, 1, i.since, i.title, Standing.NEEDS,
+                listOfNotNull("Waits for your approval", i.from.name?.let { "planned by $it" }).joinToString(" · "), "", false, Need.Target.Deploy(i),
+            )
+        }
         needs.sortWith(compareBy({ it.rank }, { it.since }, { it.id }))
 
         for (b in model.boards) {
@@ -300,8 +330,8 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
             val flight = rows.filter { it.inFlight }.map { r ->
                 val all = r.says().toMutableList()
                 for ((m, p) in panes) if (works(r, b.id, m.machine.id, p)) {
-                    all += p.standing
-                    on += BoardSession(Peeked.Pane(m, p), m.conversations[p.id] ?: p.name, r.words, p.standing)
+                    all += m.standing(p)
+                    on += BoardSession(Peeked.Pane(m, p), m.conversations[p.id] ?: p.name, r.words, m.standing(p), m.machine.ownerName)
                 }
                 for (s in model.hosted) if (r.pointer?.kind == "issue" && s.issueId == r.pointer.id) {
                     all += s.standing
@@ -310,7 +340,7 @@ class HomeState(project: Project?, fleet: HomeFleet, model: HomeModel) {
                 all.minOrNull() ?: Standing.IDLE
             }
             sessions[b.id] = on.sortedWith(compareBy({ it.standing }, { it.name }))
-            var says = listOf(Standing.NEEDS, Standing.ASKS, Standing.FAILED, Standing.CHECKS_FAILING, Standing.QUIET, Standing.WORKING, Standing.CHECKS_RUNNING, Standing.REVIEW)
+            var says = listOf(Standing.NEEDS, Standing.ASKS, Standing.FAILED, Standing.CHECKS_FAILING, Standing.WAITS, Standing.QUIET, Standing.WORKING, Standing.CHECKS_RUNNING, Standing.REVIEW)
                 .map { st -> st to flight.count { it == st } }.filter { it.second > 0 }.map { (st, n) -> st to "$n ${st.word}" }
             val idle = flight.count { it == Standing.IDLE }
             if (flight.isEmpty()) {
@@ -346,7 +376,6 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
     val nav = LocalNav.current
     val coroutines = rememberCoroutineScope()
     val snack = remember { SnackbarHostState() }
-    var making by remember { mutableStateOf(false) }
     var peek by remember { mutableStateOf<Peeked?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     /** What was answered here, by need and ask: folded away. */
@@ -379,7 +408,9 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
         }
     }
 
-    val state = HomeState(project, fleet, model)
+    val heading = LocalHeading.current
+    val context = LocalContext.current
+    val state = HomeState(project, fleet, model, heading?.inbox?.items.orEmpty(), scope.me?.account)
     val needs = state.needs.filter { folded["${it.id}|${it.ask}"] != true }
     val people = model.rooms.filter { it.isConversation && !it.archived && scope.showsRoom(it) }
         .sortedWith(compareByDescending<ChatRoom> { if (it.unread > 0) 1 else 0 }.thenByDescending { it.last })
@@ -387,9 +418,7 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TabHeading("Arugula", project = true) {
-                AnswerButton("New", Modifier.testTag("home-new"), primary = true) { making = true }
-            }
+            TabHeading(AppTab.OVERVIEW.label)
             model.problem?.let { Text(it, Modifier.padding(horizontal = 16.dp), style = Face.mono(11.sp), color = Palette.danger, maxLines = 2) }
             PullToRefreshBox(
                 refreshing,
@@ -417,6 +446,7 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
                                     is Need.Target.Pane -> peek = Peeked.Pane(t.m, t.p)
                                     is Need.Target.OnBoard -> nav.push(Dest.BoardThread(t.board))
                                     is Need.Target.Session -> peek = Peeked.Hosted(t.s)
+                                    is Need.Target.Deploy -> heading?.let { h -> h.inbox.later { openOnPlatform(context, h.model.url, t.item.subject.url) } }
                                 }
                             })
                             NeedAnswer(n, api, model) { said ->
@@ -457,9 +487,6 @@ fun HomeScreen(api: Api, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
     }
 
-    if (making) {
-        NewSheet(api, model, fleet, onDismiss = { making = false }, toast = toast, made = { coroutines.launch { refresh() } })
-    }
     peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = toast) }
 }
 
@@ -498,23 +525,25 @@ private fun BoardLineRow(line: BoardLine, modifier: Modifier) {
             },
             style = Face.ui(13.sp), maxLines = 2,
         )
-        Text(leadWords(line.board.lead), style = Face.mono(11.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(leadWords(line.board.lead, LocalScope.current.current), style = Face.mono(11.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
-/** Who leads it: a session on a machine, or nobody. */
-fun leadWords(l: Lead?): String {
+/** Who leads it: a session on a machine, or nobody. A chief of staff's
+ * session reads by [project]'s name, when it's that project's (Arugula #1457). */
+fun leadWords(l: Lead?, project: Project? = null): String {
     l ?: return "No lead"
     val on = l.machineName?.takeIf { it.isNotEmpty() }?.let { " on $it" } ?: ""
-    return "Led by ${l.session}$on"
+    return "Led by ${sessionLabel(l.session, project)}$on"
 }
 
 // ---- a board's thread
 
 /**
- * A board's thread: its lane bar and who leads it over the conversation,
- * which reaches the session that leads it, and the sessions on its cards,
- * each opening its peek. Board opens its lanes.
+ * A board's thread: its lane bar, who leads it and its grant (with Revoke,
+ * or Run this board) over the conversation, which reaches the session that
+ * leads it, and the sessions on its cards, each opening its peek. Board
+ * opens its lanes.
  */
 @Composable
 fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet, live: LiveChat) {
@@ -523,23 +552,24 @@ fun BoardThreadScreen(api: Api, board: Board, model: HomeModel, fleet: HomeFleet
     val snack = remember { SnackbarHostState() }
     val coroutines = rememberCoroutineScope()
     val sessions = HomeState(LocalScope.current.current, fleet, model).sessions[board.id] ?: emptyList()
+    val toast: (String) -> Unit = { t -> coroutines.launch { snack.showSnackbar(t) } }
     val boardButton: @Composable () -> Unit = {
         Text("BOARD", Modifier.clickable { nav.push(Dest.Lanes(board)) }.padding(6.dp).testTag("open-board"), style = Face.mono(12.sp, FontWeight.Bold), color = Palette.accent)
     }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            DetailBar(board.title, boardButton)
+            DetailBar(board.title, trailing = boardButton)
             Loaded(key = board.id, load = { model.thread(board) }) { room, _ ->
-                ChatRoomScreen(api, room, live, title = board.title, bar = false, heading = { BoardThreadHeading(board, model, sessions) { peek = it } })
+                ChatRoomScreen(api, room, live, title = board.title, bar = false, heading = { BoardThreadHeading(api, board, model, sessions, toast) { peek = it } })
             }
         }
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
     }
-    peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = { t -> coroutines.launch { snack.showSnackbar(t) } }) }
+    peek?.let { p -> SessionPeek(api, p, onDismiss = { peek = null }, toast = toast) }
 }
 
 @Composable
-private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<BoardSession>, peek: (Peeked) -> Unit) {
+private fun BoardThreadHeading(api: Api, board: Board, model: HomeModel, sessions: List<BoardSession>, toast: (String) -> Unit, peek: (Peeked) -> Unit) {
     val line = model.boards.firstOrNull { it.id == board.id } ?: board
     val p = line.progress
     val total = p?.total ?: 0
@@ -549,7 +579,8 @@ private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<Bo
     Column(Modifier.fillMaxWidth().background(Palette.void).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         LaneBar(done, review, doing, total.coerceAtLeast(1))
         Text("$done done · $review review · $doing doing · ${(total - done - review - doing).coerceAtLeast(0)} next", style = Face.mono(11.sp), color = Palette.dim)
-        Text(leadWords(line.lead), Modifier.testTag("board-lead"), style = Face.mono(11.sp), color = Palette.subtle)
+        Text(leadWords(line.lead, LocalScope.current.current), Modifier.testTag("board-lead"), style = Face.mono(11.sp), color = Palette.subtle)
+        BoardGrantLine(api, line, model, toast)
         if (sessions.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (s in sessions) {
@@ -558,8 +589,63 @@ private fun BoardThreadHeading(board: Board, model: HomeModel, sessions: List<Bo
                             Dot(s.standing.tone, 6)
                             Text(s.name, style = Face.ui(13.sp, FontWeight.SemiBold), color = Palette.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text("${s.card} · ${if (s.standing == Standing.IDLE) "quiet" else s.standing.word}", style = Face.mono(10.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${s.card} · ${s.word}", style = Face.mono(10.sp), color = Palette.dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                }
+            }
+        }
+    }
+}
+
+/** What Run this board says once its card is asked for: the web's words (Arugula #1416), on the web until the phone shows the card (#1459). One place, so the phone's wording is one change. */
+const val RUN_BOARD_ASKED = "Run this board: approve its card in Needs you on the web."
+const val RUN_BOARD_AGAIN = "Its Run this board card is waiting in Needs you on the web."
+
+/**
+ * The board's grant to start agents, under who leads it (Arugula #1456, the
+ * web's #1416): where its lead runs, which machines its issue agents may use,
+ * how many at once and until when, with Revoke for the person who gave it.
+ * A board with no lead and no grant, in a team's project (a staff room is a
+ * team's), offers Run this board, whose card goes in the reader's Needs you on the web (#1459).
+ */
+@Composable
+private fun BoardGrantLine(api: Api, board: Board, model: HomeModel, toast: (String) -> Unit) {
+    val team = LocalScope.current.current?.team != null
+    val coroutines = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    val g = model.views[board.id]?.grant
+    if (g == null) {
+        if (board.lead != null || board.closedAt != null || !team) return
+        AnswerButton("Run this board", Modifier.testTag("board-run"), primary = true, enabled = !busy) {
+            busy = true
+            coroutines.launch {
+                try {
+                    val r = api.post("/api/boards/${board.id}/run")
+                    toast(if (r.optBoolean("again")) RUN_BOARD_AGAIN else RUN_BOARD_ASKED)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    toast("Couldn't ask to run it: ${describe(e)}")
+                } finally {
+                    busy = false
+                }
+            }
+        }
+        return
+    }
+    Text(g.line, Modifier.testTag("board-grant-line"), style = Face.mono(11.sp), color = Palette.subtle)
+    if (g.mine) {
+        AnswerButton("Revoke", Modifier.testTag("board-grant-revoke"), enabled = !busy) {
+            busy = true
+            coroutines.launch {
+                try {
+                    model.put(board.id, BoardDetail.of(api.delete("/api/boards/${board.id}/grant")))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    toast("Couldn't change it: ${describe(e)}")
+                } finally {
+                    busy = false
                 }
             }
         }

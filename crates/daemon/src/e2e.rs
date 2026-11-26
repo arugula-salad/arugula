@@ -217,7 +217,12 @@ async fn serve(
     // machine, a project person's own machine drives it: any request.
     if device.kind == Kind::Daemon {
         let full = app.control.drives(&who);
-        return serve_machine(app, inbound, out, who, device, principal, caller, full, changed).await;
+        let was = principal.clone();
+        let still = move |app: &App| {
+            no_longer(app.control.device(&who).map(|(_, p)| p), &was)
+                .or_else(|| (full && !app.control.drives(&who)).then_some("no longer drives this machine"))
+        };
+        return serve_machine(app, inbound, out, principal, caller, full, changed, still).await;
     }
     let recheck_who = who;
     let recheck_was = principal.clone();
@@ -302,6 +307,23 @@ async fn serve_token(
             anyhow::bail!("machine token refused: {why}");
         }
     };
+    // Another machine (Arugula #1002), on control's word as a person is:
+    // its agents' requests, or on a hosted machine all of them.
+    if claims.role.is_machine() {
+        let full = claims.role == arugula_control_wire::machine_token::TokenRole::Drives && enrolled.saved.is_hosted();
+        let (m2, ch) = responder.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
+        out.send(m2).await?;
+        let out = Arc::new(Out::new(ch, out));
+        let id = format!("account:{}", claims.sub);
+        let principal = if full {
+            crate::acl::Principal::Owner
+        } else {
+            crate::acl::Principal::User { id: id.clone(), name: claims.name.clone(), pic: None }
+        };
+        let device = claims.from.clone().unwrap_or(id);
+        let caller = Caller { account: claims.sub.clone(), device, name: claims.name.clone() };
+        return serve_machine(app, inbound, out, principal, caller, full, changed, |_: &App| None).await;
+    }
     let input = arugula_proto::sharing::remote_input(app.control.state_dir());
     let grant = token_grant(&claims, enrolled.saved.is_hosted(), enrolled.owner_role_owns(&claims.sub), input);
     let (m2, ch) = responder.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
@@ -401,8 +423,11 @@ pub(crate) fn token_grant(
         TokenRole::Viewer => {
             TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", everywhere: false }
         }
-        // Only what's shared with `account:<sub>`.
-        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest", everywhere: false },
+        // Only what's shared with `account:<sub>`. A machine's token never
+        // gets here (`serve_token`): as a guest's, if it did.
+        TokenRole::Guest | TokenRole::Agents | TokenRole::Drives => {
+            TokenGrant { principal: user(), role: None, shown: "guest", everywhere: false }
+        }
     }
 }
 
@@ -615,23 +640,24 @@ fn agents_only(path: &str) -> bool {
 }
 
 /// A daemon's channel (#399): its requests under `/api/a2a/` answered as
-/// its account, anything else refused, and closed when it's no longer let
-/// in. `full` (M184, a hosted machine's driver): every request, as its
-/// principal says, and closed when it no longer drives this one.
+/// its account, anything else refused, and closed when `still` says it's
+/// no longer let in. `full` (M184, a hosted machine's driver): every
+/// request, as its principal says. Opened with a device's certificate or,
+/// since Arugula #1002, a machine token.
 #[allow(clippy::too_many_arguments)]
 async fn serve_machine(
     app: Arc<App>,
     mut inbound: mpsc::Receiver<Vec<u8>>,
     out: Arc<Out>,
-    who: [u8; 32],
-    device: arugula_e2e::Cert,
     principal: crate::acl::Principal,
     caller: Caller,
     full: bool,
     mut changed: tokio::sync::watch::Receiver<u64>,
+    still: impl Fn(&App) -> Option<&'static str>,
 ) -> anyhow::Result<()> {
     let what = if full { "driving channel" } else { "agent channel" };
-    info!(device = device.device, account = device.account, name = device.name, "{what} open");
+    let device = caller.device.clone();
+    info!(device, account = caller.account, name = caller.name, "{what} open");
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
     let mut requests = tokio::task::JoinSet::new();
@@ -655,15 +681,14 @@ async fn serve_machine(
                 }
             }
             Ok(()) = changed.changed() => {
-                let gone = no_longer(app.control.device(&who).map(|(_, p)| p), &principal);
-                if gone.is_some() || (full && !app.control.drives(&who)) {
-                    info!(device = device.device, "machine no longer let in: closing its {what}");
+                if let Some(why) = still(&app) {
+                    info!(device, why, "machine no longer let in: closing its {what}");
                     break Ok(());
                 }
             }
         }
     };
-    info!(device = device.device, "{what} closed");
+    info!(device, "{what} closed");
     r
 }
 
@@ -1049,6 +1074,7 @@ mod token_grants {
             iat: 0,
             exp: 300,
             jti: "j".into(),
+            from: None,
         }
     }
 

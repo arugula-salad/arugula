@@ -31,6 +31,13 @@
 //! What the owner shows of the sessions (`agent_sessions`, #577) also decides
 //! the names an unknown `@geek/name` answers with, and the `agents.sessions`
 //! op lists them ([`sessions_for`]).
+//!
+//! An agent block that isn't in a turn is woken once for what comes
+//! together (#1339): a follow-up for it waits [`WAKE_SETTLE`] for others,
+//! and all that came by then are one prompt ([`together`], [`Wakes`]). A machine back
+//! from away is told everything control kept at once, and its chief of
+//! staff, idle in its block, wakes once for all of it.
+//!
 //! The text is framed as a teammate's ([`framed`]): it is information, never
 //! the person's approval, and never a slash command. One the machine's owner
 //! posted themselves (#665, control's [`AgentMention::from_owner`]) is said to
@@ -39,7 +46,10 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use arugula_control_wire::watch::{EXPIRES_MAX_MS, PER_SESSION, WatchTag};
@@ -60,6 +70,17 @@ use crate::{
     mux::{Api, DropWhy, Followups, Tag, Turn},
     server::App,
 };
+
+/// How long a follow-up for an agent block that isn't in a turn waits for
+/// others to wake it with (#1339). Control sends what a machine missed all
+/// at once when it's back, so they come within this of each other; one
+/// still being routed then is waited for too, up to [`WAKE_MAX`].
+const WAKE_SETTLE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The longest a wake waits for the deliveries still being routed (#1339):
+/// naming a session can take seconds, but a stream of them never holds a
+/// wake back for good.
+const WAKE_MAX: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The most unread mentions kept; the oldest go first.
 const MAX_UNREAD: usize = 50;
@@ -182,7 +203,8 @@ impl MentionTag {
 /// `text` is the follow-up of `tags` so far: the first one's own words, and
 /// from the second on, the merged text (oldest first).
 pub fn absorb(text: &mut String, tags: &mut Vec<MentionTag>, tag: &MentionTag) -> bool {
-    if !tags.first().is_some_and(|t| t.same_thread(tag)) {
+    // A wake's prompt (#1339) may hold several threads: nothing joins it.
+    if tags.is_empty() || !tags.iter().all(|t| t.same_thread(tag)) {
         return false;
     }
     tags.push(tag.clone());
@@ -196,6 +218,37 @@ fn merged(tags: &[MentionTag]) -> String {
     let (Some(first), Some(last)) = (threads.first(), threads.last()) else { return String::new() };
     let lines = threads.iter().map(|t| t.line.as_str()).collect::<Vec<_>>().join("\n");
     format!("{}\n{lines}\n\n{}", first.head, last.tail)
+}
+
+/// The one prompt for the follow-ups that wake an agent block together
+/// (#1339), in the order they came: replies of one thread as #580 merges
+/// them, else each one's own text, apart.
+fn together(items: &[(String, MentionTag)]) -> String {
+    if let [(text, _)] = items {
+        return text.clone();
+    }
+    let tags: Vec<MentionTag> = items.iter().map(|(_, t)| t.clone()).collect();
+    if tags[1..].iter().all(|t| tags[0].same_thread(t)) {
+        return merged(&tags);
+    }
+    let each = items.iter().map(|(text, _)| text.as_str()).collect::<Vec<_>>().join("\n\n---\n\n");
+    format!(
+        "{} messages came for you while you were idle, in the order they came. Each says where it's from and \
+         where to answer it.\n\n{each}",
+        items.len()
+    )
+}
+
+/// Who a wake's prompt is from, as an agent block's transcript says it: each
+/// author but the block's owner, once, in the order they came.
+fn wake_by(items: &[Waking]) -> Option<String> {
+    let mut names: Vec<&str> = vec![];
+    for (_, by, _) in items {
+        if by.who != "owner" && !names.contains(&by.name.as_str()) {
+            names.push(&by.name);
+        }
+    }
+    (!names.is_empty()).then(|| names.join(", "))
 }
 
 /// The longest first line a card quotes (#551), in characters.
@@ -296,6 +349,90 @@ pub struct State {
     /// `wait_…` of the call's own, never a conversation's): its message is
     /// the call's answer, not a follow-up. In memory only, as the calls are.
     waits: Mutex<HashMap<String, tokio::sync::oneshot::Sender<String>>>,
+    /// The follow-ups waiting to wake an agent block (#1339).
+    pub(crate) wakes: Wakes,
+}
+
+/// The follow-ups waiting to wake an agent block, by its pane (#1339), and
+/// the deliveries still being routed, which a wake waits for: they may be
+/// for its block too. In memory only.
+#[derive(Clone, Default)]
+pub(crate) struct Wakes(std::sync::Arc<WakesIn>);
+
+#[derive(Default)]
+pub(crate) struct WakesIn {
+    by_pane: Mutex<HashMap<PaneId, Vec<Waking>>>,
+    flying: AtomicUsize,
+    /// Where a wake that couldn't be sent reports its mentions dropped:
+    /// [`keep_telling`]'s.
+    reports: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<(PaneId, MentionTag, Turn)>>,
+}
+
+/// One follow-up in a wake: its text, who it's from and its mention.
+type Waking = (String, Driver, MentionTag);
+
+/// Counts one delivery in [`WakesIn::flying`] while it lives.
+struct Flying<'a>(&'a AtomicUsize);
+
+impl<'a> Flying<'a> {
+    fn on(n: &'a AtomicUsize) -> Self {
+        n.fetch_add(1, Ordering::SeqCst);
+        Flying(n)
+    }
+}
+
+impl Drop for Flying<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl Wakes {
+    /// Where a wake that couldn't be sent says its mentions were dropped.
+    pub fn report_to(&self, tx: tokio::sync::mpsc::UnboundedSender<(PaneId, MentionTag, Turn)>) {
+        let _ = self.0.reports.set(tx);
+    }
+
+    /// Put a follow-up in `pane`'s wake: true for the first, whose task
+    /// sends it ([`send`](Self::send)).
+    fn join(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> bool {
+        let mut by_pane = self.0.by_pane.lock().unwrap();
+        let items = by_pane.entry(pane).or_default();
+        items.push((text, by, tag));
+        items.len() == 1
+    }
+
+    /// After [`WAKE_SETTLE`], and once no other delivery is being routed (up
+    /// to [`WAKE_MAX`]), send what came for `pane`'s block as one prompt. A
+    /// block gone by then drops it, and says so as a closed block's queue
+    /// does.
+    async fn send(&self, mux: &crate::mux::MuxHandle, pane: PaneId) {
+        tokio::time::sleep(WAKE_SETTLE).await;
+        let until = tokio::time::Instant::now() + WAKE_MAX.saturating_sub(WAKE_SETTLE);
+        while self.0.flying.load(Ordering::SeqCst) > 0 && tokio::time::Instant::now() < until {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let items = self.0.by_pane.lock().unwrap().remove(&pane).unwrap_or_default();
+        let tags: Vec<MentionTag> = items.iter().map(|(_, _, t)| t.clone()).collect();
+        let sent = match mux.api(|r| Api::Block(pane, r)).await.flatten() {
+            Some(b) => {
+                let name = wake_by(&items);
+                let texts: Vec<_> = items.into_iter().map(|(text, _, tag)| (text, tag)).collect();
+                let all: Vec<_> = tags.iter().map(MentionTag::to_json).collect();
+                let args = serde_json::json!({ "text": together(&texts), "mentions": all });
+                b.call_by("send", args, name.as_deref()).await.map(|_| ())
+            }
+            None => Err("its block closed".into()),
+        };
+        if let Err(e) = sent {
+            warn!(pane, error = %e, "can't wake an agent block: what came for it is dropped");
+            for tag in tags {
+                if let Some(tx) = self.0.reports.get() {
+                    let _ = tx.send((pane, tag, Turn::Dropped(DropWhy::Exited)));
+                }
+            }
+        }
+    }
 }
 
 impl State {
@@ -1119,16 +1256,18 @@ impl Daemon for App {
     async fn follow_up(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
         // An agent block takes it as its next prompt (#611): its own queue
         // waits for the turn in progress (D4), and says whether it went in.
+        // One that isn't in a turn is woken once for what comes together
+        // (#1339).
         if let Some(b) = self.mux.api(|r| Api::Block(pane, r)).await.flatten()
             && b.kind() == arugula_proto::BlockType::Agent
         {
-            let name = (by.who != "owner").then_some(by.name.as_str());
-            let args = serde_json::json!({
-                "text": text,
-                "mention": tag.to_json(),
-            });
-            let sent = b.call_by("send", args, name).await?;
-            return Ok(sent["queued"].as_u64() == Some(0));
+            if b.state()["status"] == "working" {
+                let name = (by.who != "owner").then_some(by.name.as_str());
+                let args = serde_json::json!({ "text": text, "mention": tag.to_json() });
+                let sent = b.call_by("send", args, name).await?;
+                return Ok(sent["queued"].as_u64() == Some(0));
+            }
+            return self.wake(pane, text, by, tag);
         }
         match self.mux.api(|r| Api::FollowUp(pane, text, by, Some(tag.to_tag()), r)).await {
             Some(r) => r,
@@ -1154,11 +1293,26 @@ impl Daemon for App {
     }
 }
 
+impl App {
+    /// Wake the agent block in `pane` with this follow-up and any others
+    /// that come for it within [`WAKE_SETTLE`] (#1339), as one prompt. Each
+    /// is answered at once, as going in: control waits for no wake.
+    fn wake(&self, pane: PaneId, text: String, by: Driver, tag: MentionTag) -> Result<bool, String> {
+        let wakes = self.agent_mentions.wakes.clone();
+        if wakes.join(pane, text, by, tag) {
+            let mux = self.mux.clone();
+            crate::task::spawn(async move { wakes.send(&mux, pane).await });
+        }
+        Ok(true)
+    }
+}
+
 /// The names of the sessions live in our panes, or only `pane`'s (#429):
-/// an agent block goes by its title, a terminal by the title of the Claude
-/// Code conversation in it. Display and addressing only: a name is no
-/// authority.
-pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
+/// an agent block goes by its title, or by the `session` its config names
+/// (a chief of staff's, by its project's id: Arugula #1457), a terminal by
+/// the title of the Claude Code conversation in it. Display and addressing
+/// only: a name is no authority.
+pub async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneId, String)> {
     let mut out = vec![];
     let mut terminals = HashMap::new();
     let mut hooked = vec![];
@@ -1170,7 +1324,9 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
             continue;
         }
         if p.info.kind.prompted() {
-            if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+            if let Some(t) = config_session(app, id).await {
+                out.push((id, t));
+            } else if let Some(t) = p.info.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
                 out.push((id, t.to_owned()));
             }
         } else if p.info.kind == arugula_proto::BlockType::Terminal {
@@ -1203,6 +1359,16 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
         out.extend(found.into_iter().filter(|(_, t)| !t.is_empty()));
     }
     out
+}
+
+/// The session name an agent block's config gives it apart from its title
+/// (Arugula #1457), if any.
+async fn config_session(app: &App, pane: PaneId) -> Option<String> {
+    let block = app.mux.api(|r| Api::Block(pane, r)).await.flatten()?;
+    if block.kind() != arugula_proto::BlockType::Agent {
+        return None;
+    }
+    block.config()["session"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
 }
 
 /// Keep only `only`'s conversation, when it is set (#512): process
@@ -1372,7 +1538,9 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         debug!(room = m.room, seq = m.seq, "a mention told again: answered as before");
         return OpAnswer::Done { url: None, routed: Some(routed) };
     }
+    let flying = Flying::on(&state.wakes.0.flying);
     let answer = route(app, m).await;
+    drop(flying);
     // A watch's message that found no session (#631) wasn't told: control
     // sends it again, and it must find it then.
     if let OpAnswer::Done { routed: Some(r), .. } = &answer
@@ -1946,6 +2114,42 @@ mod tests {
         assert!(absorb(&mut text, &mut got, &reply("ch_x", 15, 10)));
         assert_eq!(text, "Replies in ch_x to \"root 10\":\nada: reply 11\nada: reply 12\nada: reply 15\n\n(tail)");
         assert_eq!(got.len(), 3);
+    }
+
+    /// #1339: what wakes an agent block together is one prompt: alone, as
+    /// it is; one thread's, merged as #580's; else each apart, in the order
+    /// they came. It's from each author but the owner, once.
+    #[test]
+    fn what_wakes_a_block_together_is_one_prompt() {
+        let reply = |room: &str, seq: i64, root: i64| MentionTag {
+            room: room.into(),
+            seq,
+            headline: String::new(),
+            thread: Some(MentionThread {
+                root,
+                head: format!("In {room}:"),
+                line: format!("ada: {seq}"),
+                tail: "(tail)".into(),
+            }),
+            watch: None,
+        };
+        let one = [("framed 11".to_owned(), reply("ch_x", 11, 10))];
+        assert_eq!(together(&one), "framed 11");
+        let thread = [one[0].clone(), ("framed 12".to_owned(), reply("ch_x", 12, 10))];
+        assert_eq!(together(&thread), "In ch_x:\nada: 11\nada: 12\n\n(tail)");
+        let watch = MentionTag { room: "wch_1".into(), seq: 0, headline: String::new(), thread: None, watch: None };
+        let apart = [("post 5".to_owned(), reply("dm_staff", 5, 5)), ("watch".to_owned(), watch)];
+        let text = together(&apart);
+        assert!(text.starts_with("2 messages came for you while you were idle"), "{text}");
+        assert!(text.ends_with("post 5\n\n---\n\nwatch"), "{text}");
+
+        let by = |who: &str, name: &str| Driver { who: who.into(), name: name.into() };
+        let items =
+            |bys: &[Driver]| bys.iter().map(|b| (String::new(), b.clone(), apart[0].1.clone())).collect::<Vec<_>>();
+        let jake = by("agent-mention", "Jake");
+        let arugula = by("watch", "Arugula");
+        assert_eq!(wake_by(&items(&[jake.clone(), arugula, jake])).as_deref(), Some("Jake, Arugula"));
+        assert_eq!(wake_by(&items(&[by("owner", "me")])), None);
     }
 
     #[test]

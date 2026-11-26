@@ -18,7 +18,10 @@ use crate::agent::images::sniff;
 /// One picture, in bytes.
 pub const ASSET_MAX: usize = 2 * 1024 * 1024;
 /// The pictures one Doc has.
-pub const ASSETS_MAX: usize = 20;
+pub const ASSETS_MAX: usize = 60;
+/// All of one Doc's pictures together, in bytes: 20 of the largest, which
+/// is also what a shared Doc's snapshot (at most 48 MB) has room for.
+pub const ASSETS_TOTAL_MAX: usize = 40 * 1024 * 1024;
 
 /// The folder inside the Doc's.
 pub const FOLDER: &str = "assets";
@@ -72,6 +75,30 @@ pub fn check_name(name: &str) -> Result<(), String> {
     }
     if named_mime(name).is_none() {
         return Err(format!("asset name {name:?} must end in {} (lowercase)", extensions()));
+    }
+    Ok(())
+}
+
+/// Whether the Doc, holding `held` (each picture's name and size), has
+/// room for `name` at `size` bytes: a name it has is replaced, not counted
+/// twice. Or why not, in one line.
+pub fn check_room<'a>(held: impl IntoIterator<Item = (&'a str, u64)>, name: &str, size: u64) -> Result<(), String> {
+    let (mut count, mut total) = (0, size);
+    for (n, s) in held {
+        if n != name {
+            count += 1;
+            total += s;
+        }
+    }
+    if count >= ASSETS_MAX {
+        return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
+    }
+    if total > ASSETS_TOTAL_MAX as u64 {
+        return Err(format!(
+            "a Doc keeps at most {ASSETS_MAX} pictures and {} MiB of them: {name} would make it {} MiB; replace or shrink one",
+            ASSETS_TOTAL_MAX >> 20,
+            total.div_ceil(1 << 20)
+        ));
     }
     Ok(())
 }

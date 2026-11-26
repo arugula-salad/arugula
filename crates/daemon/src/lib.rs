@@ -10,6 +10,7 @@ mod acl {
 mod acl_api;
 pub mod agent;
 pub mod agent_mentions;
+pub mod approvals;
 use arugula_mux::agentenv;
 pub mod api;
 pub mod args;
@@ -55,6 +56,7 @@ use arugula_mux::keys;
 pub mod lab_flags;
 // What the base asks of Labs (crates/arugulad-labs), which registers it.
 pub mod lab_hooks;
+pub mod ladder;
 mod listening;
 pub mod local_watches;
 mod localauth;
@@ -66,6 +68,7 @@ use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
 use arugula_mux::pane;
+mod pane_asks;
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 pub mod peer;
 use arugula_mux::perm;
@@ -102,6 +105,8 @@ use arugula_mux::store;
 pub mod subcommands;
 use arugula_mux::sys;
 pub(crate) use arugula_mux::sys::home;
+#[cfg(unix)]
+pub mod build_dirs;
 pub mod tailscale;
 pub mod telemetry;
 mod tls;
@@ -235,6 +240,9 @@ fn start_background(app: &std::sync::Arc<server::App>) {
     // M70: uploads older than a day go, from now.
     #[cfg(unix)]
     crate::task::spawn(upload::keep_sweeping());
+    // #1410: agents' build folders that no worktree or session owns go.
+    #[cfg(unix)]
+    crate::task::spawn(build_dirs::keep_sweeping(app.clone()));
 }
 
 /// A random name for this daemon's state directory, kept in it: the
@@ -534,6 +542,7 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
                 Some(t) => rt.block_on(control::join_with_token(&url, &name, &t, &dir))?,
                 None => rt.block_on(control::join(&url, &name, team.as_deref(), account.as_deref(), &dir))?,
             }
+            say_remote_input(&dir);
             if daemon_running(&dir) {
                 println!("  The running daemon picks this up within a few seconds.");
             } else {
@@ -677,51 +686,31 @@ fn lasted(secs: u64) -> String {
     }
 }
 
-/// Before a join (Arugula #1194): may people type into this machine
-/// through Arugula cloud? `--remote-input` (or `ARUGULA_REMOTE_INPUT`)
-/// says, else a terminal is asked. Unanswered (no terminal, the input
-/// ended), a machine joining for the first time is off, and one already
-/// joined or set before stays as it is (`sharing::join_sets`). Join says
-/// which way it is either way.
+/// Before a join (Arugula #1194): `--remote-input` (or
+/// `ARUGULA_REMOTE_INPUT`) says whether people may type into this machine
+/// through Arugula cloud. Not told, nothing is asked: the join settles it
+/// (Arugula issue iss_d8ce0c357cf0902c51dec39378ef7a1b), on for the
+/// account's own machine and off for a team's, and whatever was said
+/// before stands (`sharing::joined_sets`).
 fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Result<()> {
-    use arugula_proto::sharing;
-    use std::io::{BufRead, IsTerminal, Write};
-    let on = match given {
-        Some(word) => Some(word == "on"),
-        None if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() => {
-            println!("{}", sharing::REMOTE_INPUT_QUESTION);
-            let mut answer = None;
-            let mut lines = std::io::stdin().lock().lines();
-            while answer.is_none() {
-                print!("{}", sharing::REMOTE_INPUT_PROMPT);
-                std::io::stdout().flush()?;
-                match lines.next() {
-                    Some(line) => answer = sharing::remote_input_answer(&line?),
-                    // Ended: unanswered.
-                    None => break,
-                }
-            }
-            answer
-        }
-        None => None,
-    };
-    let joined = dir.join("control.json").exists();
-    let set = sharing::join_sets(on, joined, sharing::remote_input_said(dir));
-    if let Some(on) = set {
-        sharing::set_remote_input(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if let Some(word) = given {
+        arugula_proto::sharing::set_remote_input(dir, word == "on").map_err(|e| anyhow::anyhow!("{e}"))?;
+        say_remote_input(dir);
     }
-    let now = sharing::remote_input(dir);
-    let why = if on.is_none() && set.is_some() { " (nobody answered, so it's off)" } else { "" };
-    if now {
-        println!("  Typing through Arugula cloud: on, as each person's role allows.");
+    Ok(())
+}
+
+/// Which way typing through Arugula cloud is here, and how to change it.
+fn say_remote_input(dir: &std::path::Path) {
+    if arugula_proto::sharing::remote_input(dir) {
+        println!("  Typing through Arugula cloud: on, as each person's role allows (you, from your phone too).");
         println!("  Turn it off here with `arugulad sharing remote-input off`.");
     } else {
-        println!("  Typing through Arugula cloud: off{why}. Nobody types here through it, you included;");
+        println!("  Typing through Arugula cloud: off. Nobody types here through it, you included;");
         println!("  you can still watch from your other devices. To allow it, run");
-        println!("  `arugulad sharing remote-input on` here, or join with `--remote-input on`.");
+        println!("  `arugulad sharing remote-input on` here.");
     }
     println!();
-    Ok(())
 }
 
 /// `arugulad sharing`: the machine's sharing settings, one's state, or one
@@ -1207,7 +1196,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         sessions: agent::sessions(),
         pane_gone,
         usage: Arc::new(telemetry::Hooks),
-        followups: Arc::new(agent_mentions::TurnReports(turns_tx)),
+        followups: Arc::new(agent_mentions::TurnReports(turns_tx.clone())),
         at_exit: Some(mux::AtExit(Arc::new(|| lab_hooks::labs().at_exit()))),
     };
     // M101: counting starts with the mux; reports, once control is known.
@@ -1265,7 +1254,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         hand::Hands::open(&state_dir),
         rules,
     );
-    // Control hears where the turns that took teammates' mentions are (#540).
+    // Control hears where the turns that took teammates' mentions are (#540),
+    // and of the ones a wake couldn't send (#1339).
+    app.agent_mentions.wakes.report_to(turns_tx);
     crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
     // The watches it holds itself, on its own panes and blocks.
     crate::task::spawn(local_watches::keep(app.clone()));

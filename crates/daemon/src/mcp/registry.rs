@@ -49,6 +49,32 @@ pub trait ControlTools: Send + Sync + 'static {
         matches: Option<serde_json::Map<String, Value>>,
         limit: Duration,
     ) -> BoxFuture<'a, Out>;
+    /// The chief of staff's first prompt as an agent block (Arugula #1337):
+    /// its standing instructions, then `prompt`.
+    fn chief_of_staff_prompt(&self, prompt: &str) -> String;
+    /// A board lead's first prompt (Arugula #1440): its standing
+    /// instructions, then `prompt`.
+    fn board_lead_prompt(&self, prompt: &str) -> String;
+    /// An issue agent's first prompt (Arugula #1440): its standing
+    /// instructions, then `prompt`.
+    fn issue_agent_prompt(&self, prompt: &str) -> String;
+    /// Make `session`, an agent block's on this machine, the lead of the
+    /// person's staff room in `project` (Arugula #1338). Answers the room.
+    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out>;
+    /// The person's staff room in `project`, with its lead (Arugula #1340).
+    fn staff_room<'a>(&'a self, app: &'a App, project: &'a str) -> BoxFuture<'a, Out>;
+    /// Tell the staff room's lead `session` that it's moved (Arugula #1340):
+    /// `notice` in `room`, by `by`, the session taking over, as this
+    /// machine's agent; or, for a hosted session (`ses_…`), stop it with
+    /// `notice` as the reason.
+    fn stand_down<'a>(
+        &'a self,
+        app: &'a App,
+        room: &'a str,
+        session: &'a str,
+        notice: &'a str,
+        by: &'a str,
+    ) -> BoxFuture<'a, Out>;
 }
 
 static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
@@ -112,6 +138,85 @@ pub async fn wait_event(
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_event(call, event, matches, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on an event")),
+    }
+}
+
+/// The recipe `start_agent` starts a chief of staff with (Arugula #1338),
+/// as `session_start` takes it for a hosted one.
+pub const CHIEF_OF_STAFF: &str = "chief-of-staff";
+
+/// [`ControlTools::chief_of_staff_prompt`].
+pub fn chief_of_staff_prompt(prompt: &str) -> Result<String, String> {
+    match CONTROL_TOOLS.get() {
+        Some(c) => Ok(c.chief_of_staff_prompt(prompt)),
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't start a chief of staff")),
+    }
+}
+
+/// The recipe a board's lead runs (Arugula #1440): `start_agent {recipe}`
+/// on this machine, and a ladder start's lead by default.
+pub const BOARD_LEAD: &str = "board-lead";
+
+/// The recipe an agent started on an issue runs (Arugula #1440): it leads
+/// the issue's thread. Every start on an issue puts it first; naming it is
+/// the same as not.
+pub const ISSUE_AGENT: &str = "issue-agent";
+
+/// Whether `name` is one of Arugula's own recipes, which a block reads as
+/// its first prompt, not one it wears (`.claude/agents/NAME.md`).
+pub fn own_recipe(name: &str) -> bool {
+    [CHIEF_OF_STAFF, BOARD_LEAD, ISSUE_AGENT].contains(&name.trim())
+}
+
+/// [`ControlTools::board_lead_prompt`], for the lead of `board` when it's
+/// known.
+pub fn board_lead_prompt(board: Option<&str>, prompt: &str) -> Result<String, String> {
+    let prompt = match board {
+        Some(b) => format!("Your board is {b}.\n\n{}", prompt.trim()),
+        None => prompt.trim().to_owned(),
+    };
+    match CONTROL_TOOLS.get() {
+        Some(c) => Ok(c.board_lead_prompt(&prompt)),
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't start a board's lead")),
+    }
+}
+
+/// [`ControlTools::issue_agent_prompt`], for an agent on `issue` (on
+/// `board`, when it's known). Without control's tools, it has no thread to
+/// lead: `prompt` with its issue.
+pub fn issue_agent_prompt(issue: &str, board: Option<&str>, prompt: &str) -> String {
+    let about = match board {
+        Some(b) => format!("Your issue is {issue}, on the board {b}."),
+        None => format!("Your issue is {issue}."),
+    };
+    let prompt = format!("{about}\n\n{}", prompt.trim());
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.issue_agent_prompt(&prompt),
+        None => prompt,
+    }
+}
+
+/// [`ControlTools::lead_staff`].
+pub async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.lead_staff(app, project, session).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't lead a staff room")),
+    }
+}
+
+/// [`ControlTools::staff_room`].
+pub async fn staff_room(app: &App, project: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.staff_room(app, project).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't read a staff room")),
+    }
+}
+
+/// [`ControlTools::stand_down`].
+pub async fn stand_down(app: &App, room: &str, session: &str, notice: &str, by: &str) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.stand_down(app, room, session, notice, by).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't move a chief of staff")),
     }
 }
 

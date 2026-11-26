@@ -76,7 +76,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub use assets::ASSET_MAX;
-use assets::{ASSETS_MAX, Asset};
+use assets::Asset;
 use link::{Fail, Link};
 
 use crate::{
@@ -531,9 +531,7 @@ impl Doc {
             if let Some(a) = st.assets.iter().find(|a| a.name != name && a.name.eq_ignore_ascii_case(name)) {
                 return Err(format!("the Doc has {} already: use that name to replace it", a.name));
             }
-            if st.assets.len() >= ASSETS_MAX && !st.assets.iter().any(|a| a.name == name) {
-                return Err(format!("a Doc has at most {ASSETS_MAX} assets: replace one by its name"));
-            }
+            assets::check_room(st.assets.iter().map(|a| (a.name.as_str(), a.size)), name, bytes.len() as u64)?;
         }
         let size = bytes.len() as u64;
         write(self.dir.join(assets::FOLDER), name, bytes).await?;
@@ -1517,20 +1515,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_doc_keeps_twenty_pictures() {
+    async fn a_doc_keeps_sixty_pictures() {
         let dir = temp("asset-count");
         let (d, pushes) = doc(&dir, false);
-        for i in 0..ASSETS_MAX {
+        for i in 0..assets::ASSETS_MAX {
             put(&d, &format!("p{i:02}.png"), &png(&i.to_string())).await.unwrap();
         }
         let pushed = pushes.load(Ordering::SeqCst);
         let e = put(&d, "one-more.png", &png("x")).await.unwrap_err();
-        assert!(e.contains("at most 20 assets") && !e.contains('\n'), "{e}");
-        assert_eq!((assets(&d).len(), pushes.load(Ordering::SeqCst)), (20, pushed));
+        assert!(e.contains("at most 60 assets") && !e.contains('\n'), "{e}");
+        assert_eq!((assets(&d).len(), pushes.load(Ordering::SeqCst)), (60, pushed));
         assert!(!dir.join(FOLDER).join(assets::FOLDER).join("one-more.png").exists());
         // A name it has is replaced, not counted twice.
         put(&d, "p07.png", &png("new")).await.unwrap();
-        assert_eq!(assets(&d).len(), 20);
+        assert_eq!(assets(&d).len(), 60);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_docs_pictures_together_are_at_most_forty_mib() {
+        let dir = temp("asset-total");
+        let (d, pushes) = doc(&dir, false);
+        // 19 of the largest and one a little under: 40 MiB less a bit.
+        let full = png(&"x".repeat(ASSET_MAX - 8));
+        for i in 0..19 {
+            put(&d, &format!("big{i:02}.png"), &full).await.unwrap();
+        }
+        put(&d, "last.png", &png(&"x".repeat(ASSET_MAX - 1008))).await.unwrap();
+        let pushed = pushes.load(Ordering::SeqCst);
+        // 1000 bytes of room: a small picture fits, a large one doesn't.
+        let e = put(&d, "over.png", &png(&"x".repeat(2000))).await.unwrap_err();
+        assert!(e.contains("60 pictures and 40 MiB") && e.contains("over.png") && !e.contains('\n'), "{e}");
+        assert_eq!((assets(&d).len(), pushes.load(Ordering::SeqCst)), (20, pushed));
+        assert!(!dir.join(FOLDER).join(assets::FOLDER).join("over.png").exists());
+        put(&d, "small.png", &png(&"x".repeat(900))).await.unwrap();
+        // A name it has is replaced, so its old bytes don't count: the
+        // largest can be written again, but not once the Doc is full.
+        put(&d, "big00.png", &full).await.unwrap();
+        let e = put(&d, "last.png", &full).await.unwrap_err();
+        assert!(e.contains("40 MiB"), "{e}");
         std::fs::remove_dir_all(dir).unwrap();
     }
 

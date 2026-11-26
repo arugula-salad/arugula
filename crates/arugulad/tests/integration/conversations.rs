@@ -6,7 +6,8 @@
 //! session held by another process: continuing refused, forking allowed;
 //! and one held in a pane, placed there by its parent processes (#81).
 //! Under systemd, one held in a pane's scope, then by the block's own
-//! agent (#82).
+//! agent (#82). And Continue here: `claude --resume` in a terminal pane,
+//! with no adapter.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -322,6 +323,80 @@ fn a_conversation_in_a_pane_says_which() {
     // Opened, its block says the same.
     let v = d.post("/api/conversations/open", json!({ "id": HELD, "then": "continue" }));
     assert!(v["error"].as_str().unwrap().contains(&format!("pane %{pane}")), "{v}");
+}
+
+/// Continue here: a terminal pane in the conversation's folder running
+/// the person's own `claude --resume <id>`, with no adapter installed; the
+/// pane that has it once it runs; and with its folder gone, nothing until
+/// home is asked for, then there. The `claude` on the daemon's PATH is a
+/// stand-in that writes down where it ran and what with, and holds the
+/// session as the real one would.
+#[test]
+fn continue_here_resumes_in_a_terminal_in_its_folder() {
+    let c = Claude::new("here");
+    c.seed(ID, "kestrel", "cli");
+    // No adapter: nothing to install, nothing it needs.
+    std::fs::remove_dir_all(c.agents.join("claude")).unwrap();
+    let bin = c.root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let (ran, held) = (c.root.join("ran"), c.dir.join("sessions/here.json"));
+    let start = PROC_START.replace("$1", "$$");
+    let fake = bin.join("claude");
+    std::fs::write(
+        &fake,
+        format!(
+            r#"#!/bin/sh
+printf '%s|%s\n' "$(pwd -P)" "$*" >> {ran}
+s=$({start}); printf '{{"pid":%s,"sessionId":"%s","procStart":"%s","kind":"interactive","entrypoint":"cli","status":"idle"}}' $$ "$2" "$s" > {f}.tmp && mv {f}.tmp {f}
+exec sleep 60
+"#,
+            ran = ran.display(),
+            f = held.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let mut env = c.env();
+    env.push(("PATH", path));
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let d = Daemon::child_env(&[], &env);
+    let work = c.work.display().to_string();
+    // Where it ran, through any link (macOS' /tmp).
+    let real = |p: &str| std::fs::canonicalize(p).unwrap().display().to_string();
+    let work_real = real(&work);
+
+    let v = d.post("/api/conversations/continue", json!({ "id": "11111111" }));
+    let pane = v["pane"].as_u64().unwrap();
+    assert_eq!(
+        (v["opened"].as_bool(), v["conversation"].as_str(), v["cwd"].as_str()),
+        (Some(true), Some(ID), Some(work.as_str())),
+        "{v}"
+    );
+    assert_eq!(v["folder_gone"], Value::Null, "{v}");
+    d.wait_for("claude --resume", || held.exists());
+    assert_eq!(std::fs::read_to_string(&ran).unwrap(), format!("{work_real}|--resume {ID}\n"));
+    // A terminal, not an agent block.
+    assert_eq!(conversations(&d, "")[0]["block"], Value::Null);
+
+    // Once it runs there, Continue here goes to that pane.
+    d.wait_for("the pane holds it", || conversations(&d, "live=1").first().is_some_and(|c| c["live"]["pane"] == pane));
+    let again = d.post("/api/conversations/continue", json!({ "id": ID }));
+    assert_eq!((again["pane"].as_u64(), again["opened"].as_bool()), (Some(pane), Some(false)), "{again}");
+
+    // Its folder gone (and the holder too): it says so and opens nothing,
+    // then runs in home when asked.
+    std::fs::remove_file(&held).unwrap();
+    std::fs::remove_dir_all(&c.work).unwrap();
+    let gone = d.post("/api/conversations/continue", json!({ "id": ID }));
+    assert_eq!((gone["pane"].as_u64(), gone["folder_gone"].as_bool()), (None, Some(true)), "{gone}");
+    assert_eq!(gone["cwd"], work);
+    let home = d.post("/api/conversations/continue", json!({ "id": ID, "home": true }));
+    let there = home["cwd"].as_str().unwrap().to_owned();
+    assert!(home["pane"].as_u64().is_some_and(|p| p != pane) && there != work, "{home}");
+    d.wait_for("claude --resume in home", || std::fs::read_to_string(&ran).unwrap().lines().count() == 2);
+    let last = std::fs::read_to_string(&ran).unwrap().lines().last().unwrap().to_owned();
+    assert_eq!(last, format!("{}|--resume {ID}", real(&there)));
 }
 
 /// Under systemd (#82), where panes and agents run in scopes: a Claude Code

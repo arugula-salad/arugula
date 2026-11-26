@@ -1,8 +1,8 @@
 // The Overview's Board level (Arugula #1287, #1288): a board zoomed to in
 // place, at `/p/:project/board/:board`. Its title, goal and a big lane bar;
 // its lead's card, with Talk to the lead (that agent's tab) and Board
-// thread as two buttons, or "no lead" and a way to ask the chief of staff
-// for one; then its open tickets as the board groups them, each with its
+// thread as two buttons, or "no lead" and Run this board, which puts the
+// board's card in Needs you (#1416); then its open tickets as the board groups them, each with its
 // number and title, its PR or check line, one word of how it stands and
 // the agents on it as chips (sessions by card, #1082). Done tickets fold
 // into one line. A ticket zooms on to its Work level; a chip opens that
@@ -15,7 +15,7 @@ import { EmptyLine } from "../shared/ui/block-states";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet } from "../shell/fleet";
 import { shortHost } from "../shell/swarm/model";
-import { STATE_WORD, type OvBoard, type OvCard, type OvSession } from "../shell/swarm/overview";
+import { ticketWord, wordOf, type OvBoard, type OvCard, type OvSession } from "../shell/swarm/overview";
 import { names } from "../platform/links";
 import { follow, pathOf } from "../platform/router";
 
@@ -38,12 +38,12 @@ export interface BoardLevelProps {
   leads: number;
   /** The board's thread in the talk panel, while chat is on. */
   thread?(): void;
-  /** Ask the chief of staff, in the staff room, to start a lead for it (a board no one leads, once the room is there). */
-  askChief?(): void;
+  /** Run this board (a board no one leads): its card goes in Needs you. */
+  run?(): void;
 }
 
 /** The Board level: the board, its lead, and its open tickets to zoom in to. */
-export function OverviewBoard({ project, board: b, view, zoomCard, talkTo, leadWho, leads, thread, askChief }: BoardLevelProps) {
+export function OverviewBoard({ project, board: b, view, zoomCard, talkTo, leadWho, leads, thread, run }: BoardLevelProps) {
   const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
   // Done tickets fold into one line; their rows are drawn once it's unfolded.
   const [unfolded, setUnfolded] = useState(false);
@@ -76,7 +76,7 @@ export function OverviewBoard({ project, board: b, view, zoomCard, talkTo, leadW
             </a>
           </p>
         </header>
-        <LeadCard b={b} who={leadWho} leads={leads} talkTo={talkTo} thread={thread} askChief={askChief} />
+        <LeadCard b={b} who={leadWho} leads={leads} talkTo={talkTo} thread={thread} run={run} />
       </div>
       {open.length === 0 ? (
         <EmptyLine data-ov-level-empty>Nothing open on this board.</EmptyLine>
@@ -105,8 +105,8 @@ export function OverviewBoard({ project, board: b, view, zoomCard, talkTo, leadW
 
 /** Who leads the board: its name, how it stands, its machine and how many
  * boards it leads, with Talk to the lead and Board thread apart; or that
- * nobody does, and a way to ask the chief of staff for one. */
-function LeadCard({ b, who, leads, talkTo, thread, askChief }: { b: OvBoard; who?: string; leads: number; talkTo: (s: OvSession) => void; thread?: () => void; askChief?: () => void }) {
+ * nobody does, and Run this board. */
+function LeadCard({ b, who, leads, talkTo, thread, run }: { b: OvBoard; who?: string; leads: number; talkTo: (s: OvSession) => void; thread?: () => void; run?: () => void }) {
   const l = b.lead;
   const threadButton = thread && (
     <button type="button" class="secondary small" data-ov-lead-thread onClick={thread}>
@@ -120,17 +120,17 @@ function LeadCard({ b, who, leads, talkTo, thread, askChief }: { b: OvBoard; who
         <b class="dim">No lead</b>
         <span class="dim ov-bl-lead-sub">No session leads this board.</span>
         <div class="ov-bl-lead-acts">
-          {askChief && (
-            <button type="button" class="secondary small" data-ov-ask-chief onClick={askChief}>
-              Ask chief of staff to start one
+          {run && (
+            <button type="button" class="primary small" data-ov-run-board onClick={run}>
+              Run this board
             </button>
           )}
           {threadButton}
         </div>
       </aside>
     );
-  const name = who ? `${who}'s ${l.session}` : l.session;
-  const says = l.standing ? STATE_WORD[l.standing] : "";
+  const name = who ? `${who}'s ${l.peek.name}` : l.peek.name;
+  const says = l.standing ? wordOf({ standing: l.standing, asks: who }) : "";
   return (
     <aside class="ov-bl-lead" data-ov-lead-card={l.session}>
       <span class="dim ov-bl-lead-label">Lead</span>
@@ -149,13 +149,6 @@ function LeadCard({ b, who, leads, talkTo, thread, askChief }: { b: OvBoard; who
       </div>
     </aside>
   );
-}
-
-/** The word a ticket says: it asks you (its question, or a session on it
- * waiting), else its lane's. */
-function ticketWord(r: BoardRow, c?: OvCard): { word: string; asks: boolean } {
-  if (r.ask?.mine || c?.standing === "asks" || c?.standing === "needs") return { word: "asks you", asks: true };
-  return { word: r.lane === "doing" ? "working" : r.lane === "review" ? "in review" : r.lane === "next" ? "next" : "done", asks: false };
 }
 
 /** A ticket's PR or check line: its own PR's, else the first PR attached as its work, as the board's chip says it. */
@@ -204,7 +197,7 @@ function TicketRow({ r, c, project, board, zoom, talkTo }: { r: BoardRow; c?: Ov
 
 /** An agent on a ticket: a dot for how it stands, its name and machine; it opens that agent's tab. */
 function AgentChip({ s, talk }: { s: OvSession; talk: () => void }) {
-  const says = STATE_WORD[s.standing];
+  const says = wordOf(s);
   const title = `${s.name} on ${s.where}${says ? `, ${says}` : ""}: talk to it`;
   return (
     <button type="button" class="ov-lead" title={title} aria-label={title} data-ov-agent-chip={s.key} onClick={talk}>

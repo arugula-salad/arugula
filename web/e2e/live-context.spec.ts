@@ -11,9 +11,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { menu, paneEl, panes, reset, seedConversation, SLEEP } from "./helpers";
+import { menu, menuItem, paneEl, panes, reset, seedConversation, SLEEP } from "./helpers";
 
 const VERSIONS = { claude_version: "2.1.316", mod_version: "0.2.0" };
+
+/** Conversation `id` from Your work (its ⋯) as an agent block, beside `term`. */
+async function openAsBlock(page: Page, term: number, id: string) {
+  await menu(page, paneEl(page, term), "Your work…");
+  const row = page.getByRole("dialog", { name: "Your work" }).locator(`[data-conversation="${id}"]`);
+  await row.click();
+  await row.locator("[data-conv-more]").click();
+  await (await menuItem(page, "Open as agent block")).click();
+}
 
 async function signal(page: Page, pane: number, body: object) {
   await page.evaluate(([p, b]) => window.__arugula.client.api(`/api/panes/${p}/session-signal`, b), [pane, { ...VERSIONS, ...body }] as const);
@@ -66,10 +75,7 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
   try {
     await reset(page);
     const [term] = await panes(page);
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
-    const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
-    await dialog.locator(".picker-filter").fill(title);
-    await dialog.locator("[data-conversation]", { hasText: title }).click();
+    await openAsBlock(page, term, s.id);
     const block = (await (await page.waitForFunction(() => window.__arugula.client.state!.panes.find((p) => p.type === "agent")?.id ?? null)).jsonValue()) as number;
     const bar = paneEl(page, block).locator(".agent-bar");
     // From the transcript: Sonnet 4.6's window can't be told, and its cost
@@ -99,11 +105,12 @@ test("an agent block's strip: the mod's figures win over its transcript's", asyn
 });
 
 // #453: keyed by Claude Code's session id, with the pane optional. A
-// session with no pane (VS Code's Claude Code, the desktop app) shows its
-// figures where conversations are listed; one from an app started in a pane
-// (its pid isn't in the pane's foreground job) does too, and not on that pane.
-// VS Code's sessions are on the default list, as VS Code's.
-test("a session with no pane shows its live figures in the conversations list", async ({ page }) => {
+// session with no pane (VS Code's Claude Code, the desktop app) keeps its
+// figures; one from an app started in a pane (its pid isn't in the pane's
+// foreground job) does too, and not on that pane. VS Code's sessions are on
+// the default list. Your work's rows draw no strip or cost (Arugula #1396),
+// so what's checked is what `conversations.list` carries for them.
+test("a session with no pane keeps its live figures in the conversations list", async ({ page }) => {
   const claude = process.env.CLAUDE_CONFIG_DIR!;
   const title = "Live from no pane";
   const away = "Live from VS Code started in a pane";
@@ -114,6 +121,12 @@ test("a session with no pane shows its live figures in the conversations list", 
   writeFileSync(tPath, readFileSync(tPath, "utf8").replaceAll('"entrypoint":"cli"', '"entrypoint":"claude-vscode"'));
   const post = (body: object) =>
     page.evaluate((b) => window.__arugula.client.api("/api/conversations/session-signal", b), { ...VERSIONS, ...body });
+  type Row = { id: string; source: string; context?: { source?: string; tokens: number | null; window: number | null; effort?: string; cost_usd?: number | null; model: string | null; claude_version?: string | null; mod_version?: string | null } };
+  const listed = () =>
+    page.evaluate(async () => {
+      const res = await window.__arugula.client.request("GET", "/api/conversations?limit=1000");
+      return ((await res.json()) as { conversations: unknown[] }).conversations;
+    }) as Promise<Row[]>;
   try {
     await reset(page);
     const [term] = await panes(page);
@@ -122,25 +135,26 @@ test("a session with no pane shows its live figures in the conversations list", 
     // Started from the terminal, running elsewhere: this test's own process
     // isn't in the pane's foreground job.
     await post({ session_id: t.id, event: "usage", tokens: 20_000, window: 200_000, pane: term, pid: process.pid });
-    await menu(page, paneEl(page, term), "Claude Code conversations…");
-    const dialog = page.getByRole("dialog", { name: "Claude Code conversations" });
-    const row = dialog.locator(`[data-conversation="${s.id}"]`);
-    const strip = row.locator("[data-conv-context] [data-context]");
-    await expect(strip).toHaveAttribute("data-source", "live");
-    await expect(strip.locator("[data-fill]")).toHaveAttribute("data-fill", "30");
-    await expect(row.locator(".conv-cost")).toHaveText("$2.50");
-    await expect(row.locator(".conv-cost")).toHaveAttribute("data-cost-from", "claude");
-    // The strip opens its popover, not the conversation.
-    await strip.locator("button").click();
-    const pop = page.locator("[data-context-pop]");
-    await expect(pop).toContainText("Opus 5.5, high effort");
-    await expect(pop.locator("[data-context-source]")).toHaveText("Live from Claude Code (Claude Code 2.1.316, arugula-live 0.2.0), as it runs.");
-    await expect(dialog).toBeVisible();
+    const rows = await listed();
+    expect(rows.find((r) => r.id === s.id)?.context).toMatchObject({
+      source: "live",
+      tokens: 300_000,
+      window: 1_000_000,
+      effort: "high",
+      cost_usd: 2.5,
+      model: "Opus 5.5",
+      claude_version: "2.1.316",
+      mod_version: "0.2.0",
+    });
+    const app = rows.find((r) => r.id === t.id);
+    expect(app?.source).toBe("vscode");
+    expect(app?.context).toMatchObject({ source: "live", tokens: 20_000, window: 200_000 });
+    // Listed in Your work, as Claude Code's.
+    await menu(page, paneEl(page, term), "Your work…");
+    const dialog = page.getByRole("dialog", { name: "Your work" });
+    await expect(dialog.locator(`[data-conversation="${t.id}"] .yw-tool`)).toHaveText("Claude Code");
     await page.keyboard.press("Escape");
-    await expect(pop).toHaveCount(0);
-    const app = dialog.locator(`[data-conversation="${t.id}"]`);
-    await expect(app.locator(".conv-source")).toHaveText("VS Code");
-    await expect(app.locator("[data-conv-context] [data-fill]")).toHaveAttribute("data-fill", "10");
+    await expect(dialog).toBeHidden();
     // The terminal it was started from shows none of it.
     await expect(page.locator(`[data-pane-header="${term}"] [data-context]`)).toHaveCount(0);
   } finally {

@@ -19,9 +19,23 @@ mkdir -p "$rel"
 for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin x86_64-apple-darwin; do
   n=arugula-${version#v}-$t
   mkdir -p "$work/src/$n"
-  # shellcheck disable=SC2016 # expands in the stand-in, not here
-  printf '#!/bin/sh\necho "arugulad $*" >>"$HOME/calls"\n' >"$work/src/$n/arugulad"
-  printf '#!/bin/sh\necho arugula\n' >"$work/src/$n/arugula"
+  # arugulad records how it was run; a service install puts the CLI in
+  # ~/.local/bin, as the real one does.
+  cat >"$work/src/$n/arugulad" <<'EOF'
+#!/bin/sh
+echo "arugulad $*" >>"$HOME/calls"
+[ "$*" = install ] && mkdir -p "$HOME/.local/bin" && cp "$(dirname "$0")/arugula" "$HOME/.local/bin/arugula"
+exit 0
+EOF
+  # arugula web --if-browser: opens the page when FAKE_BROWSER says
+  # there's a browser, else prints nothing and fails, as the CLI does.
+  cat >"$work/src/$n/arugula" <<'EOF'
+#!/bin/sh
+echo "arugula $*" >>"$HOME/calls"
+[ "$1 $2" = "web --if-browser" ] || exit 0
+[ -n "${FAKE_BROWSER:-}" ] || exit 1
+echo "Opened http://127.0.0.1:7681/ in your browser, signed in."
+EOF
   chmod +x "$work/src/$n/arugulad" "$work/src/$n/arugula"
   tar -C "$work/src" -czf "$rel/$n.tar.gz" "$n"
 done
@@ -89,6 +103,7 @@ case "\$url" in
   */releases/download/$version/*) f="$rel/\${url##*/}" ;;
   */releases/download/app-latest/*) f="$apprel/\${url##*/}" ;;
   */releases/download/*) exit 22 ;;
+  http://127.0.0.1:7681/) [ -n "\${FAKE_UP:-}" ] && exit 0; exit 7 ;;
   *) exit 7 ;;
 esac
 [ -f "\$f" ] || exit 22
@@ -387,6 +402,51 @@ done
 mkdir -p "$work/home-mac-old-app/Apps/illogical.app"
 app mac-old-app Darwin arm64 "" arm64 --app
 if [ -e "$home/Apps/illogical.app" ]; then bad mac-old-app "left illogical.app beside Arugula.app"; else ok "illogical.app replaced"; fi
+
+# A started daemon that answers: the installer opens its page through
+# `arugula web --if-browser` (the sign-in link, never printed), so the
+# browser lands on Your work signed in. Not over ssh, not with the Mac
+# app (it shows the page), not with ARUGULA_NO_OPEN; with no browser,
+# the summary says how, as before.
+sd=$work/systemd
+mkdir -p "$sd"
+printf '#!/bin/sh\nexit 0\n' >"$sd/systemctl"
+chmod +x "$sd/systemctl"
+path=$stubs:$sd:$PATH
+release=("ARUGULA_VERSION=$version")
+here=(SSH_CONNECTION= SSH_TTY= FAKE_UP=1)
+opens() { grep -qx 'arugula web --if-browser' "$home/calls" 2>/dev/null; }
+with=("${here[@]}" FAKE_BROWSER=1)
+run open-linux Linux x86_64 ""
+if [ "$status" = 0 ] && opens && grep -q "Opened http://127.0.0.1:7681/ in your browser, signed in." <<<"$out" &&
+  grep -qF "arugula web   (http://127.0.0.1:7681, signed in: opened just now)" <<<"$out"; then
+  ok "started: opens the page signed in"
+else
+  bad open-linux "didn't open the page through arugula web --if-browser"
+fi
+with=("${here[@]}")
+run open-no-browser Linux x86_64 ""
+if [ "$status" = 0 ] && opens && grep -qF "arugula web   (http://127.0.0.1:7681, with your browser signed in)" <<<"$out" &&
+  ! grep -q "token" <<<"$out"; then
+  ok "no browser: says to run arugula web, no link"
+else
+  bad open-no-browser "failed, or didn't say how to open it"
+fi
+with=(FAKE_UP=1 FAKE_BROWSER=1)
+run open-ssh Linux x86_64 ""
+if [ "$status" = 0 ] && grep -qx 'arugulad install' "$home/calls" && ! opens; then ok "over ssh: no browser opened"; else bad open-ssh "opened a browser over ssh"; fi
+with=("${here[@]}" FAKE_BROWSER=1 ARUGULA_NO_OPEN=1)
+run open-no-open Linux x86_64 ""
+if [ "$status" = 0 ] && ! opens; then ok "ARUGULA_NO_OPEN: no browser opened"; else bad open-no-open "opened with ARUGULA_NO_OPEN=1"; fi
+with=("${here[@]}" FAKE_BROWSER=1 FAKE_CONSOLE="$(id -un)")
+run open-mac-app Darwin arm64 ""
+if [ "$status" = 0 ] && grep -q '^open .*/Arugula.app$' "$home/calls" && ! opens; then ok "Mac app: it opens, not the browser"; else bad open-mac-app "opened the browser beside the app, or not the app"; fi
+with=("${here[@]}" FAKE_BROWSER=1)
+run open-mac-no-app Darwin arm64 "" --no-app
+if [ "$status" = 0 ] && opens; then ok "Mac, --no-app: opens the page"; else bad open-mac-no-app "didn't open the page"; fi
+with=()
+release=("ARUGULA_VERSION=$version" "ARUGULA_NO_START=1")
+path=$stubs:$PATH
 
 # No systemd: the binaries, and no links under illogical's names (#534).
 # PATH without systemctl: the stubs and the few tools install.sh uses.

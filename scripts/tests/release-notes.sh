@@ -235,13 +235,20 @@ case "$1" in
     ;;
 esac
 RELEASE
+# gh answers FAKE_AFTER instead once the train has slept, when it's set.
 cat >"$tmp/gh" <<'GH'
 #!/usr/bin/env bash
+if [ -s "$FAKE/slept" ] && [ -n "${FAKE_AFTER:-}" ]; then echo "$FAKE_AFTER"; exit 0; fi
 echo "${FAKE_GOING:-0} ${FAKE_STARTED:-}"
 GH
+# A fake sleep: records how long, and doesn't.
+cat >"$tmp/sleep" <<'SLEEP'
+#!/usr/bin/env bash
+echo "$1" >>"$FAKE/slept"
+SLEEP
 mkdir "$tmp/bin"
 mv "$tmp/gh" "$tmp/bin/gh"
-chmod +x "$tmp/release" "$tmp/bin/gh"
+chmod +x "$tmp/release" "$tmp/bin/gh" "$tmp/sleep"
 # A hand cut's file reaches main before its tag: its headlines stay out of a
 # train's notes, and only a file newer than the tag counts.
 hand() { # VERSION IDS (a JSON array of strings)
@@ -271,9 +278,10 @@ has "its own version's file leaves notes alone" "First thing"
 rm docs/releases/1.2.4.md
 
 git push -q origin main --tags
-export FAKE=$tmp PATH=$tmp/bin:$PATH ARUGULA_TRAIN_RELEASE=$tmp/release
+export FAKE=$tmp PATH=$tmp/bin:$PATH ARUGULA_TRAIN_RELEASE=$tmp/release ARUGULA_TRAIN_SLEEP=$tmp/sleep
 train() { # WHAT WANT_EXIT WANT_BUMPS SAYS
   : >"$tmp/bumps"
+  : >"$tmp/slept"
   local code=0 n
   scripts/release-train >"$tmp/out" 2>&1 || code=$?
   n=$(grep -c . "$tmp/bumps" || true)
@@ -288,7 +296,9 @@ export ARUGULA_RELEASE_TRAIN=on
 FAKE_GOING=1 train "a release going: stays" 0 0 "already going"
 FAKE_GREEN='' train "nothing green: stays" 0 0 "no commit has"
 recent=$(node -e 'console.log(new Date(Date.now() - 30 * 60000).toISOString())')
-FAKE_STARTED=$recent train "a release 30m ago: waits for the gap" 0 0 "waits for 60m"
+FAKE_STARTED=$recent train "a release 30m ago: waits for the gap once" 0 0 "waits for 60m"
+if [ "$(cat "$tmp/slept")" = 1830 ]; then ok "it slept the gap's last 30m, once"; else bad "slept: $(cat "$tmp/slept")"; fi
+FAKE_STARTED=$recent FAKE_AFTER="1 $recent" train "after the wait it looks again" 0 0 "already going"
 FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=20 FAKE_GREEN='' train "past a shorter gap: goes on" 0 0 "no commit has"
 FAKE_STARTED=$recent ARUGULA_TRAIN_GAP_MINUTES=0 FAKE_GREEN='' train "a manual run: no gap" 0 0 "no commit has"
 git tag -f v1.2.9 "$main" >/dev/null

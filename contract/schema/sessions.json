@@ -107,6 +107,13 @@
     "AgentSessionStart": {
       "description": "[`AGENT_SESSIONS`]'s body: where to ask, and what. On a native issue\n(`issue`: its id, `iss_…`; or `number` in `project`), or in a project's\nchannel (`room`), in the thread of one of its messages (`thread`, its\nseq) or as a message of its own.",
       "properties": {
+        "block": {
+          "description": "The agent block on the signing machine that asked (its pane), when\nan agent block did (Arugula #1393): the session's asks go to it\nfirst while it's live, and reach its person after ten minutes\nwithout an answer. Ignored by a control from before it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "issue": {
           "default": null,
           "type": [
@@ -286,6 +293,18 @@
             "null"
           ]
         },
+        "proposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatProposal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What an agent session proposes (`ask:prp_…`, Arugula #1278): its\nchoices are [`APPROVE`] and [`DENY`]. None for any other ask."
+        },
         "question": {
           "type": "string"
         },
@@ -322,10 +341,157 @@
       "properties": {
         "choice": {
           "type": "string"
+        },
+        "note": {
+          "description": "A to-do's (Arugula #1462): the person's note with [`TODO_DONE`] or\n[`TODO_CANT`], plain text, at most [`TODO_NOTE_MAX`] characters. It\nis kept on the to-do and never put in an event, a push or chat; one\nthat looks like a secret is refused. Any other ask takes none.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "choice"
+      ],
+      "type": "object"
+    },
+    "ChatAsks": {
+      "description": "[`PROJECT_ASKS`]' answer: what waits on the reader in a project, oldest\nfirst. Agents' proposals for now (Arugula #1278).",
+      "properties": {
+        "asks": {
+          "items": {
+            "$ref": "#/$defs/ChatAsk"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "asks"
+      ],
+      "type": "object"
+    },
+    "ChatProposal": {
+      "description": "A proposal as its card draws it ([`ChatAsk::proposal`]).",
+      "properties": {
+        "action": {
+          "description": "`start`, `close`, `run_board` or `todo`.",
+          "type": "string"
+        },
+        "answered_by_name": {
+          "description": "Who answered it, by name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "by_session": {
+          "description": "The session that proposed it, `ses_…`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "`prp_…`.",
+          "type": "string"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalIssue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`start`: the issue."
+        },
+        "outcome": {
+          "description": "What answering it did, in a line.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "`start`: what the new session is told (none: to work on the issue).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "`start`: the repo it names, `owner/name`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalRun"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`run_board`: the board, where its lead runs and what it may start."
+        },
+        "sessions": {
+          "description": "`close`: the sessions, as they are now.",
+          "items": {
+            "$ref": "#/$defs/ProposalSession"
+          },
+          "type": "array"
+        },
+        "started": {
+          "description": "`start`, approved: the session it started.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "description": "`open`, `approved`, `denied` or `failed` (approved, and doing it\ndidn't work: `outcome` says why); a to-do's `open`, `done`, `cant`\nor `cancelled`.",
+          "type": "string"
+        },
+        "todo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalTodo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`todo`: what to do, how, and its receipt."
+        },
+        "why": {
+          "description": "Why, in the agent's words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "by_session",
+        "sessions",
+        "why",
+        "state"
+      ],
+      "type": "object"
+    },
+    "GrantMachine": {
+      "description": "A machine a [`BoardGrant`] names: its id, and its name now (its id while\nit can't be told).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
       ],
       "type": "object"
     },
@@ -349,6 +515,438 @@
       "required": [
         "room",
         "seq"
+      ],
+      "type": "object"
+    },
+    "MachineCancel": {
+      "description": "[`agent_proposal_cancel`]'s body: the agent that asked, by its session's\nname on the machine.",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "MachinePropose": {
+      "description": "[`agent_proposals`]' body.",
+      "properties": {
+        "blocks": {
+          "default": [],
+          "description": "A close's blocks as the machine sees them now, for the card: `id`\nis `%N`, `title` the block's, `state` its agent's.",
+          "items": {
+            "$ref": "#/$defs/ProposalSession"
+          },
+          "type": "array"
+        },
+        "pane": {
+          "description": "Its block, by pane: a start works in its repo.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "proposal": {
+          "$ref": "#/$defs/Proposal"
+        },
+        "session": {
+          "description": "The proposing agent's session, by its name on the machine.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal",
+        "session",
+        "pane"
+      ],
+      "type": "object"
+    },
+    "MachineProposed": {
+      "description": "[`agent_proposals`]' answer: the card (`prp_…`, what `ask.answered`\nmatches as `ask`), and its message in the person's staff room.",
+      "properties": {
+        "ask": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ask",
+        "room",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "Proposal": {
+      "description": "What an agent session asks its asker to approve (Arugula #1278): it\ndoes nothing itself. The proposal is an ask in their staff room\n(`via` `ask:prp_…`) that mentions them, so it's under Needs you and\npushed to their phone; **Approve** does it as them, through the same\npath their own press would take, and **Deny** drops it. Either way\n`ask.answered` tells the session. Chat never approves it.",
+      "oneOf": [
+        {
+          "description": "An agent session on one of the project's native issues, as\n**Agent on this** starts one: on the box the project's pool picks,\nin `repo` when it's given, told `prompt` (by default, to work on\nthe issue).",
+          "properties": {
+            "action": {
+              "const": "start",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "prompt": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "number"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stop these sessions of the project (`ses_…`), as their cards'\n**Stop** does. A machine's agent (Arugula #1417) names agent blocks\non its own machine instead (`blocks`, by pane), and no sessions.",
+          "properties": {
+            "action": {
+              "const": "close",
+              "type": "string"
+            },
+            "blocks": {
+              "items": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "sessions": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "\"Run this board\" (Arugula #1416): start the board's lead on\n`machine`, and grant it issue agents on that machine and `machines`,\n`cap` at once, until the board closes or `lapse_days` pass. Approve\nwrites the board's grant (replacing any it had) and starts the lead\nthere. A machine's agent's only: `machine` is a machine of its\nperson's, by name or id (none: the asking machine).",
+          "properties": {
+            "action": {
+              "const": "run_board",
+              "type": "string"
+            },
+            "board": {
+              "description": "`brd_…`.",
+              "type": "string"
+            },
+            "cap": {
+              "description": "None: [`RUN_BOARD_CAP`].",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "lapse_days": {
+              "description": "None: when the board closes.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "machine": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "machines": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "prompt": {
+              "description": "What the lead is told; none: to run the board.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "board"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A to-do (Arugula #1462): work its person does outside Arugula (an\napproval on GitHub, a script with their credentials, a secret put\nsomewhere) and reports back on. Its card's choices are [`TODO_DONE`]\nand [`TODO_CANT`], with a note; nothing is done on Approve, and the\nagent may cancel it. `what`, `why` and `how` are plain text, shown\nas written (no Markdown): `what` one line, `how` the steps,\ncommands verbatim. It's for the person the agent works for (a\nsession's asker, a machine's owner): the agent doesn't name them.",
+          "properties": {
+            "action": {
+              "const": "todo",
+              "type": "string"
+            },
+            "conversation": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TodoConversation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A machine's agent's conversation, which the answer is for."
+            },
+            "how": {
+              "default": "",
+              "type": "string"
+            },
+            "issue": {
+              "description": "Its card: one of the project's native issues, by number.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "what": {
+              "type": "string"
+            },
+            "why": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "what"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProposalCancelled": {
+      "description": "A to-do cancelled by its agent: [`agent_proposal_cancel`]'s answer, and\na session's `ProposalCancel`'s.",
+      "properties": {
+        "ask": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ask"
+      ],
+      "type": "object"
+    },
+    "ProposalIssue": {
+      "description": "[`ChatProposal::issue`].",
+      "properties": {
+        "id": {
+          "description": "`iss_…`.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ProposalRun": {
+      "description": "A \"Run this board\" card's lines ([`ChatProposal::run`]).",
+      "properties": {
+        "board": {
+          "description": "`brd_…`, and its title now.",
+          "type": "string"
+        },
+        "board_title": {
+          "type": "string"
+        },
+        "cap": {
+          "description": "How many issue agents at once.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checkouts": {
+          "default": [],
+          "description": "What each machine said when the card was raised: the first of the\nproject's repos it has a clone of, or none. A machine that isn't here\ncouldn't be asked (offline, or its Arugula is too old).",
+          "items": {
+            "$ref": "#/$defs/RunCheckout"
+          },
+          "type": "array"
+        },
+        "lapse_days": {
+          "description": "None: until the board closes.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lead_machine": {
+          "$ref": "#/$defs/GrantMachine",
+          "description": "Where its lead runs."
+        },
+        "machines": {
+          "description": "Where its issue agents may run: the lead's machine first.",
+          "items": {
+            "$ref": "#/$defs/GrantMachine"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "description": "The board's repo (Arugula #1458): the first of the project's linked\nrepos, the board's own first. None: the project links none, and\nagents start in their machine's home.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "board",
+        "board_title",
+        "lead_machine",
+        "machines",
+        "cap"
+      ],
+      "type": "object"
+    },
+    "ProposalSession": {
+      "description": "One of [`ChatProposal::sessions`].",
+      "properties": {
+        "id": {
+          "description": "`ses_…`.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state now (`working`, `done`, `stopped`, …).",
+          "type": "string"
+        },
+        "title": {
+          "description": "What it works on: its branch's slug, or its issue's title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ProposalTodo": {
+      "description": "A to-do's lines ([`ChatProposal::todo`], Arugula #1462): plain text, as\nthe agent wrote it. Its why is [`ChatProposal::why`], whom it's for the\ncard's asker, and who answered [`ChatProposal::answered_by_name`].",
+      "properties": {
+        "answered_at": {
+          "description": "When it was answered (or cancelled), ms.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TodoConversation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "how": {
+          "description": "The steps, shown as written in a mono well.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "A machine's agent's: the machine, by id, and its conversation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "The person's note with their answer: only they read it here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "what": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "what",
+        "how"
+      ],
+      "type": "object"
+    },
+    "RunCheckout": {
+      "description": "One machine's clone, for a \"Run this board\" card (Arugula #1458).",
+      "properties": {
+        "machine": {
+          "description": "The machine, by id.",
+          "type": "string"
+        },
+        "repo": {
+          "description": "The first of the project's repos it has a clone of (where its agents\nstart); none: it has none, and no agent starts there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "machine"
       ],
       "type": "object"
     },
@@ -1685,6 +2283,23 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "TodoConversation": {
+      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+      "properties": {
+        "agent": {
+          "description": "`claude` or `codex`.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "id"
+      ],
       "type": "object"
     }
   },

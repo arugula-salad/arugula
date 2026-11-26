@@ -11,11 +11,13 @@ export type MachineAt =
   /** The machines. `pane` (a notification's, naming no machine) opens on
    * the home or last machine; `name`, a machine by name (control's old
    * `?machine=NAME`). `layer`: one of the shell's own places over the
-   * machine shown (`overview`, `agents`, `settings=machine`…). `pop`: the
-   * pane alone in its window, on the home machine, which this address
-   * can't name (#1032). Without either, the Machines page (Arugula #1346):
-   * every machine's sessions in the project; `agents`, only the agents'. */
-  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true }
+   * machine shown (`agents`, `settings=machine`…). `pop`: the pane alone
+   * in its window, on the home machine, which this address can't name
+   * (#1032). Without either, the Machines page (Arugula #1346): every
+   * machine's sessions in the project; `agents`, only the agents'; `show`,
+   * scrolled to a machine (its id, or a name where it has none) and
+   * `session`, to that session's card (Arugula #1349). */
+  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true; show?: string; session?: number }
   /** A machine's page, with a pane to show: shared from (`share`), a person
    * to follow there (`follow`), alone in its window (`pop`); or with
    * Start an agent open (`agent`). */
@@ -34,14 +36,14 @@ const BOARD = /^brd_[\w-]+$/;
 /** A machine's name, as a host is called. */
 const NAME = /^[\w.-]{1,253}$/;
 /** The shell's own places over a machine, as their fragments say them. */
-const LAYER = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings(?:=[\w-]+)?|developer|getting-started=\w+)$/;
+const LAYER = /^(?:agents(?:=team)?|settings(?:=[\w-]+)?|developer|getting-started=\w+)$/;
 /** Those of them control's page sends on to the app: the machine's own,
  * its Settings sections among them, which the machine's page there sends on
  * to Settings' This machine (Arugula #1110). The rest of Settings is the
  * app's `/settings` (shell/fragments.ts) but for Phones and browsers;
  * Getting started stays with control's sign-in and passkeys (joining a
  * machine to control). */
-const MOVES = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings=(?:machine|remote-sessions)|developer)$/;
+const MOVES = /^(?:agents(?:=team)?|settings=(?:machine|remote-sessions)|developer)$/;
 
 const num = (v: string | null) => (v !== null && /^\d{1,9}$/.test(v) ? Number(v) : undefined);
 
@@ -51,7 +53,18 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
     const pane = num(q.get("pane"));
     const name = q.get("machine");
     const layer = hash.replace(/^#/, "");
-    return { at: "machines", ...(pane !== undefined ? { pane } : {}), ...(name ? { name } : {}), ...(LAYER.test(layer) ? { layer } : {}), ...(pane !== undefined && q.has("pop") ? { pop: true } : {}), ...(pane === undefined && !name && q.has("agents") ? { agents: true } : {}) };
+    const show = pane === undefined && !name ? q.get("show") : null;
+    const session = show && NAME.test(show) ? num(q.get("session")) : undefined;
+    return {
+      at: "machines",
+      ...(pane !== undefined ? { pane } : {}),
+      ...(name ? { name } : {}),
+      ...(LAYER.test(layer) ? { layer } : {}),
+      ...(pane !== undefined && q.has("pop") ? { pop: true } : {}),
+      ...(pane === undefined && !name && q.has("agents") ? { agents: true } : {}),
+      ...(show && NAME.test(show) ? { show } : {}),
+      ...(session !== undefined ? { session } : {}),
+    };
   }
   if (rest.length !== 1) return null;
   if (rest[0] === "swarm") {
@@ -87,6 +100,8 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
   if (m.at === "machines") {
     if (m.pane !== undefined) q.set("pane", String(m.pane));
     if (m.name) q.set("machine", m.name);
+    if (m.show) q.set("show", m.show);
+    if (m.show && m.session !== undefined) q.set("session", String(m.session));
   } else if (m.at === "swarm") {
     path += "/swarm";
     if (m.focus) q.set("focus", `${m.focus.machine ? `${m.focus.machine}.` : ""}${m.focus.pane}`);
@@ -115,7 +130,7 @@ export function controlHash(m: MachineAt): string {
   }
   // Control's page has no list of every machine's panes: a machine's, or its own.
   if (m.at === "panes") return m.machine ? `machine=${m.machine}` : "";
-  if (m.at === "machines") return m.layer ?? (m.pane !== undefined ? `${m.pop ? "pop" : "pane"}=${m.pane}` : "");
+  if (m.at === "machines") return m.layer ?? (m.pane !== undefined ? `${m.pop ? "pop" : "pane"}=${m.pane}` : m.show && /^[0-9a-f]{6,64}$/.test(m.show) ? `machine=${m.show}` : "");
   if (m.pop && m.pane !== undefined) return `pop=${m.machine}.${m.pane}`;
   if (m.pane !== undefined) return `pane=${m.machine}.${m.pane}${m.share ? "&share" : ""}${m.follow ? `&follow=${encodeURIComponent(m.follow)}` : ""}`;
   return `machine=${m.machine}${m.agent ? "&agent" : ""}`;
@@ -162,6 +177,10 @@ export function fromControl(hash: string, search = ""): string | null {
   m = /^#project=(prj_[0-9a-f]{4,64})$/.exec(hash);
   if (m) return `/p/${m[1]}`;
   if (hash === "#docs") return "/docs";
+  // A machine's sessions over its panes, retired for the Machines page
+  // (Arugula #1349): the link names no machine, so the page's top, where
+  // this computer or the one you used last leads.
+  if (/^#overview(?:=\d+)?$/.test(hash)) return machinesPath({ at: "machines" });
   const layer = hash.slice(1);
   if (MOVES.test(layer)) return machinesPath({ at: "machines", layer });
   return null;

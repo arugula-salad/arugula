@@ -158,9 +158,14 @@ fn adapter(home: &Path, dir: &str, name: &str) -> String {
     arugula_proto::exe::Exe::here().in_dir(&bin, name).map_or_else(|| name.to_owned(), |p| p.display().to_string())
 }
 
-fn installed(home: &Path, name: &str) -> String {
-    let bin = home.join(".local").join("bin");
-    arugula_proto::exe::Exe::here().in_dir(&bin, name).map_or_else(|| name.to_owned(), |p| p.display().to_string())
+/// The `codex` this machine has, for the adapter's `CODEX_PATH`: ours in
+/// `~/.local/bin`, else the first on `path`. None when there isn't one: a
+/// bare `CODEX_PATH=codex` that finds nothing kills the adapter with Node's
+/// unhandled `spawn codex ENOENT` (#1447), where unset it runs the copy it
+/// installed with.
+fn installed(home: &Path, name: &str, path: &str) -> Option<String> {
+    let x = arugula_proto::exe::Exe::here();
+    x.in_dir(&home.join(".local").join("bin"), name).or_else(|| x.find(name, path)).map(|p| p.display().to_string())
 }
 
 /// Why a Managoat block doesn't start: daemon-side Managoat was removed.
@@ -244,8 +249,8 @@ impl Def {
             }
             Kind::Codex => {
                 l.argv = if vm { vec!["codex-acp".into()] } else { vec![adapter(home, "codex", "codex-acp")] };
-                if !vm {
-                    l.env.push(("CODEX_PATH".into(), installed(home, "codex")));
+                if !vm && let Some(codex) = installed(home, "codex", &std::env::var("PATH").unwrap_or_default()) {
+                    l.env.push(("CODEX_PATH".into(), codex));
                 }
                 l.npm = Some(CODEX_ACP);
             }
@@ -402,9 +407,32 @@ mod tests {
         assert_eq!(f.check().unwrap_err(), CLOUD_MIGRATION);
         let acp = Def { agent: Kind::Acp, command: split_command("managoat acp --agent arena"), ..Default::default() };
         assert_eq!(acp.launch(home, false).unwrap().argv, split_command("managoat acp --agent arena"));
+    }
 
-        let codex = Def { agent: Kind::Codex, ..Default::default() }.launch(home, false).unwrap();
-        assert_eq!(codex.env, vec![("CODEX_PATH".into(), "codex".into())]);
+    /// #1447: `CODEX_PATH` names a `codex` that's there, or isn't set (the
+    /// adapter then runs the one it installed with). A name that finds
+    /// nothing killed it with `spawn codex ENOENT`.
+    #[cfg(unix)]
+    #[test]
+    fn codex_path_is_a_codex_that_exists() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let d = std::env::temp_dir().join(format!("arugula-codex-path-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (home, onpath) = (d.join("home"), d.join("onpath"));
+        std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+        std::fs::create_dir_all(&onpath).unwrap();
+        let make = |p: PathBuf| {
+            std::fs::write(&p, "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        };
+        let path = format!("{}:{}", d.join("nothing").display(), onpath.display());
+        assert_eq!(installed(&home, "codex", &path), None);
+        make(onpath.join("codex"));
+        assert_eq!(installed(&home, "codex", &path), Some(onpath.join("codex").display().to_string()));
+        make(home.join(".local/bin/codex"));
+        assert_eq!(installed(&home, "codex", &path), Some(home.join(".local/bin/codex").display().to_string()));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// A block saved as `agent: fountain` (its name before the rename to

@@ -5,13 +5,15 @@
 package io.arugula.app
 
 import io.arugula.core.Control
+import io.arugula.core.Core
 import io.arugula.core.CoreError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-class Api(val control: Control, private val signedOut: () -> Unit) {
+/** [stored]: the session as the app keeps it, for a Doc's web view (Docs.kt's [WebSession]). */
+class Api(val control: Control, val stored: String? = null, private val signedOut: () -> Unit) {
     suspend fun call(method: String, path: String, body: JSONObject? = null): String = withContext(Dispatchers.IO) {
         try {
             control.call(method, path, body?.toString())
@@ -26,6 +28,8 @@ class Api(val control: Control, private val signedOut: () -> Unit) {
     suspend fun post(path: String, body: JSONObject = JSONObject()) = call("POST", path, body).let {
         runCatching { JSONObject(it) }.getOrDefault(JSONObject())
     }
+
+    suspend fun delete(path: String) = JSONObject(call("DELETE", path))
 
     /** The thread of an object (a board, an issue): made the first time someone opens it. */
     suspend fun threadOf(target: String) =
@@ -45,6 +49,7 @@ fun JSONObject.obj(k: String): JSONObject? = optJSONObject(k)
 fun <T> JSONObject.list(k: String, f: (JSONObject) -> T): List<T> = optJSONArray(k).objects().mapNotNull { runCatching { f(it) }.getOrNull() }
 fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
 fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).map { optString(it) }
+fun JSONObject.ints(k: String): List<Int> = optJSONArray(k).let { a -> if (a == null) emptyList() else (0 until a.length()).map { a.optInt(it) } }
 
 // ---- projects, issues, boards
 
@@ -61,11 +66,14 @@ data class Project(val id: String, val name: String, val team: Team?) {
 
 data class Me(val account: String, val login: String, val name: String)
 
-data class Projects(val me: Me, val projects: List<Project>) {
+/** [names]: each teammate's name by account, as their teams list them: whom a folded ask waits on (Arugula #1393). */
+data class Projects(val me: Me, val projects: List<Project>, val names: Map<String, String> = emptyMap()) {
     companion object {
         fun of(o: JSONObject) = Projects(
             o.getJSONObject("me").let { Me(it.optString("account"), it.optString("login"), it.optString("name")) },
             o.list("projects", Project::of),
+            o.optJSONArray("projects").objects().flatMap { it.obj("team")?.optJSONArray("members").objects() }
+                .mapNotNull { m -> m.str("account")?.let { a -> m.str("name")?.takeIf { it.isNotEmpty() }?.let { a to it } } }.toMap(),
         )
     }
 }
@@ -95,8 +103,23 @@ data class Board(val id: String, val title: String, val goal: String?, val progr
     }
 }
 
-/** One board: its lanes (Next, Doing, Review, Done) with their rows, and its groups. */
-data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, val lanes: List<Lane>, val groups: Map<String, String>) {
+/** One board: its lanes (Next, Doing, Review, Done) with their rows, its groups, and its grant. */
+data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, val lanes: List<Lane>, val groups: Map<String, String>, val closedAt: Long? = null, val grant: Grant? = null) {
+    /**
+     * Its live grant to start agents (Arugula #1416, #1456): what its person
+     * approved on its Run this board card. [mine]: the reader gave it, so
+     * Revoke is theirs.
+     */
+    data class Grant(val id: String, val personName: String?, val leadMachine: String, val machines: List<String>, val cap: Int, val lapsesAt: Long?, val mine: Boolean) {
+        /** As the web's board page says it: "Grant: lead on geek · agents on geek, mini · up to 3 · until the board closes"; a teammate's is "Grant (Jo's): …". */
+        val line: String
+            get() {
+                val by = if (mine) "" else personName?.takeIf { it.isNotEmpty() }?.let { " ($it's)" } ?: ""
+                val until = lapsesAt?.let { "until " + java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "until the board closes"
+                return "Grant$by: lead on $leadMachine · agents on ${machines.joinToString(", ")} · up to $cap · $until"
+            }
+    }
+
     /** The issue's or PR's state as the board read it. */
     data class Live(val kind: String?, val number: Int?, val title: String?, val state: String?, val repo: String?)
 
@@ -104,7 +127,8 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
     data class Pointer(val kind: String, val id: String?, val url: String?, val machine: String?, val pane: String?)
 
     /** The row's one open question: [mine] when it's for the reader. */
-    data class Ask(val id: String, val question: String, val options: List<String>, val mine: Boolean, val canAnswer: Boolean?, val askedBy: String?, val createdAt: Long?)
+    /** [who] is the person it asks (empty: the board raised it), [whoName] their name. */
+    data class Ask(val id: String, val question: String, val options: List<String>, val mine: Boolean, val canAnswer: Boolean?, val askedBy: String?, val createdAt: Long?, val who: String? = null, val whoName: String? = null)
 
     data class Attachment(val role: String, val pointer: Pointer, val released: Boolean, val live: Live?)
 
@@ -124,7 +148,7 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
         private fun row(o: JSONObject) = Row(
             o.getString("id"), o.str("note"), o.str("group"), o.str("lane"), live(o.obj("live")), pointer(o.obj("pointer")),
             o.obj("ask")?.let {
-                Ask(it.getString("id"), it.optString("question"), it.optJSONArray("options").strings(), it.optBoolean("mine"), it.bool("can_answer"), it.str("asked_by"), it.long("created_at"))
+                Ask(it.getString("id"), it.optString("question"), it.optJSONArray("options").strings(), it.optBoolean("mine"), it.bool("can_answer"), it.str("asked_by"), it.long("created_at"), it.str("who"), it.str("who_name"))
             },
             o.list("attachments") { Attachment(it.optString("role"), pointer(it.getJSONObject("pointer"))!!, it.optBoolean("released"), live(it.obj("live"))) },
             o.list("marks") { it.optString("kind") },
@@ -137,6 +161,13 @@ data class BoardDetail(val title: String, val goal: String?, val lead: Lead?, va
                 b.optString("title"), b.str("goal"), Board.lead(b.obj("lead")),
                 o.list("zones") { z -> Lane(z.getString("id"), z.optString("title"), z.list("rows", ::row)) },
                 o.optJSONArray("groups").objects().associate { it.getString("id") to it.optString("title") },
+                b.long("closed_at"),
+                o.obj("grant")?.let { g ->
+                    Grant(
+                        g.getString("id"), g.str("person_name"), g.obj("lead_machine")?.optString("name").orEmpty(),
+                        g.list("machines") { it.optString("name") }, g.optInt("cap"), g.long("lapses_at"), g.optBoolean("mine"),
+                    )
+                },
             )
         }
     }
@@ -198,10 +229,113 @@ data class ChatMessage(
 
 // ---- machines
 
-data class Machine(val id: String, val name: String, val online: Boolean) {
+/**
+ * A machine in the directory. [ownerName]: whose it is, when it's someone
+ * else's (M19); [account] is set whenever it isn't yours, as the web's fleet,
+ * even when the owner has no name to show.
+ */
+data class Machine(val id: String, val name: String, val online: Boolean, val ownerName: String? = null, val account: String? = null) {
+    val yours get() = account == null && ownerName == null
+
     companion object {
-        fun of(o: JSONObject) = Machine(o.getString("id"), o.optString("name"), o.optBoolean("online"))
+        fun of(o: JSONObject) = Machine(
+            o.getString("id"), o.optString("name"), o.optBoolean("online"),
+            o.str("owner_name")?.takeIf { it.isNotEmpty() }, o.str("account")?.takeIf { it.isNotEmpty() },
+        )
     }
+}
+
+/** The project the app shows, as the core's rule reads it (Arugula #1355): Machines and Home show only its sessions. */
+data class Shown(val id: String, val personal: Boolean)
+
+val Project.shown get() = Shown(id, team == null)
+
+/**
+ * Whether a pane (its session's project and its card's) or a session (no
+ * card) on a machine that's [yours] or not shows here: the core's rule, the
+ * web's `inShown`. With no project, every one does.
+ */
+fun Shown?.shows(project: String?, card: String? = null, yours: Boolean) =
+    Core.shown(this?.id, this?.personal ?: false, project, card, yours)
+
+/**
+ * A session's name as people read it, as the core says (Arugula #1457): a
+ * chief of staff's, "Chief of staff · prj_…", by [in]'s name when it's that
+ * project's; any other as it is. Display only: match by the name itself.
+ */
+fun sessionLabel(session: String, `in`: Project?): String = Core.sessionLabel(session, `in`?.id, `in`?.name)
+
+/** One of a session's tabs as the core keeps it: its panes' ids, in layout order. */
+data class SessionTab(val id: Int, val name: String?, val panes: List<Int>)
+
+/** One of a machine's sessions the core keeps for a project: its tabs' panes, and how many need you. */
+data class SessionCard(val id: Int, val name: String, val tabs: List<SessionTab>, val needsYou: Int, val state: String) {
+    val panes get() = tabs.flatMap { it.panes }
+
+    companion object {
+        fun of(o: JSONObject) = SessionCard(
+            o.getInt("id"), o.optString("name"), o.list("tabs") { t -> SessionTab(t.getInt("id"), t.str("name"), t.ints("panes")) },
+            o.optInt("needs_you"), o.optString("state"),
+        )
+    }
+}
+
+/** A machine's section on Machines: whose it is, and its sessions in the project, needs you first. */
+data class MachineSection(val id: String, val name: String, val online: Boolean, val cloud: Boolean, val owner: String?, val sessions: List<SessionCard>) {
+    companion object {
+        fun of(o: JSONObject) = MachineSection(
+            o.getString("id"), o.optString("name"), o.optBoolean("online"), o.optBoolean("cloud"), o.str("owner"), o.list("sessions", SessionCard::of),
+        )
+    }
+}
+
+/** A session pinned, as the platform keeps it (`/api/sessions/pins`): its machine's id and the session's there. */
+data class Pin(val machine: String, val session: Int) {
+    fun json(): JSONObject = JSONObject().put("machine", machine).put("session", session)
+
+    companion object {
+        fun of(o: JSONObject) = Pin(o.getString("machine"), o.getInt("session"))
+    }
+}
+
+/** A pinned session, with its machine. */
+data class PinnedCard(val machine: MachineSection, val card: SessionCard)
+
+/**
+ * Machines as the core lays them out (`aru_machines`): those with sessions
+ * in the project in the phone's order, [quiet], those with none, by name,
+ * and [pinned], the sessions pinned, in pin order and out of [machines].
+ */
+data class Sections(val machines: List<MachineSection>, val quiet: List<MachineSection>, val pinned: List<PinnedCard> = emptyList()) {
+    companion object {
+        fun of(o: JSONObject?): Sections {
+            // Each pinned session's card from `order`, which has every machine's.
+            val order = o?.list("order", MachineSection::of).orEmpty()
+            val pinned = o?.list("pinned", Pin::of).orEmpty().mapNotNull { p ->
+                val m = order.firstOrNull { it.id == p.machine } ?: return@mapNotNull null
+                m.sessions.firstOrNull { it.id == p.session }?.let { PinnedCard(m, it) }
+            }
+            return Sections(o?.list("machines", MachineSection::of).orEmpty(), o?.list("quiet", MachineSection::of).orEmpty(), pinned)
+        }
+    }
+}
+
+/**
+ * The core's `aru_machines` for [hosts] (each `{id, name, online, owner,
+ * panes}`): every machine in the phone's order, and each one's sessions
+ * that show in [shown]. [recent] is the machine used last, and [pins] come out first.
+ */
+fun sections(hosts: List<JSONObject>, shown: Shown?, recent: String?, pins: List<Pin> = emptyList()): JSONObject? = runCatching {
+    val input = JSONObject().put("hosts", JSONArray(hosts))
+    shown?.let { input.put("at", JSONObject().put("id", it.id).put("personal", it.personal)) }
+    recent?.let { input.put("recent", it) }
+    if (pins.isNotEmpty()) input.put("pins", JSONArray(pins.map { it.json() }))
+    Core.machines(input)
+}.getOrNull()
+
+fun Machine.host(panes: String? = null): JSONObject = JSONObject().put("id", id).put("name", name).put("online", online).apply {
+    (ownerName ?: account)?.let { put("owner", it) }
+    panes?.let { runCatching { put("panes", JSONObject(it)) } }
 }
 
 /** A project's agent sessions in Arugula cloud, newest first: what each waits on the reader for. */

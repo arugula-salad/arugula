@@ -14,6 +14,9 @@
 //!   control dropped (#325), the same button joins again: the old
 //!   enrollment is set aside first.
 //! - `POST /api/setup/claude`: `claude mcp add arugula -- arugula mcp`.
+//! - `POST /api/setup/hooks`: `arugula hooks install` alone, the hooks
+//!   offer's one click on a terminal Claude waiting at a permission prompt;
+//!   the answer names the settings file it changed (`done`).
 //! - `POST /api/setup/agents/{kind}` (#335), "Use Claude Code with
 //!   Arugula": installs (or updates) the agent's ACP adapter, waiting for
 //!   npm, and for Claude Code adds its hooks (`arugula hooks install`, so a
@@ -42,7 +45,7 @@ use std::{
 
 use arugula_proto::{
     exe::Exe,
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupTailscale},
+    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupHooks, SetupTailscale},
     setup::{ControlJoinRequest, Outcome, SetupQuery},
 };
 use axum::Router;
@@ -60,7 +63,13 @@ const TAILSCALE_ADMIN_DNS: &str = "https://login.tailscale.com/admin/dns";
 const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().op::<SetupGet>().op::<SetupTailscale>().op::<SetupControl>().op::<SetupClaude>().op::<SetupAgent>()
+    Router::new()
+        .op::<SetupGet>()
+        .op::<SetupTailscale>()
+        .op::<SetupControl>()
+        .op::<SetupClaude>()
+        .op::<SetupHooks>()
+        .op::<SetupAgent>()
 }
 
 #[derive(Serialize)]
@@ -619,6 +628,19 @@ fn hooks_lines(said: &Value) -> Vec<String> {
         lines.push(says.to_owned());
     }
     lines
+}
+
+/// `POST /api/setup/hooks`: Arugula's hooks in Claude Code's settings, and
+/// nothing else (no adapter, no MCP server). Run by the person, never by
+/// itself.
+pub(crate) async fn claude_hooks(app: &App) -> Outcome {
+    match add_hooks(app).await {
+        Ok(done) if done.is_empty() => {
+            Outcome { done: vec!["Claude Code has Arugula's hooks already.".into()], ..Outcome::ok() }
+        }
+        Ok(done) => Outcome { done, ..Outcome::ok() },
+        Err(o) => o,
+    }
 }
 
 pub(crate) async fn claude_mcp(app: &Arc<App>) -> Outcome {

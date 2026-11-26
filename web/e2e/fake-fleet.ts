@@ -175,6 +175,14 @@ export class FakeFleet {
 
   stop() {
     for (const m of this.machines) m.proc.kill("SIGKILL");
+    // And the panes' shims, which outlive a daemon on purpose: their state
+    // dirs are under root. Left running, the next fleet's panes can take
+    // the same hold sockets and close at once.
+    try {
+      execFileSync("pkill", ["-KILL", "-f", this.root]);
+    } catch {
+      // none left
+    }
     // Its panes' programs may still be writing for a moment.
     try {
       rmSync(this.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

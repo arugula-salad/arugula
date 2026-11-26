@@ -757,6 +757,10 @@ pub struct ForgeDraft {
 ///   `done=true`; `limit` up to 500.
 /// - `POST /api/inbox/{item}` ([`InboxMark`]): mark its entries (one
 ///   reason's, or all) seen or done, or not; answered [`InboxMarked`].
+///   `{item}` is also an [`InboxItem`]'s id (Arugula #1430).
+///
+/// Its count changing is an `inbox` event on `GET /api/chat/live`
+/// (`chat::ChatLive::Inbox`), so no client polls.
 pub const INBOX: &str = "/api/inbox";
 pub const INBOX_ITEM: &str = "/api/inbox/{item}";
 
@@ -782,7 +786,216 @@ pub const INBOX_REASONS: [&str; 9] = [
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Inbox {
+    /// Today's list, unchanged, for apps released before `items` (One
+    /// Inbox, Arugula #1428): removed once the oldest supported app reads
+    /// `items`.
     pub entries: Vec<InboxEntry>,
+    /// The one count (Arugula #1430): the open items whose `counts` is
+    /// true. Every client shows this number and adds nothing to it. Seen
+    /// doesn't lower it: an item counts until it clears. 0 from a server
+    /// before it.
+    #[serde(default)]
+    pub count: u32,
+    /// The one list: what needs the reader or names them, ranked by group
+    /// ([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first
+    /// within a group. One item per thing: a mention in a thread is its
+    /// `mention` item, never also the thread's `thread_news`.
+    #[serde(default)]
+    pub items: Vec<InboxItem>,
+    /// How many asks agents are handling among themselves (Arugula #1393):
+    /// the reader's agents' asks that the agent that started them answers
+    /// first, for ten minutes. Shown as a line, never counted.
+    #[serde(default)]
+    pub handled: u32,
+    /// `count`, by project (Arugula #1433): the rail's project marks. Each
+    /// counted item under its subject's project; one with no project (a
+    /// DM) is in `count` alone, and a project with none isn't listed.
+    /// Empty from a server before it.
+    #[serde(default)]
+    pub by_project: std::collections::BTreeMap<String, u32>,
+}
+
+/// An item's group, in the order the list shows them: `decide` (waiting
+/// on the reader), `named` (names them), `chat` (a DM or a thread with
+/// news), and `ready` (a finished turn, never counted).
+pub const INBOX_GROUPS: [&str; 4] = ["decide", "named", "chat", "ready"];
+
+/// An item's kind (Arugula #1430), with its group: `agent_ask`,
+/// `permission`, `agent_failed`, `approval`, `todo`, `board_ask`,
+/// `deploy_approval`, `checks_failed`, `run_failed` and
+/// `changes_requested` decide; `review_request`, `mention` and `assigned`
+/// name the reader; `dm` and `thread_news` are chat; `turn_finished` is
+/// ready. A client shows a kind it doesn't know by its title.
+///
+/// An agent's card in its person's staff room (Arugula #1467) is an
+/// `approval` (start, close, Run this board: Approve or Deny) or a `todo`
+/// (work only they can do: Done or Can't, with a note). Before it, both
+/// were `proposal`.
+pub const INBOX_KINDS: [&str; 16] = [
+    "agent_ask",
+    "permission",
+    "agent_failed",
+    "approval",
+    "todo",
+    "board_ask",
+    "deploy_approval",
+    "checks_failed",
+    "run_failed",
+    "changes_requested",
+    "review_request",
+    "mention",
+    "assigned",
+    "dm",
+    "thread_news",
+    "turn_finished",
+];
+
+/// One item of the one Inbox (Arugula #1430): a thing that needs the
+/// reader or names them, until its source no longer does.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxItem {
+    /// Stable and unique for the reader, and a push's tag: `prp_…` (an
+    /// agent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`
+    /// (a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula
+    /// #1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's
+    /// item and reason (`fi_…:review_requested`, `iss_…:mentioned`,
+    /// `run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an
+    /// approval or a to-do.
+    pub id: String,
+    /// One of [`INBOX_KINDS`].
+    pub kind: String,
+    /// One of [`INBOX_GROUPS`].
+    pub group: String,
+    /// Whether it's in `count`: false for `turn_finished`, for an alert
+    /// (`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an
+    /// item `for` someone else.
+    pub counts: bool,
+    /// The account it waits on (Arugula #1393): the reader, or a teammate
+    /// whose ask the reader sees folded ("2 asks for Jake ›"), never
+    /// counted for them. `None`: the reader's, as before it. An item
+    /// counts only when `counts` is true and `for` is the reader or absent.
+    #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(rename = "for", optional))]
+    pub for_account: Option<String>,
+    /// An agent's ask that another agent was to answer, and didn't within
+    /// ten minutes: it reached its person, and says so (Arugula #1393).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub escalated: bool,
+    /// One line: the PR's title, the question, "Approve deploy v0.70.105".
+    pub title: String,
+    /// The message, for a DM, a thread or a chat mention. Never an agent's
+    /// question, which stays on its machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub snippet: Option<String>,
+    /// The card's decision lines, as plain text (Arugula #1467): what its
+    /// staff card says, by the same words, so a client shows the expanded
+    /// row without reading the card. An `approval`'s are its terms (a Run
+    /// this board's lead, its issue agents' machines, the cap, the lapse
+    /// and what each machine said of its clone; a close's blocks; a start's
+    /// repo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its
+    /// how when it has one: its steps as written, in one line with its
+    /// newlines, for the mono well. Never a secret, never a to-do's note.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+    pub lines: Vec<String>,
+    /// Who asks or wrote. An agent's card is from its agent (`agent`, the
+    /// session's id or a machine's agent's name, and `machine`); a chief of
+    /// staff's `name` is `Chief of staff · <the project's name>`.
+    #[serde(default)]
+    pub from: InboxFrom,
+    /// What it's about, and where Open goes.
+    pub subject: InboxSubject,
+    /// How to answer it in place, when it can be.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub answer: Option<InboxAnswer>,
+    /// When it started waiting on the reader (ms): it ranks the list.
+    pub since: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub seen_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub done_at: Option<u64>,
+}
+
+/// Who an item is from: a person, or an agent and its machine.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxFrom {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub account: Option<String>,
+    /// A person's or a GitHub login's name, as the list shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub name: Option<String>,
+    /// An agent session's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
+}
+
+/// What an item is about. `type` is `pane`, `session`, `proposal`,
+/// `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
+/// where Open goes (a path on the platform's page, or the item on GitHub).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxSubject {
+    #[serde(rename = "type")]
+    #[cfg_attr(feature = "ts", ts(rename = "type"))]
+    pub kind: String,
+    pub id: String,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub project: Option<String>,
+    /// The asker's machine: an agent's card's is the machine its agent
+    /// asked from, never what it would act on (a close's blocks are in
+    /// `lines`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
+    /// The asker's block on `machine`, as `%N`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub pane: Option<String>,
+    /// The chat room it's in: a proposal's card, a thread, a DM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub room: Option<String>,
+    /// The message in `room`: a proposal's card, the first unread.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub seq: Option<i64>,
+    /// A board ask's board.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub board: Option<String>,
+}
+
+/// How to answer an item in place. `via` is `attention_act`,
+/// `session_action`, `card` (an `approval`), `todo`, `board_answer`,
+/// `deploy` or `chat_reply`; `options` only where the server holds them (a
+/// board ask's, an approval's and a to-do's). An approval or a to-do is
+/// answered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and
+/// a to-do's `note`), as its staff card is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxAnswer {
+    pub via: String,
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -809,7 +1022,8 @@ pub struct InboxEntry {
     /// The item on GitHub; a native issue's or a run's path on the
     /// platform page (`/issues/<id>`, `/runs/<id>`).
     pub url: String,
-    /// A native issue's or a run's project (M202, M215).
+    /// A native issue's or a run's project (M202, M215); a mirrored
+    /// item's, the project its repo is linked in (Arugula #1433).
     #[serde(default)]
     pub project: Option<String>,
     /// A `thread_mention`'s room: the thread on the item (M202).
@@ -837,6 +1051,18 @@ pub struct InboxMark {
     pub seen: Option<bool>,
     #[serde(default)]
     pub done: Option<bool>,
+    /// Answers an `approval` or a `todo` (Arugula #1467) with one of its
+    /// `answer.options`, as its staff card's buttons do, and by the same
+    /// path: only its person, once. `seen` and `done` are then ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub choice: Option<String>,
+    /// A to-do's answer's note: kept on the to-do for its person, never in
+    /// an item, a push or a live event. One that looks like a secret is
+    /// refused. Only with `choice`, and only a to-do's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

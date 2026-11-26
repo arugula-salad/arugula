@@ -232,8 +232,8 @@ function jumpTarget(e: KeyboardEvent): number | null {
 function focusTarget(one = false) {
   const w = workspace;
   if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute() || docsRoute()) return null;
-  // Not from under a dialog, nor over the session overview (M111).
-  if (document.querySelector(".prompt-backdrop") || location.hash.startsWith("#overview")) return null;
+  // Not from under a dialog.
+  if (document.querySelector(".prompt-backdrop")) return null;
   const tab = w.client.tabView();
   if (!tab || layoutRefusal(w.client, tab)) return null;
   if (!one && tab.focus === null && paneIds(tab).length < 2) return null;

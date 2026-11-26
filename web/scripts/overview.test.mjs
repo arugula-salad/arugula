@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardLead, boardSays, groupByOwner, leadAwake, inFlight, overviewOf, staffSpots, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -57,8 +57,9 @@ test("a row's own data says its word: its question for you, its PR's checks and 
   ];
   const o = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf);
   const by = Object.fromEntries(o.boards[0].doing.map((c) => [c.row.id, c.standing]));
-  assert.deepEqual(by, { r_ask: "asks", r_other: "idle", r_raised: "idle", r_fail: "checks_failing", r_run: "checks_running", r_open: "review", r_merged: "idle", r_stalled: "quiet" });
-  assert.deepEqual(o.boards[0].doing.map((c) => STATE_WORD[c.standing]).filter(Boolean), ["asks you", "checks failing", "quiet", "checks running", "in review"]);
+  assert.deepEqual(by, { r_ask: "asks", r_other: "waits", r_raised: "idle", r_fail: "checks_failing", r_run: "checks_running", r_open: "review", r_merged: "idle", r_stalled: "quiet" });
+  // Someone else's question names them (#1392).
+  assert.deepEqual(o.boards[0].doing.map(wordOf).filter(Boolean), ["asks you", "checks failing", "asks Aaron", "quiet", "checks running", "in review"]);
   // A working session doesn't hide failing checks; checks running don't hide it working.
   const on = (r) => ({ issue: "#1", boards: [{ project: P, board: "brd_b", title: "B", row: r }] });
   const two = [row("rf", "doing", 1, { attachments: [pr("checks_failed")] }), row("rr", "doing", 2, { attachments: [pr("checks_running")] })];
@@ -99,6 +100,34 @@ test("cards that need you come first, then failures, then quiet ones, then worki
   assert.deepEqual(boardSays(o.boards[0]).map((x) => x.words), ["1 needs you", "1 failed", "1 quiet", "1 working"]);
   assert.deepEqual(o.boards.map(asksYou), [true, false]);
   assert.equal(statsLine(o, 1), "5 cards in flight · 1 session working · 1 needs you");
+});
+
+test("a card a teammate's session waits on says whom it asks, not \"asks you\"; only yours count as needing you (#1392)", () => {
+  const rows = [row("r_mine", "doing", 1), row("r_aaron", "doing", 2), row("r_unknown", "doing", 3), row("r_next", "next", 4, { ask: { id: "a", who: "acc_b", who_name: "Bea", question: "?", options: [], asked_by: "Claude", raised: false, mine: false, can_answer: false, created_at: 1 } })];
+  const on = (r, n) => ({ issue: `#${n}`, boards: [{ project: P, board: "brd_a", title: "A", row: r }] });
+  const panes = [
+    pane("workstation", 1, { on_issue: on("r_mine", 1), standing: "needs", agent: true }),
+    pane("aaron-mbp", 2, { on_issue: on("r_aaron", 2), standing: "needs", agent: true, owner: "Aaron", session: { id: 2, name: "s2" } }),
+    pane("box", 3, { on_issue: on("r_unknown", 3), standing: "needs", agent: true, owner: "", session: { id: 3, name: "s3" } }),
+  ];
+  const b = overviewOf(P, [view("brd_a", "A", rows)], panes, null, hostOf).boards[0];
+  const card = (id) => b.doing.find((c) => c.row.id === id);
+  assert.equal(ticketWord(card("r_mine").row, card("r_mine")).word, "asks you");
+  assert.deepEqual(ticketWord(card("r_aaron").row, card("r_aaron")), { word: "asks Aaron", asks: false });
+  assert.equal(ticketWord(card("r_unknown").row, card("r_unknown")).word, "asks someone");
+  assert.equal(ticketWord(rows[3]).word, "asks Bea");
+  // The session's chip names Aaron too.
+  assert.deepEqual([card("r_aaron").sessions[0].standing, wordOf(card("r_aaron").sessions[0])], ["waits", "asks Aaron"]);
+  // The row counts one that needs you, and opens by itself for it; teammates' alone don't open it.
+  assert.deepEqual(boardSays(b).map((x) => x.words), ["1 needs you", "2 asks someone else"]);
+  assert.equal(asksYou(b), true);
+  const theirs = overviewOf(P, [view("brd_a", "A", rows.slice(1))], panes.slice(1), null, hostOf).boards[0];
+  assert.equal(asksYou(theirs), false);
+  // A session the hub names on a teammate's machine, with no pane here, names them by its machine's owner.
+  const byCard = { project: P, groups: [{ card: { id: "iss_1" }, sessions: [{ kind: "agent", id: 9, name: "Claude", on: { kind: "machine", id: "m_c", name: "cam-box" }, state: "needs_input", updated_at: 1 }] }] };
+  const hub = overviewOf(P, [view("brd_a", "A", [row("r1", "doing", 1)])], [], byCard, hostOf, (m) => (m === "m_c" ? "Cam" : undefined)).boards[0];
+  assert.equal(ticketWord(hub.doing[0].row, hub.doing[0]).word, "asks Cam");
+  assert.equal(asksYou(hub), false);
 });
 
 test("a card the board marks stalled is quiet, though a session on it works", () => {
@@ -222,6 +251,50 @@ test("a board's lead stands as its session's panes on its machine, else as the h
   assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
 });
 
+test("a chief of staff leading its staff room by its project's id is found by its block's title and named by its project (Arugula #1457)", () => {
+  const lead = { machine: "m_ws", machine_name: "workstation", session: "Chief of staff · prj_1" };
+  const chief = pane("workstation", 4, { machine: "m_ws", session: { id: 3, name: "main" }, title: "Chief of staff · Launch crew", agent: true, standing: "working" });
+  const projectName = (id) => (id === "prj_1" ? "Launch crew" : undefined);
+  const l = boardLead(lead, [chief], null, hostOf, projectName);
+  assert.equal(l.standing, "working");
+  assert.equal(l.peek.name, "Chief of staff · Launch crew");
+  assert.deepEqual(l.peek.panes.map((p) => p.key), ["workstation:4"]);
+  // It routes by its own name still.
+  assert.equal(l.session, "Chief of staff · prj_1");
+  // The project not loaded: its name as it is, and its pane by that name alone.
+  const raw = boardLead(lead, [chief], null, hostOf);
+  assert.equal(raw.peek.name, "Chief of staff · prj_1");
+  // Another project's chief of staff isn't this one's, though both projects are "Launch crew".
+  const other = pane("workstation", 5, { machine: "m_ws", session: { id: 4, name: "other" }, project: "prj_3", title: "Chief of staff · Launch crew", agent: true });
+  const ours = { ...chief, project: "prj_1" };
+  const both = boardLead(lead, [ours, other], null, hostOf, (id) => (id === "prj_1" || id === "prj_3" ? "Launch crew" : undefined));
+  assert.deepEqual(both.peek.panes.map((p) => p.key), ["workstation:4"]);
+  const theirs = boardLead({ ...lead, session: "Chief of staff · prj_3" }, [ours, other], null, hostOf, (id) => (id === "prj_1" || id === "prj_3" ? "Launch crew" : undefined));
+  assert.deepEqual(theirs.peek.panes.map((p) => p.key), ["workstation:5"]);
+});
+
+test("a lead's tab head says where it runs and whether it's awake: awake, idle, asleep on an offline machine or a paused Cloud workspace, or none (#1342)", () => {
+  const panes = [pane("workstation", 1, { machine: "m_ws", session: { id: 3, name: "cos" }, standing: "working" })];
+  const on = { name: "workstation", status: "online", state: "connected" };
+  // A staff room's lead reads as a board's: its session's panes on its machine.
+  const cos = boardLead({ machine: "m_ws", machine_name: "workstation", session: "cos" }, panes, null, hostOf);
+  assert.equal(cos.standing, "working");
+  assert.deepEqual(leadAwake(cos, on), { state: "awake", machine: "workstation" });
+  // A turn not running, on a machine that's up: idle there; a message wakes it.
+  assert.deepEqual(leadAwake({ ...cos, standing: "quiet" }, on), { state: "idle", machine: "workstation" });
+  assert.deepEqual(leadAwake({ ...cos, standing: null }, on), { state: "idle", machine: "workstation" });
+  // Offline in control's directory, whatever its last summary said; a Cloud workspace's paused box, by its own name.
+  assert.deepEqual(leadAwake(cos, { ...on, status: "offline", state: "stale" }), { state: "asleep", machine: "workstation" });
+  assert.deepEqual(leadAwake({ machineName: "", standing: null }, { name: "arugula-dev-3", status: "online", state: "asleep" }), { state: "asleep", machine: "arugula-dev-3" });
+  // No directory word: the page's own.
+  assert.deepEqual(leadAwake({ ...cos, standing: null }, { name: "workstation", state: "offline" }), { state: "asleep", machine: "workstation" });
+  // A machine the page doesn't reach, nothing telling: only where. One control no longer names has left.
+  assert.deepEqual(leadAwake({ machineName: "build-01", standing: null }, undefined), { state: "unknown", machine: "build-01" });
+  assert.deepEqual(leadAwake({ machineName: "", standing: null }, undefined), { state: "asleep", machine: "its machine" });
+  // No lead.
+  assert.deepEqual(leadAwake(null, on), { state: "none" });
+});
+
 test("Needs you groups by owner: yours first, then people by how many asks and then name, each in its order", () => {
   const ask = (id, owner) => ({ id, owner });
   const groups = groupByOwner([ask(1, "zed"), ask(2, "amy"), ask(3, null), ask(4, "zed"), ask(5, "bo"), ask(6, null), ask(7, "amy"), ask(8, "cy")], (a) => a.owner);
@@ -230,4 +303,56 @@ test("Needs you groups by owner: yours first, then people by how many asks and t
   assert.deepEqual(groupByOwner([ask(1, "bo")], (a) => a.owner).map((g) => g.name), ["bo"]);
   assert.deepEqual(groupByOwner([ask(1, null)], (a) => a.owner).map((g) => g.name), [null]);
   assert.deepEqual(groupByOwner([], (a) => a.owner), []);
+});
+
+test("Your work on the Overview lists the reader's own machines, on their personal project only (Arugula #1400)", () => {
+  const hosts = [
+    { name: "laptop" },
+    { name: "jos-mac", owner: "jo", ownerId: "acct_b", team: "tm_1" },
+    { name: "team-box", team: "tm_1", teamBox: true },
+    { name: "ws-1", hosted: true },
+    { name: "desk", team: "tm_1" },
+  ];
+  assert.deepEqual(yourWorkMachines(true, hosts), ["laptop", "desk"]);
+  assert.deepEqual(yourWorkMachines(false, hosts), []);
+});
+
+// Arugula #1341: Start offers your machines this page reaches whose daemon
+// starts a chief of staff, here first and the project's Cloud workspaces
+// last; the default is here, else your first, never a Cloud workspace.
+test("the chief of staff starts on your reached, new-enough machines, here by default, a Cloud workspace never the default", () => {
+  const host = (name, more = {}) => ({ name, id: `m_${name}`, state: "connected", ...more });
+  const hosts = [
+    host("zed"),
+    host("geek"),
+    host("old"),
+    host("away", { state: "offline", status: "offline" }),
+    host("dozing", { state: "asleep" }),
+    host("pending", { state: "connecting", status: "online" }),
+    host("sams", { owner: "sam" }),
+    host("box", { teamBox: true }),
+    host("ws", { hosted: true }),
+    host("other-ws", { hosted: true }),
+  ];
+  const features = (n) => (n === "old" ? { labs: false } : n === "pending" ? null : { chief_of_staff: true });
+  const hostedIn = (id) => ({ m_ws: "prj_1", "m_other-ws": "prj_2" })[id];
+  const o = { project: "prj_1", here: "zed", features, hostedIn };
+  const r = staffSpots(hosts, o);
+  assert.deepEqual(r.can.map((s) => s.name), ["zed", "geek", "ws"]);
+  assert.equal(r.pick, "zed");
+  assert.deepEqual(r.can.map((s) => [s.here, s.cloud]), [[true, false], [false, false], [false, true]]);
+  assert.deepEqual(r.cannot, [
+    { name: "away", why: "offline" },
+    { name: "dozing", why: "asleep" },
+    { name: "old", why: "needs an update" },
+    { name: "pending", why: "not reached from here" },
+  ]);
+  // In a browser (no machine here): your first by name.
+  assert.equal(staffSpots(hosts, { ...o, here: null }).pick, "geek");
+  // Here can't: your first that can.
+  assert.equal(staffSpots(hosts, { ...o, here: "old" }).pick, "geek");
+  // Only a Cloud workspace can: offered, not picked.
+  const cloudOnly = staffSpots([host("ws", { hosted: true }), host("away", { state: "offline" })], o);
+  assert.deepEqual(cloudOnly.can.map((s) => s.name), ["ws"]);
+  assert.equal(cloudOnly.pick, null);
 });

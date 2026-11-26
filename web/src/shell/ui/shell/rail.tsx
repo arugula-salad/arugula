@@ -2,7 +2,8 @@
 // page and a daemon's. The app's places (Arugula #1345, as the app's rail:
 // platform/rail.tsx): Overview, Boards, Docs and Chat are the app's (the
 // platform page's, M153), and Machines is this page, its views the bar's
-// (MachinePlaces). Arugula's mark (this machine's sessions) is above them,
+// (MachinePlaces). Arugula's mark (this machine on the Machines page,
+// Arugula #1349; what it means everywhere is #849's) is above them,
 // the Inbox and Settings at the foot. The app's places are only where
 // control has a platform page.
 // It stays while the swarm or agents cover the panes, so the way back is
@@ -18,7 +19,7 @@ import { onSwarmRoute } from "../../swarm/route";
 import { openSettings } from "../settings-route";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
-import { BOARDS_TO, DOCS_TO, INBOX_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
+import { BOARDS_TO, DOCS_TO, INBOX_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, machinesAt, openChat, openMachinesAt, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
 import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, Mark, OverviewIcon, SettingsIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
@@ -77,13 +78,16 @@ export function Rail({ client }: { client: Client }) {
       onClick: () => openChat(),
     },
   ];
+  // This machine's sessions: on the Machines page, at it; a machine on its
+  // own has none, and its sidebar's search is.
+  const onMachines = !!machinesAt(client);
   const brand = (
     <button
       class="ws-brand"
-      aria-label={`Arugula: the sessions on ${host}`}
-      title={`The sessions on ${host}: their tabs, panes and what needs you`}
-      data-open-sessions-overview
-      onClick={() => (at === "overview" ? focusSessionSearch() : openOverview())}
+      aria-label={onMachines ? `Arugula: ${host} on Machines` : `Arugula: search the sessions on ${host}`}
+      title={onMachines ? `${host} on Machines: its sessions, tabs and panes` : `Search the sessions on ${host}`}
+      data-open-mark
+      onClick={() => openMachinesAt(client) || focusSessionSearch()}
     >
       <Mark />
     </button>

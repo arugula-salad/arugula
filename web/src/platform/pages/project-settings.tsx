@@ -9,7 +9,8 @@
 // Then where its new issues go (M195, moved here by UI audit #163), its
 // environments, their secrets and "Deploy…" (M252), its standing grant for
 // runs (M211), its cloud workspaces' sizes (M266) and finish step for agent
-// sessions (M261),
+// sessions (M261), a join token for a machine to join its team (or its
+// person) with (Machines, Arugula #1152, ../settings/join-token),
 // for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and first, for every member, who
@@ -24,7 +25,7 @@
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 //
-// The 17 are 11 rows in a flat list (Arugula #1105, the Settings Doc's
+// The 18 are 12 rows in a flat list (Arugula #1105, the Settings Doc's
 // Project scope; no band headings over them). Where a row merged
 // a few ("Repos and trackers": Linked repos and Plane), each is a part of
 // it, under its own heading, and the row says theirs in a line. The old
@@ -60,6 +61,7 @@ import { plural } from "../settings/summary";
 import { Access } from "../settings/access";
 import { General } from "../settings/general";
 import { Chip } from "../../shared/ui/state-chip";
+import { JoinToken } from "../settings/join-token";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -311,6 +313,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <WorkspaceSize p={p} />
         <FinishStep p={p} />
       </Section>
+      <JoinToken p={p} />
       <Section id="agents" title="Agents" lede="The model its agent sessions use, the workspace they run on, and, for its owners, the agent tokens over it.">
         <AgentModel p={p} />
         <AgentWorkspace p={p} />

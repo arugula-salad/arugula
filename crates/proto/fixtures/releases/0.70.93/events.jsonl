@@ -1,0 +1,14 @@
+{"fixture":"events","version":"0.26.2","about":"`arugula events -f`: follow the events stream while a command runs in a new tab, until it exits."}
+{"t":2,"c":1,"from":"client","request":{"method":"GET","path":"/api/events?follow=1"}}
+{"t":2,"c":1,"from":"daemon","response":{"status":200,"type":"application/x-ndjson","stream":true}}
+{"t":2,"c":2,"from":"client","request":{"method":"POST","path":"/api/run","body":{"command":"echo fixture-events"}}}
+{"t":3,"c":2,"from":"daemon","response":{"status":200,"type":"application/json","body":{"pane":2}}}
+{"t":3,"c":1,"from":"daemon","line":{"at_ms":0,"pane":2,"type":"opened"}}
+{"t":3,"c":1,"from":"daemon","line":{"at_ms":0,"rev":2,"type":"layout"}}
+{"t":3,"c":1,"from":"daemon","line":{"at_ms":0,"pane":2,"text":"echo fixture-events","type":"command_start"}}
+{"t":3,"c":1,"from":"daemon","line":{"at_ms":0,"pane":2,"state":"working","type":"attention"}}
+{"t":14,"c":1,"from":"daemon","line":{"at_ms":0,"exit":0,"pane":2,"text":"echo fixture-events","type":"command_end"}}
+{"t":14,"c":1,"from":"daemon","line":{"at_ms":0,"pane":2,"state":"idle","type":"attention"}}
+{"t":14,"c":1,"from":"daemon","line":{"at_ms":0,"code":0,"pane":2,"type":"exit"}}
+{"t":14,"c":1,"from":"daemon","line":{"at_ms":0,"pane":2,"reason":{"actions":["dismiss"],"exit":0,"headline":"exited with code 0","kind":"done","since_ms":0},"state":"done","type":"attention"}}
+{"t":14,"c":1,"from":"client","close":true}

@@ -36,7 +36,7 @@ struct ChatRoomsView: View {
                 .voidList()
                 .overlay { if rooms.isEmpty { Caps("No rooms yet") } }
             }
-            .tabHeading("Chat", project: true)
+            .tabHeading("Chat")
             .background(Palette.void)
         } detail: {
             NavigationStack {
@@ -193,6 +193,7 @@ struct ChatRoomView: View {
                         .font(Face.mono(10, "Bold")).tracking(0.8)
                         .foregroundStyle(live.connected ? Palette.ok : Palette.warn)
                         .accessibilityIdentifier("chat-live")
+                        .accessibilityValue(room.id)
                 }
             }
         }
@@ -257,11 +258,13 @@ struct DayRule: View {
 }
 
 /// Someone's square: their initials on a color their name picks, the same
-/// every time. An agent's has a chip in the corner.
+/// every time, or their picture when there is one. An agent's has a chip in
+/// the corner.
 struct Avatar: View {
     let name: String
     var size: CGFloat = 36
     var agent = false
+    var picture: UIImage? = nil
 
     private static let tones: [Color] = [
         Palette.accent, Palette.info, Palette.ok, Palette.peach, Palette.teal, Palette.pink, Palette.warn, Palette.merged,
@@ -275,9 +278,15 @@ struct Avatar: View {
             .fill(Avatar.tones[Int(hash % UInt32(Avatar.tones.count))])
             .frame(width: size, height: size)
             .overlay {
-                Text(initials.isEmpty ? "?" : initials)
-                    .font(Face.display(size * 0.5, "Black"))
-                    .foregroundStyle(Palette.void)
+                if let picture {
+                    Image(uiImage: picture).renderingMode(.original).resizable().scaledToFill()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: size * 0.22))
+                } else {
+                    Text(initials.isEmpty ? "?" : initials)
+                        .font(Face.display(size * 0.5, "Black"))
+                        .foregroundStyle(Palette.void)
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if agent {
@@ -495,12 +504,14 @@ struct CodeBlock: View {
 /// rooms do, `changed[room]` when a room's messages do, and `epoch` when a
 /// new stream starts (its `hello`: anything could have been missed). A
 /// dropped stream is opened again; the room on screen is told to control, so
-/// nobody is pushed for what they're reading.
+/// nobody is pushed for what they're reading. `inbox` moves when the reader's
+/// Inbox count or items do (the one Inbox, Arugula #1434).
 @MainActor
 final class LiveChat: ObservableObject {
     @Published private(set) var rooms = 0
     @Published private(set) var changed: [String: Int] = [:]
     @Published private(set) var epoch = 0
+    @Published private(set) var inbox = 0
     @Published private(set) var connected = false
     private let control: Control
     nonisolated(unsafe) private var live: OpaquePointer?
@@ -580,6 +591,8 @@ final class LiveChat: ObservableObject {
                 if type == "message" { rooms += 1 }
             case "room", "read":
                 rooms += 1
+            case "inbox":
+                inbox += 1
             case "closed":
                 aru_chat_live_free(l)
                 live = nil

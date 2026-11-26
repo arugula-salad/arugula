@@ -32,6 +32,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hook
 import type { BoardLane, BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
+import { sessionLabel } from "../chief-of-staff";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
 import { CheckCircleIcon, ChevronIcon, EditIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
@@ -741,6 +742,7 @@ function BoardHead({ view, back, write, shareLink, more: items, docs, goal: draf
         <DocTimes doc={{ made: b.created_at, updated: b.updated_at }} />
       </p>
       {b.lead && <LeadLine lead={b.lead} id={id} />}
+      <GrantLine view={view} id={id} write={write} act={act} />
       {(write || b.goal || (docs && ((view.docs ?? []).length > 0 || write))) && (
         <div class={docs ? "board-head-body" : "board-head-body solo"}>
           <div class="board-goal-col">
@@ -815,7 +817,7 @@ function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
   return (
     <p class="doc-meta board-lead" data-board-lead={lead.session}>
       <span>
-        Led by <b>{lead.session}</b>
+        Led by <b>{sessionLabel(lead.session, api.projectName)}</b>
         {machine && ` on ${machine}`}
       </span>
       <button type="button" class="link" title="The board's thread: its lead reads it" data-board-lead-talk onClick={() => void talk()}>
@@ -824,6 +826,58 @@ function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
       {open && (
         <button type="button" class="link" title="Its pane, on its machine" data-board-lead-open onClick={() => api.goToPane(lead.machine, String(lead.pane), null)}>
           Open
+        </button>
+      )}
+    </p>
+  );
+}
+
+/** The board's grant to start agents, under who leads it (Arugula #1416):
+ * where its lead runs, which machines its issue agents may use, how many at
+ * once and until when, with Revoke for the person who gave it. A board with
+ * no lead and no grant offers Run this board, whose card goes in the
+ * reader's Needs you. */
+function GrantLine({ view, id, write, act }: { view: BoardView; id: string; write: boolean; act: Act }) {
+  const { toast } = usePlatformApi();
+  const [busy, setBusy] = useState(false);
+  const b = view.board;
+  const g = view.grant;
+  if (!g) {
+    if (b.lead || b.closed_at != null || !write) return null;
+    const run = async () => {
+      setBusy(true);
+      try {
+        const r = await boards.run(id);
+        toast(r.again ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.");
+      } catch (e) {
+        toast(`Couldn't ask to run it: ${(e as Error).message}`);
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <p class="doc-meta board-grant" data-board-grant="">
+        <button type="button" class="link" disabled={busy} title="Its card goes in your Needs you: Approve starts its lead and grants it agents" data-board-run onClick={() => void run()}>
+          Run this board
+        </button>
+      </p>
+    );
+  }
+  const revoke = async () => {
+    setBusy(true);
+    await act(() => boards.revokeGrant(id));
+    setBusy(false);
+  };
+  const until = g.lapses_at ? `until ${new Date(g.lapses_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "until the board closes";
+  const by = g.mine ? "" : g.person_name ? ` (${g.person_name}'s)` : "";
+  return (
+    <p class="doc-meta board-grant" data-board-grant={g.id}>
+      <span data-board-grant-line>
+        Grant{by}: lead on {g.lead_machine.name} · agents on {g.machines.map((m) => m.name).join(", ")} · up to {g.cap} · {until}
+      </span>
+      {g.mine && (
+        <button type="button" class="link" disabled={busy} title="Nothing more starts under it; its lead and agents run on" data-board-grant-revoke onClick={() => void revoke()}>
+          Revoke
         </button>
       )}
     </p>

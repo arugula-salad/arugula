@@ -43,6 +43,7 @@ import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } fro
 import { Count } from "../ui/state-chip";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
+import { sessionLabel } from "../chief-of-staff";
 
 /** The room head's width under which each of its folds goes into ⋯, in the
  * order they go: Go to pane, Members, pins, star, bell. Measured: with a
@@ -366,7 +367,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.staff ? `You and your agents${r.lead ? `: ${r.lead.session} on ${r.lead.machine_name || "a machine"} leads it` : ""}` : r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.staff ? `You and your agents${r.lead ? `: ${sessionLabel(r.lead.session, api.projectName)} on ${r.lead.machine_name || "a machine"} leads it` : ""}` : r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
         draggable={!phone}
         onDragStart={(e) => {
           e.dataTransfer?.setData("text/x-arugula-room", r.id);

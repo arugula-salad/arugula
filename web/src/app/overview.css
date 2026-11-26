@@ -5,13 +5,32 @@
    rows; Needs you holds Swarm's own rail cards, or one quiet line. */
 
 .ov {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The right column is a third by default (#1444), at least 18rem, at most half. */
+  grid-template-columns: minmax(0, 1fr) clamp(18rem, var(--ov-col, 33.333%), 50%);
   gap: var(--space-4);
   align-items: start;
 }
 .ov.phone {
   grid-template-columns: minmax(0, 1fr);
+}
+/* The divider sits on the column's left edge, over the panel's hairline. */
+.ov-split {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  justify-self: start;
+  width: 6px;
+  margin-left: calc(-3px - var(--space-4) / 2);
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+.ov-split:hover,
+.ov-split:focus-visible {
+  background: linear-gradient(to right, transparent 2px, var(--line) 2px, var(--line) 4px, transparent 4px);
+  outline: none;
 }
 
 .ov-field {
@@ -198,10 +217,16 @@ button.ov-lead:focus-visible {
   background: var(--warn);
 }
 .ov-lead-dot[data-ov-lead-standing="working"] {
-  background: var(--ok);
+  background: var(--warn);
+}
+.ov-lead-dot[data-ov-lead-standing="quiet"] {
+  background: var(--muted);
 }
 .ov-lead-dot[data-ov-lead-standing="needs"] {
   background: var(--accent);
+}
+.ov-lead-dot[data-ov-lead-standing="waits"] {
+  background: var(--info);
 }
 .ov-lead-dot[data-ov-lead-standing="failed"] {
   background: var(--danger);
@@ -437,8 +462,12 @@ button.ov-peek:disabled {
    and the conversation the rest, its box at the foot. Needs you doesn't
    shrink then: the conversation's list does, else a long thread squeezes
    its heading under the tabs. */
+.ov:not(.phone) > .ov-panel {
+  grid-column: 2;
+  grid-row: 1;
+}
 .ov-panel {
-  width: 380px;
+  width: auto;
   position: sticky;
   top: 0;
   max-height: calc(100vh - 80px);
@@ -499,17 +528,24 @@ button.ov-peek:disabled {
   gap: 0;
   padding: 0 var(--space-3) var(--space-3);
 }
-.ov-asks {
+/* What the reader's agents propose (#1278): their chat cards, above the asks. */
+.ov-proposals {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
+  overflow-y: auto;
+}
+.ov-asks {
+  display: flex;
+  flex-direction: column;
 }
 .ov-asks-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   margin: 0;
-  padding: var(--space-3) 0 0;
+  padding: var(--space-3) 0 var(--space-1);
   font: 600 var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
@@ -520,16 +556,32 @@ button.ov-peek:disabled {
   --c: var(--s-ask);
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  border-radius: var(--card-radius);
+  /* The gap between rows belongs to the rows (#1427): half of it, a
+   * transparent border above and below each, so the pointer is over a row
+   * all the way down the list and an open one doesn't close on the way
+   * to the next. The visible outline is the inset ring; the padding is
+   * the 1px it takes. */
+  border-block: var(--space-1) solid transparent;
+  border-radius: var(--card-radius) / calc(var(--card-radius) + var(--space-1));
+  padding: 1px;
   background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
+}
+/* The first row's upper half-gap is the heading's (padding below it), the
+ * last's lower one the list's: not the page's. */
+.ov-ask:first-child {
+  margin-top: calc(-1 * var(--space-1));
+}
+.ov-ask:last-child {
+  margin-bottom: calc(-1 * var(--space-1));
 }
 .ov-ask::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
+  left: 1px;
+  top: 7px;
+  bottom: 7px;
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--c);
@@ -699,6 +751,106 @@ button.ov-peek:disabled {
   margin: 0;
   padding: var(--space-2) var(--space-3);
 }
+/* An agent's head in the who-line (#1342), its rung and its parent's latest word under it (#1441), a line each. */
+.ov-who .agent-rung,
+.ov-who .agent-word {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* An issue agent's tab (#1441): its issue's thread over its peek. */
+.ov-agent-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ov-agent-tab > .ov-talk-room {
+  flex: 3 1 0;
+  min-height: 12em;
+}
+.ov-agent-tab > .ov-peek-tab {
+  flex: 2 1 0;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+.ov-agent-tab .ov-peek-tail {
+  min-height: 4em;
+}
+.ov-agent-note {
+  flex: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+}
+/* The chief of staff's tab before there is one (#1341): what it does, the
+   machine to run it on and Start; a card when the machine needs a grant. */
+.ov-staff-start {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+}
+.ov-staff-start-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.ov-staff-start-go label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+}
+.ov-staff-cannot {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+}
+.ov-staff-grant {
+  margin: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+.ov-staff-grant p {
+  margin: 0 0 var(--space-1);
+}
+.ov-staff-grant-acts {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.ov-staff-failed {
+  margin: 0 var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+/* Over the staff room while its chief of staff is asleep (#1453): why
+   nothing hears it, and Run it on another machine. */
+.ov-staff-move {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.ov-staff-move > p {
+  margin: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+.ov-staff-move .ov-staff-start-go {
+  justify-content: flex-start;
+  margin: 0 var(--space-3);
+}
 
 /* A session's peek (#1271): its head, its last lines, its buttons, and its box at the foot. */
 .ov-peek-tab {
@@ -770,6 +922,13 @@ button.ov-peek:disabled {
 @media (max-width: 1000px) {
   .ov {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-split {
+    display: none;
+  }
+  .ov:not(.phone) > .ov-panel {
+    grid-column: auto;
+    grid-row: auto;
   }
   .ov-panel {
     width: auto;

@@ -49,6 +49,20 @@ export function clearHash() {
   dispatchEvent(new HashChangeEvent("hashchange"));
 }
 
+/** Where a dialog the phone app opened in its web sheet (`&app` on its
+ * address, Arugula #604) goes when it's done: the app's own scheme, which
+ * closes the sheet and hands the app back. Always this one address, never
+ * one the link names. */
+export const APP_BACK = "arugula://back";
+
+/** Back to the phone app that opened this dialog. */
+export function backToApp() {
+  clearHash();
+  // For a test, which can't follow the app's scheme.
+  document.documentElement.dataset.backToApp = APP_BACK;
+  location.assign(APP_BACK);
+}
+
 /** An invite link that was used: out of the address bar, so a reload
  * doesn't offer it again (#208), but its prompt stays up until closed,
  * through the overlay mounting afresh. */

@@ -899,15 +899,67 @@
     },
     "Inbox": {
       "properties": {
+        "by_project": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "description": "`count`, by project (Arugula #1433): the rail's project marks. Each\ncounted item under its subject's project; one with no project (a\nDM) is in `count` alone, and a project with none isn't listed.\nEmpty from a server before it.",
+          "type": "object"
+        },
+        "count": {
+          "default": 0,
+          "description": "The one count (Arugula #1430): the open items whose `counts` is\ntrue. Every client shows this number and adds nothing to it. Seen\ndoesn't lower it: an item counts until it clears. 0 from a server\nbefore it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "entries": {
+          "description": "Today's list, unchanged, for apps released before `items` (One\nInbox, Arugula #1428): removed once the oldest supported app reads\n`items`.",
           "items": {
             "$ref": "#/$defs/InboxEntry"
+          },
+          "type": "array"
+        },
+        "handled": {
+          "default": 0,
+          "description": "How many asks agents are handling among themselves (Arugula #1393):\nthe reader's agents' asks that the agent that started them answers\nfirst, for ten minutes. Shown as a line, never counted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "default": [],
+          "description": "The one list: what needs the reader or names them, ranked by group\n([`INBOX_GROUPS`]: Decide, then Names you, then Chat), oldest first\nwithin a group. One item per thing: a mention in a thread is its\n`mention` item, never also the thread's `thread_news`.",
+          "items": {
+            "$ref": "#/$defs/InboxItem"
           },
           "type": "array"
         }
       },
       "required": [
         "entries"
+      ],
+      "type": "object"
+    },
+    "InboxAnswer": {
+      "description": "How to answer an item in place. `via` is `attention_act`,\n`session_action`, `card` (an `approval`), `todo`, `board_answer`,\n`deploy` or `chat_reply`; `options` only where the server holds them (a\nboard ask's, an approval's and a to-do's). An approval or a to-do is\nanswered with `POST /api/inbox/{id}` and [`InboxMark`]'s `choice` (and\na to-do's `note`), as its staff card is.",
+      "properties": {
+        "options": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "via"
       ],
       "type": "object"
     },
@@ -952,7 +1004,7 @@
         },
         "project": {
           "default": null,
-          "description": "A native issue's or a run's project (M202, M215).",
+          "description": "A native issue's or a run's project (M202, M215); a mirrored\nitem's, the project its repo is linked in (Arugula #1433).",
           "type": [
             "string",
             "null"
@@ -1014,13 +1066,161 @@
       ],
       "type": "object"
     },
+    "InboxFrom": {
+      "description": "Who an item is from: a person, or an agent and its machine.",
+      "properties": {
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "agent": {
+          "description": "An agent session's id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "A person's or a GitHub login's name, as the list shows it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "InboxItem": {
+      "description": "One item of the one Inbox (Arugula #1430): a thing that needs the\nreader or names them, until its source no longer does.",
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InboxAnswer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How to answer it in place, when it can be."
+        },
+        "counts": {
+          "description": "Whether it's in `count`: false for `turn_finished`, for an alert\n(`checks_failed`, `run_failed`: not asks, Arugula #1393), and for an\nitem `for` someone else.",
+          "type": "boolean"
+        },
+        "done_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "escalated": {
+          "description": "An agent's ask that another agent was to answer, and didn't within\nten minutes: it reached its person, and says so (Arugula #1393).",
+          "type": "boolean"
+        },
+        "for": {
+          "description": "The account it waits on (Arugula #1393): the reader, or a teammate\nwhose ask the reader sees folded (\"2 asks for Jake ›\"), never\ncounted for them. `None`: the reader's, as before it. An item\ncounts only when `counts` is true and `for` is the reader or absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from": {
+          "$ref": "#/$defs/InboxFrom",
+          "default": {},
+          "description": "Who asks or wrote. An agent's card is from its agent (`agent`, the\nsession's id or a machine's agent's name, and `machine`); a chief of\nstaff's `name` is `Chief of staff · <the project's name>`."
+        },
+        "group": {
+          "description": "One of [`INBOX_GROUPS`].",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable and unique for the reader, and a push's tag: `prp_…` (an\nagent's card: an approval or a to-do), `ask_…` (a board ask), `dep_…`\n(a deploy), `ses_…:<since>` (a hosted session's open ask, Arugula\n#1393), `room:<id>` (a DM, a thread or a chat mention), or an entry's\nitem and reason (`fi_…:review_requested`, `iss_…:mentioned`,\n`run_…:run_failed`). `POST /api/inbox/{id}` marks it, and answers an\napproval or a to-do.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "One of [`INBOX_KINDS`].",
+          "type": "string"
+        },
+        "lines": {
+          "description": "The card's decision lines, as plain text (Arugula #1467): what its\nstaff card says, by the same words, so a client shows the expanded\nrow without reading the card. An `approval`'s are its terms (a Run\nthis board's lead, its issue agents' machines, the cap, the lapse\nand what each machine said of its clone; a close's blocks; a start's\nrepo and prompt), then `Why: …`. A `todo`'s are `Why: …`, then its\nhow when it has one: its steps as written, in one line with its\nnewlines, for the mono well. Never a secret, never a to-do's note.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "seen_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "since": {
+          "description": "When it started waiting on the reader (ms): it ranks the list.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "snippet": {
+          "description": "The message, for a DM, a thread or a chat mention. Never an agent's\nquestion, which stays on its machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/InboxSubject",
+          "description": "What it's about, and where Open goes."
+        },
+        "title": {
+          "description": "One line: the PR's title, the question, \"Approve deploy v0.70.105\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "group",
+        "counts",
+        "title",
+        "subject",
+        "since"
+      ],
+      "type": "object"
+    },
     "InboxMark": {
       "description": "Mark an item's entries: `true` sets seen or done (now, if it wasn't),\n`false` clears it, and one not given stays as it is.",
       "properties": {
+        "choice": {
+          "description": "Answers an `approval` or a `todo` (Arugula #1467) with one of its\n`answer.options`, as its staff card's buttons do, and by the same\npath: only its person, once. `seen` and `done` are then ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "done": {
           "default": null,
           "type": [
             "boolean",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "A to-do's answer's note: kept on the to-do for its person, never in\nan item, a push or a live event. One that looks like a secret is\nrefused. Only with `choice`, and only a to-do's.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -1057,6 +1257,68 @@
       "required": [
         "item",
         "marked"
+      ],
+      "type": "object"
+    },
+    "InboxSubject": {
+      "description": "What an item is about. `type` is `pane`, `session`, `proposal`,\n`board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is\nwhere Open goes (a path on the platform's page, or the item on GitHub).",
+      "properties": {
+        "board": {
+          "description": "A board ask's board.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "machine": {
+          "description": "The asker's machine: an agent's card's is the machine its agent\nasked from, never what it would act on (a close's blocks are in\n`lines`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pane": {
+          "description": "The asker's block on `machine`, as `%N`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "room": {
+          "description": "The chat room it's in: a proposal's card, a thread, a DM.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "description": "The message in `room`: a proposal's card, the first unread.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "url"
       ],
       "type": "object"
     },

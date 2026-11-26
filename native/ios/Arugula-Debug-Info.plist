@@ -5,7 +5,7 @@
      http to localhost and its subdomains, so a Doc's prototype frame loads
      from a local control's proto origin (proto.blocks.localhost, the
      native-sim testnet claim's, Arugula #1259). Loopback only; Release has
-     none of that. -->
+     none of that. Remote-notification, as Release has it. -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleURLTypes</key>
@@ -17,6 +17,10 @@
 			<array>
 				<string>arugula</string>
 			</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>

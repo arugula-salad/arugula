@@ -7,6 +7,7 @@ adapters.list GET /api/agents/adapters Owner drives=false credential=false
 agent_can.get GET /api/agent-can Owner drives=false credential=false
 agents.get GET /api/hosts/self/agents Owner drives=false credential=false
 agents.refresh POST /api/hosts/self/agents/refresh Owner drives=false credential=false
+conversation.continue POST /api/conversations/continue Owner drives=false credential=false
 conversation.open POST /api/conversations/open Owner drives=false credential=false
 conversation.session_signal POST /api/conversations/session-signal Owner drives=false credential=false
 conversations.list GET /api/conversations Owner drives=false credential=false
@@ -90,6 +91,7 @@ setup.agent POST /api/setup/agents/{kind} Owner drives=false credential=false
 setup.claude POST /api/setup/claude Owner drives=false credential=false
 setup.control POST /api/setup/control Owner drives=false credential=false
 setup.get GET /api/setup Owner drives=false credential=false
+setup.hooks POST /api/setup/hooks Owner drives=false credential=false
 setup.tailscale POST /api/setup/tailscale Owner drives=false credential=false
 share.mint POST /api/shares Owner drives=false credential=false
 share.revoke DELETE /api/shares/{id} Owner drives=false credential=false

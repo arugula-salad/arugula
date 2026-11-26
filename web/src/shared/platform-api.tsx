@@ -77,6 +77,10 @@ export interface PlatformApi {
   machine(id: string | null | undefined): PlatformMachine | undefined;
   /** What a pane does, when this page sees it; "" otherwise. */
   paneTitle(machine: string | null | undefined, pane: number | string): string;
+  /** A project's name, when this page has its projects (Arugula #1457):
+   * a chief of staff's session is named by its project's id, and shown by
+   * this. None: such a name shows as it is. */
+  projectName?(id: string): string | undefined;
   /** A session's name, when this page sees it; "" otherwise. */
   sessionName(machine: string | null | undefined, session: number | string): string;
   /** Show a pane (with the quote found in it), or a session. Says why not

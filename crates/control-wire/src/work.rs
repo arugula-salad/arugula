@@ -830,8 +830,9 @@ pub struct SessionIssuesAsk {
 
 /// What a session's agent does in its project: read, comment on and open
 /// its native issues, make, write and read its Docs (aru-118), and read and
-/// post in its rooms as its asker's agent (Arugula #1276), nothing else. The route kept its first name, `session/issues`, for the boxes
-/// already calling it.
+/// post in its rooms as its asker's agent (Arugula #1276), and read its
+/// boards (Arugula #1381), nothing else. The route kept its first name,
+/// `session/issues`, for the boxes already calling it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -887,6 +888,22 @@ pub enum SessionIssuesOp {
         #[serde(default)]
         parent: Option<i64>,
     },
+    /// The project's boards, as the session's asker may read them (Arugula
+    /// #1381); with `board` (`brd_…`, or an open board's exact title) that
+    /// one board, with its lead, its rows and who works each.
+    BoardRead {
+        #[serde(default)]
+        board: Option<String>,
+    },
+    /// A proposal for the session's asker to approve or deny (Arugula
+    /// #1278): a card in their staff room, under Needs you and on their
+    /// phone. The session does nothing itself: the person's Approve does
+    /// it, as them, and `ask.answered` tells the session how it went.
+    Propose { proposal: crate::sessions::Proposal },
+    /// Cancel one of the session's own to-dos (Arugula #1462) while it's
+    /// open: it leaves its person's Needs you, and `ask.answered` says
+    /// `cancelled`. Only a to-do is cancelled.
+    ProposalCancel { ask: String },
 }
 
 /// [`WORK_SESSION_ISSUES`]'s answer.
@@ -940,6 +957,25 @@ pub enum SessionIssuesGiven {
     Posted {
         room: String,
         seq: i64,
+    },
+    /// The project's boards (`BoardRead` with no board).
+    Boards {
+        list: crate::boards::BoardList,
+    },
+    /// One board (`BoardRead` with a board).
+    Board {
+        view: crate::boards::BoardView,
+    },
+    /// Proposed (`Propose`): its id (`prp_…`, what `ask.answered`
+    /// matches as `ask`), and its card's message in the staff room.
+    Proposed {
+        ask: String,
+        room: String,
+        seq: i64,
+    },
+    /// Cancelled (`ProposalCancel`).
+    ProposalCancelled {
+        ask: String,
     },
     /// Not done, and why (the agent reads it).
     Refused {

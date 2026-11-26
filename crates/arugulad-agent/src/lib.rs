@@ -171,6 +171,11 @@ pub struct Config {
     /// instead of the session's own title (#629).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The name its session goes by instead of its title (Arugula #1457):
+    /// a chief of staff's, by its project's id, so staff posts reach it
+    /// whatever the block or the project is called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
     /// The ACP session, once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
@@ -328,7 +333,8 @@ pub struct TurnStat {
 /// a follow-up queued mid-turn is credited to its own author (M255). A
 /// mention (#611) carries its tag, so its turn reports `working` when it is
 /// sent and `read` when it ends (#540). The replies of one thread that wait
-/// together are one prompt (#580), with every one's tag.
+/// together are one prompt (#580), with every one's tag, and so is what
+/// woke the block together (#1339), whatever its threads.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
@@ -425,6 +431,17 @@ struct Inner {
     /// by a finished background task; it ends with an autonomous
     /// `usage_update`, a prompt of ours, or [`autonomous_quiet`].
     autonomous_at: Option<std::time::Instant>,
+    /// Our prompt is out, and the agent's last word was a cycle's result
+    /// that isn't its own (a task notification's): claude-agent-acp took
+    /// the turn's result for that cycle's and won't answer the prompt
+    /// (#1455). Quiet past [`autonomous_quiet`], the turn is let go.
+    stray_at: Option<std::time::Instant>,
+    /// The turn was let go that way: the `cancelled` that answers it is its
+    /// end, not a stop.
+    let_go: bool,
+    /// When the agent last sent anything, for how long a turn has said
+    /// nothing (#1455).
+    heard_ms: Option<u64>,
     /// The last request that starts the agent or opens its session, and
     /// when it went or the agent last sent anything since: silent past
     /// [`open_within`], it's given up on.
@@ -564,11 +581,12 @@ impl crate::features::Feature for AgentBlock {
 
     fn routes(&self, r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crate::server::App>> {
         use arugula_proto::op::ops::{
-            ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
+            ConversationContinue, ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
         };
         use arugulad_base::ops::OpRoutes;
         r.op_of::<ConversationsList, AgentBlock>()
             .op_of::<ConversationOpen, AgentBlock>()
+            .op_of::<ConversationContinue, AgentBlock>()
             .op_of::<PaneSessionSignal, AgentBlock>()
             .op_of::<ConversationSessionSignal, AgentBlock>()
     }
@@ -741,6 +759,9 @@ impl Inner {
             prompt_id: None,
             result_in: false,
             autonomous_at: None,
+            stray_at: None,
+            let_go: false,
+            heard_ms: None,
             opening: None,
             background: Default::default(),
             queue: VecDeque::new(),
@@ -818,8 +839,11 @@ impl Inner {
         if let Some(by) = &q.by {
             e["by"] = json!(by);
         }
-        if let [m] = q.mention.as_slice() {
-            e["mention"] = m.to_json();
+        match q.mention.as_slice() {
+            [] => {}
+            [m] => e["mention"] = m.to_json(),
+            // A wake's (#1339).
+            all => e["mentions"] = all.iter().map(MentionTag::to_json).collect(),
         }
         self.note(e);
     }
@@ -958,7 +982,7 @@ impl Inner {
                     text: e["text"].as_str().unwrap_or_default().to_owned(),
                     images: strings(&e["images"]),
                     by: e["by"].as_str().map(str::to_owned),
-                    mention: mention_of(&e["mention"]).into_iter().collect(),
+                    mention: mentions_of(e),
                 };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
@@ -979,6 +1003,12 @@ impl Inner {
                 }
             }
             "queue_clear" => self.queue.clear(),
+            // #1455: the agent's turn ended but its prompt was never
+            // answered, so it was let go (`session/cancel`).
+            "let_go" => {
+                self.let_go = true;
+                self.t.note("The turn ended without Claude Code saying so; Arugula closed it", at);
+            }
             "login" => self.login = e["login"].as_str().map(str::to_owned),
             "spawn" => {
                 // A new server: nothing outstanding carries over. (An old
@@ -1169,6 +1199,8 @@ impl Inner {
                         self.t.user(&text, images, at);
                         self.prompt_id = Some(id);
                         self.result_in = false;
+                        self.stray_at = None;
+                        self.let_go = false;
                         if self.autonomous_at.take().is_some() {
                             self.end_woken(at);
                         }
@@ -1225,6 +1257,17 @@ impl Inner {
             *since = at;
         }
         let method = m["method"].as_str();
+        if method.is_some() {
+            self.heard_ms = Some(at);
+            // Work, or a request: the turn goes on (#1455).
+            let work = matches!(
+                m["params"]["update"]["sessionUpdate"].as_str(),
+                Some("agent_message_chunk" | "agent_thought_chunk" | "tool_call" | "tool_call_update" | "plan")
+            );
+            if work || method != Some("session/update") {
+                self.stray_at = None;
+            }
+        }
         match (m.get("id"), method) {
             // An answer to one of ours.
             (Some(id), None) => {
@@ -1308,9 +1351,13 @@ impl Inner {
                             self.status = Status::Ready;
                         }
                         let stop = match &result {
+                            // A turn let go (#1455) had ended.
+                            None if self.let_go && r["stopReason"] == "cancelled" => "end_turn".to_owned(),
                             None => r["stopReason"].as_str().unwrap_or("end_turn").to_owned(),
                             Some(_) => "error".to_owned(),
                         };
+                        self.let_go = false;
+                        self.stray_at = None;
                         if let Some(t) = self.turns.last_mut() {
                             t.ended_ms = Some(at);
                             t.stop = Some(stop.clone());
@@ -1365,6 +1412,18 @@ impl Inner {
                             && origin == "human"
                         {
                             self.result_in = true;
+                        }
+                        // #1455: a cycle's result, not the prompt's, with the
+                        // prompt out. Its own may never come.
+                        if claude
+                            && self.replay.is_none()
+                            && self.live
+                            && self.prompt_id.is_some()
+                            && !self.result_in
+                            && u["cost"].is_object()
+                            && origin != "human"
+                        {
+                            self.stray_at = Some(std::time::Instant::now());
                         }
                         // An autonomous cycle's close.
                         if claude && self.replay.is_none() && origin != "human" && self.autonomous_at.take().is_some() {
@@ -1631,6 +1690,17 @@ impl Inner {
         news
     }
 
+    /// A tool call of this turn has started and not finished (#1455): the
+    /// turn is busy, however quiet.
+    fn tool_in_flight(&self) -> bool {
+        self.t
+            .entries
+            .iter()
+            .rev()
+            .take_while(|e| !matches!(e, Entry::User { .. }))
+            .any(|e| matches!(e, Entry::Tool(t) if !t.finished()))
+    }
+
     /// The server it was woken on went away: so did its cycle, which no
     /// longer holds back what's queued (#716).
     fn close_woken(&mut self, at: u64) {
@@ -1832,6 +1902,11 @@ impl Inner {
         // work, or tasks it left running): `wait --idle` waits.
         state["held"] = json!(self.status == Status::Working && self.result_in);
         state["background"] = json!(self.background.ids());
+        // #1455: when it last sent anything, for how long a turn has been
+        // quiet.
+        state["heard_ms"] = json!(self.heard_ms);
+        // #1473: when the running turn began, for how long it has run.
+        state["turn_started_ms"] = json!(self.prompt_id.and_then(|_| self.turns.last()).map(|t| t.started_ms));
         state
     }
 }
@@ -2597,6 +2672,12 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                         send_next(&ctx, &mut g);
                         dirty = true;
                     }
+                    // Not while a tool runs: a quiet one (a long build) is
+                    // work, and its end or the result after it is news.
+                    if g.stray_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) && !g.tool_in_flight() {
+                        g.stray_at = None;
+                        dirty |= let_go(&mut g);
+                    }
                     // #606: what it left running, checked on this host only.
                     if ctx.sprite.is_some() {
                         g.background.clear();
@@ -3204,6 +3285,22 @@ fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
 /// credential, say.
 const TURN_ALLOWED_FOR: Duration = Duration::from_secs(5);
 
+/// #1455: the agent's last word, a quiet period ago, was a cycle's result
+/// that wasn't its prompt's, which claude-agent-acp then never answers:
+/// its turn is over, so the block would show working, holding what's
+/// queued, for good. `session/cancel` gets the answer (as `cancelled`, the
+/// adapter's backstop sees to it), which ends the turn as it ended. Not
+/// with a card open, which it waits on, or a tool call running.
+fn let_go(g: &mut Inner) -> bool {
+    if g.prompt_id.is_none() || g.result_in || !g.pending.is_empty() || !g.asks.is_empty() || g.tool_in_flight() {
+        return false;
+    }
+    g.note(json!({ "e": "let_go" }));
+    let session = g.session();
+    g.notify("session/cancel", json!({ "sessionId": session }));
+    true
+}
+
 /// Send the next queued prompt, if the agent can take it. Not while it
 /// works on a cycle it woke for by itself (#716): claude-agent-acp folds a
 /// prompt that comes then into that cycle and never answers it, so the
@@ -3290,6 +3387,13 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
 /// The mention a `send` or a logged queue entry carries (#611).
 fn mention_of(v: &Value) -> Option<MentionTag> {
     MentionTag::from_json(v)
+}
+
+/// The mentions a `send` or a logged queue entry carries: its `mention`, or
+/// the `mentions` of a wake (#1339), which are one prompt.
+fn mentions_of(v: &Value) -> Vec<MentionTag> {
+    let many = v["mentions"].as_array().map(Vec::as_slice).unwrap_or_default();
+    mention_of(&v["mention"]).into_iter().chain(many.iter().filter_map(mention_of)).collect()
 }
 
 impl Agent {
@@ -3561,7 +3665,7 @@ impl Agent {
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
-        let mention: Vec<_> = mention_of(&args["mention"]).into_iter().collect();
+        let mention = mentions_of(args);
         let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned), mention };
         attach(&self.ctx, &mut q, &files)?;
         let mut g = self.inner.lock().unwrap();

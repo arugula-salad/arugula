@@ -125,17 +125,23 @@ enum class Tone(val color: Color) {
     MUTED(Palette.muted), PEACH(Palette.peach), TEAL(Palette.teal),
 }
 
-/** How a card or a session stands, most urgent first (the Overview's words). */
+/** How a card or a session stands, most urgent first (the Overview's words).
+ * [WAITS]: it, or its question, waits on someone else (Arugula #1392). */
 enum class Standing(val word: String, val tone: Tone) {
     NEEDS("needs you", Tone.ACCENT),
     ASKS("asks you", Tone.ACCENT),
     FAILED("failed", Tone.DANGER),
     CHECKS_FAILING("checks failing", Tone.DANGER),
+    WAITS("asks someone else", Tone.INFO),
     QUIET("quiet", Tone.WARN),
     WORKING("working", Tone.OK),
     CHECKS_RUNNING("checks running", Tone.INFO),
     REVIEW("in review", Tone.INFO),
     IDLE("", Tone.MUTED),
+    ;
+
+    /** Its word, naming whom it waits on when that's someone else: `asks Aaron`, or `asks someone` where that isn't known. */
+    fun word(asks: String?): String = if (this == WAITS) "asks ${asks?.takeIf { it.isNotEmpty() } ?: "someone"}" else word
 }
 
 /** A section's label, as the swarm's: small mono capitals, dim. */
@@ -224,9 +230,9 @@ fun AnswerButton(text: String, modifier: Modifier = Modifier, primary: Boolean =
     }
 }
 
-/** Someone's square: their initials on a color their name picks, the same every time. */
+/** Someone's square: their initials on a color their name picks, the same every time, or their [picture] when there is one. */
 @Composable
-fun Avatar(name: String, size: Int = 36, agent: Boolean = false) {
+fun Avatar(name: String, size: Int = 36, agent: Boolean = false, picture: androidx.compose.ui.graphics.ImageBitmap? = null) {
     val tones = listOf(Palette.accent, Palette.info, Palette.ok, Palette.peach, Palette.teal, Palette.pink, Palette.warn, Palette.merged)
     val words = name.split(' ', '-', '_', '.').filter { it.isNotEmpty() }
     val initials = words.take(2).map { it.first().uppercaseChar() }.joinToString("")
@@ -234,7 +240,11 @@ fun Avatar(name: String, size: Int = 36, agent: Boolean = false) {
     for (c in name) hash = hash * 33u + c.code.toUInt()
     Box(Modifier.size(size.dp)) {
         Box(Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.22).dp)).background(tones[(hash % tones.size.toUInt()).toInt()]), contentAlignment = Alignment.Center) {
-            Text(initials.ifEmpty { "?" }, style = Face.display((size * 0.5).sp, FontWeight.Black), color = Palette.void)
+            if (picture != null) {
+                androidx.compose.foundation.Image(picture, null, Modifier.size(size.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else {
+                Text(initials.ifEmpty { "?" }, style = Face.display((size * 0.5).sp, FontWeight.Black), color = Palette.void)
+            }
         }
         if (agent) {
             Box(Modifier.align(Alignment.BottomEnd).size((size * 0.38).dp).clip(RoundedCornerShape(4.dp)).background(Palette.bg), contentAlignment = Alignment.Center) {

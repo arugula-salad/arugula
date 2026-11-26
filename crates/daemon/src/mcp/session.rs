@@ -1,8 +1,8 @@
 //! A hosted session's MCP (aru-115, amended): the tools a session's agent
-//! has for its project's native issues, Docs (aru-118) and rooms (Arugula
-//! #1276), on a listener of
-//! their own, which `arugulad-mcp`'s `session` serves. Here: their names, and
-//! the entry a session's agent is given ([`entry`]).
+//! has for its project's native issues, Docs (aru-118), rooms (Arugula
+//! #1276), boards (Arugula #1381) and approval cards (Arugula #1278), on a
+//! listener of their own, which `arugulad-mcp`'s `session` serves. Here:
+//! their names, and the entry a session's agent is given ([`entry`]).
 
 use std::sync::OnceLock;
 
@@ -17,6 +17,8 @@ pub const READ_DOC: &str = "read_project_doc";
 pub const WATCH: &str = "watch";
 pub const READ_THREAD: &str = "read_session_thread";
 pub const POST_THREAD: &str = "post_session_thread";
+pub const BOARD_READ: &str = "board_read";
+pub const ASK_APPROVAL: &str = "ask_approval";
 
 static URL: OnceLock<String> = OnceLock::new();
 
