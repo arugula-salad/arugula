@@ -5,8 +5,10 @@
 //! (Arugula #1278): control posts it in their staff room (`via`
 //! `ask:prp_…`), under Needs you and on their phone, checked as this
 //! agent's posts there are (`threads.post`). **Approve** sends this machine
-//! `agents.approved` (`arugulad_base::approvals`), which does it as them;
-//! `ask.answered` tells the agent, by its watch.
+//! `agents.approved` (`arugulad_base::approvals`), which does it as them.
+//! The card names the agent's conversation, and its answer is told to it
+//! as a follow-up, with no watch (Arugula #1465); `ask.answered` tells
+//! anyone else watching.
 //!
 //! The agent does nothing itself. A start on another of the person's
 //! machines is a ladder start's (aru-143, #1415), under a board's grant;
@@ -31,7 +33,7 @@ use crate::{
 
 pub(crate) const TOOL: &str = "ask_approval";
 
-pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…): watch event ask.answered with match {\"ask\": id}, and end your turn.";
+pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…). Their answer wakes you here with what they chose, no watch needed: end your turn or go on with other work.";
 
 /// What a control from before the cards means for the agent.
 const NOT_YET: &str =
@@ -190,7 +192,8 @@ pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
         .ok_or("your block has no session name for the card: give its tab a name")?;
     let cards = cards_of(c, me, &blocks).await?;
     let project = c.current_project(a.project.as_deref()).await?;
-    let body = MachinePropose { proposal, session, pane: me, blocks: cards };
+    let conversation = arugulad_base::agent_mentions::asking(c.app(), me).await;
+    let body = MachinePropose { proposal, session, pane: me, blocks: cards, conversation };
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = match c.app().control.cloud(Method::POST, &agent_proposals(&project), Some(&body)).await {
         Ok(v) => v,
@@ -210,8 +213,8 @@ pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
     let p: MachineProposed = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
     done(
         format!(
-            "Asked for approval: card {} (message {} in room {}). Watch event ask.answered with match {{\"ask\": \"{}\"}}, then end your turn.",
-            p.ask, p.seq, p.room, p.ask
+            "Asked for approval: card {} (message {} in room {}). Their answer wakes you here, no watch needed: end your turn or go on with other work.",
+            p.ask, p.seq, p.room
         ),
         json!({ "ask": p.ask, "room": p.room, "seq": p.seq, "project": project }),
     )

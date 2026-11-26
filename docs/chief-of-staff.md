@@ -395,9 +395,13 @@ It asks you on a card:
    in chat answers it.
 4. Control emits `ask.answered`, with the card (`ask`), the session that
    asked, the `action` and the `answer` (`approved`, `denied` or `failed`)
-   and, for a start, the session it `started`. The chief of staff watches it
-   for each card, so your answer wakes it. The card's message gets a line
-   saying who answered and what happened.
+   and, for a start, the session it `started`. The card's message gets a
+   line saying who answered and what happened.
+5. Your answer wakes the session that asked, with no watch (Arugula
+   #1465): control queues it a prompt saying who answered and what it did
+   (a to-do's note too), its next turn's, or one that wakes it when idle. A
+   watch it made on `ask.answered` for its own card still fires, once, and
+   isn't told a second time.
 
 ### On a machine
 
@@ -431,7 +435,15 @@ The chief of staff on one of your machines asks the same way (Arugula
    machine that's offline, or too old to know the op, fails the card.
 4. `ask.answered` is the same event, with the agent's session name as
    `session`, the `machine`, and for a start the block it `started`
-   (`%N`). The chief of staff watches it per card.
+   (`%N`).
+5. The card names the asking conversation (`MachinePropose`'s
+   `conversation`: its harness and its id), so your answer is told to it
+   as a follow-up, with no watch (Arugula #1465): an `agents.mention`
+   tagged as a watch's message is, with the card's `prp_…` as its id. The
+   daemon gives it to that conversation alone, once, as your answer; an
+   idle one is woken with it. A board ask (`board_write` `ask`) names its
+   conversation the same way, and its answer goes the same way, by its
+   `ask_…`.
 
 A start on another of your machines isn't a card's: it's a ladder start,
 with control's start ticket (aru-143, #1415), under the board's grant. The

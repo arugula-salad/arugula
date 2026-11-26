@@ -13073,6 +13073,17 @@
         "additionalProperties": false,
         "description": "[`BOARD_ROW_ASK`]'s body: `who` is an account of the project. `options`\nare 0 to [`ASK_OPTIONS_MAX`] (none: free text), and `recommend` is one\nof them.",
         "properties": {
+          "conversation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodoConversation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A machine's agent's conversation (Arugula #1465): the answer is told\nto it, as a follow-up. A person's ask has none."
+          },
           "options": {
             "default": [],
             "items": {
@@ -16153,7 +16164,7 @@
         "type": "string"
       },
       "TodoConversation": {
-        "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+        "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked. Any card's or board ask's\nanswer wakes it (Arugula #1465): [`MachinePropose::conversation`],\n`boards::NewAsk::conversation`.",
         "properties": {
           "agent": {
             "description": "`claude` or `codex`.",

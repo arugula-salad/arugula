@@ -83,6 +83,8 @@ pub fn issue_agent_on_a_machine(prompt: Option<&str>) -> String {
 /// `draft`, the rest after `device_call`, and `list`'s kinds after
 /// `agents`. Before any other crate that lists a tool after one of these.
 pub fn register() {
+    // An answered to-do leaves `todo list` when its answer arrives.
+    arugulad_base::agent_mentions::on_answer(todos::drop_kept);
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
     let tools: [Listed; 25] = [

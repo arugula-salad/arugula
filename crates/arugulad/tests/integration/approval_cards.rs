@@ -2,7 +2,8 @@
 //! a start or a close on a card (`ask_approval`), the person's Approve
 //! reaches this machine as `agents.approved`, which starts an agent block on
 //! the issue (or closes blocks) here, and the card's `ask.answered` wakes the
-//! chief of staff through its watch. Against a fake control (it takes the
+//! chief of staff through its watch, or its answer does with no watch
+//! (Arugula #1465). Against a fake control (it takes the
 //! card, plays the person's Approve on the relay socket, and fires the
 //! watch) and a real daemon whose agents are the fake ACP agent.
 #![cfg(unix)]
@@ -71,6 +72,7 @@ async fn any(State(f): State<Fake>, req: Request) -> Response {
             Json(json!({ "id": format!("wch_{n}"), "state": "live", "expires_ms": 1 })).into_response()
         }
         ("PUT", ["api", "daemon", "chat", "mention-state"]) => Json(json!({})).into_response(),
+        ("GET", ["api", "daemon", "boards", "brd_1"]) => Json(board_view()).into_response(),
         _ => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("no route {method} {path}") }))).into_response(),
     }
 }
@@ -98,6 +100,53 @@ async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
     })
 }
 
+/// Board `brd_1` with one row, on #12, as the platform sends it.
+fn board_view() -> Value {
+    let lane = |id: &str, rows: Value| json!({ "id": format!("lane_{id}"), "rev": 0, "title": id, "kind": "lane", "rows": rows });
+    json!({
+        "board": { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,
+                   "updated_at": 1, "progress": { "done": 0, "total": 1, "proven": 0 } },
+        "groups": [],
+        "zones": [
+            lane("next", json!([{ "id": "row_1", "rev": 1, "pointer": { "kind": "issue", "id": "iss_12" },
+                "note": "", "status": "none", "lane": "next", "attachments": [],
+                "live": { "state": "open", "kind": "native", "number": 12, "title": "" },
+                "created_at": 1, "updated_at": 1 }])),
+            lane("doing", json!([])),
+            lane("review", json!([])),
+            lane("done", json!([])),
+        ],
+    })
+}
+
+/// A board ask as a control from before Arugula #1465 reads it: its JSON
+/// extractor refuses a field it doesn't know, with axum's own answer.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct OldAsk {
+    who: String,
+    question: String,
+    #[serde(default)]
+    why: Option<String>,
+    #[serde(default)]
+    options: Vec<String>,
+    #[serde(default)]
+    recommend: Option<String>,
+}
+
+async fn old_ask(
+    State(f): State<Fake>,
+    body: Result<Json<OldAsk>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let ok = body.is_ok();
+    f.calls.lock().unwrap().push((format!("POST /api/daemon/boards/brd_1/rows/row_1/ask {ok}"), json!(ok)));
+    match body {
+        Ok(_) => Json(board_view()).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
 fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let url = rt.block_on(async {
@@ -110,6 +159,7 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
             .route(arugula_control_wire::issues::AGENT_ISSUE_HOME, get(move || async move { Json(home) }))
             .route("/api/relay/dial", get(dial))
+            .route("/api/daemon/boards/brd_1/rows/row_1/ask", post(old_ask))
             .fallback(any)
             .with_state(f);
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -184,7 +234,7 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
         .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
         .unwrap();
     assert_eq!(asked["ask"], "prp_0", "{asked}");
-    assert!(asked["summary"].as_str().unwrap().contains("Watch event ask.answered"), "{asked}");
+    assert!(asked["summary"].as_str().unwrap().contains("no watch needed"), "{asked}");
     let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
     assert_eq!(
         card["proposal"],
@@ -284,6 +334,93 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     assert!(a["error"].as_str().unwrap().contains("isn't running on"), "{a}");
     assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
 
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Arugula #1465: a Claude Code chief of staff's card names its
+/// conversation, and the answer control tells it, tagged with the card's
+/// `prp_…`, wakes it with no watch: the person's answer and note, framed as
+/// theirs, once.
+#[test]
+fn a_cards_answer_wakes_the_conversation_that_asked_with_no_watch() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-answer-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let bin = tmp.join("agents/claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let agents_dir = tmp.join("agents").display().to_string();
+    let d = Daemon::child_in(&[], &[("ARUGULA_AGENTS_DIR", &agents_dir)], |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+
+    let config = json!({ "agent": "claude", "cwd": tmp, "title": "Chief of staff", "prompt": "hello" });
+    let chief = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(chief, "idle");
+    let session = d.state(chief)["session_id"].as_str().expect("its session").to_owned();
+    let mcp = Mcp::bridge(&d, Some(chief));
+    let asked = mcp
+        .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_0", "{asked}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[0];
+    assert_eq!(card["conversation"], json!({ "agent": "claude", "id": session }), "{card}");
+    assert!(f.asked("POST /api/daemon/watches").is_empty(), "no watch");
+
+    // The person answers: control tells the conversation that asked.
+    let said = "Ada approved your card prp_0 (start an agent on #12 Fix the login): started agent block %9.\nAda's note: \"go\"";
+    let op = |id: &str| {
+        json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "prp_0", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": said, "watch": { "id": "prp_0", "session": session } } })
+    };
+    f.send(op("m-1"));
+    d.wait_for("its answer", || f.answer("m-1").is_some());
+    assert_eq!(f.answer("m-1").unwrap()["routed"]["step"], "named");
+    d.wait_for("the chief of staff woken", || prompts(&d, chief).contains("Your ask prp_0 was answered"));
+    let p = prompts(&d, chief);
+    assert!(p.contains("started agent block %9") && p.contains("Ada's note"), "{p}");
+    // Sent again (control lost the daemon's answer): told once.
+    d.wait(chief, "idle");
+    f.send(op("m-2"));
+    d.wait_for("its answer", || f.answer("m-2").is_some());
+    assert_eq!(prompts(&d, chief).matches("Your ask prp_0 was answered").count(), 1, "once");
+
+    // The done-when, on a machine: it adds a to-do with no watch, ends its
+    // turn, and Done wakes it with the note; the to-do leaves its list.
+    let added = mcp
+        .call("todo", json!({ "kind": "add", "what": "Run the migration", "why": "it needs your prod credentials" }))
+        .unwrap();
+    assert_eq!(added["todo"], "prp_1", "{added}");
+    assert!(added["summary"].as_str().unwrap().contains("no watch needed"), "{added}");
+    let card = &f.asked("POST /api/daemon/projects/prj_1/proposals")[1];
+    assert_eq!(card["conversation"], json!({ "agent": "claude", "id": session }), "{card}");
+    assert!(f.asked("POST /api/daemon/watches").is_empty(), "no watch");
+    let listed = mcp.call("todo", json!({ "kind": "list" })).unwrap();
+    assert!(listed["summary"].as_str().unwrap().contains("prp_1"), "{listed}");
+    d.wait(chief, "idle");
+    let done = "Your to-do \"Run the migration\" (prp_1) is done: Ada did it.\nAda's note: \"14,203 rows\"";
+    f.send(json!({ "t": "op", "id": "m-3", "op": { "op": "agents.mention", "room": "prp_1", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": done, "watch": { "id": "prp_1", "session": session } } }));
+    d.wait_for("woken with the note", || prompts(&d, chief).contains("14,203 rows"));
+    let listed = mcp.call("todo", json!({ "kind": "list" })).unwrap();
+    assert!(!listed["summary"].as_str().unwrap().contains("prp_1"), "answered, it leaves the list: {listed}");
+
+    // A control from before #1465 refuses a board ask's conversation: the
+    // daemon asks again without it, and the ask goes in.
+    let asked = mcp
+        .call(
+            "board_write",
+            json!({ "kind": "ask", "board": "brd_1", "item": "#12", "who": "acc", "question": "Ship?" }),
+        )
+        .unwrap();
+    assert!(asked["summary"].as_str().unwrap().contains("Asked on #12."), "{asked}");
+    let tries: Vec<Value> = f.asked("POST /api/daemon/boards/brd_1/rows/row_1/ask");
+    assert_eq!(tries, [json!(false), json!(true)], "refused with its conversation, taken without");
+
+    drop(mcp);
     drop(d);
     let _ = std::fs::remove_dir_all(&tmp);
 }

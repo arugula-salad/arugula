@@ -541,6 +541,17 @@
           },
           "type": "array"
         },
+        "conversation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TodoConversation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its conversation (Arugula #1465), whatever the card: the answer is\ntold to it, as a follow-up, with no watch. A to-do's\n[`Proposal::Todo`] `conversation` says the same; this one wins. An\nolder control ignores it."
+        },
         "pane": {
           "description": "Its block, by pane: a start works in its repo.",
           "format": "uint32",
@@ -2286,7 +2297,7 @@
       "type": "object"
     },
     "TodoConversation": {
-      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked. Any card's or board ask's\nanswer wakes it (Arugula #1465): [`MachinePropose::conversation`],\n`boards::NewAsk::conversation`.",
       "properties": {
         "agent": {
           "description": "`claude` or `codex`.",

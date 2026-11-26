@@ -6252,7 +6252,7 @@
       "type": "string"
     },
     "TodoConversation": {
-      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked.",
+      "description": "The conversation a machine's agent's to-do is for (Arugula #1462): its\nharness and its id there, so an answer can find it again once its block\nis gone. The machine is the one that asked. Any card's or board ask's\nanswer wakes it (Arugula #1465): [`MachinePropose::conversation`],\n`boards::NewAsk::conversation`.",
       "properties": {
         "agent": {
           "description": "`claude` or `codex`.",

@@ -77,7 +77,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula cloud (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula cloud, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. Lanes follow the work (board_read says how); you can't set one. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. ask puts a decision to a person (who, the question, up to four options, a recommendation, why); read the answer in board_read, never wait. Groups are phases or waves: add_group, rename_group, move_group, delete_group; group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. Order and blockers are the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). verbose: true answers with the whole board. One failed item of a batch doesn't stop the rest.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula cloud, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. Lanes follow the work (board_read says how); you can't set one. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. ask puts a decision to a person (who, the question, up to four options, a recommendation, why); their answer wakes you as a follow-up, so never wait. Groups are phases or waves: add_group, rename_group, move_group, delete_group; group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. Order and blockers are the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). verbose: true answers with the whole board. One failed item of a batch doesn't stop the rest.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -698,6 +698,27 @@ async fn owners_boards(c: &Call<'_>, what: &str) -> Result<(), String> {
 
 async fn boards_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
     c.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+}
+
+/// Post `ask`. A control from before Arugula #1465 knows no
+/// `conversation` and refuses the body ([`unknown_field`]): it's asked
+/// again once without it, so the ask goes in and its answer wakes no one.
+async fn ask_call(c: &Call<'_>, path: &str, ask: NewAsk) -> Result<Value, String> {
+    let has = ask.conversation.is_some();
+    match c.app().control.cloud(Method::POST, path, Some(&given(ask.clone())?)).await {
+        Err(CloudRefused::Said { status, said: s, .. }) if has && unknown_field(status, &s) => {
+            let bare = NewAsk { conversation: None, ..ask };
+            boards_call(c, Method::POST, path, Some(given(bare)?)).await
+        }
+        r => r.map_err(said),
+    }
+}
+
+/// Whether control refused a body it couldn't read: its JSON extractor's
+/// 422, which has no words of its own (the platform's own refusals say
+/// why, as `error`).
+fn unknown_field(status: u16, said: &str) -> bool {
+    status == 422 && said.starts_with("control answered")
 }
 
 /// A board as the platform sends it.
@@ -1650,14 +1671,20 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let a: AskArgs = args(a)?;
             let view = read_view(c, &a.board).await?;
             let row = find_row(&view, &a.item)?;
-            let body = given(NewAsk {
+            // Its answer is told to this conversation (Arugula #1465).
+            let conversation = match c.own_pane() {
+                Some(me) => arugulad_base::agent_mentions::asking(c.app(), me).await,
+                None => None,
+            };
+            let ask = NewAsk {
                 who: a.who,
                 question: a.question,
                 why: a.why,
                 options: a.options,
                 recommend: a.recommend,
-            })?;
-            let v = boards_call(c, Method::POST, &agent_board_row_ask(&a.board, &row.id), Some(body)).await?;
+                conversation,
+            };
+            let v = ask_call(c, &agent_board_row_ask(&a.board, &row.id), ask).await?;
             one_row(&view_of(v)?, &format!("Asked on {}.", row.item_label()), &row.id, a.verbose)
         }
         "note" => {
@@ -2116,6 +2143,17 @@ mod tests {
         assert_eq!((r.item.as_str(), r.verbose), ("ARUGU-2", false));
     }
 
+    /// A control from before Arugula #1465 refuses an ask's conversation
+    /// with its JSON extractor's wordless 422: that one is asked again
+    /// without it. The platform's own refusals, which say why, aren't.
+    #[test]
+    fn only_a_body_control_couldnt_read_is_asked_again() {
+        assert!(unknown_field(422, "control answered 422"));
+        assert!(!unknown_field(422, "a note row has nothing to act on: ask on the issue's row"));
+        assert!(!unknown_field(400, "control answered 400"));
+        assert!(!unknown_field(409, "control answered 409"));
+    }
+
     /// An ask names who and the question, and leaves out what isn't given.
     #[test]
     fn an_ask_is_sent_as_the_wire_says() {
@@ -2123,9 +2161,15 @@ mod tests {
             json!({ "board": "b", "item": "#7", "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }),
         )
         .unwrap();
-        let body =
-            given(NewAsk { who: a.who, question: a.question, why: a.why, options: a.options, recommend: a.recommend })
-                .unwrap();
+        let body = given(NewAsk {
+            who: a.who,
+            question: a.question,
+            why: a.why,
+            options: a.options,
+            recommend: a.recommend,
+            conversation: None,
+        })
+        .unwrap();
         assert_eq!(body, json!({ "who": "acc", "question": "Ship?", "options": ["Yes", "No"] }));
         assert!(serde_json::from_value::<AskArgs>(json!({ "board": "b", "item": "#7", "question": "Ship?" })).is_err());
     }

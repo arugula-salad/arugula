@@ -258,13 +258,28 @@ pub struct WatchCancelled {
 /// The daemon gives it to that session alone, framed as Arugula's word and
 /// not a teammate's, past the owner's switch for teammates' mentions (the
 /// owner's own agent asked for it).
+///
+/// Or an answer to the session's own ask (Arugula #1465): `id` is the ask,
+/// an approval card or to-do's `prp_…` or a board ask's `ask_…`, and the
+/// text says who answered and how, with a to-do's note. It goes the same
+/// way, to that session alone and once, with no watch: a daemon that knows
+/// [`is_answer`] frames it as its person's answer; an older one, as a
+/// watch's message.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WatchTag {
-    /// `wch_…`.
+    /// `wch_…`, or an answered ask's `prp_…` or `ask_…`.
     pub id: String,
-    /// The Claude Code session's id.
+    /// The Claude Code session's id (or an agent block's, for its harness).
     pub session: String,
+}
+
+impl WatchTag {
+    /// Whether it carries an answer to the session's own ask (Arugula
+    /// #1465), not a watch's message.
+    pub fn is_answer(&self) -> bool {
+        self.id.starts_with("prp_") || self.id.starts_with("ask_")
+    }
 }
 
 /// `GET`: the live watches on a mirrored PR (`fi_…`, Arugula #1036), for a
