@@ -236,7 +236,7 @@
           ]
         },
         "repo": {
-          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it. Control sends it when the\nproject links one repo, for a machine that doesn't read `repos`.",
+          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it: the first of `repos`, for a\nmachine that doesn't read them.",
           "type": [
             "string",
             "null"

@@ -506,8 +506,8 @@ pub struct AskApproved {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub board_title: Option<String>,
     /// `run_board`: the project's repo (`owner/name`), for the lead to work
-    /// in when this machine has a clone of it. Control sends it when the
-    /// project links one repo, for a machine that doesn't read `repos`.
+    /// in when this machine has a clone of it: the first of `repos`, for a
+    /// machine that doesn't read them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     /// `run_board` (Arugula #1458): the project's linked repos, the board's
