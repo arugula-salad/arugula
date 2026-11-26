@@ -1,6 +1,6 @@
 ---
 section: Fixed
 title: Same-named projects keep their own chief of staff
-line: Starting a chief of staff for a project no longer closes another project's that has the same name: the second one's title adds a short project id.
+line: A chief of staff's session is named by its project's id, so two projects with one name, or a renamed project, each keep their own chief of staff and staff posts.
 headline: no
 ---

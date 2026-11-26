@@ -88,10 +88,14 @@ daemon as on any machine. That call:
    name>" (or the `title` you give), in the project: its `staff` is that
    project's staff room;
 2. sends it the machine's recipe, then your `prompt`, as its first prompt;
-3. makes it your staff room's lead there, by its session's name (an agent
-   block's session is named by its title), as its own `post_thread`
-   `room: staff`, `lead: true` would. The answer's `chief_of_staff` says
-   whether it leads.
+3. makes it your staff room's lead there, by its session's name, as its own
+   `post_thread` `room: staff`, `lead: true` would. The answer's
+   `chief_of_staff` says whether it leads. Its session is named by the
+   project's id, "Chief of staff · prj_…", not by its title: two of your
+   projects may share a name, and a project may be renamed, and your posts
+   in staff still reach the right one. Starting one again for the project
+   closes the one here by that name (or, from an older daemon, by the
+   project's title), never another project's.
 
 `start_agent` takes the lead itself rather than leaving it to the first
 wake: a post of yours in staff reaches it from the start, and the first wake
