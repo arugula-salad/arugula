@@ -500,7 +500,10 @@ mod tests {
         assert!(every_ms("30s").unwrap_err().contains("like 5m"));
         assert!(every_ms("0m").unwrap_err().contains("at least 1m"));
         assert!(every_ms("25h").unwrap_err().contains("at most 24h"));
-        assert_eq!((every_word(EVERY_DEFAULT_MS), every_word(3_600_000), every_word(90 * 60_000)), ("5m".into(), "1h".into(), "90m".into()));
+        assert_eq!(
+            (every_word(EVERY_DEFAULT_MS), every_word(3_600_000), every_word(90 * 60_000)),
+            ("5m".into(), "1h".into(), "90m".into())
+        );
     }
 
     #[test]
