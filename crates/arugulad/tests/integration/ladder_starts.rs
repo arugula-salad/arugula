@@ -743,3 +743,64 @@ async fn a_lead_closes_its_boards_agents_in_their_own_tabs_here() {
     assert_eq!(f.running(), 1);
     assert!(a.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == shell), "the shell is still open");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_lead_reads_and_closes_the_agents_it_started_in_their_own_tabs() {
+    let Pair { a, b: _b, a_id: _, b_id: _, f: _, url: _ } = pair(2).await;
+    let work = a.state.join("ladder-work");
+    std::fs::create_dir_all(&work).unwrap();
+    let clone_a = clone_in(&work, "alpha-clone");
+    let shell = a.post("/api/run", json!({ "cwd": clone_a }))["pane"].as_u64().unwrap();
+    let s = bridge(&a).await;
+    let r = call(&s, json!({ "prompt": "Lead it", "board": BOARD, "cwd": clone_a })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let lead = r.structured_content.clone().unwrap()["block"].as_u64().unwrap();
+    // Another agent block, in a tab of its own, that started nothing here.
+    let r = call(&s, json!({ "prompt": "Other", "board": BOARD, "issue": "#2", "cwd": clone_a })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let other = r.structured_content.clone().unwrap()["block"].as_u64().unwrap();
+    drop(s);
+
+    // The lead starts an issue agent, with no `to`: it opens in a tab of its own.
+    let lead_s = as_block(&a, lead).await;
+    let r = call(&lead_s, json!({ "prompt": "Fix #1", "board": BOARD, "issue": "#1", "cwd": clone_a })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let started = r.structured_content.clone().unwrap()["block"].as_u64().unwrap();
+    let panes = a.get("/api/panes");
+    let tab = |id: u64| panes.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap()["tab"].clone();
+    assert_ne!(tab(lead), tab(started), "the issue agent is in another tab");
+
+    // It reads what it started, and an agent that didn't start it can't.
+    let r = call_tool(&lead_s, "read_output", json!({ "pane": started })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let r = call_tool(&lead_s, "read_output", json!({ "pane": shell })).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("in another tab"), "{}", text(&r));
+    let r = call_tool(&lead_s, "read_output", json!({ "pane": other })).await;
+    assert_eq!(r.is_error, Some(true), "{}", text(&r));
+    let other_s = as_block(&a, other).await;
+    let r = call_tool(&other_s, "read_output", json!({ "pane": started })).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("in another tab"), "{}", text(&r));
+    let r = call_tool(&other_s, "close", json!({ "pane": started })).await;
+    assert_eq!(r.is_error, Some(true));
+    assert!(text(&r).contains("in another tab"), "{}", text(&r));
+    drop(other_s);
+
+    // It closes what it started.
+    let r = call_tool(&lead_s, "close", json!({ "pane": started })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    assert!(text(&r).contains(&format!("Closed %{started}")), "{}", text(&r));
+
+    // A terminal session as lead has no block token to confine: it reads
+    // and closes what it started the same.
+    let term = bridge(&a).await;
+    let r = call(&term, json!({ "prompt": "Fix #3", "board": BOARD, "issue": "#3", "cwd": clone_a })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let by_term = r.structured_content.clone().unwrap()["block"].as_u64().unwrap();
+    let r = call_tool(&term, "read_output", json!({ "pane": by_term })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    let r = call_tool(&term, "close", json!({ "pane": by_term })).await;
+    assert_ne!(r.is_error, Some(true), "{}", text(&r));
+    drop(term);
+}

@@ -451,7 +451,8 @@ impl<'a> Call<'a> {
         self.caller.scope.block()
     }
 
-    /// An open pane or block, if this caller may see it.
+    /// An open pane or block, if this caller may see it: for an agent
+    /// block's token, one in its own tab or one it started.
     pub async fn readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let panes = self.panes().await;
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
@@ -459,7 +460,10 @@ impl<'a> Call<'a> {
         };
         if let Some(me) = self.me() {
             let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
-            if tab != Some(p.tab) {
+            // What it started is its own, in whatever tab it opened (a
+            // board lead's issue agents, Arugula #1474).
+            let started = p.info.started_by.as_ref().and_then(|s| s.block) == Some(me);
+            if tab != Some(p.tab) && !started {
                 return Err(format!("%{pane} is in another tab: this agent's token reaches its own tab only"));
             }
         }
