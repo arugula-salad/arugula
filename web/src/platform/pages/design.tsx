@@ -125,7 +125,9 @@ const noop = () => {};
 // ---- sections
 
 function TypeScale() {
-  const names = useMemo(() => tokens(/^--text-[a-z0-9]+$/).sort(numeric), []);
+  // Today's steps; kit/tokens.css's role names for them (--text-label …)
+  // join when the kit rebuilds this page (design lift, phase 2).
+  const names = useMemo(() => tokens(/^--text-(xs|sm|md|lg|xl|2xl|doc)$/).sort(numeric), []);
   return (
     <div class="design-type">
       {names.map((name) => {
