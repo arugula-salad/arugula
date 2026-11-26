@@ -621,6 +621,31 @@ pub struct ProposalRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lapse_days: Option<u32>,
+    /// The board's repo (Arugula #1458): the first of the project's linked
+    /// repos, the board's own first. None: the project links none, and
+    /// agents start in their machine's home.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub repo: Option<String>,
+    /// What each machine said when the card was raised: the first of the
+    /// project's repos it has a clone of, or none. A machine that isn't here
+    /// couldn't be asked (offline, or its Arugula is too old).
+    #[serde(default)]
+    pub checkouts: Vec<RunCheckout>,
+}
+
+/// One machine's clone, for a "Run this board" card (Arugula #1458).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RunCheckout {
+    /// The machine, by id.
+    pub machine: String,
+    /// The first of the project's repos it has a clone of (where its agents
+    /// start); none: it has none, and no agent starts there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub repo: Option<String>,
 }
 
 /// [`ChatProposal::issue`].

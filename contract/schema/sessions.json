@@ -718,6 +718,14 @@
           "minimum": 0,
           "type": "integer"
         },
+        "checkouts": {
+          "default": [],
+          "description": "What each machine said when the card was raised: the first of the\nproject's repos it has a clone of, or none. A machine that isn't here\ncouldn't be asked (offline, or its Arugula is too old).",
+          "items": {
+            "$ref": "#/$defs/RunCheckout"
+          },
+          "type": "array"
+        },
         "lapse_days": {
           "description": "None: until the board closes.",
           "format": "uint32",
@@ -737,6 +745,13 @@
             "$ref": "#/$defs/GrantMachine"
           },
           "type": "array"
+        },
+        "repo": {
+          "description": "The board's repo (Arugula #1458): the first of the project's linked\nrepos, the board's own first. None: the project links none, and\nagents start in their machine's home.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -768,6 +783,26 @@
         "id",
         "title",
         "state"
+      ],
+      "type": "object"
+    },
+    "RunCheckout": {
+      "description": "One machine's clone, for a \"Run this board\" card (Arugula #1458).",
+      "properties": {
+        "machine": {
+          "description": "The machine, by id.",
+          "type": "string"
+        },
+        "repo": {
+          "description": "The first of the project's repos it has a clone of (where its agents\nstart); none: it has none, and no agent starts there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "machine"
       ],
       "type": "object"
     },

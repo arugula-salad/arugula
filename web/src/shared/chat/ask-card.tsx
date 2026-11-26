@@ -245,20 +245,40 @@ function ProposalAsk({ room, m }: { room: ChatRoom; m: ChatMessage }) {
 
 /** A "Run this board" card's lines (Arugula #1416): the board, where its
  * lead runs, where its issue agents may and how many at once, and when the
- * grant lapses. */
+ * grant lapses. With a repo, each machine's clone of it as the machine said
+ * when the card was raised (Arugula #1458): a machine with none is said, as
+ * is one that couldn't be asked. */
 function RunLines({ run, project }: { run: ProposalRun; project: string | null }) {
   const board = project ? `/p/${enc(project)}/boards/${enc(run.board)}` : null;
+  const repo = run.repo ?? null;
+  const said = new Map((run.checkouts ?? []).map((c) => [c.machine, c.repo ?? null]));
+  const lead = run.lead_machine;
+  const leadAt = repo && said.has(lead.id) ? said.get(lead.id) : undefined;
+  const others = run.machines.filter((m) => m.id !== lead.id);
+  const without = repo ? others.filter((m) => said.has(m.id) && !said.get(m.id)) : [];
+  const unasked = repo ? run.machines.filter((m) => !said.has(m.id)) : [];
   return (
     <>
       <p class="session-card-line session-ask-question" data-proposal-board={run.board}>
         Run {board ? <a href={board}>{run.board_title || run.board}</a> : <b>{run.board_title || run.board}</b>}
       </p>
-      <p class="session-card-line" data-proposal-lead={run.lead_machine.id}>
-        Lead on <b>{run.lead_machine.name}</b>
+      <p class={`session-card-line${leadAt === null ? " bad" : ""}`} data-proposal-lead={lead.id}>
+        Lead on <b>{lead.name}</b>
+        {leadAt ? ` · in ${leadAt}` : leadAt === null ? ` · no clone of ${repo} there, so it won't start` : ""}
       </p>
       <p class="session-card-line" data-proposal-machines>
         Issue agents on {run.machines.map((m) => m.name).join(", ")} · up to {run.cap} at once
       </p>
+      {without.length > 0 && (
+        <p class="session-card-line bad" data-proposal-no-clone>
+          No clone of {repo} on {without.map((m) => m.name).join(", ")}: no issue agent starts there
+        </p>
+      )}
+      {unasked.length > 0 && (
+        <p class="session-card-line" data-proposal-unasked>
+          Couldn't ask {unasked.map((m) => m.name).join(", ")} for a clone of {repo}
+        </p>
+      )}
       <p class="session-card-line" data-proposal-lapse>
         {lapseWords(run.lapse_days)}
       </p>

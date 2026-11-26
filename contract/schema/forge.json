@@ -236,11 +236,18 @@
           ]
         },
         "repo": {
-          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it.",
+          "description": "`run_board`: the project's repo (`owner/name`), for the lead to work\nin when this machine has a clone of it: the first of `repos`, for a\nmachine that doesn't read them.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "repos": {
+          "description": "`run_board` (Arugula #1458): the project's linked repos, the board's\nown first (the ones its rows' PRs go to). The lead starts in a clone\nof the first this machine has; with none of them, it doesn't start.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "session": {
           "description": "The agent that asked: its session's name and its block.",
@@ -351,6 +358,21 @@
         "file"
       ],
       "type": "string"
+    },
+    "CheckoutsAsk": {
+      "description": "`agents.checkouts`' ask (Arugula #1458): the project's repos\n(`owner/name`), the board's own first.",
+      "properties": {
+        "repos": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "type": "object"
     },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
@@ -543,6 +565,20 @@
           "properties": {
             "op": {
               "const": "agents.approved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CheckoutsAsk",
+          "description": "Which of a project's repos this machine has a clone of (Arugula\n#1458): control asks each machine a \"Run this board\" card offers,\nbefore the person approves, so the card says where agents can't\nstart. The daemon answers `checkout` with the first it has, found as\na ladder start finds one. An older daemon answers `unknown`.",
+          "properties": {
+            "op": {
+              "const": "agents.checkouts",
               "type": "string"
             }
           },
@@ -1203,6 +1239,26 @@
           "required": [
             "answer",
             "said"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.checkouts`' answer (Arugula #1458): the first of the\nrepos asked that this machine has a clone of; none: it has none.",
+          "properties": {
+            "answer": {
+              "const": "checkout",
+              "type": "string"
+            },
+            "repo": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "answer"
           ],
           "type": "object"
         },

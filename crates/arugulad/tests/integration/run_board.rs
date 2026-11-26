@@ -3,7 +3,11 @@
 //! grant's lead machine as `agents.approved`, which starts the board's lead
 //! there as a ladder start (a start ticket under the grant control just
 //! wrote) and makes it the board's lead; a post on the board's thread then
-//! reaches it. Revoked, the grant refuses the next start. Against a fake
+//! reaches it. Revoked, the grant refuses the next start. The lead works in
+//! a worktree of this machine's clone of the board's repo, found in its home
+//! folder; a machine with none of the project's repos says so and starts
+//! nothing, and says which it has when control asks for the card (Arugula
+//! #1458). Against a fake
 //! control (it takes the card, plays the person's Approve on the relay
 //! socket, signs start tickets while the grant is live, and sends the
 //! board's thread to its lead) and a real daemon whose agents are the fake
@@ -12,6 +16,8 @@
 
 use std::{
     os::unix::fs::PermissionsExt,
+    path::Path,
+    process::Command,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -196,6 +202,26 @@ fn serve(f: Fake) -> (tokio::runtime::Runtime, String) {
     (rt, url)
 }
 
+fn git(dir: &Path, args: &[&str]) {
+    let o = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&o.stderr));
+}
+
+/// A clone of `acme/widgets` at `dir`, from a bare repository at
+/// `root/acme/widgets.git`.
+fn clone_of_widgets(root: &Path, dir: &Path) {
+    let seed = root.join("seed");
+    std::fs::create_dir_all(&seed).unwrap();
+    git(&seed, &["init", "-q", "-b", "main"]);
+    std::fs::write(seed.join("README"), "widgets\n").unwrap();
+    git(&seed, &["add", "."]);
+    git(&seed, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "first"]);
+    let bare = root.join("acme/widgets.git");
+    std::fs::create_dir_all(bare.parent().unwrap()).unwrap();
+    git(root, &["clone", "-q", "--bare", &seed.display().to_string(), &bare.display().to_string()]);
+    git(root, &["clone", "-q", &bare.display().to_string(), &dir.display().to_string()]);
+}
+
 /// What the fake agent in block `id` was prompted with, every turn's.
 fn prompts(d: &Daemon, id: u64) -> String {
     let Some(sid) = d.state(id)["session_id"].as_str().map(str::to_owned) else { return String::new() };
@@ -217,10 +243,18 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
     std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
 
+    // Its home folder holds a clone of the board's repo that no pane works
+    // in: the lead's start finds it there.
+    let home = tmp.join("home");
+    let clone = home.join("dev/acme/widgets");
+    clone_of_widgets(&tmp.join("git"), &clone);
+
     let agents_dir = agents.display().to_string();
+    let home_dir = home.display().to_string();
     let here = Arc::new(Mutex::new(String::new()));
     let me = here.clone();
-    let d = Daemon::child_in(&[], &[("ARUGULA_AGENTS_DIR", &agents_dir)], move |state| {
+    let env = [("ARUGULA_AGENTS_DIR", agents_dir.as_str()), ("HOME", home_dir.as_str())];
+    let d = Daemon::child_in(&[], &env, move |state| {
         enroll(state, &url);
         *me.lock().unwrap() = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap().id();
     });
@@ -259,12 +293,34 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     let why = mcp.call("ask_approval", json!({ "action": "start", "issue": "#1", "cap": 2, "why": "x" })).unwrap_err();
     assert!(why.contains("go with run_board"), "{why}");
 
+    // Before the person approves, control asks which of the project's repos
+    // this machine has a clone of, for the card to say.
+    f.send(json!({ "t": "op", "id": "clones-1", "op": { "op": "agents.checkouts",
+        "repos": ["acme/site", "acme/widgets"] } }));
+    f.send(json!({ "t": "op", "id": "clones-2", "op": { "op": "agents.checkouts", "repos": ["acme/site"] } }));
+    d.wait_for("its answers", || f.answer("clones-1").is_some() && f.answer("clones-2").is_some());
+    assert_eq!(f.answer("clones-1").unwrap(), json!({ "answer": "checkout", "repo": "acme/widgets" }));
+    assert_eq!(f.answer("clones-2").unwrap(), json!({ "answer": "checkout", "repo": null }));
+
     // The person approves: control writes the grant and asks the grant's
-    // lead machine (this one) to start the lead.
+    // lead machine (this one) to start the lead. With no clone here of any
+    // of the project's repos, it says so and nothing starts.
     f.granted.store(true, Ordering::SeqCst);
+    f.send(json!({ "t": "op", "id": "approve-0", "op": { "op": "agents.approved", "ask": "prp_0",
+        "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD,
+        "board_title": "Launch", "repos": ["acme/site", "acme/docs"] } }));
+    d.wait_for("its answer", || f.answer("approve-0").is_some());
+    let a = f.answer("approve-0").unwrap();
+    assert_eq!(a["answer"], "failed", "{a}");
+    let why = a["error"].as_str().unwrap();
+    assert!(why.contains("has no clone of acme/site (or the project's 1 other repos)"), "{a}");
+    assert!(f.issued.lock().unwrap().is_empty(), "no ticket asked for");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before, "nothing started");
+
+    // The board's own repo first: the first of them with a clone here.
     f.send(json!({ "t": "op", "id": "approve-1", "op": { "op": "agents.approved", "ask": "prp_0",
         "project": "prj_1", "action": "run_board", "session": "Chief of staff", "pane": chief, "board": BOARD,
-        "board_title": "Launch" } }));
+        "board_title": "Launch", "repos": ["acme/site", "acme/widgets"] } }));
     d.wait_for("its answer", || f.answer("approve-1").is_some());
     let a = f.answer("approve-1").unwrap();
     assert_eq!(a["answer"], "approved", "{a}");
@@ -287,6 +343,12 @@ fn run_this_board_starts_its_lead_which_hears_the_boards_thread_and_a_revoked_gr
     assert_eq!(b["state"]["work"]["ladder"]["rung"], "lead", "{b}");
     assert_eq!(b["state"]["title"], "Lead · Launch", "a title, so its session's posts find it: {b}");
     assert_eq!(b["state"]["work"]["ladder"]["by_session"], "Chief of staff", "{b}");
+    // In a worktree of the home folder's clone, not the home folder.
+    let cwd = b["state"]["cwd"].as_str().unwrap_or_default();
+    let (real_clone, real_cwd) = (std::fs::canonicalize(&clone).unwrap(), std::fs::canonicalize(cwd).unwrap());
+    assert!(real_cwd.starts_with(&real_clone) && real_cwd != real_clone, "{cwd} isn't in {}", clone.display());
+    assert!(real_cwd.join("README").exists(), "a worktree of the clone: {cwd}");
+    assert!(said.contains(&format!(" in {cwd}:")), "{a}");
     // It works without a card for each command, as the board-lead recipe's
     // issue agents do (Arugula #1440).
     assert_eq!((&b["state"]["permission_mode"], &b["state"]["user_settings"]), (&json!("auto"), &json!(true)), "{b}");
