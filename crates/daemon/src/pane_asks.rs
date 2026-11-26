@@ -32,7 +32,7 @@
 use std::time::Instant;
 
 use arugula_control_wire::boards::{AGENT_PANE_ASKS, PaneAsk, PaneAskKind, PaneAsksReport};
-use arugula_proto::{AskWhat, Attention, BlockType, ReasonKind, api::PaneSummary};
+use arugula_proto::{AskWhat, Attention, BlockType, ReasonKind, WAITS_BUNDLE, api::PaneSummary};
 use tracing::{debug, warn};
 
 use crate::{
@@ -45,6 +45,11 @@ use crate::{
 fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
     let i = &p.info;
     let r = i.reason.as_ref()?;
+    // It waits on a card or a to-do of its own (Arugula #1464): that is
+    // its person's Inbox item already.
+    if r.bundle.as_deref().is_some_and(|b| b.starts_with(WAITS_BUNDLE)) {
+        return None;
+    }
     let agent = i.kind == BlockType::Agent;
     if !(agent || i.ask.is_some() || r.kind == ReasonKind::Gate) {
         return None;
@@ -215,8 +220,16 @@ mod tests {
         p
     }
 
+    /// A pane waiting on its own card or to-do (Arugula #1464).
+    fn waits() -> Reason {
+        let mut r = reason(ReasonKind::Input, None);
+        r.bundle = Some(format!("{WAITS_BUNDLE}/work"));
+        r
+    }
+
     /// Each kind of wait, from an agent block's attention and reason; a
-    /// terminal's bell and a working block are none.
+    /// terminal's bell, a working block and one waiting on its own card or
+    /// to-do (its person's Inbox item already) are none.
     #[test]
     fn what_each_pane_waits_for() {
         use {Attention::*, BlockType::*, ReasonKind as R};
@@ -231,6 +244,8 @@ mod tests {
             pane(8, Terminal, NeedsInput, Some(reason(R::Input, None))),
             pane(9, Terminal, Done, Some(reason(R::Failed, None))),
             pane(10, Agent, Working, None),
+            pane(11, Agent, NeedsInput, Some(waits())),
+            pane(12, Terminal, NeedsInput, Some(waits())),
         ];
         let got: Vec<_> = report(&panes).asks.iter().map(|a| (a.pane, a.kind, a.for_person)).collect();
         use PaneAskKind as K;

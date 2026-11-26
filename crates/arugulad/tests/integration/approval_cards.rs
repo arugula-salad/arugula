@@ -67,6 +67,9 @@ async fn any(State(f): State<Fake>, req: Request) -> Response {
             let n = f.asked("POST /api/daemon/projects/prj_1/proposals").len() - 1;
             Json(json!({ "ask": format!("prp_{n}"), "room": "dm_staff", "seq": 40 + n })).into_response()
         }
+        ("POST", ["api", "daemon", "projects", "prj_1", "proposals", ask, "cancel"]) => {
+            Json(json!({ "ask": ask })).into_response()
+        }
         ("POST", ["api", "daemon", "watches"]) => {
             let n = f.asked("POST /api/daemon/watches").len() - 1;
             Json(json!({ "id": format!("wch_{n}"), "state": "live", "expires_ms": 1 })).into_response()
@@ -419,6 +422,98 @@ fn a_cards_answer_wakes_the_conversation_that_asked_with_no_watch() {
     assert!(asked["summary"].as_str().unwrap().contains("Asked on #12."), "{asked}");
     let tries: Vec<Value> = f.asked("POST /api/daemon/boards/brd_1/rows/row_1/ask");
     assert_eq!(tries, [json!(false), json!(true)], "refused with its conversation, taken without");
+
+    drop(mcp);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// The reason pane `id` shows, while it needs input.
+fn needs(d: &Daemon, id: u64) -> Option<Value> {
+    pane(d, id).filter(|p| p["attention"] == "needs_input").map(|p| p["reason"].clone())
+}
+
+/// Arugula #1464's done-when: an agent block on a machine adds a to-do, and
+/// its pane waits on its person for it (unpushed: the card was) until the
+/// person's answer reaches this daemon, which wakes the agent with it. A
+/// card does the same, and a cancel ends the wait.
+#[test]
+fn an_agent_blocks_to_do_is_its_pane_waiting_on_you_until_the_answer_reaches_the_daemon() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-waits-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let bin = tmp.join("agents/claude/node_modules/.bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let acp = bin.join("claude-agent-acp");
+    std::fs::write(&acp, format!("#!/bin/sh\nexec {PYTHON} {} \"$@\"\n", fake())).unwrap();
+    std::fs::set_permissions(&acp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let agents_dir = tmp.join("agents").display().to_string();
+    let d = Daemon::child_in(&[], &[("ARUGULA_AGENTS_DIR", &agents_dir)], |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+
+    let config = json!({ "agent": "claude", "cwd": tmp, "title": "Worker", "prompt": "hello" });
+    let worker = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(worker, "idle");
+    let session = d.state(worker)["session_id"].as_str().expect("its session").to_owned();
+    assert_eq!(needs(&d, worker), None, "nothing waits yet");
+    let mcp = Mcp::bridge(&d, Some(worker));
+
+    // It adds a to-do: its pane waits on its person, under its what.
+    let added = mcp
+        .call("todo", json!({ "kind": "add", "what": "Run the migration", "why": "it needs your prod credentials" }))
+        .unwrap();
+    assert_eq!(added["todo"], "prp_0", "{added}");
+    d.wait_for("the pane waits on you", || needs(&d, worker).is_some());
+    let r = needs(&d, worker).unwrap();
+    assert_eq!(r["kind"], "input", "{r}");
+    assert_eq!(r["headline"], "Waits on you: Run the migration", "{r}");
+    assert!(r["bundle"].as_str().unwrap().starts_with(arugula_proto::WAITS_BUNDLE), "{r}");
+
+    // A card too: one more.
+    let asked = mcp
+        .call("ask_approval", json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" }))
+        .unwrap();
+    assert_eq!(asked["ask"], "prp_1", "{asked}");
+    d.wait_for("both wait", || {
+        needs(&d, worker).is_some_and(|r| r["headline"] == "Waits on you: Run the migration (+1 more)")
+    });
+
+    // The owner answers the to-do: control tells this daemon, which wakes
+    // the agent with the note; only the card waits now.
+    let done = "Your to-do \"Run the migration\" (prp_0) is done: Ada did it.\nAda's note: \"14,203 rows\"";
+    f.send(json!({ "t": "op", "id": "m-1", "op": { "op": "agents.mention", "room": "prp_0", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": done, "watch": { "id": "prp_0", "session": session } } }));
+    d.wait_for("its answer", || f.answer("m-1").is_some());
+    assert_eq!(f.answer("m-1").unwrap()["routed"]["step"], "named");
+    d.wait_for("woken with the note", || prompts(&d, worker).contains("14,203 rows"));
+    d.wait(worker, "idle");
+    d.wait_for("the card waits", || {
+        needs(&d, worker).is_some_and(|r| r["headline"] == "Waits on you: approve starting an agent on #12")
+    });
+
+    // Another to-do, cancelled: it waits no more.
+    let added = mcp.call("todo", json!({ "kind": "add", "what": "Rotate the key", "why": "it's yours" })).unwrap();
+    assert_eq!(added["todo"], "prp_2", "{added}");
+    d.wait_for("it waits too", || {
+        needs(&d, worker).is_some_and(|r| r["headline"] == "Waits on you: approve starting an agent on #12 (+1 more)")
+    });
+    mcp.call("todo", json!({ "kind": "cancel", "id": "prp_2" })).unwrap();
+    d.wait_for("cancelled", || {
+        needs(&d, worker).is_some_and(|r| r["headline"] == "Waits on you: approve starting an agent on #12")
+    });
+
+    // The card is answered too: nothing waits, and the pane is the agent's
+    // own again.
+    let said = "Ada denied your card prp_1 (start an agent on #12 Fix the login).";
+    f.send(json!({ "t": "op", "id": "m-2", "op": { "op": "agents.mention", "room": "prp_1", "room_name": "answer",
+        "seq": 0, "author": "Arugula", "text": said, "watch": { "id": "prp_1", "session": session } } }));
+    d.wait_for("its answer", || f.answer("m-2").is_some());
+    d.wait_for("woken", || prompts(&d, worker).contains("denied your card prp_1"));
+    d.wait(worker, "idle");
+    d.wait_for("nothing waits", || {
+        needs(&d, worker).is_none_or(|r| !r["bundle"].as_str().unwrap_or_default().starts_with("waits:"))
+    });
 
     drop(mcp);
     drop(d);

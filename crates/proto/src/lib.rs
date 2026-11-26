@@ -266,7 +266,8 @@ pub struct Reason {
     pub duration_ms: Option<u64>,
     /// Reasons with the same key are one card on a "needs you" rail ("11
     /// failed on build-03"): `failed:<machine>`, `exited:<machine>`,
-    /// `ask:<project>:<agent>`. `None` never bundles.
+    /// `ask:<project>:<agent>`, [`WAITS_BUNDLE`]`<project>`. `None` never
+    /// bundles.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub bundle: Option<String>,
@@ -289,6 +290,12 @@ pub struct Reason {
     /// What [`api::ActRequest`] can do about it here.
     pub actions: Vec<Action>,
 }
+
+/// The bundle of an `input` reason that says a pane's agent waits on a card
+/// or a to-do it raised on its person (Arugula #1464), with its project
+/// after it. The card is the person's Inbox item already, so the pane only
+/// says so.
+pub const WAITS_BUNDLE: &str = "waits:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

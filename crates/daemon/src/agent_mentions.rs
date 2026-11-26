@@ -1181,6 +1181,9 @@ pub(crate) trait Daemon {
     async fn clear_notice(&self, key: &str);
     /// The panes whose owner silenced teammates' agents' mentions (#579).
     async fn silenced(&self) -> Vec<PaneId>;
+    /// An ask of one of our agents was answered (Arugula #1464): its pane
+    /// waits on it no longer.
+    async fn settled(&self, _ask: &str) {}
 }
 
 /// What a pane was last up to (#577), for `agents.sessions`.
@@ -1207,6 +1210,10 @@ async fn handed(app: &impl Daemon, pane: PaneId, now: bool) -> bool {
 impl Daemon for App {
     fn state_dir(&self) -> &std::path::Path {
         self.control.state_dir()
+    }
+
+    async fn settled(&self, ask: &str) {
+        self.mux.api(|r| Api::WaitsSettled(ask.to_owned(), r)).await;
     }
 
     fn mentions(&self) -> &State {
@@ -1555,8 +1562,11 @@ pub fn on_answer(f: fn(&std::path::Path, &str)) {
 pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // An answer settles its ask here, whether or not its session takes it
     // now, and however often control sends it.
-    if let (Some(w), Some(f)) = (m.watch.as_ref().filter(|w| w.is_answer()), ON_ANSWER.get()) {
-        f(app.state_dir(), &w.id);
+    if let Some(w) = m.watch.as_ref().filter(|w| w.is_answer()) {
+        if let Some(f) = ON_ANSWER.get() {
+            f(app.state_dir(), &w.id);
+        }
+        app.settled(&w.id).await;
     }
     let key = MentionKey::of(m).text();
     let now = arugula_e2e::now_ms();

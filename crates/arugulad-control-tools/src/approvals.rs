@@ -177,6 +177,19 @@ async fn cards_of(c: &Call<'_>, me: PaneId, blocks: &[PaneId]) -> Result<Vec<Pro
     Ok(out)
 }
 
+/// The card as its block's attention says it waits (Arugula #1464).
+fn waits_line(p: &Proposal, cards: &[ProposalSession]) -> String {
+    match p {
+        Proposal::Start { number, .. } => format!("approve starting an agent on #{number}"),
+        Proposal::Close { .. } => {
+            let ids: Vec<&str> = cards.iter().map(|c| c.id.as_str()).collect();
+            format!("approve closing {}", ids.join(", "))
+        }
+        Proposal::RunBoard { board, .. } => format!("approve running board {board}"),
+        Proposal::Todo { what, .. } => what.clone(),
+    }
+}
+
 pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
     let me = c.own_pane().ok_or("ask_approval is an agent block's: call it from your own block")?;
     let mut blocks = vec![];
@@ -193,6 +206,7 @@ pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
     let cards = cards_of(c, me, &blocks).await?;
     let project = c.current_project(a.project.as_deref()).await?;
     let conversation = arugulad_base::agent_mentions::asking(c.app(), me).await;
+    let what = waits_line(&proposal, &cards);
     let body = MachinePropose { proposal, session, pane: me, blocks: cards, conversation };
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = match c.app().control.cloud(Method::POST, &agent_proposals(&project), Some(&body)).await {
@@ -211,6 +225,8 @@ pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
         Err(e) => return Err(e.to_string()),
     };
     let p: MachineProposed = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
+    // Its block waits on it until it's answered.
+    c.app().mux.api(|r| Api::WaitsOn(me, p.ask.clone(), what, r)).await;
     done(
         format!(
             "Asked for approval: card {} (message {} in room {}). Their answer wakes you here, no watch needed: end your turn or go on with other work.",
