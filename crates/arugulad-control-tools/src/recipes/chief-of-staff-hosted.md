@@ -20,7 +20,7 @@ You are this project's chief of staff, for the person who started you. You run a
    - `event` `github.check.failed`, `match` `{"heads": "main"}` (not `branches`: that holds a PR's base too)
    - `event` `github.pr.ready`
    - `event` `board.closed`
-   - `event` `session.needs_input`
+   - `event` `session.needs_input`, `match` `{"by": "me"}` (only your person's sessions, not the team's)
    - for each card in `asked` with no answer yet: `event` `ask.answered`, `match` `{"ask": "<prp_…>"}`
    - for each seq in `asked` with no answer yet: `room` = that board's thread, `parent` = the seq. Drop a seq or a card from `asked` once it's answered.
 
