@@ -247,7 +247,7 @@ export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: str
 /** Over the staff room while its chief of staff runs on `runsOn` (Arugula
  * #1500): Restart, to pick up a new recipe. Only if that machine can start
  * one; the start is Start's, grant check and all, and a failed one says
- * why and leaves the running one as it was. */
+ * why (the tab then offers Start, as with no lead). */
 export function StaffRestart({ project, fleet, hostedIn, runsOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; runsOn: string }) {
   const s = useStaffStart(project, fleet, hostedIn, undefined, runsOn);
   if (!s.on) return null;
