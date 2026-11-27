@@ -149,8 +149,10 @@ export const RUN = {
 
 /** The reader's staff room, with `proposal`'s message in it (seq 2), and the
  * hub's routes for it: the project's open asks, the ask, and its answer
- * (each body posted in `window.posted`). The fixture page answers chat
- * itself, so it's made up in the page. */
+ * (each body posted in `window.posted`). Answered in the Inbox
+ * (`POST /api/inbox/<prp>`, its Needs you row), it's answered in the room
+ * too, as the hub does it: the message changes and the card reads it again.
+ * The fixture page answers chat itself, so it's made up in the page. */
 export async function proposing(page: Page, proposal: typeof START | typeof CLOSE | typeof RUN) {
   await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
   await page.evaluate(
@@ -181,6 +183,13 @@ export async function proposing(page: Page, proposal: typeof START | typeof CLOS
             state = body.choice === "Approve" ? "approved" : "denied";
           }
           return json(ask());
+        }
+        if (url.pathname === `/api/inbox/${proposal.id}` && init?.method === "POST") {
+          const body = JSON.parse(String(init.body)) as { choice: string };
+          state = body.choice === "Approve" || body.choice === "Start" ? "approved" : "denied";
+          const r = await before(input, init);
+          (c as unknown as { heard(ev: unknown): void }).heard({ type: "changed", room: "dm_cos", seq: 2 });
+          return r;
         }
         return before(input, init);
       };
