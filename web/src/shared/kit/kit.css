@@ -83,6 +83,9 @@
   text-align: left;
   cursor: pointer;
 }
+div.k-row-line {
+  cursor: default;
+}
 .k-row:hover {
   background: var(--hover);
 }
