@@ -80,3 +80,14 @@ export const agentRunning = (p: Pick<PaneInfo, "type" | "kind" | "running">) => 
 
 /** "1 needs you", "3 need you". */
 export const needYouText = (n: number) => `${n} ${n === 1 ? "needs" : "need"} you`;
+
+/** How long a thing has waited, short ("7m", "2h", "3d"); "" when its time
+ * is missing or can't be one (0, or before 2001: seconds, not ms), so a row
+ * never says it waited since 1970. Its own few lines, not ./time's `ago`:
+ * importing that here splits it into a chunk the Doc share page then loads
+ * (doc-link.spec). */
+export function needAge(since: number | null | undefined, now = Date.now()): string {
+  if (!since || !Number.isFinite(since) || since < 1e12) return "";
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+}

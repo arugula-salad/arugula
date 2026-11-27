@@ -1,87 +1,57 @@
-// The project's Overview (Arugula inversion, L6): Swarm for this project,
-// the view the app opens on, the window's width (#1085). Under its stats,
-// the briefing line: what happened since the reader last looked, from the
-// event log (./overview-briefing.tsx, #1277). The field is the
-// project's open boards, one hairline row each: its title, its lane bar,
-// its count (`13/18`) and what's going on in words. A board that asks you
-// is open; a click opens any other, to its cards in Doing and Review as
-// one-line rows, the worst first; a row's preview, on hover or focus, shows
-// the sessions on it (./overview-row.tsx). Not on a card is the last
-// group. The talk panel on the right (./overview-talk.tsx, #1270; under
-// the field on a narrow window) holds Needs you on its top (first on a
-// phone; one quiet line when nothing does), Swarm's rail scoped to the
-// project, its cards naming their card; and below it the conversations
-// the field opens: a board's thread, from its row, and a session's peek
-// (./overview-peek.tsx, #1271), from a card's row or a session's on no
-// card. On the reader's personal project, Your work follows Not on a card
-// (Arugula #1400): the Claude Code and Codex conversations on their own
-// machines, the daemon page's list (../shell/ui/conversations.tsx), each
-// asked through the page's fleet; Continue here opens its pane on its
-// machine's page, as Open in Panes does, and one open in a pane is in Not
-// on a card instead. The old home's lists aren't here (#1088): only where there is no
-// Overview (./machines.tsx). A card with no session opens the board's own
-// drawer over the page (its address names it, so the path and Esc climb
-// back), as its peek's card link does; Open in Panes opens a session on
-// its machine's page, on its pane. The grouping is ../shell/swarm/overview.ts; the machines are
-// the machine page's (./machine-page), booted once.
+// The project's Overview (Lift 4, #1480; v6's, on the kit): the page the
+// app opens on. Two thirds and one third, fixed (panes come in Lift 9).
+// The left holds the title line (the project, then how many sessions work,
+// how many cards fail, how many cards were done today), Boards (each moving
+// board a card: its mark, title, lane bar, count and what's going on in
+// words; the quiet ones folded into one card) and the Running line (what
+// runs in the project, on to Machines). The right third is Needs you, To do
+// and a teammate's asks (./overview-needs.tsx) above the agent panel
+// (./overview-talk.tsx), whose first tab is the chief of staff; moving
+// through Needs you peeks each asker there.
 //
-// It zooms in place (Arugula #1287): from the Project level (the field
-// above) to a board (./overview-board.tsx), and on to the work on a card
-// or a session on no card (./overview-work.tsx), each at its own address
-// (../platform/paths.ts), so a link, a reload and Back land on it. The
-// bar's path names each level and climbs back; so do the level pill and
-// Esc, a level at a time (a session on no card is a step from Project).
-// The talk panel's tabs stay as you zoom: each level brings its own to
-// the front, the chief of staff's at Project, the lead's at Board, the
-// card's agent's at Work. A Needs you card zooms to the work that asks.
-// Each agent's tab knows its rung on the agent ladder (#1441): a board's
-// lead is "lead of" its boards, under the chief of staff; an agent on an
-// issue's card is "on #N for" its board, under the board's lead, and its
-// tab is its issue's thread over its peek.
+// Its old zoom addresses (`/p/:project/board/:board`, `…/card/:row`,
+// `…/work/:session`, Arugula #1287) still land: a board on its board, a
+// card in the board's drawer over this page, a session in its peek. A card
+// the address names (`?board=&card=`) opens the board's drawer over the
+// page, so the path and Esc climb back. The grouping is
+// ../shell/swarm/overview.ts; the machines are the machine page's
+// (./machine-page), booted once.
 
 import "./overview.css";
-import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardRow, BoardView, ChatAsk } from "../shared/proto";
+import type { BoardRow, BoardView, InboxItem } from "../shared/proto";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
-import { epicLine, isCard, pointerLabel } from "../shared/boards/text";
+import { isCard, pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
-import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
+import { needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
-import { EmptyLine, EmptyState } from "../shared/ui/block-states";
-import { OverviewSplit, useColumn } from "./overview-split";
+import { Mark, type State } from "../shared/kit/state-mark";
+import { Surface } from "../shared/kit/surface";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
+import { ChevronIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
+import { activityOf, kindOf, readableCommand, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
-import { asksYou, boardLead, boardSays, inFlight, overviewOf, statsLine, yourWorkMachines, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, wordOf } from "../shell/swarm/overview";
-import { bundlesOf, type Bundle } from "../shell/swarm/view";
-import { Needs, paneOfItem, paneOwner, useProposals } from "./overview-asks";
+import { boardLead, boardSays, overviewOf, type OvBoard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
+import { OverviewNeeds, paneOfItem, paneOwner } from "./overview-needs";
 import { useProjectInbox } from "../platform/inbox-count";
-import { answeredLine, ProposalCard } from "../shared/chat/ask-card";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
+import { Faces } from "../platform/pages/project";
 import { useBoards } from "../platform/pages/boards";
 import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
-import { boot, type Booted } from "./machine-page";
-import { YourWork } from "../shell/ui/conversations";
-import { ownerKey, PERSONAL } from "../platform/owners";
-import { BriefingLine, useBriefing } from "./overview-briefing";
-import { OverviewBoard } from "./overview-board";
-import { CardRow, SessionRow, Word } from "./overview-row";
-import { OverviewWork } from "./overview-work";
+import { boot } from "./machine-page";
 import { PeekContext, peekKey, type PeekPlace, talkKey } from "./overview-peek";
 import { staffStartTab, staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
 export function OverviewPlace({ project, board, card, zoom, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; session: AppSession | null }) {
-  const [b, setB] = useState<Booted | null>(null);
+  const [b, setB] = useState<Awaited<ReturnType<typeof boot>> | null>(null);
   useEffect(() => {
     let live = true;
     void boot(session).then((x) => live && setB(x));
@@ -96,14 +66,6 @@ export function OverviewPlace({ project, board, card, zoom, session }: { project
   return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} session={session} />;
 }
 
-/** The Overview's levels, outermost first (Arugula #1287). */
-const LEVELS = ["Project", "Board", "Work"] as const;
-type Level = 0 | 1 | 2;
-/** How far in `zoom` is: 0 Project, 1 a board, 2 a card's or a session's work. */
-const levelOf = (zoom?: OverviewZoom): Level => (!zoom ? 0 : "session" in zoom || zoom.card ? 2 : 1);
-/** A level out from `zoom`: a card's board, else Project. */
-const outOf = (zoom: OverviewZoom, to: Level = (levelOf(zoom) - 1) as Level): OverviewZoom | undefined => (to === 1 && "board" in zoom ? { board: zoom.board } : undefined);
-const zoomKey = (zoom?: OverviewZoom) => (!zoom ? "" : "session" in zoom ? `s:${zoom.session}` : `b:${zoom.board}/${zoom.card ?? ""}`);
 /** A session's peek, as a tab. */
 // Keyed by the hub's id where it has one, so a reload or a daemon restart finds it again (#1390).
 const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: talkKey(s), title: s.name });
@@ -267,27 +229,6 @@ function useBoardViews(project: string, refocus: number): { views: BoardView[] |
   return { views, put: (v) => setRead((m) => new Map(m ?? []).set(v.board.id, v)) };
 }
 
-/** Rows of the board list's own shape, still, until the boards' views land: what comes takes their place without the page moving. */
-function BoardsSkeleton() {
-  return (
-    <ul class="ov-boards ov-skeleton" data-ov-skeleton aria-busy="true" aria-label="Loading the boards">
-      {[0, 1, 2].map((i) => (
-        <li key={i} class="ov-board ov-board-still">
-          <div class="ov-board-line">
-            <span />
-            <i class="ov-skel-bar" />
-            <i class="ov-skel-bar" />
-            <span />
-            <i class="ov-skel-bar" />
-            <i class="ov-skel-bar" />
-            <span />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 /** The hub's sessions by card, read again a minute later; null where the
  * hub has no such route yet, or it couldn't answer, and undefined until
  * it first answers (or doesn't). */
@@ -310,42 +251,36 @@ function useByCard(project: string): SessionsByCard | null | undefined {
   return v;
 }
 
-/** The boards the reader opened or closed on this project's Overview, kept for the tab. */
-function useOpened(project: string): [Map<string, boolean>, (board: string, open: boolean) => void] {
-  const key = `arugula.ov-open:${project}`;
-  const [m, setM] = useState<Map<string, boolean>>(() => {
-    try {
-      return new Map(JSON.parse(sessionStorage.getItem(key) ?? "[]") as [string, boolean][]);
-    } catch {
-      return new Map();
-    }
-  });
-  const set = (board: string, open: boolean) =>
-    setM((was) => {
-      const next = new Map(was).set(board, open);
-      try {
-        sessionStorage.setItem(key, JSON.stringify([...next]));
-      } catch {
-        // Not kept: it holds for this page.
-      }
-      return next;
-    });
-  return [m, set];
-}
+/** How a board stands, as a kit mark. */
+const MARK: Record<Standing, State> = {
+  needs: "asks",
+  asks: "asks",
+  failed: "failing",
+  checks_failing: "failing",
+  waits: "waits",
+  quiet: "idle",
+  working: "working",
+  checks_running: "working",
+  review: "working",
+  idle: "idle",
+};
+
+/** A board is moving while it has cards in flight or something to say. */
+const moving = (b: OvBoard) => b.doing.length + b.review.length > 0 || b.standing !== "idle";
+
+/** Midnight today, here. */
+const today = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
 
 function OverviewBody({ project, board, card, zoom, fleet, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
-  // The chief of staff's room shows as the talk panel's first tab once chat lists it.
+  // The chief of staff's room shows as the panel's first tab once chat lists it.
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
-  const column = useColumn();
   const refocus = useRefocus();
   const { views, put } = useBoardViews(project, refocus);
-  const byCardRead = useByCard(project);
-  const byCard = byCardRead ?? null;
-  const briefing = useBriefing(project, byCard, refocus);
+  const byCard = useByCard(project) ?? null;
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
   // Whose a machine is, for a session the hub names that no pane here shows: "" for one this page doesn't know.
   const machineOwner = (m: string) => {
@@ -356,62 +291,24 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   };
   const ovPanes = fleet.panes.map((p) => ovPane(fleet, p));
   const o = overviewOf(project, views ?? [], ovPanes, byCard, hostOf, machineOwner);
-  // Needs you is the project's Inbox (Arugula #1433): its items and its count, as the server says them, read
-  // again when the stream says it changed and on refocus.
+  // Needs you is the project's Inbox (Arugula #1433), as the server says it, read again when the stream says it changed and on refocus.
   const inbox = useProjectInbox(project, String(refocus));
-  const items = (inbox?.items ?? []).filter((i) => i.group !== "ready" && !i.done_at);
-  // And what the reader's agents propose to do as them (#1278), read again as their staff room moves: those the Inbox lists.
-  const staffRoom = chat.rooms.find((r) => r.staff && r.project === project);
-  const proposals = useProposals(project, `${staffRoom?.id}:${staffRoom?.last}:${staffRoom?.mentions}`, refocus);
-  const proposed = proposals.asks.filter((a) => items.some((i) => i.id === a.proposal!.id));
-  const listed = items.filter((i) => !proposed.some((a) => a.proposal!.id === i.id) && !proposals.dropped.has(i.id));
-  const needs = inbox?.count ?? 0;
   const p = platform.project(project);
+  const staffRoom = chat.rooms.find((r) => r.staff && r.project === project);
 
-  // Needs you's panes: Swarm's rail, for the panes the Inbox lists, held still under the pointer as Swarm's is.
-  const bundles = bundlesOf(fleet.panes.filter((x) => listed.some((i) => paneOfItem(fleet, i) === x)));
-  const [over, setHeld] = useState(false);
-  // An open ask holds the list still too, whether or not the pointer is on it.
-  const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
-  const pin = (key: string, on: boolean) => setPinned((s) => (s.has(key) === on ? s : new Set(on ? [...s, key] : [...s].filter((k) => k !== key))));
-  const held = over || pinned.size > 0;
-  const kept = useRef<Bundle[]>([]);
-  const acted = useRef(new Set<string>());
-  const railed = holdStill(held, kept.current, bundles, (b) => ({ ...b, gone: true }), acted.current);
-  kept.current = railed;
-  useEffect(() => shownNow(bundles.flatMap((b) => b.panes)));
+  // The old zoom addresses (#1287) land where their things live now.
+  useEffect(() => {
+    if (!zoom) return;
+    if ("board" in zoom) go(pathOf(zoom.card ? { page: "project", project, board: zoom.board, card: zoom.card } : { page: "board", project, board: zoom.board }, names), true);
+  }, [zoom && ("board" in zoom ? `${zoom.board}/${zoom.card}` : "")]);
 
-  const up = () => go(pathOf({ page: "project", project }, names));
-  const openCard = (c: OvCard) => go(pathOf({ page: "project", project, board: c.board, card: c.row.id }, names));
-  const paneAt = (pane: { host: string; id: number }, share = false) => {
-    const machine = fleet.host(pane.host)?.id;
-    go(pathOf({ page: "machines", project, at: machine ? { at: "machine", machine, pane: pane.id, ...(share ? { share: true as const } : {}) } : { at: "machines", name: pane.host, pane: pane.id } }, names));
-  };
   const openPanes = (s: OvSession) => {
-    if (s.lead) paneAt(s.lead);
+    const lead = s.lead;
+    const machine = lead && fleet.host(lead.host)?.id;
+    if (lead) go(pathOf({ page: "machines", project, at: machine ? { at: "machine", machine, pane: lead.id } : { at: "machines", name: lead.host, pane: lead.id } }, names));
     else if (s.hosted) go(api.sessionHref?.(project, s.hosted) ?? pathOf({ page: "session", project, session: s.hosted }, names));
   };
-  // A board's row is open when the reader opened it, else when it asks
-  // them (and stays so once answered, so the row answered doesn't go), or
-  // holds the card the address opens.
-  const [toggled, setOpen] = useOpened(project);
-  const asked = useRef(new Set<string>());
-  for (const b of o.boards) if (asksYou(b)) asked.current.add(b.id);
-  const isOpen = (b: OvBoard) => toggled.get(b.id) ?? (asked.current.has(b.id) || b.id === board);
-  // A rail card's Find: the row its pane is on (its board opened), brought into view.
-  const show = (key: string) => {
-    const on = o.cardOf.get(key);
-    const ob = on && o.boards.find((b) => b.id === on.board);
-    if (ob && !isOpen(ob)) setOpen(ob.id, true);
-    requestAnimationFrame(() => {
-      const at = `[data-ov-panes~="${CSS.escape(key)}"]`;
-      const tile = document.querySelector<HTMLElement>(`.ov-row${at}`) ?? document.querySelector<HTMLElement>(at);
-      tile?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      tile?.classList.remove("ov-found");
-      void tile?.offsetWidth;
-      tile?.classList.add("ov-found");
-    });
-  };
+  const openCard = (c: { board: string; row: BoardRow }) => go(pathOf({ page: "project", project, board: c.board, card: c.row.id }, names));
 
   // The card the address opens: the board's drawer, over the page.
   const shownView = board ? views?.find((v) => v.board.id === board) : undefined;
@@ -419,8 +316,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   useEffect(() => {
     if (opened) where.cardIs(opened.id, cardWords(opened));
   }, [opened && cardWords(opened), opened?.id]);
-  // The drawer's backdrop starts under the bar, as the prototype's does, so
-  // the path above it stays a way up while the card is open.
+  // The drawer's backdrop starts under the bar, so the path above it stays a way up while the card is open.
   const [barBottom, setBarBottom] = useState(0);
   useLayoutEffect(() => {
     if (opened) setBarBottom(Math.max(0, Math.round(document.querySelector("[data-platform-bar]")?.getBoundingClientRect().bottom ?? 0)));
@@ -435,19 +331,11 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
       return false;
     }
   };
-  // An assignee's picture: a native issue names them, a member by that name (or login) has one.
-  const faceOf = (name: string) => (chat.on ? p?.team?.members.find((m) => m.name === name || m.account === name)?.account : undefined);
 
-  // The talk panel's tabs; a board's thread opens there, and the panel comes into view where it's under the field.
+  // The panel's tabs: the chief of staff's pinned first, and the peeks Needs you opens.
   const talk = useTalk(project);
-  useSubscribe((fn) => chat.subscribe(fn));
-  const talkTo = (t: TalkTab) => {
-    talk.open(t);
-    requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-  };
-  // A card's row, or a session's, opens its peek there (#1271); a card with no session, its drawer.
-  const openSession = (s: OvSession) => talkTo(peekTab(s));
   const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
+  const sessions = [...ovCards.flatMap((c) => c.sessions), ...o.loose, ...o.boards.flatMap((b) => (b.lead ? [b.lead.peek] : []))];
   const peeks: PeekPlace = {
     fleet,
     find: (key) => {
@@ -460,7 +348,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     lead: (l) => boardLead(l, ovPanes, byCard, hostOf, (id) => platform.project(id)?.name),
     openPanes,
     openCard,
-    askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
+    askLead: chat.on ? (id) => talk.open({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
     project: p?.name ?? "this project",
     rung: (s, c) => {
       // A board's lead, by its tab: under the reader's chief of staff, who writes to it in its boards' threads.
@@ -488,248 +376,153 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     for (const { from, to } of stale) talk.rekey(from, to);
   }, [stale.map((x) => `${x.from}>${x.to.id}`).join(" ")]);
 
-  // Zooming (Arugula #1287): where the address is, and the way in and out.
-  const level = levelOf(zoom);
-  const zkey = zoomKey(zoom);
-  const zoomTo = (z?: OverviewZoom) => go(pathOf({ page: "project", project, ...(z ? { zoom: z } : {}) }, names));
-  const zoomBoard = zoom && "board" in zoom ? zoom.board : undefined;
-  const zoomCard = zoom && "board" in zoom ? zoom.card : undefined;
-  const zoomedBoard = zoomBoard ? o.boards.find((b) => b.id === zoomBoard) : undefined;
-  const zoomedView = zoomBoard ? views?.find((v) => v.board.id === zoomBoard) : undefined;
-  const zoomedRow = zoomCard ? zoomedView?.zones.flatMap((z) => z.rows).find((r) => r.id === zoomCard) : undefined;
-  const zoomedCard = zoomCard ? ovCards.find((c) => c.board === zoomBoard && c.row.id === zoomCard) : undefined;
-  const zoomedSession = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
-  const workSessions = zoomedCard ? zoomedCard.sessions : zoomedSession ? [zoomedSession] : [];
-  // A Needs you card's pane: the work it's on, its card's or its own on no card.
-  const zoomToWork = (key: string) => {
-    const at = o.cardOf.get(key);
-    if (at) return zoomTo({ board: at.board, card: at.row.id });
-    const s = o.loose.find((x) => x.panes.some((p) => p.key === key));
-    if (s) zoomTo({ session: peekKey(s) });
-    else show(key);
-  };
-  // The bar's path names the card, or the session, zoomed to.
-  useEffect(() => {
-    if (zoomedRow) where.cardIs(zoomedRow.id, cardWords(zoomedRow));
-    else if (zoomedSession && zoom && "session" in zoom) where.cardIs(zoom.session, zoomedSession.name);
-  }, [zoomedRow && cardWords(zoomedRow), zoomedRow?.id, zoomedSession?.name]);
-  // Esc zooms out a level, unless it's someone else's: a box being typed in, a dialog.
-  useEffect(() => {
-    if (!zoom) return;
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if ((e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable], dialog, [role=dialog]")) return;
-      if (document.querySelector("dialog[open], [aria-modal=true]")) return;
-      e.preventDefault();
-      zoomTo(outOf(zoom));
-    };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [zkey]);
-
-  // A lead on a teammate's machine is named with them (a team's own box has no one to name).
-  const teammateOf = (machine: string) => {
-    const h = fleet.hostById(machine);
-    return h && !h.team ? h.owner : undefined;
-  };
-
   // The chief of staff's tab, pinned first, once it has a room (#1275); until then, Start (#1341).
   const chief: TalkTab | null = staffTab(project);
   const chiefTab = chief ?? staffStartTab(project);
 
-  // Its pinned tab is picked, not opened, so it never takes one of the tabs' places.
-  const pickChief = (t: TalkTab) => {
-    talk.pick(`${t.kind}:${t.id}`);
-    requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
-  };
-
-  // Each level brings its own tab to the front, once, as it's zoomed to
-  // (the tab the reader had stays at Project on a reload): the chief of
-  // staff's at Project, the lead's at Board, the agent's at Work. The
-  // others stay open.
-  const front: TalkTab | null = level === 0 ? chief : level === 1 ? (zoomedBoard ? leadTab(zoomedBoard) : null) : workSessions.length ? peekTab(workSessions.find((s) => s.panes.some((p) => p.agent)) ?? workSessions[0]) : null;
-  const fronted = useRef<string | null>(zoom ? null : zkey);
+  // A session on no card, by its old address: its peek.
+  const zoomed = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
   useEffect(() => {
-    if (fronted.current === zkey || !front) return;
-    fronted.current = zkey;
-    if (front === chief) talk.pick(`${front.kind}:${front.id}`);
-    else talk.open(front);
-  }, [zkey, front && `${front.kind}:${front.id}`]);
-  // A board no one leads: Run this board (#1416) puts its card in the staff room, under Needs you, and brings that tab up.
-  async function runBoard(b: OvBoard) {
-    try {
-      const r = await boards.run(b.id);
-      api.toast(r.again ? "Its Run this board card is waiting in Needs you." : "Run this board: approve its card in Needs you.");
-      if (chief) pickChief(chief);
-    } catch (e) {
-      api.toast(`Couldn't ask to run it: ${(e as Error).message}`);
-    }
-  }
-  // The lead's tab: its session's peek, as its chip opens it (#1290); a board no one leads, its thread.
-  function leadTab(b: OvBoard): TalkTab | null {
-    if (b.lead) return peekTab(b.lead.peek);
-    return chat.on ? { kind: "thread", id: b.id, title: b.title } : null;
-  }
+    if (!zoomed) return;
+    talk.open(peekTab(zoomed));
+    go(pathOf({ page: "project", project }, names), true);
+  }, [zoomed && talkKey(zoomed)]);
 
-  // A card no agent works on offers its board's lead (#1289): its tab, as the Board level opens it.
-  const askLeadOf = (b: OvBoard) => {
-    const t = leadTab(b);
-    return t ? () => talkTo(t) : undefined;
+  // Moving through Needs you peeks the asker: its session's peek, or the chief of staff's room for its card.
+  const peek = (i: InboxItem) => {
+    const pane = paneOfItem(fleet, i);
+    const s = pane && sessions.find((x) => x.panes.some((y) => y.key === pane.key));
+    if (s) talk.open(peekTab(s));
+    else if (chief && i.subject.room && i.subject.room === staffRoom?.id) talk.pick(`${chief.kind}:${chief.id}`);
   };
 
-  // Your work, on the reader's personal project: their own machines' conversations, never a teammate's.
-  const own = yourWorkMachines(!!p && ownerKey(p) === PERSONAL, fleet.list);
-  const [convs, setConvs] = useState<number | null>(null);
-  const any = o.boards.length > 0 || o.loose.length > 0 || !!convs;
-  const projectLevel = (
-    <>
-      {/* Counted once the boards land: before that it would say 0 in flight (#1380). */}
-      <p class="dim ov-stats" data-ov-stats aria-busy={views === null || undefined}>
-        {views === null ? "Reading the boards…" : statsLine(o, needs)}
-      </p>
-      {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
-      <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
-      {views === null && <BoardsSkeleton />}
-      {views !== null && !any && (own.length === 0 || convs === 0) && (
-        <EmptyState
-          where="page"
-          data-ov-empty
-          title="Nothing in flight."
-          why="The project's open boards show here, each a row, with their cards in Doing and Review and the sessions working on them. So do the project's sessions that aren't on a card."
-          action={
-            <a class="secondary" href={pathOf({ page: "boards", project }, names)} onClick={(e) => follow(e, pathOf({ page: "boards", project }, names))}>
-              Boards
-            </a>
-          }
-        />
-      )}
-      {o.boards.length > 0 && (
-        <ul class="ov-boards" data-ov-boards>
-          {o.boards.map((b) => (
-            <BoardRow key={b.id} b={b} zoom={() => zoomTo({ board: b.id })} leadWho={b.lead && teammateOf(b.lead.machine)} talkLead={b.lead && (() => openSession(b.lead!.peek))} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
-          ))}
+  const moved = o.boards.filter(moving);
+  const quiet = o.boards.filter((b) => !moving(b));
+  const [quietOpen, setQuietOpen] = useState(false);
+  const all = [...ovCards.flatMap((c) => c.sessions), ...o.loose];
+  const working = all.filter((s) => s.standing === "working").length;
+  const failing = ovCards.filter((c) => c.standing === "failed" || c.standing === "checks_failing").length;
+  const since = today();
+  const doneToday = (views ?? []).flatMap((v) => v.zones.flatMap((z) => z.rows)).filter((r) => r.lane === "done" && r.updated_at >= since).length;
+
+  // Running: what runs in the project, by kind.
+  const mine = ovPanes.filter((x) => x.project === project);
+  const kinds = new Map<string, number>();
+  for (const x of fleet.panes) if (mine.some((m) => m.key === x.key)) kinds.set(kindOf(x), (kinds.get(kindOf(x)) ?? 0) + 1);
+  const failed = mine.filter((x) => x.standing === "failed").length;
+  const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const running = [
+    kinds.get("agent") && plural(kinds.get("agent")!, "agent"),
+    kinds.get("server") && plural(kinds.get("server")!, "server"),
+    kinds.get("shell") && plural(kinds.get("shell")!, "shell"),
+    kinds.get("app") && plural(kinds.get("app")!, "app"),
+  ].filter(Boolean);
+  const machines = pathOf({ page: "machines", project, at: { at: "machines" } }, names);
+
+  const tile = (b: OvBoard) => {
+    const to = pathOf({ page: "board", project, board: b.id }, names);
+    const says = boardSays(b);
+    return (
+      <Surface key={b.id} kind="card" as="li" class="ov-board" data-ov-board={b.id} data-ov-standing={b.standing}>
+        <a class="ov-board-title" href={to} onClick={(e) => follow(e, to)} data-ov-board-title>
+          <Mark state={MARK[b.standing]} />
+          <span>{b.title}</span>
+        </a>
+        <div class="ov-board-bar">
+          <span class="ov-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.total} aria-valuenow={b.done} aria-label={`${b.done} of ${b.total} done`}>
+            <i style={{ width: `${b.total ? Math.round((100 * b.done) / b.total) : 0}%` }} />
+          </span>
+          <span class="m-id" data-ov-board-count>
+            {b.total ? `${b.done}/${b.total}` : "–"}
+          </span>
+        </div>
+        <p class="ov-says m-meta" data-ov-board-says>
+          {says.map((x, i) => [i > 0 && " · ", <span key={x.standing} data-standing={MARK[x.standing]}>{x.words}</span>])}
+        </p>
+      </Surface>
+    );
+  };
+
+  const main = (
+    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" data-ov-main>
+      <header class="ov-title" data-ov-title>
+        <h1>{p?.name ?? "Overview"}</h1>
+        {chat.on && p?.team && <Faces p={p} />}
+        <p class="m-meta" data-ov-stats aria-busy={views === null || undefined}>
+          {views === null ? (
+            "Reading the boards…"
+          ) : (
+            <>
+              <span data-standing="working">{working} working</span> · <span data-standing={failing ? "failing" : undefined}>{failing} failing</span> · {doneToday} done today
+            </>
+          )}
+        </p>
+      </header>
+      <header class="ov-head">
+        <h2>Boards</h2>
+        <span class="m-meta">
+          {moved.length} moving{quiet.length ? ` · ${quiet.length} quiet` : ""}
+        </span>
+      </header>
+      {views !== null && o.boards.length === 0 ? (
+        <p class="ov-quiet" data-ov-empty>
+          No open boards.{" "}
+          <a href={pathOf({ page: "boards", project }, names)} onClick={(e) => follow(e, pathOf({ page: "boards", project }, names))}>
+            Boards
+          </a>
+        </p>
+      ) : (
+        <ul class="ov-boards" data-ov-boards aria-busy={views === null || undefined}>
+          {moved.map(tile)}
+          {quietOpen && quiet.map(tile)}
+          {quiet.length > 0 && !quietOpen && (
+            <li class="ov-board ov-folded">
+              <button type="button" class="ov-board-title" aria-expanded={false} data-ov-quiet onClick={() => setQuietOpen(true)}>
+                <Mark state="idle" />
+                <span>{quiet.length} quiet</span>
+                <ChevronIcon dir="right" size="xs" />
+              </button>
+              <p class="ov-says m-meta" data-ov-quiet-names>{quiet.map((b) => b.title).join(", ")}</p>
+            </li>
+          )}
         </ul>
       )}
-      {o.loose.length > 0 && (
-        <section class="ov-loose" data-ov-loose>
-          <header class="ov-loose-head">
-            <b>Not on a card</b>
-            <span class="dim">Sessions in this project that aren't working on a card</span>
-          </header>
-          <ul class="ov-rows">
-            {o.loose.map((s) => (
-              <SessionRow key={s.key} s={s} fleet={fleet} open={() => openSession(s)} />
-            ))}
-          </ul>
-        </section>
-      )}
-      {own.length > 0 && (
-        <section class="ov-loose ov-your-work" data-ov-your-work hidden={!convs}>
-          <header class="ov-loose-head">
-            <b>Your work</b>
-            <span class="dim">Claude Code and Codex conversations on {own.length > 1 ? "your machines" : own[0]}, newest first</span>
-          </header>
-          <YourWork phone={phone} on={{ fleet, hosts: own, show: (host, pane) => paneAt({ host, id: pane }), toast: (t) => api.toast(t), counted: setConvs }} />
-        </section>
-      )}
-    </>
+      <a class="ov-running" href={machines} onClick={(e) => follow(e, machines)} data-ov-running>
+        <b>Running</b>
+        <span class="m-meta">
+          {running.length ? running.join(" · ") : "nothing"}
+          {failed ? (
+            <>
+              {" · "}
+              <span data-standing="failing">{failed} failed</span>
+            </>
+          ) : null}
+        </span>
+      </a>
+    </Surface>
   );
-  // Zoomed in, the field is that level's; at Project, the rows above.
-  const talkingPeek = talk.active?.startsWith("peek:") ? talk.active.slice("peek:".length) : null;
-  const levelView =
-    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && (fleet.panes.length === 0 || byCardRead === undefined)) ? (
-      <p class="dim">Loading…</p>
-    ) : level === 1 || zoomCard ? (
-      !zoomedBoard || !zoomedView ? (
-        <EmptyLine data-ov-level-gone>That board isn't open in this project now.</EmptyLine>
-      ) : level === 1 ? (
-        <OverviewBoard
-          project={project}
-          board={zoomedBoard}
-          view={zoomedView}
-          fleet={fleet}
-          zoomCard={(row) => zoomTo({ board: zoomedBoard.id, card: row })}
-          talkTo={openSession}
-          leadWho={zoomedBoard.lead && teammateOf(zoomedBoard.lead.machine)}
-          leads={zoomedBoard.lead ? o.boards.filter((x) => x.lead?.machine === zoomedBoard.lead!.machine && x.lead.session === zoomedBoard.lead!.session).length : 0}
-          thread={chat.on ? () => talkTo({ kind: "thread", id: zoomedBoard.id, title: zoomedBoard.title }) : undefined}
-          run={() => void runBoard(zoomedBoard)}
-        />
-      ) : !zoomedRow ? (
-        <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>
-      ) : (
-        <OverviewWork project={project} fleet={fleet} card={{ board: zoomedBoard.id, boardTitle: zoomedBoard.title, row: zoomedRow, standing: zoomedCard?.standing ?? "idle" }} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} askLead={askLeadOf(zoomedBoard)} />
-      )
-    ) : (
-      <OverviewWork project={project} fleet={fleet} card={null} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} />
-    );
-  const field = (
-    <div class="ov-field" data-ov-field data-ov-level={LEVELS[level].toLowerCase()}>
-      <ZoomLevels level={level} board={!!zoomBoard} phone={phone} out={(to) => zoom && zoomTo(outOf(zoom, to))} />
-      <Stage zkey={zkey} level={level}>
-        {levelView ?? projectLevel}
-      </Stage>
-    </div>
-  );
-  // Answered here, a proposal leaves Needs you, and a toast says what came of it.
-  const answered = (a: ChatAsk) => {
-    if (a.proposal?.state === "open") return;
-    proposals.drop(a);
-    api.toast(answeredLine(a));
-  };
-  // Nothing needs you: one quiet line, not a column.
-  const rail = listed.length === 0 && railed.length === 0 && proposed.length === 0 ? (
-    <section class="ov-needs ov-needs-none" aria-label={NEEDS_YOU} data-ov-needs>
-      <EmptyLine data-ov-needs-none>Nothing needs you.</EmptyLine>
-    </section>
-  ) : (
-    <section class="ov-needs" aria-label={NEEDS_YOU} data-ov-needs>
-      <header>
-        <h2>{NEEDS_YOU}</h2>
-        {needs > 0 && <span data-ov-needs-count>{needs}</span>}
-      </header>
-      {proposed.length > 0 && (
-        <div class="ov-proposals" data-ov-proposals>
-          {proposed.map((a) => (
-            <ProposalCard key={a.proposal!.id} a={a} project={project} answered={answered} open={chief ? () => pickChief(chief) : undefined} />
-          ))}
-        </div>
-      )}
-      {(listed.length > 0 || railed.length > 0) && (
-        <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-          <Needs
-            items={listed}
-            me={platform.me?.account}
-            railed={railed}
-            fleet={fleet}
-            pin={pin}
-            card={(b) => {
-              const first = b.panes[0];
-              const at = o.cardOf.get(first.key);
-              return {
-                work: at ? cardWords(at.row) : "Not on a card",
-                show: () => zoomToWork(first.key),
-                open: () => paneAt(first),
-                share: () => paneAt(first, true),
-                follow: () => paneAt(first),
-                acted: () => acted.current.add(b.key),
-                back: () => {},
-              };
-            }}
-          />
-        </div>
-      )}
-    </section>
-  );
+  const needs = <OverviewNeeds items={inbox?.items ?? []} me={platform.me?.account} fleet={fleet} toast={(t) => api.toast(t)} peek={peek} />;
+  const panel = <TalkPanel talk={talk} pinned={chiefTab} phone={phone} />;
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px`, "--ov-col": `${column * 100}%` }}>
-      {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      <PeekContext.Provider value={peeks}>{phone ? [rail, field, (talk.tabs.length > 0 || chiefTab) && <TalkPanel talk={talk} pinned={chiefTab} phone />] : [field, <OverviewSplit key="split" />, <TalkPanel talk={talk} pinned={chiefTab} needs={rail} phone={false} />]}</PeekContext.Provider>
+    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
+      <PeekContext.Provider value={peeks}>
+        {phone ? (
+          [needs, main, panel]
+        ) : (
+          <>
+            {main}
+            <div class="ov-side" data-ov-side>
+              {needs}
+              {panel}
+            </div>
+          </>
+        )}
+      </PeekContext.Provider>
       {opened && shownView && (
         <Drawer
           r={opened}
           platform={(path) => path}
-          close={up}
+          close={() => go(pathOf({ page: "project", project }, names))}
           project={project}
           others={shownView.zones.flatMap((z) => z.rows)}
           write={!!p && mayWrite(p)}
@@ -737,134 +530,6 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           id={shownView.board.id}
         />
       )}
-    </div>
-  );
-}
-
-/** A board's lead (#414, #1272): a dot for how its session stands (none
- * where no machine or the hub tells), its name, a teammate's with theirs,
- * and its machine. It opens that agent's peek (#1290), never the board's
- * thread, which is the row's own button. */
-function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk: () => void }) {
-  const name = who ? `${who}'s ${lead.session}` : lead.session;
-  const says = lead.standing ? wordOf({ standing: lead.standing, asks: who }) : "";
-  const title = `Led by ${name}${lead.machineName ? ` on ${lead.machineName}` : ""}${says ? `, ${says}` : ""}`;
-  const inner = (
-    <>
-      <i class="ov-lead-dot" data-ov-lead-standing={lead.standing ?? undefined} aria-hidden="true" />
-      <span class="ov-lead-name">{name}</span>
-      {lead.machineName && <span class="ov-lead-machine">{lead.machineName}</span>}
-    </>
-  );
-  return (
-    <button type="button" class="ov-lead" title={`${title}: talk to it`} aria-label={`${title}: talk to it`} data-ov-board-lead={lead.session} onClick={talk}>
-      {inner}
-    </button>
-  );
-}
-
-/** A board, one hairline row: the way to open it (when it has cards in
- * flight), its title, its lane bar, its count and what's going on in
- * words; open, its cards in flight, one line each, the worst first, up to
- * eight, and how many more. A click on the row (its title, or anywhere
- * but a button) zooms to the board (#1287). */
-function BoardRow({ b, zoom, leadWho, talkLead, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; zoom: () => void; leadWho?: string; talkLead?: () => void; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
-  const to = pathOf({ page: "project", project, zoom: { board: b.id } }, names);
-  const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
-  const flight = b.doing.length + b.review.length > 0;
-  const shown = flight && open;
-  const { shown: rows, more } = inFlight(b, 8);
-  const id = `ov-board-${b.id}`;
-  return (
-    <li class={`ov-board${shown ? " ov-board-open" : ""}${flight ? "" : " ov-board-still"}`} data-ov-board={b.id} data-ov-open={shown ? "" : undefined} data-ov-standing={b.standing} data-ov-panes={[...b.doing, ...b.review].flatMap((c) => c.sessions.flatMap((s) => s.panes.map((p) => p.key))).join(" ")}>
-      {/* A click anywhere on the row zooms to the board; its chevron opens it in place. */}
-      <div class="ov-board-line" onClick={(ev) => !(ev.target as Element).closest("a, button, [data-ov-board-lead]") && !getSelection()?.toString() && zoom()}>
-        <button type="button" class="ov-board-toggle" disabled={!flight} aria-expanded={flight ? shown : undefined} aria-controls={shown ? id : undefined} aria-label={shown ? `Close ${b.title}` : `Open ${b.title}`} data-ov-board-toggle onClick={() => setOpen(!open)}>
-          {flight && <ChevronIcon dir={shown ? "down" : "right"} size="sm" />}
-        </button>
-        <a class="ov-board-title" href={to} onClick={(ev) => follow(ev, to)} title={`Zoom in to ${b.title}`} data-ov-board-title>
-          {b.title}
-        </a>
-        <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.total} aria-valuenow={b.done} aria-label={e.words}>
-          {e.segments.map((s) => (
-            <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
-          ))}
-        </div>
-        <span class="ov-board-count" title={e.words} data-ov-board-count>
-          {b.total ? `${b.done}/${b.total}` : "–"}
-        </span>
-        <span class="ov-board-says" data-ov-board-says>
-          {boardSays(b).map((x) => (
-            <Word key={x.standing} standing={x.standing} words={x.words} />
-          ))}
-        </span>
-        <span class="ov-board-lead-cell">{b.lead && talkLead && <LeadChip lead={b.lead} who={leadWho} talk={talkLead} />}</span>
-        {/* Its thread, in the talk panel (while chat is on): the lead and anyone mentioned read it. */}
-        {talk && (
-          <button type="button" class="ov-board-talk" aria-label={`Board thread: talk in ${b.title}'s thread`} title="Board thread: its lead and anyone mentioned read it" data-ov-board-talk onClick={talk}>
-            <ThreadIcon size="sm" />
-          </button>
-        )}
-      </div>
-      {shown && (
-        <div class="ov-board-rows" id={id}>
-          <ul class="ov-rows">
-            {rows.map((c) => (
-              <CardRow key={c.row.id} c={c} fleet={fleet} open={() => (c.sessions.length ? openSession(c.sessions[0]) : openCard(c))} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
-            ))}
-          </ul>
-          {more > 0 && (
-            <a class="ov-more-rows" href={to} onClick={(ev) => follow(ev, to)} data-ov-more-rows>
-              {more} more in flight
-            </a>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** The level pill (#1287): Project, Board and Work, the one you're at
- * lit; a level out is a click, a level in isn't (you zoom in by clicking
- * what's there), and Board isn't on the way out of a session on no card.
- * Esc says so beside it. */
-function ZoomLevels({ level, board, phone, out }: { level: Level; board: boolean; phone: boolean; out: (to: Level) => void }) {
-  return (
-    <div class="ov-zoom-bar" data-ov-zoom-bar>
-      <div class="ov-levels" role="group" aria-label="Zoom level" data-ov-levels>
-        {LEVELS.map((name, i) => (
-          <button key={name} type="button" class={i === level ? "ov-level-on" : undefined} aria-current={i === level ? "true" : undefined} disabled={i > level || (i === 1 && !board)} data-ov-level-pill={name.toLowerCase()} onClick={() => i < level && out(i as Level)}>
-            {name}
-          </button>
-        ))}
-      </div>
-      {!phone && level > 0 && <span class="dim ov-zoom-hint">Esc to zoom out</span>}
-    </div>
-  );
-}
-
-/** Where the pointer last went down, for the zoom to grow from (#1287). */
-let pressed: { x: number; y: number; at: number } | null = null;
-if (typeof document !== "undefined") document.addEventListener("pointerdown", (e) => void (pressed = { x: e.clientX, y: e.clientY, at: Date.now() }), { capture: true, passive: true });
-
-/** A level's view, drawn anew as the zoom changes: a short scale and fade,
- * in from where you clicked going in, settling back going out. None on
- * the first draw (a link, a reload). */
-function Stage({ zkey, level, children }: { zkey: string; level: Level; children: ComponentChildren }) {
-  const was = useRef<{ key: string; level: Level; dir: "in" | "out" | null }>({ key: zkey, level, dir: null });
-  if (was.current.key !== zkey) was.current = { key: zkey, level, dir: level >= was.current.level ? "in" : "out" };
-  const dir = was.current.dir;
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || !dir) return;
-    const r = el.getBoundingClientRect();
-    const p = pressed && Date.now() - pressed.at < 1000 ? pressed : null;
-    el.style.transformOrigin = p ? `${Math.round(p.x - r.left)}px ${Math.round(p.y - r.top)}px` : "50% 0";
-  }, [zkey]);
-  return (
-    <div key={zkey} ref={ref} class={`ov-stage${dir ? ` ov-zoom-${dir}` : ""}`} data-ov-stage>
-      {children}
     </div>
   );
 }

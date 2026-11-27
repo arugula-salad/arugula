@@ -6,11 +6,13 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardLead, boardSays, groupByOwner, leadAwake, inFlight, overviewOf, staffSpots, STATE_WORD, statsLine, ticketWord, wordOf, yourWorkMachines } from "../src/shell/swarm/overview.ts";
+import { boardLead, boardSays, leadAwake, overviewOf, staffSpots, STATE_WORD, wordOf } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
 const P = PROJECT;
+/** A board that asks the reader something: its card needs or asks them. */
+const asksYou = (b) => b.standing === "needs" || b.standing === "asks";
 const row = (id, lane, n, extra = {}) => ({ id, lane, rev: 1, pointer: { kind: "issue", id: `iss_${n}` }, note: "", attachments: [], live: { state: "open", kind: "native", number: n, title: `Card ${n}` }, updated_at: n, ...extra });
 const view = (id, title, rows, extra = {}) => ({
   board: { id, title, project: P, ...extra },
@@ -68,15 +70,6 @@ test("a row's own data says its word: its question for you, its PR's checks and 
   assert.deepEqual(b.doing.map((c) => [c.row.id, c.standing]), [["rf", "checks_failing"], ["rr", "working"]]);
 });
 
-test("a board lists four rows, Doing and Review together, the worst first, then how many more", () => {
-  const rows = [row("r1", "doing", 1), row("r2", "doing", 2, { marks: [{ kind: "stalled", since: 1 }] }), row("r3", "review", 3), row("r4", "doing", 4), row("r5", "review", 5), row("r6", "doing", 6)];
-  const b = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf).boards[0];
-  const { shown, more } = inFlight(b);
-  assert.deepEqual(shown.map((c) => c.row.id), ["r2", "r5", "r3", "r6"]);
-  assert.equal(more, 2);
-  assert.equal(inFlight(b, 10).more, 0);
-});
-
 test("a closed board isn't drawn", () => {
   const o = overviewOf(P, [view("brd_c", "Shipped", [row("r1", "doing", 1)], { closed_at: 5 })], [], null, hostOf);
   assert.equal(o.boards.length, 0);
@@ -99,7 +92,6 @@ test("cards that need you come first, then failures, then quiet ones, then worki
   // A's row says each, the worst first, and opens by itself: a card on it needs you. B's doesn't.
   assert.deepEqual(boardSays(o.boards[0]).map((x) => x.words), ["1 needs you", "1 failed", "1 quiet", "1 working"]);
   assert.deepEqual(o.boards.map(asksYou), [true, false]);
-  assert.equal(statsLine(o, 1), "5 cards in flight · 1 session working · 1 needs you");
 });
 
 test("a card a teammate's session waits on says whom it asks, not \"asks you\"; only yours count as needing you (#1392)", () => {
@@ -112,10 +104,6 @@ test("a card a teammate's session waits on says whom it asks, not \"asks you\"; 
   ];
   const b = overviewOf(P, [view("brd_a", "A", rows)], panes, null, hostOf).boards[0];
   const card = (id) => b.doing.find((c) => c.row.id === id);
-  assert.equal(ticketWord(card("r_mine").row, card("r_mine")).word, "asks you");
-  assert.deepEqual(ticketWord(card("r_aaron").row, card("r_aaron")), { word: "asks Aaron", asks: false });
-  assert.equal(ticketWord(card("r_unknown").row, card("r_unknown")).word, "asks someone");
-  assert.equal(ticketWord(rows[3]).word, "asks Bea");
   // The session's chip names Aaron too.
   assert.deepEqual([card("r_aaron").sessions[0].standing, wordOf(card("r_aaron").sessions[0])], ["waits", "asks Aaron"]);
   // The row counts one that needs you, and opens by itself for it; teammates' alone don't open it.
@@ -126,7 +114,6 @@ test("a card a teammate's session waits on says whom it asks, not \"asks you\"; 
   // A session the hub names on a teammate's machine, with no pane here, names them by its machine's owner.
   const byCard = { project: P, groups: [{ card: { id: "iss_1" }, sessions: [{ kind: "agent", id: 9, name: "Claude", on: { kind: "machine", id: "m_c", name: "cam-box" }, state: "needs_input", updated_at: 1 }] }] };
   const hub = overviewOf(P, [view("brd_a", "A", [row("r1", "doing", 1)])], [], byCard, hostOf, (m) => (m === "m_c" ? "Cam" : undefined)).boards[0];
-  assert.equal(ticketWord(hub.doing[0].row, hub.doing[0]).word, "asks Cam");
   assert.equal(asksYou(hub), false);
 });
 
@@ -313,31 +300,6 @@ test("a lead's tab head says where it runs and whether it's awake: awake, idle, 
   assert.deepEqual(leadAwake(null, on), { state: "none" });
 });
 
-test("Needs you groups by owner: yours first, then people by how many asks and then name, each in its order", () => {
-  const ask = (id, owner) => ({ id, owner });
-  const groups = groupByOwner([ask(1, "zed"), ask(2, "amy"), ask(3, null), ask(4, "zed"), ask(5, "bo"), ask(6, null), ask(7, "amy"), ask(8, "cy")], (a) => a.owner);
-  assert.deepEqual(groups.map((g) => [g.name, g.items.map((a) => a.id)]), [[null, [3, 6]], ["amy", [2, 7]], ["zed", [1, 4]], ["bo", [5]], ["cy", [8]]]);
-  // Without yours, no group of yours; only yours, one group with no name.
-  assert.deepEqual(groupByOwner([ask(1, "bo")], (a) => a.owner).map((g) => g.name), ["bo"]);
-  assert.deepEqual(groupByOwner([ask(1, null)], (a) => a.owner).map((g) => g.name), [null]);
-  assert.deepEqual(groupByOwner([], (a) => a.owner), []);
-});
-
-test("Your work on the Overview lists the reader's own machines, on their personal project only (Arugula #1400)", () => {
-  const hosts = [
-    { name: "laptop" },
-    { name: "jos-mac", owner: "jo", ownerId: "acct_b", team: "tm_1" },
-    { name: "team-box", team: "tm_1", teamBox: true },
-    { name: "ws-1", hosted: true },
-    { name: "desk", team: "tm_1" },
-  ];
-  assert.deepEqual(yourWorkMachines(true, hosts), ["laptop", "desk"]);
-  assert.deepEqual(yourWorkMachines(false, hosts), []);
-});
-
-// Arugula #1341: Start offers your machines this page reaches whose daemon
-// starts a chief of staff, here first and the project's Cloud workspaces
-// last; the default is here, else your first, never a Cloud workspace.
 test("the chief of staff starts on your reached, new-enough machines, here by default, a Cloud workspace never the default", () => {
   const host = (name, more = {}) => ({ name, id: `m_${name}`, state: "connected", ...more });
   const hosts = [
