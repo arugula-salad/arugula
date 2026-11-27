@@ -869,6 +869,7 @@ pub(crate) fn cloud_only(on: On) -> Vec<String> {
         .map(|d| d.name.to_owned())
         .collect();
     out.push("show:board".into());
+    out.push("show:place".into());
     out
 }
 
@@ -1342,7 +1343,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "show",
             title: "Show the user a block",
-            description: "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.",
+            description: "Show the user something as a block beside a pane (beside; default the caller's own pane), or as a pane on a board or the Overview in the app (kind place), instead of describing it. kind says what.",
             args: Args::Kinds { kinds: table(SHOW), default: None },
             read_only: false,
             destructive: false,

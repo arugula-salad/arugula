@@ -1535,6 +1535,14 @@ pub enum ChatLive {
         #[serde(default)]
         changed: Vec<String>,
     },
+    /// The reader's layout of `place` changed (Arugula #1496; another of
+    /// their pages, or an agent of theirs): read it again
+    /// ([`crate::layout::LAYOUT`]) unless the page has `rev` already. Sent
+    /// to that account only.
+    Layout {
+        place: String,
+        rev: u64,
+    },
     Resync {},
 }
 

@@ -823,7 +823,8 @@ pub const INBOX_GROUPS: [&str; 4] = ["decide", "named", "chat", "ready"];
 /// An item's kind (Arugula #1430), with its group: `agent_ask`,
 /// `permission`, `agent_failed`, `approval`, `todo`, `board_ask`,
 /// `deploy_approval`, `checks_failed`, `run_failed` and
-/// `changes_requested` decide; `review_request`, `mention` and `assigned`
+/// `changes_requested` decide, as does `for_you` (a tab an agent opened
+/// for the reader on a place, Arugula #1496); `review_request`, `mention` and `assigned`
 /// name the reader; `dm` and `thread_news` are chat; `turn_finished` is
 /// ready. A client shows a kind it doesn't know by its title.
 ///
@@ -831,7 +832,7 @@ pub const INBOX_GROUPS: [&str; 4] = ["decide", "named", "chat", "ready"];
 /// `approval` (start, close, Run this board: Approve or Deny) or a `todo`
 /// (work only they can do: Done or Can't, with a note). Before it, both
 /// were `proposal`.
-pub const INBOX_KINDS: [&str; 16] = [
+pub const INBOX_KINDS: [&str; 17] = [
     "agent_ask",
     "permission",
     "agent_failed",
@@ -848,6 +849,7 @@ pub const INBOX_KINDS: [&str; 16] = [
     "dm",
     "thread_news",
     "turn_finished",
+    "for_you",
 ];
 
 /// One item of the one Inbox (Arugula #1430): a thing that needs the
@@ -945,7 +947,7 @@ pub struct InboxFrom {
 }
 
 /// What an item is about. `type` is `pane`, `session`, `proposal`,
-/// `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
+/// `board_row`, `deploy`, `pr`, `issue`, `run`, `room`, `doc` or `tab`; `url` is
 /// where Open goes (a path on the platform's page, or the item on GitHub).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -987,6 +989,15 @@ pub struct InboxSubject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub issue: Option<String>,
+    /// The place an agent put it in front of the reader (`board:brd_…`,
+    /// `overview:prj_…`; Arugula #1496), and its tab there: Open goes to
+    /// that tab. A `for_you` item's, and a pane's ask an agent showed there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub place: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tab: Option<String>,
 }
 
 /// How to answer an item in place. `via` is `attention_act`,
