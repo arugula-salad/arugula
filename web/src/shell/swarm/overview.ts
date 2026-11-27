@@ -375,26 +375,9 @@ function rowSays(r: BoardRow): Standing[] {
   return says;
 }
 
-/** A board's cards in flight as its card lists them: Doing and Review
- * together, the worst first, up to `max`; and how many more there are. */
-export function inFlight(b: Pick<OvBoard, "doing" | "review">, max = 4): { shown: OvCard[]; more: number } {
-  const all = sortCards([...b.doing, ...b.review]);
-  return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
-}
-
 /** The pane a session's tile opens: one that needs you or someone, else its agent, else its first. */
 function leadOf(panes: OvPane[]): OvPane {
   return panes.find((p) => p.standing === "needs") ?? panes.find((p) => p.agent) ?? panes[0];
-}
-
-/** The word a ticket says on a board's level: it asks you (its question,
- * or a session of yours on it waiting); it asks someone else, by name
- * (#1392); else its lane's. */
-export function ticketWord(r: Pick<BoardRow, "ask" | "lane">, c?: Pick<OvCard, "standing" | "asks">): { word: string; asks: boolean } {
-  if (r.ask?.mine || c?.standing === "asks" || c?.standing === "needs") return { word: "asks you", asks: true };
-  if (r.ask?.who && !r.ask.mine) return { word: `asks ${r.ask.who_name || "someone"}`, asks: false };
-  if (c?.standing === "waits") return { word: wordOf(c), asks: false };
-  return { word: r.lane === "doing" ? "working" : r.lane === "review" ? "in review" : r.lane === "next" ? "next" : "done", asks: false };
 }
 
 /** The word a card or a session says: one waiting on someone else names
@@ -427,53 +410,6 @@ export function boardSays(b: Pick<OvBoard, "doing" | "review">): { standing: Sta
   const idle = all.filter((c) => c.standing === "idle").length;
   if (idle) says.push({ standing: "idle", words: says.length ? `${idle} more in flight` : `${idle} in flight` });
   return says;
-}
-
-/** Whether a board asks something of the reader: a card in flight on it needs them, or asks them. Its row opens by itself. */
-export function asksYou(b: Pick<OvBoard, "standing">): boolean {
-  return b.standing === "needs" || b.standing === "asks";
-}
-
-/** One owner's asks in Needs you (#1333): yours, or a person's or a team's by name. */
-export interface AskGroup<T> {
-  /** `me`, or the name it's grouped under. */
-  key: string;
-  /** Null for yours. */
-  name: string | null;
-  items: T[];
-}
-
-/** Needs you's asks by owner (#1333): yours first, then one group per
- * other name, the one with more asks first and then by name; each keeps
- * the order it came in (`byNeedsYou`'s). `ownerOf` says whose an ask is:
- * null for yours, else the name to group it under. */
-export function groupByOwner<T>(items: T[], ownerOf: (t: T) => string | null): AskGroup<T>[] {
-  const groups = new Map<string, AskGroup<T>>();
-  for (const t of items) {
-    const name = ownerOf(t);
-    const key = name === null ? "me" : `name:${name}`;
-    const g = groups.get(key) ?? groups.set(key, { key, name, items: [] }).get(key)!;
-    g.items.push(t);
-  }
-  const mine = groups.get("me");
-  const others = [...groups.values()].filter((g) => g.name !== null).sort((a, b) => b.items.length - a.items.length || a.name!.localeCompare(b.name!));
-  return mine ? [mine, ...others] : others;
-}
-
-/** The bar's line: `7 cards in flight · 4 sessions working · 2 need you`. */
-export function statsLine(o: Pick<Overview, "boards" | "loose">, needs: number): string {
-  const cards = o.boards.reduce((n, b) => n + b.doing.length + b.review.length, 0);
-  const sessions = [...o.boards.flatMap((b) => [...b.doing, ...b.review].flatMap((c) => c.sessions)), ...o.loose];
-  const working = sessions.filter((s) => s.standing === "working").length;
-  return `${cards} ${cards === 1 ? "card" : "cards"} in flight · ${working} ${working === 1 ? "session" : "sessions"} working · ${needs} ${needs === 1 ? "needs" : "need"} you`;
-}
-
-/** Whose conversations Your work lists on a project's Overview (Arugula
- * #1400): on the reader's personal project, the machines they own, by name;
- * never a teammate's, a team's own box or a hosted one, and on any other
- * project none. */
-export function yourWorkMachines(personal: boolean, hosts: { name: string; owner?: string; teamBox?: boolean; hosted?: boolean }[]): string[] {
-  return personal ? hosts.filter((h) => !h.owner && !h.teamBox && !h.hosted).map((h) => h.name) : [];
 }
 
 /** A machine the chief of staff may start on. */

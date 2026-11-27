@@ -1,654 +1,215 @@
-/* The project's Overview (./overview.tsx): the field of boards on the left,
-   the window's width, the talk panel on the right (Needs you on its top,
-   then conversation tabs), under the field on a narrow window; on a phone,
-   one list with Needs you on top and the talk at its foot. A board is a hairline row, open to its cards' one-line
-   rows; Needs you holds Swarm's own rail cards, or one quiet line. */
+/* The project's Overview (./overview.tsx, Lift 4): two thirds and one
+   third. The left is a section: the title line, Boards as cards (the quiet
+   ones folded into one) and the Running line. The right third stacks Needs
+   you, To do and a teammate's asks (./overview-needs.tsx) above the agent
+   panel, which reaches the window's foot. On a narrow window or a phone,
+   one column: Needs you, then the rest, the panel at its own height. Kit
+   parts draw the surfaces and rows; this lays them out. */
 
 .ov {
-  position: relative;
   display: grid;
-  /* The right column is a third by default (#1444), at least 18rem, at most half. */
-  grid-template-columns: minmax(0, 1fr) clamp(18rem, var(--ov-col, 33.333%), 50%);
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr);
+  gap: var(--gap);
   align-items: start;
 }
 .ov.phone {
   grid-template-columns: minmax(0, 1fr);
 }
-/* The divider sits on the column's left edge, over the panel's hairline. */
-.ov-split {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: stretch;
-  justify-self: start;
-  width: 6px;
-  margin-left: calc(-3px - var(--space-4) / 2);
-  cursor: col-resize;
-  z-index: 2;
-  touch-action: none;
-}
-.ov-split:hover,
-.ov-split:focus-visible {
-  background: linear-gradient(to right, transparent 2px, var(--line) 2px, var(--line) 4px, transparent 4px);
-  outline: none;
-}
-
-.ov-field {
-  min-width: 0;
+.ov-main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-}
-.ov-stats {
-  margin: 0;
-}
-/* The briefing line (#1277): what happened since the reader last looked,
-   then the chief of staff's latest sentence; a button that opens its tab
-   once it has a room. One line, the sentence giving way first. */
-.ov-briefing {
+  gap: var(--gap);
   min-width: 0;
-  max-width: 100%;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin: calc(-1 * var(--space-2)) 0 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: var(--text-sm) var(--font-sans);
-  color: var(--fg);
-  text-align: left;
-  white-space: nowrap;
 }
-button.ov-briefing {
-  cursor: pointer;
-}
-button.ov-briefing:hover .ov-briefing-said,
-button.ov-briefing:focus-visible .ov-briefing-said {
-  color: var(--fg);
-}
-.ov-briefing-counts {
-  flex: 0 0 auto;
-}
-.ov-briefing-said {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
-}
-.ov-briefing-said::before {
-  content: "· ";
-}
-
-/* A board: one hairline row. Its toggle, title, lane bar, count and words
-   line up down the list, as columns do. */
-.ov-boards {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--line);
-}
-.ov-board {
-  border-bottom: 1px solid var(--line);
-}
-.ov-board-line {
+.ov-title {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.4fr) minmax(0, 1.3fr) 24px;
-  gap: var(--space-3);
+  grid-template-columns: 1fr auto;
   align-items: center;
-  padding: var(--space-2) var(--space-1);
 }
-.ov-board:not(.ov-board-still) > .ov-board-line {
-  cursor: pointer;
+.ov-title > p {
+  grid-column: 1 / -1;
 }
-.ov-board:not(.ov-board-still) > .ov-board-line:hover {
-  background: var(--surface);
-}
-/* The boards' rows before their views land: bars where the title, bar and words go, not moving. */
-.ov-skel-bar {
-  display: block;
-  height: 10px;
-  border-radius: var(--field-radius);
-  background: var(--surface);
-}
-.ov-skeleton .ov-board-line {
-  min-height: 36px;
-}
-.ov-board-toggle {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--field-radius);
-  background: none;
-  color: var(--dim);
-  cursor: pointer;
-}
-.ov-board-toggle:disabled {
-  cursor: default;
-}
-/* A title, not a link's colour: the row is the board's, its title the way to it. */
-.ov .ov-board-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 600 var(--text-md) var(--font-sans);
-  color: var(--fg);
-  text-decoration: none;
-}
-.ov .ov-board-title:hover {
-  text-decoration: underline;
-}
-.ov .ov-board-still .ov-board-title {
-  font-weight: 500;
-  color: var(--dim);
-}
-.ov-board-line .board-bar {
-  height: 4px;
-}
-.ov-board-count {
-  font: 500 var(--text-xs) var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--dim);
-}
-.ov-board-says {
-  min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-3);
-}
-.ov-board-says .tone-plain {
-  color: var(--dim);
-}
-/* Its lead (#1272): a chip with a dot for how its session stands, its name and its machine; it opens the board's thread. */
-.ov-board-lead-cell {
-  min-width: 0;
-  display: flex;
-}
-.ov-lead {
-  min-width: 0;
-  max-width: 100%;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: none;
-  font: 500 var(--text-xs) var(--font-sans);
-  color: var(--muted);
-  white-space: nowrap;
-}
-button.ov-lead {
-  cursor: pointer;
-}
-button.ov-lead:hover,
-button.ov-lead:focus-visible {
-  background: var(--raised);
-  color: var(--fg);
-}
-/* The machine gives way before the name does. */
-.ov-lead-name,
-.ov-lead-machine {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ov-lead-name {
-  flex: 0 1 auto;
-  color: var(--fg);
-}
-.ov-lead-machine {
-  flex: 0 100 auto;
-  color: var(--dim);
-}
-.ov-lead-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  border: 1px solid var(--subtle);
-}
-.ov-lead-dot[data-ov-lead-standing] {
-  border: 0;
-  background: var(--accent-fill);
-}
-.ov-lead-dot[data-ov-lead-standing="working"] {
-  background: var(--accent-fill);
-}
-.ov-lead-dot[data-ov-lead-standing="quiet"] {
-  background: var(--muted);
-}
-.ov-lead-dot[data-ov-lead-standing="needs"] {
-  background: var(--needs);
-}
-.ov-lead-dot[data-ov-lead-standing="waits"] {
-  background: var(--info);
-}
-.ov-lead-dot[data-ov-lead-standing="failed"] {
-  background: var(--danger);
-}
-
-/* The way to the board's thread, in the talk panel: quiet until the row's hovered. */
-.ov-board-talk {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--field-radius);
-  background: none;
-  color: var(--subtle);
-  cursor: pointer;
-}
-.ov-board-talk:hover,
-.ov-board-talk:focus-visible {
-  background: var(--raised);
-  color: var(--fg);
-}
-.ov-board-rows {
-  padding: 0 var(--space-1) var(--space-2) calc(20px + var(--space-3));
-}
-
-/* Not on a card: the sessions that work on none, after the boards. */
-.ov-loose-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.ov-loose-head b {
-  font: 600 var(--text-md) var(--font-sans);
-}
-
-/* On a phone, a board's row is two lines: its title and count, then its bar and words. */
-.ov.phone .ov-board-line {
-  grid-template-columns: 20px minmax(0, 1fr) auto auto;
-  gap: var(--space-1) var(--space-2);
-}
-.ov.phone .ov-board-line .board-bar {
-  grid-column: 2 / -1;
-  grid-row: 2;
-}
-.ov.phone .ov-board-says {
-  grid-column: 2 / -1;
-  grid-row: 3;
-}
-.ov.phone .ov-board-lead-cell {
-  grid-column: 2 / -1;
-  grid-row: 4;
-}
-.ov.phone .ov-board-lead-cell:empty {
-  display: none;
-}
-.ov.phone .ov-board-rows {
-  padding-left: 0;
-}
-
-/* A board's rows (./overview-row.tsx): one line each, the preview under it. */
-.ov-rows {
+.ov-title h1 {
   margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
+  font: 700 var(--text-hero) var(--font-title);
+  color: var(--ink);
 }
-.ov-loose .ov-rows {
-  margin-top: var(--space-1);
+.ov-title p {
+  margin: 4px 0 0;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
-.ov-row {
-  position: relative;
-  border-radius: var(--field-radius);
-}
-.ov-row-line {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--field-radius);
-  background: none;
-  color: inherit;
-  font: var(--text-sm) / 1.4 var(--font-sans);
-  text-align: left;
-  cursor: pointer;
-}
-.ov-row-line:hover:not(:disabled),
-.ov-row-open .ov-row-line,
-.ov-row-current .ov-row-line {
-  background: var(--raised);
-}
-.ov-row-line:disabled {
-  cursor: default;
-}
-.ov-row-num,
-.ov-row-where {
-  flex: none;
-  font: var(--text-xs) var(--font-mono);
-  color: var(--subtle);
-}
-.ov-row-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-word {
-  flex: none;
-  font: 500 var(--text-xs) var(--font-sans);
-  color: var(--muted);
-}
-.ov-word.tone-accent {
+[data-standing="working"] {
   color: var(--accent);
 }
-.ov-word.tone-danger {
-  color: var(--danger);
+[data-standing="failing"] {
+  color: var(--fail);
 }
-.ov-word.tone-warn {
-  color: var(--warn);
+[data-standing="asks"] {
+  color: var(--needs);
 }
-.ov-row-who {
-  flex: none;
-  display: flex;
-  gap: 2px;
-}
-.ov-row-who .msg-avatar {
-  width: 18px;
-  height: 18px;
-  font-size: 9px; /* off-scale: avatar initials */
-}
-.ov-more-rows {
-  display: inline-block;
-  margin: var(--space-1) var(--space-2) 0;
-  font-size: var(--text-xs);
-}
-
-/* A row's preview: its sessions, where they run and their last lines. On
-   the row's right, so the rows under it can still be reached on their left. */
-.ov-preview {
-  position: absolute;
-  z-index: 5;
-  top: 100%;
-  right: 0;
-  width: min(28rem, 75%);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
-}
-.ov-peek {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: var(--space-1) var(--space-2);
-  border: 0;
-  border-radius: var(--field-radius);
-  background: none;
-  color: inherit;
-  font: var(--text-xs) var(--font-sans);
-  text-align: left;
-}
-button.ov-peek {
-  cursor: pointer;
-}
-button.ov-peek:hover:not(:disabled) {
-  background: var(--raised);
-}
-button.ov-peek:disabled {
-  cursor: default;
-}
-.ov-peek-head {
+/* A section's heading: its name, its count, and anything at its end. */
+.ov-head {
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
+  gap: 8px;
+  margin-top: 4px;
 }
-.ov-peek-head b {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Over the page's `.platform .sw-page h2` section margin. */
+.ov .ov-head h2 {
+  margin: 0;
+  font: 600 var(--text-title) var(--font-title);
+  color: var(--ink);
 }
-
-/* A card that waits on you pulses. */
-.ov-pulse {
-  animation: ov-pulse 1.8s infinite;
+.ov-head .m-meta {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
-@keyframes ov-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
-  }
-  70% {
-    box-shadow: 0 0 0 6px transparent;
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
+.ov-head-end {
+  margin-left: auto;
 }
-/* A rail card's Find: the row it's about, for a moment. */
-.ov-found {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ov-pulse {
-    animation: none;
-  }
+.ov-quiet {
+  margin: 0;
+  color: var(--ink-dim);
 }
 
-.ov-line {
-  font: var(--text-xs) / 1.35 var(--font-mono);
-  color: var(--subtle);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* Boards: a card each, three to a row where there's room. */
+.ov-boards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-
-/* The talk panel: Needs you on its top, the tabs under it. While a tab is
-   open it reaches the window's foot (overview-talk's useFitWindow sets its
-   height as the page scrolls), Needs you its own height up to half of it
-   and the conversation the rest, its box at the foot. Needs you doesn't
-   shrink then: the conversation's list does, else a long thread squeezes
-   its heading under the tabs. */
-.ov:not(.phone) > .ov-panel {
-  grid-column: 2;
-  grid-row: 1;
-}
-.ov-panel {
-  width: auto;
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 80px);
+.ov-board {
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--line);
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px;
+}
+/* Ink, not a link's colour: the card is the board's, its title the way to it. */
+.ov .ov-board-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 600 var(--text-title) var(--font-title);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ov-board-title > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-board-title:hover > span:last-child {
+  text-decoration: underline;
+}
+.ov-board-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.ov-bar {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+.ov-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.ov-says {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The quiet boards, folded: a dashed card that unfolds them. */
+.ov-folded {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+.ov-folded .ov-board-title {
+  color: var(--ink-dim);
+}
+
+/* Running: one line, on to Machines. */
+.ov .ov-running {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  text-decoration: none;
+}
+.ov-running:hover {
+  background: var(--hover);
+}
+.ov-running .m-meta {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
+/* The right third: Needs you over the panel, held in the window. */
+.ov-side {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  height: calc(100vh - 80px);
   min-width: 0;
 }
-.ov-panel.ov-panel-talking {
-  height: calc(100vh - 80px);
-  max-height: none;
-}
-.ov-panel .ov-needs {
+.ov-needs {
   flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50%;
+  overflow: auto;
+}
+.ov-needs > section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ov-more {
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  cursor: pointer;
+}
+.ov-more:hover {
+  color: var(--ink);
+}
+.ov-panel {
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
-.ov-panel-talking .ov-needs {
-  flex-shrink: 0;
-  max-height: 50%;
-}
-.ov-needs.ov-needs-none {
-  padding: 0 var(--space-3);
-}
-.ov-needs.ov-needs-none p {
-  margin: 0;
-}
-.ov.phone .ov-needs {
-  width: auto;
-}
-/* The page's `.platform .sw-page h2` outweighs `.ov-needs h2` and gave it
-   24px above: on a phone, a gap between the head and Needs you (#1384). */
-.ov.phone .ov-needs h2 {
-  margin: 0;
-}
-.ov-needs header {
-  flex: none;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-}
-.ov-needs h2 {
-  margin: 0;
-  font: 600 var(--text-lg) var(--font-sans);
-}
-.ov-needs header span {
-  font: 500 var(--text-xs) var(--font-mono);
-  color: var(--subtle);
-}
-
-/* Needs you's asks (#1333), by owner: a heading with a count, then a
- * two-line row each (the question, then whose and where) that opens to
- * the card's body. It opens on hover only where there is hover. Each row
- * keeps the rail card's colour: its kind's outline and left edge. */
-.ov-needs .swarm-cards {
-  gap: 0;
-  padding: 0 var(--space-3) var(--space-3);
-}
-/* What the reader's agents propose (#1278): their chat cards, above the asks. */
-.ov-proposals {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: 0 var(--space-3) var(--space-2);
-  overflow-y: auto;
-}
-.ov-asks {
-  display: flex;
-  flex-direction: column;
-}
-.ov-asks-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 0;
-  padding: var(--space-3) 0 var(--space-1);
-  font: 600 var(--text-xs) var(--font-sans);
-  color: var(--subtle);
-}
-.ov-asks-n {
-  font: 500 var(--text-xs) var(--font-mono);
-}
-.ov-ask {
-  --c: var(--s-ask);
-  position: relative;
-  overflow: hidden;
-  /* The gap between rows belongs to the rows (#1427): half of it, a
-   * transparent border above and below each, so the pointer is over a row
-   * all the way down the list and an open one doesn't close on the way
-   * to the next. The visible outline is the inset ring; the padding is
-   * the 1px it takes. */
-  border-block: var(--space-1) solid transparent;
-  border-radius: var(--card-radius) / calc(var(--card-radius) + var(--space-1));
-  padding: 1px;
-  background: color-mix(in srgb, var(--c) 7%, var(--surface));
-  background-clip: padding-box;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
-}
-/* The first row's upper half-gap is the heading's (padding below it), the
- * last's lower one the list's: not the page's. */
-.ov-ask:first-child {
-  margin-top: calc(-1 * var(--space-1));
-}
-.ov-ask:last-child {
-  margin-bottom: calc(-1 * var(--space-1));
-}
-.ov-ask::before {
-  content: "";
-  position: absolute;
-  left: 1px;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
-}
-.ov-ask.gone {
-  opacity: 0.45;
-}
-.ov-ask-row {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  cursor: pointer;
-  min-width: 0;
-}
-.ov-ask-row:hover,
-.ov-ask.open .ov-ask-row {
-  background: color-mix(in srgb, var(--c) 8%, transparent);
-}
-.ov-ask-row:focus-visible {
-  outline: 2px solid var(--c);
-  outline-offset: -2px;
-}
-.ov-ask-mark {
-  grid-row: 1;
-  align-self: center;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--c);
-}
-.ov-ask-q {
-  grid-column: 2;
-  font: 500 var(--text-md)/1.35 var(--font-sans);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ov-ask-where {
-  grid-column: 2;
-  font: 500 var(--text-xs)/1.3 var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ov-ask-body .swarm-card {
-  border: 0;
-  background: none;
-  border-radius: 0;
-  padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 16px);
-  animation: none;
-}
-.ov-ask-body .swarm-card::before {
-  display: none;
-}
-.ov-ask-body .cm-work {
-  display: block;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-}
-.ov-ask-body .cm-work:hover {
-  text-decoration: underline;
+.ov-word {
+  color: var(--ink-dim);
 }
 
 .ov-talk {
@@ -918,425 +479,29 @@ button.ov-peek:disabled {
   min-width: 0;
 }
 
-/* A narrow window, or a phone: the panel docks under the field, at its own height. */
+
+/* A narrow window, or a phone: one column, the panel at its own height. */
 @media (max-width: 1000px) {
   .ov {
     grid-template-columns: minmax(0, 1fr);
   }
-  .ov-split {
-    display: none;
-  }
-  .ov:not(.phone) > .ov-panel {
-    grid-column: auto;
-    grid-row: auto;
-  }
-  .ov-panel {
-    width: auto;
+  .ov-side {
     position: static;
+    height: auto;
+  }
+  .ov-needs {
     max-height: none;
-    border-left: 0;
-    border-top: 1px solid var(--line);
   }
-  .ov-panel.ov-panel-talking {
-    height: 70vh;
-  }
+}
+.ov.phone .ov-panel,
+.ov-side .ov-panel:not(.ov-panel-talking) {
+  min-height: 12rem;
 }
 .ov.phone .ov-panel {
-  width: auto;
-  position: static;
-  max-height: none;
-  border-left: 0;
-}
-.ov.phone .ov-panel.ov-panel-talking {
   height: 70vh;
 }
 
 /* The card's drawer leaves the bar uncovered: its path climbs back. */
 .ov .side-sheet-backdrop {
   top: var(--ov-bar-bottom, 0px);
-}
-
-/* Zooming (#1287): the level pill over the field, and each level's view
-   drawn in with a short scale and fade (in from where you clicked, or
-   settling back as you zoom out). */
-.ov-zoom-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.ov-levels {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  overflow: hidden;
-}
-.ov-levels button {
-  border: 0;
-  background: none;
-  padding: 1px var(--space-3);
-  font: var(--text-xs) var(--font-sans);
-  color: var(--dim);
-  cursor: pointer;
-}
-.ov-levels button:disabled {
-  cursor: default;
-}
-.ov-levels button:not(:disabled):hover {
-  color: var(--fg);
-}
-.ov-levels button.ov-level-on {
-  background: var(--raised);
-  color: var(--fg);
-  font-weight: 600;
-}
-.ov-zoom-hint {
-  font: var(--text-xs) var(--font-sans);
-}
-.ov-stage {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.ov-zoom-in {
-  animation: ov-zoom-in 0.2s ease-out;
-}
-.ov-zoom-out {
-  animation: ov-zoom-out 0.2s ease-out;
-}
-@keyframes ov-zoom-in {
-  from {
-    opacity: 0;
-    transform: scale(0.94);
-  }
-}
-@keyframes ov-zoom-out {
-  from {
-    opacity: 0;
-    transform: scale(1.04);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ov-zoom-in,
-  .ov-zoom-out {
-    animation: none;
-  }
-}
-
-/* A Board or Work level (./overview-board.tsx, ./overview-work.tsx): its
-   head, then its rows. #1288 and #1289 draw them out in full. */
-.ov-level {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.ov-level-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.ov-level-head h2 {
-  margin: 0;
-  font: 600 var(--text-lg) var(--font-sans);
-}
-.ov-level-head p {
-  margin: 0;
-}
-.ov-level-head .board-bar {
-  height: 6px;
-  margin-top: var(--space-1);
-}
-.ov-level-sub {
-  margin: 0;
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-level-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--line);
-}
-.ov-level-list > li {
-  border-bottom: 1px solid var(--line);
-}
-.ov-level-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 4rem minmax(0, 1fr) auto auto;
-  gap: var(--space-3);
-  align-items: baseline;
-  padding: var(--space-2);
-  border: 0;
-  background: none;
-  font: var(--text-sm) var(--font-sans);
-  color: var(--fg);
-  text-align: left;
-  cursor: pointer;
-}
-.ov-level-row:hover,
-.ov-level-row:focus-visible {
-  background: var(--raised);
-}
-.ov-level-row-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-level-pane {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2);
-  font: var(--text-sm) var(--font-sans);
-}
-/* The Work level (./overview-work.tsx, #1289): its panes live, side by
-   side, up to four; the rest as tabs above them. Each terminal keeps its
-   size in cells and its slot scrolls, as a board drawer's does. */
-.ov-work-asks:empty {
-  display: none;
-}
-.ov-work-asks {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.ov-work-noagent {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin: 0;
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-work-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-work-tab {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: baseline;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  cursor: pointer;
-}
-.ov-work-tab-on {
-  border-color: var(--accent);
-}
-.ov-work-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  gap: var(--space-3);
-}
-.ov-work-pane {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-}
-/* The pane whose agent you're talking to. */
-.ov-work-pane-talking {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-.ov-work-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-2);
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-work-name {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-work-acts {
-  margin-left: auto;
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-}
-.ov-work-note {
-  margin: 0;
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-work-slot {
-  position: relative;
-  height: min(68vh, 640px);
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--bg);
-}
-.ov-work-slot .term-host,
-.ov-work-slot .xterm {
-  height: 100%;
-}
-.ov-work-paused .ov-peek-tail {
-  max-height: 40vh;
-}
-
-/* The Board level (#1288): the head beside the lead's card, then the open
-   tickets by group, a row each with its agents' chips; Done folded. */
-.ov-bl-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem);
-  gap: var(--space-4);
-  align-items: start;
-}
-.ov-bl-goal {
-  color: var(--subtle);
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-level-head .ov-bl-bar {
-  height: 8px;
-  border-radius: 4px;
-  margin-top: var(--space-2);
-}
-.ov-bl-lead {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  font: var(--text-sm) var(--font-sans);
-}
-.ov-bl-lead-label {
-  font-size: var(--text-xs);
-}
-.ov-bl-lead-name {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-bl-lead-sub {
-  font-size: var(--text-xs);
-}
-.ov-bl-lead-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-.ov-bl-group h3 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-1);
-  font: 600 var(--text-sm) var(--font-sans);
-}
-.ov-bl-group h3 .dim {
-  font-weight: 400;
-}
-.ov-bl-tickets {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--line);
-}
-.ov-bl-ticket {
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr) 5.5rem minmax(0, 16rem);
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--line);
-  font: var(--text-sm) var(--font-sans);
-  cursor: pointer;
-}
-.ov-bl-ticket:hover,
-.ov-bl-ticket:focus-within {
-  background: var(--raised);
-}
-.ov-bl-num {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-xs);
-}
-.ov-bl-what {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ov-bl-title,
-.ov-bl-pr {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov .ov-bl-title {
-  color: var(--fg);
-  text-decoration: none;
-}
-.ov .ov-bl-title:hover {
-  text-decoration: underline;
-}
-.ov-bl-pr {
-  font-size: var(--text-xs);
-}
-.ov-bl-word {
-  padding: 1px var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font: 500 var(--text-xs) var(--font-sans);
-  color: var(--dim);
-  white-space: nowrap;
-  justify-self: start;
-}
-.ov-bl-word.ov-bl-asks {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.ov-bl-agents {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.ov-bl-done summary {
-  cursor: pointer;
-  font: var(--text-sm) var(--font-sans);
-  padding: var(--space-1) 0;
-}
-.ov.phone .ov-bl-head {
-  grid-template-columns: minmax(0, 1fr);
-}
-.ov.phone .ov-bl-ticket {
-  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
-}
-.ov.phone .ov-bl-word {
-  justify-self: end;
-}
-.ov.phone .ov-bl-agents {
-  grid-column: 2 / -1;
-  justify-content: flex-start;
 }

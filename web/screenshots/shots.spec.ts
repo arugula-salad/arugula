@@ -4,7 +4,7 @@
 // the UI changes and never show anything real.
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -714,7 +714,7 @@ async function agentBlock(page: Page): Promise<PaneId> {
 test.describe("the app", () => {
   test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
 
-  test("the Overview, and zoomed to a board with agents on its tickets", async ({ page }) => {
+  test("the Overview", async ({ page }) => {
     await open(page);
     await onCard(page, await agentBlock(page));
     // The other pictures' sessions aren't the team's work: not on the Overview.
@@ -723,19 +723,16 @@ test.describe("the app", () => {
     await expect(page.locator(`[data-ov-board="${LAUNCH}"]`)).toBeVisible();
     await settled(page, 2500);
     await page.screenshot({ path: join(out, "overview.png") });
-    await page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).click();
-    await settled(page, 2000);
-    await page.screenshot({ path: join(out, "overview-board.png") });
   });
 
   test("the chief of staff asks to start an agent: under Needs you, and its card in the staff room", async ({ page }) => {
     await proposalOverview(page);
     await page.screenshot({ path: join(out, "overview-proposal.png") });
-    // Approved from Needs you: it leaves, and its room says what came of it.
-    const approve = page.locator("[data-ov-needs] [data-proposal-approve]");
-    if (!(await approve.count())) return;
-    await approve.click();
-    await expect(page.locator("[data-ov-needs] [data-proposal]")).toHaveCount(0);
+    // Approved from Needs you: a receipt, and its room says what came of it.
+    const row = page.locator('[data-ov-needs] [data-need="approval"]');
+    await row.locator("button[aria-expanded]").first().click();
+    await row.locator('[data-answer="0"]').click();
+    await expect(row).toContainText("Approve by you");
     await page.reload();
     await expect(page.locator(`[data-ov-staff="${STAFF}"] [data-ask-state="answered"]`)).toBeVisible({ timeout: 20_000 });
     await settled(page, 1500);
@@ -769,59 +766,6 @@ test.describe("the app", () => {
     await expect(page.getByText("Let the host close the vote")).toBeVisible({ timeout: 20_000 });
     await settled(page, 1500);
     await page.screenshot({ path: join(out, "issues.png") });
-  });
-});
-
-// dive.mjs: the Overview's zoom, Project → Board → Work and back, as frames
-// for a GIF in DIVE_OUT. The zooms are 0.2 s: the page's animations run at
-// 0.3 of their speed while it records, so each gets frames.
-test.describe("dive", () => {
-  test.use({ viewport: { width: 1400, height: 877 }, deviceScaleFactor: 1 });
-
-  test("the Overview's zoom, frame by frame", async ({ page }) => {
-    const dir = process.env.DIVE_OUT;
-    test.skip(!dir, "dive.mjs sets DIVE_OUT");
-    test.setTimeout(240_000);
-    mkdirSync(dir!, { recursive: true });
-    await open(page);
-    await onCard(page, await agentBlock(page));
-    await inApp(page, `/p/${P}`, true, OVERVIEW);
-    await expect(page.locator(`[data-ov-board="${LAUNCH}"]`)).toBeVisible({ timeout: 20_000 });
-    await settled(page, 2500);
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send("Animation.enable");
-    await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.3 });
-    let n = 0;
-    const name = (i: number) => join(dir!, `f${String(i).padStart(4, "0")}.png`);
-    const frame = () => page.screenshot({ path: name(n++) });
-    /** One picture, shown for `frames` frames. */
-    const hold = async (frames: number) => {
-      const first = name(n);
-      await frame();
-      for (let i = 1; i < frames; i++) copyFileSync(first, name(n++));
-    };
-    /** Frames while `act`'s zoom plays (0.7 s, slowed). */
-    const zoom = async (act: () => Promise<void>) => {
-      await act();
-      for (const end = Date.now() + 900; Date.now() < end; ) await frame();
-    };
-    await hold(20);
-    await page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).hover();
-    await hold(8);
-    await zoom(() => page.locator(`[data-ov-board="${LAUNCH}"] [data-ov-board-title]`).click());
-    await page.mouse.move(0, 0);
-    await hold(24);
-    await page.locator(`[data-ov-ticket="${MINE.row}"]`).hover();
-    await hold(8);
-    await zoom(() => page.locator(`[data-ov-ticket="${MINE.row}"]`).click({ position: { x: 300, y: 12 } }));
-    await page.mouse.move(0, 0);
-    await settled(page, 1000);
-    await hold(32);
-    await zoom(() => page.keyboard.press("Escape"));
-    await hold(10);
-    await zoom(() => page.keyboard.press("Escape"));
-    await hold(12);
-    console.log(`${n} frames in ${dir}`);
   });
 });
 

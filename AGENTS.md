@@ -323,6 +323,7 @@ screen that hasn't moved keeps today's pieces
 | Screen | Look | Since |
 |---|---|---|
 | `/design` | the kit | Lift 2 (#1478) |
+| the Overview (its agent panel comes next) | the kit | Lift 4 (#1480) |
 | everything else | today's pieces | |
 
 The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase

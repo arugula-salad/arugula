@@ -824,7 +824,7 @@ async function changesOf(fleet: Fleet, p: FleetPane, back: () => void): Promise<
 }
 
 /** Act on a bundle: one request per host, naming its panes. */
-async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Partial<ActRequest> = {}): Promise<string | null> {
+export async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Partial<ActRequest> = {}): Promise<string | null> {
   const hosts = new Map<string, FleetPane[]>();
   for (const p of panes) hosts.set(p.host, [...(hosts.get(p.host) ?? []), p]);
   let err: string | null = null;

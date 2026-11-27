@@ -147,9 +147,7 @@ tests use a stand-in chant). A spec that fails leaves a screenshot in
 `web/test-results/`, and CI keeps those as the job's artifacts for a week. `just screenshots` regenerates the site's images
 from a throwaway daemon with a scripted demo session, into a checkout of
 [arugula-salad/site](https://github.com/arugula-salad/site) (`../site`, or
-`SITE_DIR`; `SHOTS_PORT` and `SHOTS_DEV_PORT` move the daemon's ports); the
-README's `dive.gif` is the site's own tour, made by
-`web/screenshots/dive.mjs`.
+`SITE_DIR`; `SHOTS_PORT` and `SHOTS_DEV_PORT` move the daemon's ports).
 
 ### A rollup's check
 

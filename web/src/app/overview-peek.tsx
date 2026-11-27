@@ -38,9 +38,8 @@ import { useSubscribe } from "../shared/ui/hooks";
 import { ExternalIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { kindOf, shortHost } from "../shell/swarm/model";
-import { leadAwake, type OvCard, type OvLead, type OvSession } from "../shell/swarm/overview";
+import { leadAwake, wordOf, type OvCard, type OvLead, type OvSession } from "../shell/swarm/overview";
 import { AgentHead, objectRoom, starterOf, useParentWord } from "./agent-head";
-import { Word } from "./overview-row";
 
 /** How often an open peek reads its lines again. */
 const LINES_EVERY_MS = 3000;
@@ -244,7 +243,7 @@ function Peek({ place, s, card, reply = true }: { place: PeekPlace; s: OvSession
   const head = (
     <header class="ov-peek-tab-head" data-ov-peek-head>
       <b data-ov-peek-name>{s.name}</b>
-      <Word standing={s.standing} data-ov-peek-state />
+      {wordOf(s) && <span class="ov-word" data-ov-peek-state>{wordOf(s)}</span>}
       <span class="dim mono" data-ov-peek-where>
         {shortHost(s.where)}
         {branch ? ` · ${branch}` : ""}
