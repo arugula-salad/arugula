@@ -796,6 +796,131 @@ div.k-row-line {
   color: var(--ink);
 }
 
+/* Panes (part 11, ./panes/panes.tsx): columns of panes, hairline dividers,
+   the default panes quiet, opened panes with a title row whose controls show
+   on hover or focus; the focused one has an accent line on top. */
+.k-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.k-panes-col {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+.k-panes-col + .k-panes-col,
+.k-panes-divider + .k-panes-col {
+  border-left: 1px solid var(--line);
+}
+.k-panes-divider {
+  flex: 0 0 5px;
+  margin: 0 -3px;
+  z-index: 1;
+  cursor: col-resize;
+}
+.k-panes-divider:hover {
+  background: var(--line-strong);
+}
+.k-pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 2px solid transparent;
+}
+.k-pane + .k-pane {
+  border-top-color: var(--line);
+}
+.k-pane.is-default {
+  flex: 0 0 auto;
+}
+.k-pane.is-default > .k-pane-body {
+  overflow: visible;
+}
+.k-panes.is-beside > .k-panes-col {
+  overflow: auto;
+}
+/* A default pane keeps its own heading: its controls float over its corner. */
+.k-pane.is-default {
+  position: relative;
+}
+.k-pane.is-default > .k-pane-head {
+  position: absolute;
+  top: 0;
+  right: 32px;
+  z-index: 1;
+  height: auto;
+  padding: 2px;
+  border: 0;
+}
+.k-pane.is-focused {
+  border-top-color: var(--accent);
+}
+.k-pane.is-dim .k-pane-body {
+  opacity: 0.6;
+}
+.k-pane.is-arriving {
+  animation: k-pane-in 0.24s ease-out;
+}
+@keyframes k-pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-pane.is-arriving {
+    animation: none;
+  }
+}
+.k-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.k-pane-title {
+  overflow: hidden;
+  font-size: var(--text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-pane-meta {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-pane-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.k-pane-controls {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+}
+.k-pane:hover .k-pane-controls,
+.k-pane.is-focused .k-pane-controls,
+.k-pane-controls:focus-within {
+  opacity: 1;
+}
+.k-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* ---- 10. Composer: a field that glows on focus, a round send. */
 
 .k-composer {

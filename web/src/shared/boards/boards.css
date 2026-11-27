@@ -46,6 +46,40 @@
   padding: var(--gap);
 }
 
+/* Panes open beside the board (Lift 5b): its right column narrows to a quarter. */
+.board-desk.is-beside {
+  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+}
+
+/* Each pane is the lanes' container, so a compacted group's lanes go two,
+   then one, across. Beside other panes they fill the height left. */
+.board-desk .k-pane-body {
+  container-type: inline-size;
+}
+
+.board > .k-panes.is-beside,
+.board-desk-tab > .k-panes {
+  flex: 1 0 60vh;
+  min-height: 60vh;
+}
+
+.board-desk-tab > .k-panes {
+  height: 100%;
+}
+
+.board-changed {
+  align-self: center;
+  white-space: nowrap;
+}
+
+.board-pane-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
 .board-desk-main {
   display: flex;
   flex-direction: column;

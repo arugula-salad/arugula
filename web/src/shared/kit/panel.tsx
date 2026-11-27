@@ -104,6 +104,7 @@ export function Panel({
   view,
   onView,
   floors = true,
+  placeKeys = false,
   back,
   above,
   foot,
@@ -126,6 +127,8 @@ export function Panel({
   onView?: (v: PanelView) => void;
   /** Whether it goes full screen (`f`). */
   floors?: boolean;
+  /** The place beside it takes `[`, `]` and `f` for its own panes (the board's, Lift 5b): they don't size it or put it full screen. */
+  placeKeys?: boolean;
   /** Drilled into something (a thread): the way back, also Esc, and what
    * else it does in a ⋯ beside it (Follow). */
   back?: { label: string; go: () => void; more?: MenuItem[] };
@@ -159,8 +162,8 @@ export function Panel({
   const focusPanel = () => requestAnimationFrame(() => col.current?.querySelector<HTMLElement>("[data-kit=panel]")?.focus());
 
   // The keys read the panel as it is now.
-  const now = useRef({ size, floor, view, onView, back, floors });
-  now.current = { size, floor, view, onView, back, floors };
+  const now = useRef({ size, floor, view, onView, back, floors, placeKeys });
+  now.current = { size, floor, view, onView, back, floors, placeKeys };
   const keys: Binding[] = [
     {
       id: "panel-focus",
@@ -190,11 +193,12 @@ export function Panel({
       id: "panel-floor",
       label: "The panel's transcript or terminal full screen, and back",
       keys: both("key:f"),
+      here: () => !now.current.placeKeys,
       when: () => now.current.floors && !now.current.size.shut,
       run: () => setFloor((f) => !f),
     },
-    { id: "panel-narrow", label: "Narrower panel", keys: both("key:["), run: () => step(-1) },
-    { id: "panel-wide", label: "Wider panel", keys: both("key:]"), run: () => step(1) },
+    { id: "panel-narrow", label: "Narrower panel", keys: both("key:["), here: () => !now.current.placeKeys, run: () => step(-1) },
+    { id: "panel-wide", label: "Wider panel", keys: both("key:]"), here: () => !now.current.placeKeys, run: () => step(1) },
     {
       id: "panel-collapse",
       label: "Collapse the panel to a strip, and back",

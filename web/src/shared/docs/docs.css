@@ -149,6 +149,17 @@
   }
 }
 
+/* In a narrow pane beside a board (Lift 5b): the same, by the pane's width. */
+@container (max-width: 700px) {
+  .doc-place,
+  .doc-place-work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .doc-toc {
+    display: none;
+  }
+}
+
 /* The list (Lift 6b): the title and its count, the Mine filter and New
    Doc, then the rows on one section, the latest changed first. */
 .docs-place {
