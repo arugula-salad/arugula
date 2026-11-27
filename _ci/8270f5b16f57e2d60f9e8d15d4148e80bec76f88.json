@@ -3,16 +3,16 @@
   "commit": "8270f5b16f57e2d60f9e8d15d4148e80bec76f88",
   "branch": "main",
   "state": "green",
-  "at": "2026-11-27T17:50:05Z",
+  "at": "2026-11-27T17:53:45Z",
   "phases": {
     "lint": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "lint",
           "id": 140661440013,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/46044330646/job/140661440013"
         },
         {
