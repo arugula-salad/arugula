@@ -66,6 +66,8 @@ export interface ChatNav {
   /** A board's page, for its channel's "Open the board" (Arugula #1522); a
    * host with no board pages omits it. */
   boardHref?(project: string, board: string): string;
+  /** Go to a board's page, in the page (with `boardHref`). */
+  openBoard?(project: string, board: string): void;
   /** Where the reader gives their machines' agents access to rooms (a
    * room's agents chip links here); a host with no such page omits it. */
   openGrants?(): void;

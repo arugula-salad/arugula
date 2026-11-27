@@ -20,7 +20,8 @@ import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
-import type { ChatMessage, ChatRoom, ProjectBoard } from "../src/shared/proto.gen";
+import type { ChatMessage, ChatRoom, LayoutChange, PlaceLayout, ProjectBoard } from "../src/shared/proto.gen";
+import { applyHere, blank } from "../src/shared/place-layout";
 import type { ChatReached, ChatTag } from "../src/shared/chat/tags";
 
 const P = "prj_aaaa0002";
@@ -217,6 +218,23 @@ window.fetch = async (input, init) => {
     if (m[2] === undefined) return json({ room: r, people: [person("acct_a", "Sam"), person("acct_b", "Jake")], can_manage: true, agents: [] });
     return json({});
   }
+  // A board's page (Lift 5b), and its place layout (#1496) kept here.
+  const bv = /^\/api\/boards\/(brd_[0-9a-f]+)$/.exec(path);
+  if (bv && method === "GET") {
+    const b = boardList.find((x) => x.id === bv[1]);
+    return b ? json({ board: b, zones: (["next", "doing", "review", "done"] as const).map((lane) => ({ id: `lane_${lane}`, rev: 1, title: lane, kind: "lane", rows: [] })), groups: [], docs: [] }) : json({ error: "not found" }, 404);
+  }
+  const lay = /^\/api\/layouts\/(.+)$/.exec(path);
+  if (lay) {
+    const place = decodeURIComponent(lay[1]!);
+    const now = (window.__fx.layouts[place] ??= blank(place));
+    if (method === "GET") return json(now);
+    const change = JSON.parse(String(init!.body)) as LayoutChange;
+    window.__fx.layoutsPosted.push({ place, change });
+    const r = applyHere(now, change);
+    window.__fx.layouts[place] = r.layout;
+    return json(r);
+  }
   if (path === "/api/inbox") return json({ entries: [], items: [], count: 0, by_project: {}, handled: 0 });
   if (path.startsWith("/api/")) return json({ error: "not here" }, 404);
   return new Response("", { status: 404 });
@@ -229,7 +247,15 @@ window.fetch = async (input, init) => {
 
 declare global {
   interface Window {
-    __fx: { chat: typeof chat; rooms: ChatRoom[]; boards: ProjectBoard[]; replies: Record<string, ChatMessage[]>; posted: { text: string; tags?: ChatTag[] }[] };
+    __fx: {
+      chat: typeof chat;
+      rooms: ChatRoom[];
+      boards: ProjectBoard[];
+      replies: Record<string, ChatMessage[]>;
+      posted: { text: string; tags?: ChatTag[] }[];
+      layouts: Record<string, PlaceLayout>;
+      layoutsPosted: { place: string; change: LayoutChange }[];
+    };
   }
 }
 // The replies to Launch: engineering's post in #agents.
@@ -241,7 +267,7 @@ const replies: Record<string, ChatMessage[]> = {
     msg(9, "Jake", "Thanks both.", { parent: 2 }),
   ],
 };
-window.__fx = { chat, rooms, boards: boardList, replies, posted: [] };
+window.__fx = { chat, rooms, boards: boardList, replies, posted: [], layouts: {}, layoutsPosted: [] };
 
 setSeenBackend(localBackend());
 applyAppearance();

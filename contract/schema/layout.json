@@ -444,6 +444,11 @@
               "type": "string"
             },
             {
+              "const": "room",
+              "description": "A chat room: #agents or a board's channel (`ref` its room's id,\n`ob_…`; Arugula #1522).",
+              "type": "string"
+            },
+            {
               "const": "other",
               "description": "A kind this side doesn't know yet.",
               "type": "string"

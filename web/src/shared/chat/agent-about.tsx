@@ -85,7 +85,16 @@ export function AgentAbout({ store, room }: { store: ChatStore; room: ChatRoom }
         )}
         {href && (
           <p>
-            <a class="chat-go" href={href} data-agents-open-board>
+            <a
+              class="chat-go"
+              href={href}
+              data-agents-open-board
+              onClick={(e) => {
+                if (!nav.openBoard || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                nav.openBoard(room.project!, board.id);
+              }}
+            >
               Open the board <ChevronIcon dir="right" />
             </a>
           </p>

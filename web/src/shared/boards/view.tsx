@@ -56,6 +56,7 @@ import { boardPlace, ChangedLine, forYou, PromptAsk, LANES, layoutItems, PaneBod
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
 import { Panes, type PaneItem } from "../kit/panes/panes";
+import { AgentsPaneKey, roomPaneItems } from "../chat/room-pane";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
 import { NeedRow } from "../kit/need-row";
@@ -545,7 +546,9 @@ export function BoardPanel({
   };
   const openPr = (p: OpenPr) => void show({ kind: "pr", ref: p.live.repo ? `${p.live.repo}#${p.live.number}` : p.label, title: `#${p.live.number} ${p.live.title}`, machine: null, state: null });
   const linked = (view.docs ?? []).filter((d) => d.pointer.kind === "doc");
+  // #agents and the board's channel, as panes (Arugula #1522).
   const addPane: MenuItem[] = [
+    ...roomPaneItems(view.board.project, id, view.board.title, (p) => void show(p)),
     ...linked.map((d) => ({ label: d.title, run: () => void show({ kind: "doc", ref: "id" in d.pointer ? d.pointer.id : d.id, title: d.title, machine: null, state: null }), attrs: { "data-board-add-pane": d.id } })),
     ...prs.map((p) => ({ label: `${p.label} ${p.live.title}`, run: () => openPr(p), attrs: { "data-board-add-pane": p.id } })),
   ];
@@ -613,11 +616,14 @@ export function BoardPanel({
       onResize={(pane, size) => void arranged.change({ op: "resize", pane, size })}
     />
   );
+  // `g a`: #agents beside the board (Arugula #1522).
+  const agentsKey = desk && <AgentsPaneKey project={view.board.project} show={(p) => void show(p)} />;
 
   const board = (
     <div class="board" data-board={id}>
       {desk ? (
         <>
+          {agentsKey}
           <AlertStrip project={view.board.project} platform={platform} />
           <PrFold prs={prs} open={openPr} />
           <DeskHead

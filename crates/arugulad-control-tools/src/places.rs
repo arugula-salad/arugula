@@ -74,7 +74,7 @@ async fn place_of(c: &Call<'_>, asked: &str) -> Result<String, String> {
 fn kind_of(s: &str) -> Result<PaneKind, String> {
     match serde_json::from_value(json!(s.trim())) {
         Ok(PaneKind::Other) | Err(_) => {
-            Err(format!("pane is doc, pr, preview, run, terminal, card or prompt, not {s:?}"))
+            Err(format!("pane is doc, pr, preview, run, terminal, card, prompt or room, not {s:?}"))
         }
         Ok(k) => Ok(k),
     }
@@ -156,6 +156,7 @@ mod tests {
     #[test]
     fn a_pane_kind_is_one_of_seven() {
         assert_eq!(kind_of("prompt"), Ok(PaneKind::Prompt));
+        assert_eq!(kind_of("room"), Ok(PaneKind::Room));
         assert_eq!(kind_of(" doc "), Ok(PaneKind::Doc));
         assert!(kind_of("hologram").unwrap_err().contains("doc, pr, preview"));
     }

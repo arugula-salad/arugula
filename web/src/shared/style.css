@@ -8202,7 +8202,9 @@ button.thread-quote:hover {
 }
 
 .block-team-chat .chat,
-.block-team-chat .chat.phone {
+.block-team-chat .chat.phone,
+.chat-room-pane .chat,
+.chat-room-pane .chat.phone {
   position: relative;
   inset: auto;
   z-index: auto;
@@ -8210,6 +8212,14 @@ button.thread-quote:hover {
   min-height: 0;
   min-width: 0;
   padding: 0;
+}
+
+/* A room as a board's pane (Arugula #1522): its composer in view. */
+.chat-room-pane {
+  display: flex;
+  flex-direction: column;
+  height: min(70vh, 640px);
+  min-height: 320px;
 }
 
 .chat-block-bar .chat-search {

@@ -215,6 +215,47 @@ test.describe("Tags (Arugula #1522)", () => {
   });
 });
 
+test.describe("A room as a pane (Arugula #1522)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const PI = "brd_00000000000000000000000000000003";
+  const posted = (page: Page) => page.evaluate(() => window.__fx.layoutsPosted);
+
+  test("a board's + pane offers #agents and its channel; #agents opens beside the board as Chat's room", async ({ page }) => {
+    await open(page, `/p/${P}/boards/${PI}`);
+    await page.locator("[data-board-add-pane-menu]").click();
+    await expect(page.locator('[role=menu] [data-board-add-pane="channel"]')).toHaveText(/#Product improvements/);
+    await page.locator('[role=menu] [data-board-add-pane="agents"]').click();
+    await expect.poll(() => posted(page)).toEqual([{ place: `board:${PI}`, change: { op: "show", pane: { kind: "room", ref: AGENTS, title: "#agents", machine: null, state: null }, intent: "beside", tab: "home", in_place_of: null } }]);
+    const pane = page.locator(`[data-pane-kind="room"] [data-room-pane="${AGENTS}"]`);
+    await expect(pane.locator(`[data-room-view="${AGENTS}"] [data-msg]`)).toHaveCount(6);
+    await expect(pane.getByRole("textbox", { name: "Message #agents" })).toBeAttached();
+    // The pane is the room alone: no rooms list.
+    await expect(pane.locator(".chat-side")).toHaveCount(0);
+  });
+
+  test("g a on a board opens #agents beside it", async ({ page }) => {
+    await open(page, `/p/${P}/boards/${PI}`);
+    await expect(page.locator(`[data-board-desk="${PI}"]`)).toBeVisible();
+    await page.keyboard.press("g");
+    await page.keyboard.press("a");
+    await expect(page.locator(`[data-room-pane="${AGENTS}"]`)).toBeVisible();
+  });
+
+  test("in Chat, o opens a board's channel as a pane on its board; #agents has no board to open on", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${AGENTS}`);
+    await expect(page.locator(`[data-room-view="${AGENTS}"]`)).toBeVisible();
+    await expect(page.locator("[data-room-open-pane]")).toHaveCount(0);
+    await page.goto(`/p/${P}/chat/ob_00000003`);
+    const asPane = page.locator('[data-room-view="ob_00000003"] [data-room-open-pane]');
+    await expect(asPane).toContainText("Open as a pane");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("o");
+    await expect(page).toHaveURL(new RegExp(`/boards/${PI}`));
+    await expect.poll(() => posted(page)).toEqual([{ place: `board:${PI}`, change: expect.objectContaining({ op: "show", pane: expect.objectContaining({ kind: "room", ref: "ob_00000003" }) }) }]);
+    await expect(page.locator('[data-room-pane="ob_00000003"]')).toBeVisible();
+  });
+});
+
 test.describe("phone", () => {
   test.use(pixel7);
 
