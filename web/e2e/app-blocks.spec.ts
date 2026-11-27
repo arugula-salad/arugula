@@ -27,8 +27,8 @@ const issue = { id: ISSUE, project: P, number: 1, title: "Tabs vanish", body: ""
 
 /** A fresh pane on the daemon, `before` done to its session there, then
  * the app on the pane's machine page; the board and the issue answered
- * as the platform would. Counts the board's reads. */
-async function openApp(page: Page, before: (pane: number) => Promise<unknown>) {
+ * as the platform would (the board `view`). Counts the board's reads. */
+async function openApp(page: Page, before: (pane: number) => Promise<unknown>, view: unknown = board) {
   await reset(page);
   const [pane] = await panes(page);
   await inProject(page, P, "Arugula");
@@ -38,7 +38,7 @@ async function openApp(page: Page, before: (pane: number) => Promise<unknown>) {
   const reads = { board: 0 };
   await page.route(new RegExp(`/api/boards/${B}$`), (r) => {
     reads.board++;
-    return r.fulfill({ contentType: "application/json", body: JSON.stringify(board) });
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(view) });
   });
   await page.route(new RegExp(`/api/issues/${ISSUE}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(issue) }));
   await page.goto(`/p/${P}/machines?pane=${pane}`);
@@ -56,6 +56,18 @@ test("a Board block in a machine's pane, in the app, shows its board", async ({ 
   await expect(page.locator("[data-board-needs-control]")).toHaveCount(0);
   // Read on the app's own origin, as the person.
   expect(reads.board).toBeGreaterThan(0);
+});
+
+test("a row's open ask in a Board block is its NeedRow, answered on the tile", async ({ page }) => {
+  const ask = { id: "ask_1", who: "acct_a", who_name: "you", question: "Truncate the middle, or hide the project?", options: ["Truncate middle", "Hide project"], recommend: "Truncate middle", asked_by: "claude@geek", raised: false, mine: true, can_answer: true, created_at: Date.now() - 7 * 60_000 };
+  const asking = { ...board, zones: [{ ...board.zones[0]!, rows: [{ ...board.zones[0]!.rows[0]!, ask }] }] };
+  const answers: unknown[] = [];
+  await page.route(`**/api/boards/${B}/asks/ask_1/answer`, (r) => (answers.push(r.request().postDataJSON()), r.fulfill({ json: asking })));
+  await openApp(page, (pane) => pinBoard(page, pane), asking);
+  const need = page.locator(`[data-board-block="${B}"] [data-board-row="r_one"] [data-board-ask="ask_1"] [data-need="ask"]`);
+  await expect(need).toContainText("asks you");
+  await need.getByRole("button", { name: /^Truncate middle · recommended/ }).click();
+  await expect.poll(() => answers).toEqual([{ option: "Truncate middle", text: null }]);
 });
 
 test("a board row's link in a block goes to the issue in the app, in place", async ({ page }) => {

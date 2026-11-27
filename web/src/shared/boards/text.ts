@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -37,21 +37,11 @@ export function needsYouLine(n: number): string {
   return `Needs you (${n})`;
 }
 
-/** What a card says of who an ask waits on, when the reader can't answer it. */
-export function askWaitingLine(a: Pick<BoardAsk, "who_name" | "asked_by">): string {
-  return `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
-}
-
 /** What a row says while it waits on a person's answer (Arugula #764): `waiting for you` when the open ask is the reader's (#903), else `waiting on Sam`. Only an ask a person or an agent made counts; the board's own raised ask comes from a stall and waits on nobody. Null when the row waits on no one. */
 export function waitingOf(r: Pick<BoardRow, "ask">): { words: string; mine: boolean } | null {
   const a = r.ask;
   if (!a || a.raised) return null;
   return a.mine ? { words: "waiting for you", mine: true } : { words: `waiting on ${a.who_name || "someone"}`, mine: false };
-}
-
-/** Whether a typed answer to a free-text ask can be sent. */
-export function answerReady(text: string): boolean {
-  return text.trim().length > 0;
 }
 
 /** Whether a row has an issue or a PR as its item: only those rows are

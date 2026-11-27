@@ -396,15 +396,14 @@ test.describe("shots", () => {
     const { term } = await overview(page);
     const host = await suiteHost(page);
     await proposing(page, START);
-    const approval = { ...APPROVAL, title: "Start a worker on #1412 on geek?", lines: ["Why: the release waits on it."], since: ago(2) };
+    // The Needs you row is the staff room's proposal: one id, its card's room and seq.
+    const approval = { ...APPROVAL, id: START.id, subject: { ...APPROVAL.subject, id: START.id, room: "dm_cos", seq: 2 }, title: "Start a worker on #1412 on geek?", lines: ["Why: the release waits on it."], since: ago(2) };
     await say(page, [approval, ...around(host, term).slice(1)]);
-    // In the row: a receipt where it was.
+    await expect(panel(page).locator('[data-ov-staff="dm_cos"] [data-proposal="prp_start"][data-ask-state="open"]')).toBeVisible();
+    // Answered once, in its row: a receipt where it was, and the panel's card says so.
     await row(page, approval.id).locator("button[aria-expanded]").first().click();
     await row(page, approval.id).getByRole("button", { name: /^Start/ }).click();
     await expect(row(page, approval.id)).toContainText(/Start by you/);
-    // In the panel: the chief of staff's card, answered there, says so.
-    const card = panel(page).locator('[data-ov-staff="dm_cos"] [data-proposal="prp_start"]');
-    await card.locator("[data-proposal-approve]").click();
     await expect(panel(page).locator('[data-proposal="prp_start"][data-ask-state="answered"]')).toBeVisible();
     await shoot(page, info, "shot-13");
   });
