@@ -296,13 +296,14 @@ test("an adapter that isn't installed: its command to copy, and Install in a pan
   await expect(block.locator(".adapter-help")).toBeHidden();
 });
 
-// #335: Getting started's Agents step says each adapter's state next to
-// Start an agent, and one click installs one (`POST /api/setup/agents/…`,
-// the daemon waiting for npm: the stand-in here), then says what changed;
-// an install older than the pin is out of date, and the same click
-// updates it. Codex's, since Claude Code's would also add Arugula's MCP
-// server to the Claude Code on the test machine.
-test("Getting started: each adapter's state, and one click that installs or updates it", async ({ page }) => {
+// #335: one click installs an adapter (`POST /api/setup/agents/…`, the
+// daemon waiting for npm: the stand-in here), then says what changed; an
+// install older than the pin is out of date, and the same click updates
+// it. (Its state is the Start-an-agent dialog's and the agent block's since
+// Lift 7 cut Getting started's Agents step.) Codex's, since Claude Code's
+// would also add Arugula's MCP server to the Claude Code on the test
+// machine.
+test("an adapter's state, and one click that installs or updates it", async ({ page }) => {
   const dir = join(process.env.ARUGULA_AGENTS_DIR!, "codex");
   rmSync(dir, { recursive: true, force: true });
   await reset(page);
@@ -317,14 +318,6 @@ test("Getting started: each adapter's state, and one click that installs or upda
   expect(before.state).toBe("missing");
   expect(typeof before.found).toBe("boolean");
 
-  // Claude Code's (the fake, no version) is next to Start an agent.
-  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
-  const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 4 · Agents");
-  await expect(panel.locator('[data-start-adapter="claude"]')).toContainText("Claude Code's adapter");
-  await expect(panel.locator("[data-start-agent]")).toBeVisible();
-  await panel.getByRole("button", { name: "Close" }).click();
-
   // One click: installed, and said so.
   const use = () => page.evaluate(async () => (await fetch("/api/setup/agents/codex", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json());
   let o = await use();
@@ -335,15 +328,9 @@ test("Getting started: each adapter's state, and one click that installs or upda
   o = await use();
   expect(o.done).toEqual(["Already set up: Codex runs as agent panes here."]);
 
-  // An older install is out of date, in the status and the step.
+  // An older install is out of date, in the status.
   writeFileSync(join(dir, "node_modules/@agentclientprotocol/codex-acp/package.json"), '{"version": "0.0.1"}');
   expect(await codex()).toMatchObject({ state: "installed", version: "0.0.1", outdated: true });
-  if (before.found) {
-    await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
-    await expect(panel.locator('[data-start-adapter="codex"]')).toHaveText(`Codex's adapter 0.0.1: out of date (Arugula uses ${before.pinned})`);
-    await expect(panel.locator('.adapter-help[data-adapter="outdated"]')).toBeVisible();
-    await panel.getByRole("button", { name: "Close" }).click();
-  }
   // The same click updates it.
   o = await use();
   expect(o.done).toEqual([`Updated Codex's adapter from 0.0.1 to ${before.pinned}: agent panes use it from their next start.`]);
@@ -354,42 +341,29 @@ test("Getting started: each adapter's state, and one click that installs or upda
   expect(bad.ok).toBe(false);
 });
 
-// Discovery 1: the Agents step checks "Questions on cards" beside the
-// adapter and the MCP server, read from `arugula hooks status` (the run's
-// own CLAUDE_CONFIG_DIR, playwright.config.ts): not yet, then there once
-// `arugula hooks install` has written that settings.json.
-test("Getting started: the Agents step checks Claude Code's hooks", async ({ page }) => {
+// Discovery 1, #906: while Arugula's hooks aren't all in Claude Code's
+// settings (the run's own CLAUDE_CONFIG_DIR, playwright.config.ts): none,
+// or an older install without SessionStart, Getting started at `agents`
+// (the hooks' nudge, the hint's Set it up) offers Claude Code's one click
+// under Add a machine (Lift 7).
+test("Getting started at agents offers Claude Code's one click while its hooks aren't all there", async ({ page }) => {
   const settings = join(process.env.CLAUDE_CONFIG_DIR!, "settings.json");
   rmSync(settings, { force: true });
   try {
     await reset(page);
-    const panel = page.getByRole("dialog", { name: "Getting started" });
+    const panel = page.getByRole("dialog", { name: "Add a machine" });
     const open = () => page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
     await open();
-    const hooks = panel.locator("[data-start-hooks]");
-    // `has` is relative to the row, so it takes a locator not rooted at the panel.
-    const hooksRow = panel.locator(".start-check", { has: page.locator("[data-start-hooks]") });
-    await expect(hooks).toHaveText("Questions on cards: Arugula's hooks aren't in Claude Code's settings yet");
-    await expect(hooksRow).toHaveAttribute("data-check", "todo");
-    await panel.getByRole("button", { name: "Close" }).click();
+    await expect(panel.locator("[data-start-offer] [data-start-claude]")).toHaveText("Use Claude Code with Arugula");
+    await page.keyboard.press("Escape");
 
     execFileSync("../target/debug/arugula", ["hooks", "install"], { env: process.env, stdio: "ignore" });
-    await open();
-    await expect(hooks).toHaveText("Questions on cards: Claude Code has Arugula's hooks");
-    await expect(hooksRow).toHaveAttribute("data-check", "done");
-    await expect(panel.locator("[data-start-hooks-partial]")).toHaveCount(0);
-    await panel.getByRole("button", { name: "Close" }).click();
-
-    // #906: an older install, without SessionStart: partly, which, and the command.
     const v = JSON.parse(readFileSync(settings, "utf8"));
     delete v.hooks.SessionStart;
     writeFileSync(settings, JSON.stringify(v));
     await open();
-    await expect(hooks).toHaveText("Questions on cards: Arugula's hooks are only partly installed (SessionStart missing)");
-    await expect(hooksRow).toHaveAttribute("data-check", "wait");
-    await expect(panel.locator("[data-start-hooks-partial]")).toContainText("SessionStart is missing. arugula hooks install adds the rest and changes nothing else.");
-    await expect(panel.locator("[data-start-claude]")).toBeVisible();
-    await panel.getByRole("button", { name: "Close" }).click();
+    await expect(panel.locator("[data-start-offer] [data-start-claude]")).toBeVisible();
+    await page.keyboard.press("Escape");
   } finally {
     rmSync(settings, { force: true });
   }

@@ -55,7 +55,7 @@ test("a first visit gets neither What's new nor Getting started", async ({ page 
   // Moved on all the same: the next update's panel starts from this build.
   await expect.poll(() => shown(page)).not.toBeNull();
   await expect(panel(page)).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add a machine" })).toHaveCount(0);
 });
 
 test("Go to…'s What's new; Try it opens the thing and closes it", async ({ page }) => {

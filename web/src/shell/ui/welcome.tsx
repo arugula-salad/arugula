@@ -1,63 +1,44 @@
-// Getting started (#110): what isn't on the first screen, one step at a
-// time: welcome, the cloud (Arugula control), agents, and Things to try
-// (buttons that each do one thing here, each marked done once used). It
-// doesn't open by itself (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b):
-// a first visit opens on the person's own work, and each step is offered at
-// its moment instead (the hints, ../hints). It's in Go to…'s
-// Help, Settings (the rail) and the phone's sheet.
+// Getting started (#110; Lift 7, #1487): one screen, Add a machine. This
+// machine joins Arugula cloud in a click (Connect opens the cloud with its
+// code, a signed-in person clicks Add there, picking their account or a
+// team), and `arugulad join <control>` is there to copy, for this machine
+// or any other. It doesn't open by itself
+// (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b): a
+// first visit opens on the person's own work. It's in Go to…'s Help, the
+// phone's sheet, a team chat's Join, and Join again when the cloud dropped
+// this machine.
 //
-// The phone over Tailscale left it for Settings (This machine's Tailscale…,
-// the machine menu's too): the same step, as a dialog of its own
-// (`openTailscale`). An account and the relay are the phone's way in now.
+// Where Claude Code is on the machine and isn't set up (or only partly,
+// #906), the screen offers "Use Claude Code with Arugula" under it, one
+// click for its adapter, Arugula's MCP server and its hooks (`POST
+// /api/setup/agents/claude`, #335). Opened at `agents` (the hooks' nudge,
+// the hint's Set it up), that offer shows whatever the state. Lift 7 cut the
+// Welcome, Agents and Things to try steps: adapters are the Start-an-agent
+// dialog's and the agent block's, what an agent can do is that dialog's, and
+// the hints say the rest at their moment.
 //
-// The steps that used to be commands to copy are buttons: the daemon runs
-// them for its owner (`/api/setup`, crates/daemon/src/setup.rs) and says
-// when one needs something only a person can do (a one-time sudo, a switch
-// in Tailscale's admin console), with the command or the link. Where the
-// daemon can't be asked (a page through control, a guest), each step falls
-// back to the command.
+// The phone over Tailscale is Settings' (This machine's Tailscale…, the
+// machine menu's too): a dialog of its own (`openTailscale`).
 //
-// #335: agents need Claude Code's (or Codex's) ACP adapter, and Claude Code
-// needs Arugula's MCP server to start its helpers as panes, and its hooks
-// (`arugula hooks install`) to put a terminal Claude's questions and
-// permission prompts on cards. The Agents step says each adapter's state
-// next to Start an agent, with Install (in a pane) or the npm line when it
-// can't, and checks the MCP server and the hooks; "Use Claude Code with
-// Arugula" does all three in one click (`POST /api/setup/agents/claude`),
-// then says what changed, naming the settings file. Where Claude Code is on the machine and isn't
-// set up, the first screen offers that click too. Beside the hooks, it
-// offers Claude Code's plugin, which brings the tools and the hooks at
-// once, as its two `/plugin` lines (./claude-plugin).
+// Where the daemon can't be asked (a page through control, a guest), the
+// screen is the command alone.
 
 import { opPath } from "../ops";
 import { directory } from "../hosts";
 import qrcode from "qrcode-generator";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
+import { Sheet } from "../../shared/kit/sheet";
 import type { Client } from "../client";
 import { CopyText } from "../../shared/ui/copy";
-import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from "./notify";
-import { markSeen, seen, seenReady, subscribeSeen } from "../../shared/seen";
-import { currentAccount } from "./app-bar";
-import { keyHint } from "../../shared/keys";
-import { openPanel } from "./control-panel";
-import { shareSession } from "./people";
-import { openSwarm } from "../swarm/route";
-import { openGoTo } from "../../shared/kit/frame/goto";
-import { openPort, openPr } from "../blocks";
-import { startAgent } from "./agent-dialog";
-import { AgentCanCard } from "./agent-can";
-import { ClaudePlugin } from "./claude-plugin";
-import type { ControlState, HostInfo } from "../../shared/proto";
-import { placeOf, refreshControlState } from "./control-state";
+import { notifyBlocker, pushNow, serveCommand } from "./notify";
+import { refreshControlState, placeOf } from "./control-state";
 import { desktopApp } from "../../shared/desktop";
 import { countView } from "../../shared/telemetry";
-import { EditInNvim } from "./edit-in-nvim";
-import { AdapterHelp, adapterLine, adapterReady, installAdapter, type Adapter } from "./adapter";
-import { CheckIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
+import { adapterReady, type Adapter } from "./adapter";
+import type { ControlState, HostInfo } from "../../shared/proto";
+import { ExternalIcon } from "../../shared/ui/icons";
 
-const DOCS = "https://docs.arugula.io";
-/** Arugula cloud, unless the daemon was started with `--control` (#207). */
 const CONTROL = "https://control.arugula.io";
 
 /** What `/api/host` says about this daemon (the parts for this panel). */
@@ -134,16 +115,24 @@ interface Outcome {
   done?: string[];
 }
 
-const STEPS = [
-  { id: "welcome", label: "Welcome" },
-  { id: "cloud", label: "Cloud" },
-  { id: "agents", label: "Agents" },
-  { id: "try", label: "Things to try" },
-] as const;
-type StepId = (typeof STEPS)[number]["id"];
+async function post(path: string, body?: unknown): Promise<Outcome & Record<string, unknown>> {
+  try {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: body === undefined ? "{}" : JSON.stringify(body),
+    });
+    if (!r.ok) return { ok: false, error: (await r.json().catch(() => null))?.error ?? `HTTP ${r.status}` };
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
 
-/** Older names for steps, from callers that open it at one. */
-export type Section = StepId | "control" | "ready" | "phone";
+/** Where callers open it: every one is the same screen now; `agents`
+ * shows the Claude Code offer whatever its state, `phone` is Tailscale's
+ * dialog. */
+export type Section = "welcome" | "cloud" | "agents" | "try" | "control" | "ready" | "phone";
 
 let shown: { client: Client | null; section?: Section } | null = null;
 /** The Tailscale dialog is open. */
@@ -151,11 +140,8 @@ let tailscale = false;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 let lastClient: Client | null = null;
-/** Set when it closes, for the "it's in the menu" note. */
-let closedOnce = false;
 
 export function openGettingStarted(section?: Section, client?: Client) {
-  // Its old Phone step (the desktop app's menu, a link): Tailscale's dialog.
   if (section === "phone") return openTailscale();
   countView("getting-started");
   shown = { client: client ?? lastClient, section };
@@ -180,70 +166,21 @@ export function GettingStartedLayer() {
     listeners.add(fn);
     return () => void listeners.delete(fn);
   }, []);
-  if (tailscale)
-    return (
-      <TailscaleDialog
-        close={() => {
-          tailscale = false;
-          changed();
-        }}
-      />
-    );
-  if (shown)
-    return (
-      <GettingStarted
-        client={shown.client}
-        section={shown.section}
-        close={() => {
-          shown = null;
-          closedOnce = true;
-          changed();
-          setTimeout(() => {
-            closedOnce = false;
-            changed();
-          }, 6000);
-        }}
-      />
-    );
-  // Where it went: it doesn't just vanish.
-  return closedOnce ? (
-    <div class="start-toast" role="status" data-start-toast>
-      Getting started is in Go to…, any time.
-    </div>
-  ) : null;
+  const close = () => {
+    shown = null;
+    tailscale = false;
+    changed();
+  };
+  if (tailscale) return <TailscaleDialog close={close} />;
+  return shown ? <GettingStarted section={shown.section} close={close} /> : null;
 }
 
-async function post(path: string, body?: unknown): Promise<Outcome & Record<string, unknown>> {
-  try {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: body === undefined ? "{}" : JSON.stringify(body),
-    });
-    if (!r.ok) return { ok: false, error: (await r.json().catch(() => null))?.error ?? `HTTP ${r.status}` };
-    return await r.json();
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-}
-
-function stepFor(section?: Section): number {
-  const id = section === "control" ? "cloud" : section === "ready" ? "try" : section;
-  const i = STEPS.findIndex((s) => s.id === id);
-  return i < 0 ? 0 : i;
-}
-
-function GettingStarted({ client, section, close }: { client: Client | null; section?: Section; close: () => void }) {
-  const [step, setStep] = useState(stepFor(section));
+function GettingStarted({ section, close }: { section?: Section; close: () => void }) {
   const [host, setHost] = useState<HostSays | null>(null);
   const [setup, setSetup] = useState<Setup | null>(null);
-  // The daemon can't run the steps here (through control, or not its
-  // owner): show the commands instead.
+  // The daemon can't run the join here (through control, or not its
+  // owner): the command alone.
   const [manual, setManual] = useState(false);
-  const [, setTick] = useState(0);
-  useEffect(() => subscribePush(() => setTick((t) => t + 1)), []);
-  useEffect(() => setStep(stepFor(section)), [section]);
-
   const refresh = async () => {
     try {
       const r = await fetch(opPath("setup.get"));
@@ -253,12 +190,10 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
       setManual(true);
     }
   };
-  // The cloud step's part comes back first (the rest asks Tailscale and
-  // Claude Code): which control the button joins, at once (#207).
+  // The control part comes back first (the rest asks Tailscale and Claude
+  // Code): which control the button joins, at once (#207); then Claude
+  // Code's, so its offer doesn't wait on Tailscale (#335).
   const [early, setEarly] = useState<Setup["control"] | null>(null);
-  // #335: the agents' part too, so their step doesn't wait on Tailscale
-  // (whose `status` can take seconds when it's stopped). Once it's here,
-  // it's what that step and the offer read, refreshed after their clicks.
   const [agentsPart, setAgentsPart] = useState<AgentsSetup | null>(null);
   const refreshAgents = async () => {
     const r = await fetch(`${opPath("setup.get")}?part=agents`).catch(() => null);
@@ -277,7 +212,6 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
       .then(setHost)
       .catch(() => {});
   }, []);
-
   // While a join waits for someone to click Add, look for the answer: the
   // daemon saves it as soon as control says (#1003).
   const waiting = !!setup?.control.pending;
@@ -293,102 +227,32 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
     }, 2000);
     return () => clearInterval(t);
   }, [waiting]);
-
-  const done: Record<StepId, boolean> = {
-    welcome: true,
-    cloud: !!(setup?.control.joined || (host?.control && host.control_state?.state !== "dropped")),
-    agents: claudeReady(agents),
-    try: false,
-  };
-  const id = STEPS[step].id;
-  const last = step === STEPS.length - 1;
-  const go = (i: number) => setStep(Math.max(0, Math.min(STEPS.length - 1, i)));
   // Through control the daemon's host.get isn't this page's: the machine
-  // shown is the one (UI audit #174: "this machine" from the Docs page).
+  // shown is the one (UI audit #174).
   const name = host?.name ?? (directory.current || "this machine");
-
+  // Claude Code is here and isn't set up: offered without being asked; at
+  // `agents`, whatever its state.
+  // Once offered it stays, so its click can say what it did.
+  const offered = useRef(false);
+  if (!manual && agents && (section === "agents" || (agents.claude.installed && !claudeReady(agents)))) offered.current = true;
+  const claude = offered.current;
   return (
-    <Modal
-      bare
-      close={close}
-      label="Getting started"
-      class="start"
-      root={{
-        "data-getting-started": "",
-        "data-step": id,
-        onKeyDown: (e: KeyboardEvent) => {
-          if ((e.target as HTMLElement).closest("input, textarea")) return;
-          if (e.key === "ArrowRight") go(step + 1);
-          if (e.key === "ArrowLeft") go(step - 1);
-        },
-      }}
-    >
-      <header class="start-head">
-        <div class="start-brand">
-          Arugula <span>setup</span>
-        </div>
-        <IconButton label="Close" class="start-x" onClick={close}>
-          <CloseIcon size="md" />
-        </IconButton>
-      </header>
-
-      <ol class="start-rail" aria-label="Steps">
-        {STEPS.map((s, i) => (
-          <li key={s.id}>
-            <button
-              class={`start-seg${i === step ? " now" : ""}${done[s.id] && s.id !== "welcome" ? " done" : ""}`}
-              aria-current={i === step ? "step" : undefined}
-              onClick={() => go(i)}
-              data-start-seg={s.id}
-            >
-              <b>{String(i + 1).padStart(2, "0")}</b> <span>{s.label}</span>
-            </button>
-          </li>
-        ))}
-      </ol>
-
-      <div class="start-body">
-        <div class="start-kicker" data-start-progress>
-          Step {step + 1} / {STEPS.length} · {STEPS[step].label}
-        </div>
-        {id === "welcome" && <Welcome name={name} client={client} setup={agents} manual={manual} refresh={refreshAgents} />}
-        {id === "cloud" && (
-          <Cloud
-            name={name}
-            client={client}
-            setup={setup}
-            early={early}
-            host={host}
-            manual={manual}
-            refresh={refresh}
-            setSetup={setSetup}
-            close={close}
-          />
+    <Sheet title="Add a machine" onClose={close}>
+      <div class="start" data-getting-started="">
+        <Cloud name={name} setup={setup} early={early} host={host} manual={manual} refresh={refresh} setSetup={setSetup} />
+        {claude && (
+          <div class="start-offer" data-start-offer>
+            <p>
+              <b>Claude Code on {name}.</b> One click runs it here as agent panes, starts its helpers as panes you can watch, and puts its questions on
+              cards.
+            </p>
+            <UseClaude setup={agents} refresh={refreshAgents} />
+          </div>
         )}
-        {id === "agents" && <Agents client={client} setup={agents} manual={manual} refresh={refreshAgents} close={close} />}
-        {id === "try" && <Try client={client} done={done} go={go} close={close} />}
       </div>
-
-      <footer class="start-foot">
-        <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
-          <ChevronIcon dir="left" /> Back
-        </button>
-        <span class="start-hint">Always in Go to…: Getting started</span>
-        {last ? (
-          <button class="primary" onClick={close}>
-            Done
-          </button>
-        ) : (
-          <button class="primary" onClick={() => go(step + 1)} data-start-next>
-            {step === 0 ? "Set it up" : done[id] ? "Next" : "Skip for now"} <ChevronIcon dir="right" />
-          </button>
-        )}
-      </footer>
-    </Modal>
+    </Sheet>
   );
 }
-
-// ---- steps
 
 /** Claude Code works here: its adapter's at the pin, and it has the MCP
  * server and the hooks. (An older daemon doesn't say the adapter's or
@@ -396,82 +260,6 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
 function claudeReady(setup: AgentsSetup | null): boolean {
   const a = setup?.adapters?.find((x) => x.kind === "claude");
   return !!setup?.claude.tools && setup.claude.hooks !== false && !setup.claude.hooks_partial && (!a || adapterReady(a));
-}
-
-function Welcome({ name, client, setup, manual, refresh }: { name: string; client: Client | null; setup: AgentsSetup | null; manual: boolean; refresh: () => Promise<void> }) {
-  const panes = client?.state?.panes.length ?? 0;
-  // #335: Claude Code is here and isn't set up: offer it without being asked.
-  const offer = !manual && !!setup?.claude.installed && !claudeReady(setup);
-  // #883: a new terminal may not find `arugula` by name.
-  const cli = setup?.cli?.command ?? "arugula";
-  const added = setup?.cli?.added ?? [];
-  return (
-    <section class="start-step">
-      <h2>Terminals that outlive their windows</h2>
-      <p class="start-lede">
-        <b>{name}</b> keeps {panes === 1 ? "a pane" : `${panes} panes`} running whether or not a window is open. Close this tab, open it on your
-        phone, come back tomorrow: they're where you left them.
-      </p>
-      <ul class="start-cards">
-        <li>
-          <span class="start-glyph">◎</span>
-          <div>
-            <h3>Right-click anything</h3>
-            <p>Tabs, panes and the tab bar have menus. That's where everything is.</p>
-          </div>
-        </li>
-        <li>
-          <span class="start-glyph">⇲</span>
-          <div>
-            <h3>Drag to split</h3>
-            <p>Drop a tab on a pane's edge to split it there.</p>
-          </div>
-        </li>
-        <li>
-          <span class="start-glyph">⌘</span>
-          <div>
-            <h3>Jump anywhere</h3>
-            <p>
-              <kbd>{keyHint("goto") ?? "Ctrl+K"}</kbd> finds a pane, a tab or a command.
-            </p>
-          </div>
-        </li>
-        <li>
-          <span class="start-glyph">
-            <EditIcon size="md" />
-          </span>
-          <div>
-            <h3>Edit in nvim</h3>
-            <EditInNvim titled nvim={setup?.nvim} />
-          </div>
-        </li>
-        <li>
-          <span class="start-glyph">›_</span>
-          <div>
-            <h3>From a terminal</h3>
-            <p>
-              Run, watch and script panes from a shell, over ssh too: <CopyText inline text={`${cli} ls`} />
-            </p>
-            {added.length > 0 && (
-              <p class="start-dim" data-start-cli-added>
-                Arugula put ~/.local/bin on your PATH in {added.join(" and ")}. In a terminal that was already open: <CopyText inline text="~/.local/bin/arugula ls" />
-              </p>
-            )}
-          </div>
-        </li>
-      </ul>
-      {offer && (
-        <div class="start-offer" data-start-offer>
-          <p>
-            <b>Claude Code is on this machine.</b> One click lets it run here as agent panes, start its helpers as panes you can watch, and put its questions
-            on cards: it installs Claude Code's adapter, and adds Arugula's MCP server and hooks.
-          </p>
-          <UseClaude setup={setup} refresh={refresh} />
-        </div>
-      )}
-      <p class="start-dim">Next: the cloud and agents. Each takes a click, and you can skip any of them.</p>
-    </section>
-  );
 }
 
 /** One line of a checklist: done, waiting, wrong, or not yet. */
@@ -638,31 +426,22 @@ function WholeCode({ code, typed = false }: { code: string; typed?: boolean }) {
   );
 }
 
-/** #1003: joining this machine is one click. Connect opens Arugula cloud
- * with its code, and a signed-in person clicks Add there, picking their
- * account or a team; the daemon saves the join as soon as control says,
- * with no fingerprint to compare (aru-141: control decides who reaches a
- * machine). */
 function Cloud({
   name,
-  client,
   setup,
   early,
   host,
   manual,
   refresh,
   setSetup,
-  close,
 }: {
   name: string;
-  client: Client | null;
   setup: Setup | null;
   early: Setup["control"] | null;
   host: HostSays | null;
   manual: boolean;
   refresh: () => Promise<void>;
   setSetup: (fn: (s: Setup | null) => Setup | null) => void;
-  close: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -705,20 +484,12 @@ function Cloud({
   return (
     <section class="start-step">
       <h2 data-start-cloud-title>{joined ? "Use it from anywhere" : dropped ? `Put ${name} back in your account or team` : `Add ${name} to your account or team`}</h2>
-      <p class="start-lede">
-        Arugula cloud reaches this machine from any browser, with no tailnet, and lets your team in on the sessions you share. It decides who reaches
-        this machine, and it can read the terminal traffic it relays, though it keeps none of it.
-      </p>
+      <p class="start-lede">Arugula cloud reaches it from any browser or phone, and lets your team in on what you share.</p>
       <p class="start-dim" data-start-remote-input>
         In your account, you can type into {name}'s panes from your phone and other devices. In a team, people only watch until you run{" "}
         <code>arugulad sharing remote-input on</code> here; <code>off</code> makes everyone watch.
       </p>
-      {manual ? (
-        <>
-          <p>On this machine:</p>
-          <CopyText text={`arugulad join ${control}`} data-join-command />
-        </>
-      ) : joined ? (
+      {manual ? null : joined ? (
         <>
           <ul class="start-checks">
             <Check state="done">
@@ -728,7 +499,6 @@ function Cloud({
               </a>
             </Check>
           </ul>
-          <Together joined={joined} client={client} close={close} />
           <p class="start-dim" data-start-next-device>
             {desktopApp()
               ? "Next, if you like: sign the app in, so this window reaches your other machines too. It's optional: this machine is in already."
@@ -778,6 +548,10 @@ function Cloud({
           )}
         </>
       )}
+      <div class="start-command" data-start-command>
+        <p class="start-dim">{manual ? `On ${name}:` : "Or on any machine, this one or another:"}</p>
+        <CopyText text={`arugulad join ${control}`} data-join-command />
+      </div>
     </section>
   );
 }
@@ -797,6 +571,13 @@ function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () 
   const done = outcome?.done ?? [];
   return (
     <>
+      {claudeReady(setup) && !outcome && (
+        <ul class="start-checks">
+          <Check state="done">
+            <span data-start-claude-ready>Claude Code is set up</span>
+          </Check>
+        </ul>
+      )}
       {!claudeReady(setup) && (
         <button class="primary" disabled={busy || !setup} onClick={go} data-start-claude>
           {busy ? "Setting it up…" : "Use Claude Code with Arugula"}
@@ -819,301 +600,4 @@ function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () 
 /** A sentence the CLI wrote, its `commands` as code. */
 export function withCode(text: string): preact.ComponentChildren {
   return text.split("`").map((t, i) => (i % 2 ? <code key={i}>{t}</code> : t));
-}
-
-/** #906: the events a partial install lacks, for the check's line: " (SessionStart missing)". */
-function partialWhat(p: HooksPartial): string {
-  const what = [p.missing.length ? `${p.missing.join(", ")} missing` : "", p.outdated.length ? `${p.outdated.join(", ")} out of date` : ""].filter(Boolean);
-  return what.length ? ` (${what.join("; ")})` : "";
-}
-
-function adapterCheck(a: Adapter): "done" | "wait" | "fail" | "todo" {
-  if (adapterReady(a)) return "done";
-  return a.state === "no_node" ? "fail" : a.outdated ? "wait" : "todo";
-}
-
-function Agents({ client, setup, manual, refresh, close }: { client: Client | null; setup: AgentsSetup | null; manual: boolean; refresh: () => Promise<void>; close: () => void }) {
-  const session = client?.session ?? null;
-  const cl = setup?.claude;
-  // Claude Code's always; another's where it's used here.
-  const adapters = (setup?.adapters ?? []).filter((a) => a.kind === "claude" || a.found || a.state === "installed");
-  return (
-    <section class="start-step">
-      <h2>Put agents to work</h2>
-      <p class="start-lede">Claude and Codex run here as agent blocks. When one asks something, it's a card you answer from here or the phone.</p>
-      <ul class="start-cards">
-        <li>
-          <span class="start-glyph agent">✦</span>
-          <div>
-            <h3>Start an agent</h3>
-            <p>Give it a task in this session; watch it work in a pane of its own.</p>
-            {!manual && adapters.length > 0 && (
-              <ul class="start-checks" data-start-adapters>
-                {adapters.map((a) => (
-                  <Check key={a.kind} state={adapterCheck(a)}>
-                    <span data-start-adapter={a.kind}>{adapterLine(a)}</span>
-                  </Check>
-                ))}
-              </ul>
-            )}
-            {client &&
-              !manual &&
-              adapters.map((a) => (
-                <AdapterHelp
-                  key={a.kind}
-                  client={client}
-                  a={a}
-                  then="start the agent once it's done."
-                  install={() => {
-                    close();
-                    void installAdapter(client, a.kind, { session: session ?? undefined });
-                  }}
-                />
-              ))}
-            {client && session !== null && (
-              <button
-                class="secondary"
-                data-start-agent
-                onClick={() => {
-                  close();
-                  startAgent(client, { session, from: client.active() });
-                }}
-              >
-                Start an agent…
-              </button>
-            )}
-          </div>
-        </li>
-        <li>
-          <span class="start-glyph agent">⚙</span>
-          <div>
-            <h3>Claude Code, with Arugula</h3>
-            <p>
-              Agent panes run it through its adapter. Arugula's MCP server lets it put builds, servers and its own helpers in panes you can watch and take
-              over. Its hooks put a terminal Claude's questions and permission prompts on cards, here and on your phone.
-            </p>
-            {manual ? (
-              <>
-                <p class="start-dim">On this machine, all three at once:</p>
-                <CopyText text="arugula setup claude" data-setup-command />
-                <p class="start-dim">Or only the MCP server, or only the hooks:</p>
-                <CopyText text="claude mcp add arugula -- arugula mcp" data-mcp-command />
-                <CopyText text="arugula hooks install" data-hooks-command />
-                <ClaudePlugin live />
-              </>
-            ) : (
-              <>
-                <ul class="start-checks">
-                  <Check state={cl?.tools ? "done" : "todo"}>
-                    <span data-start-tools>
-                      {cl?.tools ? "Claude Code has Arugula's tools" : cl && !cl.installed ? "Claude Code isn't installed" : "Arugula's MCP server: not added yet"}
-                    </span>
-                  </Check>
-                  {cl?.hooks !== undefined && (
-                    <Check state={cl.hooks_blocked ? "fail" : cl.hooks_partial ? "wait" : cl.hooks ? "done" : "todo"}>
-                      <span data-start-hooks>
-                        {cl.hooks_blocked
-                          ? "Questions on cards: Claude Code won't run Arugula's hooks here"
-                          : cl.hooks_partial
-                            ? `Questions on cards: Arugula's hooks are only partly installed${partialWhat(cl.hooks_partial)}`
-                            : cl.hooks
-                              ? "Questions on cards: Claude Code has Arugula's hooks"
-                              : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}
-                      </span>
-                    </Check>
-                  )}
-                </ul>
-                {/* #395: a policy (or disableAllHooks) stops Claude Code running them: why, and what still works. */}
-                {cl?.hooks_blocked ? (
-                  <p class="start-dim" data-start-hooks-blocked>
-                    {cl.hooks_blocked}
-                  </p>
-                ) : null}
-                {/* #906: some there, some not: which, and the one command (the button below runs it too). */}
-                {!cl?.hooks_blocked && cl?.hooks_partial ? (
-                  <div data-start-hooks-partial>
-                    <p class="start-dim">{withCode(cl.hooks_partial.says)}</p>
-                    <CopyText text="arugula hooks install" />
-                  </div>
-                ) : null}
-                <UseClaude setup={setup} refresh={refresh} />
-                {/* Where the hooks are offered, the plugin too (Discovery 10). */}
-                {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin live />}
-              </>
-            )}
-            <p class="start-dim">
-              <a href={`${DOCS}/cli/#mcp`} target="_blank" rel="noreferrer">
-                Which tools to allow
-              </a>{" "}
-              ·{" "}
-              <a href={`${DOCS}/cli/#claude-code-in-a-pane`} target="_blank" rel="noreferrer">
-                Claude Code in a pane
-              </a>
-            </p>
-          </div>
-        </li>
-      </ul>
-      {client && !manual && <AgentCanCard client={client} />}
-    </section>
-  );
-}
-
-/** The Cloud step's, once joined: a team to share with, and a session to
- * share. Teams are the account's: its panel on control's page, else the
- * cloud's own page, where they're in the account menu. */
-function Together({ joined, client, close }: { joined: string; client: Client | null; close: () => void }) {
-  const session = client?.session ?? null;
-  const owner = !!client?.state && !client.state.roles;
-  return (
-    <div class="start-together" data-start-together>
-      <p>Share with people: make a team, then share a session with it, or with one person.</p>
-      <div class="start-confirm">
-        {currentAccount() ? (
-          <button
-            class="secondary"
-            data-start-make-team
-            onClick={() => {
-              close();
-              openPanel("teams")();
-            }}
-          >
-            Make a team
-          </button>
-        ) : (
-          <a class="secondary" href={joined} target="_blank" rel="noreferrer" title="Teams are in the cloud's account menu" data-start-make-team>
-            Make a team <ExternalIcon size="xs" />
-          </a>
-        )}
-        {client && owner && session !== null && (
-          <button
-            class="secondary"
-            data-start-share
-            onClick={() => {
-              close();
-              shareSession(session);
-            }}
-          >
-            Share a session
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** One of Things to try: what it does, why it can't here, and what to do. */
-interface TryItem {
-  id: string;
-  label: string;
-  what: string;
-  /** Done already, whatever was clicked (push that's on). */
-  already?: boolean;
-  refusal?: string | null;
-  /** Leave Getting started open (a browser's own prompt comes next). */
-  stay?: boolean;
-  run: () => void;
-}
-
-/** The seen store's name for a thing tried. */
-const tried = (id: string) => `getting-started.try.${id}`;
-
-/** The last step: a button for each thing, on this machine, each marked
- * done once used (in the seen store), and what's still to set up. */
-function Try({ client, done, go, close }: { client: Client | null; done: Record<StepId, boolean>; go: (i: number) => void; close: () => void }) {
-  const [, setTick] = useState(0);
-  useEffect(() => subscribeSeen(() => setTick((t) => t + 1)), []);
-  const owner = !!client?.state && !client.state.roles;
-  const session = client?.session ?? null;
-  const active = client?.active();
-  const mine = active === undefined ? undefined : client?.machine(active);
-  const blocked = notifyBlocker();
-  const items: TryItem[] = [
-    { id: "swarm", label: "Open the swarm", what: "Every pane on every machine at once, what needs you first", run: () => openSwarm() },
-    {
-      id: "agent",
-      label: "Start an agent",
-      what: "Give Claude or Codex a task in a pane of its own",
-      refusal: session === null ? "No session to start it in" : null,
-      run: () => client && session !== null && startAgent(client, { session, from: client.active() }),
-    },
-    {
-      id: "port",
-      label: "Open a port",
-      what: "Preview an app running here, in a pane beside this one",
-      refusal: !client?.showsBlocks() ? "This page can't show block sites" : null,
-      run: () => client && void openPort(client, { split: active, host: mine?.id, local: !mine }),
-    },
-    {
-      id: "pr",
-      label: "Open a pull request",
-      what: "Its checks, reviews and timeline, read with your gh login",
-      refusal: !owner ? "Pull requests open with the machine owner's login" : session === null ? "No session to open it in" : null,
-      run: () => client && session !== null && void openPr(client, { session }),
-    },
-    {
-      id: "push",
-      label: "Get push",
-      what: "This device is told when a pane or an agent needs you",
-      already: pushNow() === "on",
-      refusal: blocked,
-      stay: true,
-      run: () => client && void turnOnPush(client),
-    },
-    {
-      id: "search",
-      label: "Open command search",
-      what: `Every command, session, tab and pane: ${keyHint("goto") ?? "Ctrl+K"}`,
-      run: () => openGoTo(),
-    },
-  ];
-  const rows: [StepId, string, string][] = [
-    ["cloud", "In Arugula cloud", "Not yet: connect"],
-    ["agents", "Claude Code works with Arugula", "Not yet: set up Claude Code"],
-  ];
-  const todo = rows.filter(([id]) => !done[id]);
-  return (
-    <section class="start-step">
-      <h2>Things to try</h2>
-      <p class="start-lede">Each of these does the thing, here and now. Try them in any order.</p>
-      <ul class="start-tries" data-start-tries>
-        {items.map((t) => {
-          const isDone = t.already || (seenReady() && seen(tried(t.id)));
-          return (
-            <li key={t.id} class={`start-try${isDone ? " done" : ""}`} data-start-try={t.id} data-done={isDone ? "" : undefined}>
-              <button
-                class="secondary"
-                disabled={!client || !!t.refusal}
-                title={t.refusal ?? undefined}
-                onClick={() => {
-                  markSeen(tried(t.id));
-                  if (!t.stay) close();
-                  t.run();
-                }}
-              >
-                {isDone && <span class="start-try-mark" aria-label="done">
-                    <CheckIcon size="xs" />{" "}
-                  </span>}
-                {t.label}
-              </button>
-              <span class="start-dim">{t.refusal ?? t.what}</span>
-            </li>
-          );
-        })}
-      </ul>
-      {todo.length > 0 && (
-        <ul class="start-checks" data-start-todo>
-          {todo.map(([id, , no]) => (
-            <Check key={id} state="todo">
-              <button class="link" onClick={() => go(STEPS.findIndex((s) => s.id === id))}>
-                {no} <ChevronIcon dir="right" />
-              </button>
-            </Check>
-          ))}
-        </ul>
-      )}
-      <p class="start-lede">
-        Anything you skipped is a click away: this is <b>Getting started</b> in Go to… (and the ☰ sheet on a phone), any time.
-      </p>
-    </section>
-  );
 }

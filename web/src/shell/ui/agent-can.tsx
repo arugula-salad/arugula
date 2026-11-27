@@ -3,9 +3,8 @@
 // makes the list from its MCP tools (`agent_can.get`: a line per tool, in
 // `crates/daemon/src/mcp/tools.rs`), keeping those this machine offers (its
 // Labs flags, a forge signed in to here, control and its grants), so a new
-// tool shows here and a removed one goes. Getting started's Agents step
-// shows it whole, the Start-an-agent dialog folded, and the Docs page's
-// empty state only the Doc line.
+// tool shows here and a removed one goes. The Start-an-agent dialog shows
+// it folded, and the Docs page's empty state only the Doc line.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
