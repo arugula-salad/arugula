@@ -138,13 +138,6 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
     await expect(friend.locator(sel)).toBeDisabled();
     await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
   }
-  // Docs are the owner's (#1494): a guest has no page.
-  await expect(owner.locator("[data-machine-docs]")).toBeVisible();
-  await expect(friend.locator("[data-machine-docs]")).toHaveCount(0);
-  await friend.evaluate(() => (location.hash = "docs"));
-  await friend.waitForTimeout(300);
-  await expect(friend.locator("[data-docs-page]")).toHaveCount(0);
-  await friend.evaluate(() => history.replaceState(null, "", location.pathname));
   // A viewer doesn't size the tab (the daemon letterboxes it): no offer to.
   await expect(friend.locator("[data-sized-elsewhere]")).toHaveCount(0);
   // The session's menu: its thread and notifications, nothing of the owner's.

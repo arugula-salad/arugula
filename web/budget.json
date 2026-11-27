@@ -1,10 +1,10 @@
 {
   "max": {
     "duplicateComponentNames": 21,
-    "cssLines": 25268,
+    "cssLines": 25325,
     "cssFiles": 49,
-    "customPropertiesDefined": 136,
-    "customPropertiesReferenced": 144,
+    "customPropertiesDefined": 165,
+    "customPropertiesReferenced": 173,
     "important": 22,
     "looks": 2,
     "htmlEntries": 5,

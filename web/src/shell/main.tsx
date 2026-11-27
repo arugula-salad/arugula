@@ -22,7 +22,6 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
-import "./docs-page.css";
 import "../shared/ui/settings-section.css";
 // A switch, one look on every page and in every dialog (#1099).
 import "../shared/switch.css";

@@ -28,14 +28,14 @@ test("Escape goes back a place, across projects, and after a reload", async ({ p
 });
 
 test("Escape in a field is the field's", async ({ page }) => {
-  await openApp(page, `/p/${P}/boards`);
-  await rail(page, "docs").click();
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
+  await openApp(page, `/p/${P}/docs`);
+  await rail(page, "boards").click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
   const field = page.getByRole("searchbox").or(page.locator("input[type=search], input[type=text]")).first();
   await field.focus();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
 });
 
 test("Escape that closes a menu closes only the menu", async ({ page }) => {

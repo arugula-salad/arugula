@@ -83,7 +83,7 @@ export const HINTS: Hint[] = [
     id: "docs-page",
     place: "chip",
     fact: docOpen,
-    copy: () => "Kept on the Docs page. Ask any agent for a Doc",
+    copy: () => "Kept in Docs. Ask any agent for a Doc",
     action: { label: "Go to Docs", route: "#docs" },
   },
   {
