@@ -1,12 +1,12 @@
-// An editor block's colors from the page's palette (#1048): VS Code's
+// An editor block's colors from the page's look (#1048, #1511): VS Code's
 // workbench colors and syntax colors, made from the same tokens as the
 // panes around it. The page sends them to the block (its `theme` call);
 // the daemon writes them into the block's workspace, and VS Code applies a
-// change to it at once. The extension's own themes (`ext/theme.json`,
-// Slate, `ext/theme-light.json`, Latte, and `ext/theme-mocha.json`, Mocha)
-// are these for those palettes.
+// change to it at once. The extension's own themes (`ext/theme.json` and
+// `ext/theme-light.json`) are these for Arugula at its own sliders, dark
+// and light, until the page sends its own.
 
-import { legible, type Palette } from "../shared/appearance";
+import type { Palette } from "../shared/appearance";
 import type { NvimHl, NvimTheme } from "../shared/proto";
 
 export interface TokenRule {
@@ -25,7 +25,7 @@ export interface EditorTheme {
 const alpha = (hex: string, a: string) => (hex.length === 7 ? hex + a : hex);
 
 export function editorTheme(p: Palette): EditorTheme {
-  const u = legible(p);
+  const u = p.ui;
   const t = p.term;
   const sel = t.selectionBackground ?? alpha(u.muted, "80");
   const colors: Record<string, string> = {
@@ -136,7 +136,7 @@ function mix(a: string, b: string, t: number): string {
  * did. The daemon sends them to the block's arugula.nvim, which applies
  * them as the colorscheme `arugula` (`editors/nvim/lua/arugula/theme.lua`). */
 export function nvimTheme(p: Palette): NvimTheme {
-  const u = legible(p);
+  const u = p.ui;
   const t = p.term;
   const bg = rgb(t.background) ?? rgb(u.bg)!;
   const fg = rgb(t.foreground) ?? rgb(u.fg)!;

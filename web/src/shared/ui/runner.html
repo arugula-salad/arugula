@@ -6,35 +6,35 @@
 <!-- The prototype kit (#699): the house look as opt-in `ar-` classes and `--ar-`
      tokens, written into every prototype before its own styles, so a prototype
      can start from them with nothing to import (the frame loads nothing). A
-     template, so this page doesn't apply it. Colors are `light-dark(Latte,
-     Slate)`: they follow the `color-scheme` the runner already sets and moves,
-     and `scripts/prototype-kit.test.mjs` checks each against what appearance.ts's
-     legible() paints. The
+     template, so this page doesn't apply it. Colors are `light-dark(light,
+     dark)`: they follow the `color-scheme` the runner already sets and moves,
+     and `scripts/prototype-kit.test.mjs` checks each against the house pair
+     (kit/look.ts's paperUi). The
      type scale is style.css's four most-used sizes (12px 123 times, 11px 71,
      13px 35, 15px 13; #687 will settle the real one). Nothing here selects an
      element, so a prototype that uses no `ar-` class renders as it did. -->
 <template id="arugula-kit"><style>
 :root {
-  --ar-bg: light-dark(#eff1f5, #0c1118);
-  --ar-surface: light-dark(#e6e9ef, #090d13);
-  --ar-raised: light-dark(#ccd0da, #1a2230);
-  --ar-raised-hover: light-dark(#bcc0cc, #243042);
-  --ar-text: light-dark(#4c4f69, #d6dee9);
-  --ar-muted: light-dark(#56586a, #8b98ab);
-  --ar-subtle: light-dark(#56586f, #b4c0d0);
-  --ar-faint: light-dark(#9ca0b0, #3a4658);
-  --ar-border: light-dark(#ccd0da, #1a2230);
-  --ar-accent: light-dark(#702fc6, #56c8dc);
-  --ar-on-accent: light-dark(#ffffff, #06090d);
-  --ar-danger: light-dark(#b30d31, #f2778a);
-  --ar-ok: light-dark(#29661c, #5fd394);
-  --ar-warn: light-dark(#7d4f10, #f0b45a);
-  --ar-info: light-dark(#1851c4, #7aa7f0);
-  --ar-merged: light-dark(#6941b4, #b49cf2);
-  --ar-teal: light-dark(#106368, #5fd3c4);
+  --ar-bg: light-dark(#fefefe, #1a242e);
+  --ar-surface: light-dark(#d2d8e1, #08121b);
+  --ar-raised: light-dark(#c1c9d5, #212b35);
+  --ar-raised-hover: light-dark(#b4bbc7, #303a44);
+  --ar-text: light-dark(#191d24, #e2ebf4);
+  --ar-muted: light-dark(#49525f, #99a5b2);
+  --ar-subtle: light-dark(#313842, #bec8d3);
+  --ar-faint: light-dark(#89929f, #697481);
+  --ar-border: light-dark(#c1c9d5, #212b35);
+  --ar-accent: light-dark(#3b5605, #78ce57);
+  --ar-on-accent: light-dark(#ffffff, #172a11);
+  --ar-danger: light-dark(#952b23, #ef8175);
+  --ar-ok: light-dark(#075e2a, #6fc884);
+  --ar-warn: light-dark(#764300, #eea54a);
+  --ar-info: light-dark(#255387, #8fb4dc);
+  --ar-merged: light-dark(#5f4193, #bb9ef9);
+  --ar-teal: light-dark(#025c53, #25cbb7);
   /* Text on a solid color (a count on the accent or warn): the palette's
      on-color, as --ar-on-accent is. */
-  --ar-on-color: light-dark(#ffffff, #06090d);
+  --ar-on-color: light-dark(#ffffff, #172a11);
   /* The chrome's frame and a border that has to show on a raised fill:
      style.css's --line-strong, 55% of the palette's muted (--ar-faint) over
      the surface. */
