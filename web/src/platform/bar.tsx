@@ -30,20 +30,17 @@ import { issues } from "../shared/issues/store";
 import { PhoneInbox } from "./rail";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
- * workspaces and its deploys (Deploy… and a deploy) have places of their
- * own (Discovery 5). */
-type Section = "home" | "boards" | "docs" | "runs" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+ * workspaces have a place of their own (Discovery 5); a deploy is the
+ * Overview's, where its approval is a Needs-you row (Lift 7). */
+type Section = "home" | "boards" | "docs" | "runs" | "workspaces" | "chat" | "inbox" | "settings";
 export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
+    case "deploy":
       return "home";
     case "workspaces":
     case "workspace":
       return "workspaces";
-    case "deploys":
-    case "new-deploy":
-    case "deploy":
-      return "deploys";
     // Issues and Triage are part of Boards (#656): the one place for tickets.
     case "issues":
     case "issue":
@@ -90,7 +87,6 @@ export const SECTION_LABEL: Record<Section, string> = {
   docs: "Docs",
   runs: "Runs",
   workspaces: "Workspaces",
-  deploys: "Deploys",
   chat: "Chat",
   inbox: "Inbox",
   settings: "Settings",
@@ -105,7 +101,6 @@ function sectionPath(s: Section, project: string): string | null {
     case "docs":
     case "runs":
     case "workspaces":
-    case "deploys":
       return pathOf({ page: s, project }, names);
     case "chat":
       return chatPath(project);

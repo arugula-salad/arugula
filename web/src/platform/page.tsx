@@ -27,8 +27,6 @@ import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { DeployPage } from "./pages/deploy";
-import { NewDeployPage } from "./pages/new-deploy";
-import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed } from "./pages/project-settings";
@@ -157,10 +155,6 @@ function body(r: Route, lost: string | null) {
       return <HostedWorkspaces project={r.project} />;
     case "move":
       return <MovePage project={r.project} />;
-    case "deploys":
-      return <DeploysPage project={r.project} />;
-    case "new-deploy":
-      return <NewDeployPage project={r.project} env={r.env} />;
     case "installed":
       return <Installed project={r.project} repo={r.repo} />;
     case "workspace":
