@@ -306,7 +306,7 @@ function PaneLine({ p, to, last, phone }: { p: FleetPane; to: string; last: bool
       <a class={`panes-row${p.stale ? " stale" : ""}${last ? " last" : ""}`} href={to} title={last ? "The pane you had open last" : undefined} data-panes-pane={p.id} data-panes-host={p.host} data-panes-last={last || undefined} onClick={(e) => follow(e, to)}>
         <span class="panes-row-what">{what}</span>
         {last && <span class="panes-row-where dim">where you were</span>}
-        {asks && <StateChip tone="accent">{NEEDS_YOU}</StateChip>}
+        {asks && <StateChip tone="warn">{NEEDS_YOU}</StateChip>}
         {meta && <span class="panes-row-meta dim">{meta}</span>}
       </a>
     </li>

@@ -53,7 +53,7 @@
 }
 
 .platform .settings-endpoint code {
-  font: 500 var(--text-sm)/1.4 var(--f-mono);
+  font: 500 var(--text-sm)/1.4 var(--font-mono);
 }
 
 /* A field with its words before it (Chat notifications' levels, the time
@@ -148,7 +148,7 @@
 .platform .settings-table thead th {
   padding-top: 2px;
   border-bottom: 1px solid var(--line);
-  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
@@ -176,7 +176,7 @@
 .platform .agent-matrix tbody th,
 .platform .settings-table tbody th {
   padding-left: 0;
-  font: 500 var(--text-md)/1.3 var(--f-mono);
+  font: 500 var(--text-md)/1.3 var(--font-mono);
   color: var(--fg);
   text-align: left;
   overflow-wrap: anywhere;
@@ -198,7 +198,7 @@
 }
 
 .platform .agent-level {
-  font: 500 var(--text-xs)/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--font-mono);
   /* Its own height, and room for the kit's caret (shared/fields.css). */
   height: auto;
   padding: 3px 22px 3px 6px;
@@ -218,7 +218,7 @@
 .platform .agent-only {
   display: block;
   margin-top: 3px;
-  font: 500 var(--text-xs)/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--font-mono);
   color: var(--warn);
   overflow-wrap: anywhere;
 }
@@ -228,7 +228,7 @@
 .platform .agent-idle {
   display: block;
   margin-top: 3px;
-  font: 500 var(--text-xs)/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--font-mono);
   color: var(--dim);
   cursor: help;
 }
@@ -305,7 +305,7 @@
 .platform .spend-table .num,
 .platform .spend-table thead th:nth-child(n + 3) {
   text-align: right;
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -360,7 +360,7 @@
 }
 
 .platform .secret-name {
-  font: 600 var(--text-md)/1.3 var(--f-mono);
+  font: 600 var(--text-md)/1.3 var(--font-mono);
 }
 
 .platform .secret-rows .settings-switch {
@@ -384,7 +384,7 @@
   flex-wrap: wrap;
   gap: 2px 18px;
   margin: 6px 0 0;
-  font: 500 var(--text-sm)/1.4 var(--f-mono);
+  font: 500 var(--text-sm)/1.4 var(--font-mono);
 }
 
 .platform .env-facts > div {
@@ -413,7 +413,7 @@
 .platform .env-label {
   display: block;
   margin-bottom: 4px;
-  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
@@ -470,7 +470,7 @@
 
 .platform .deploy-source-kind {
   margin-right: var(--space-1);
-  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
@@ -494,7 +494,7 @@
   border-radius: var(--chip-radius);
   background: none;
   box-shadow: none;
-  font: 500 var(--text-xs)/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--font-mono);
   color: var(--dim);
 }
 
@@ -531,7 +531,7 @@
 }
 
 .platform .deploy-table a code {
-  font: 500 var(--text-sm)/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--font-mono);
 }
 
 .platform .deploy-table tr:hover a code,
@@ -600,7 +600,7 @@
   }
   .platform .agent-matrix-wide td::before {
     content: attr(data-col);
-    font: 500 var(--text-xs)/1.2 var(--f-mono);
+    font: 500 var(--text-xs)/1.2 var(--font-mono);
     letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--dim);
@@ -650,7 +650,7 @@
   .platform .settings-table td[data-col]::before {
     content: attr(data-col);
     margin-right: 8px;
-    font: 500 var(--text-xs)/1.2 var(--f-mono);
+    font: 500 var(--text-xs)/1.2 var(--font-mono);
     letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--dim);

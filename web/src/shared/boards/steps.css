@@ -131,7 +131,7 @@
 }
 
 .step-bar[data-bar="review"] {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 .step-bar[data-bar="wait"] {
@@ -189,11 +189,11 @@
 }
 
 .steps-row[data-lane="doing"] .step-glyph {
-  color: var(--warn);
+  color: var(--accent);
 }
 
 .steps-row[data-lane="review"] .step-glyph {
-  color: var(--accent);
+  color: var(--review);
 }
 
 .steps-row[data-lane="done"] .step-glyph {

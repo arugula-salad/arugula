@@ -3,7 +3,6 @@
 // (app/main.tsx), so each piece is drawn as it is in the app.
 
 import { render } from "preact";
-import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
 import "../src/platform/platform.css";

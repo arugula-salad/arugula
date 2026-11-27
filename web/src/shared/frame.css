@@ -11,7 +11,7 @@
      the frame, where it falls back to --raised (UI audit #181). */
   --chrome-line: var(--line-strong);
   --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
-  --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  --chrome-selected: color-mix(in srgb, var(--accent-fill) 14%, var(--surface));
   --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
 }
 

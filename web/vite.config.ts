@@ -43,11 +43,11 @@ function docPalette(): Plugin {
       appearance ??= runnerImport<Appearance>(resolve(import.meta.dirname, "src/shared/appearance.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
       look ??= runnerImport<Look>(resolve(import.meta.dirname, "src/shared/kit/look.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
       const { houseColours, PALETTES } = await appearance;
-      const { paint } = await look;
+      const { paint, sliders } = await look;
       for (const [mark, [palette, scheme]] of Object.entries(MARKS)) {
         const p = PALETTES.find((q) => q.id === palette);
         if (!p || !code.includes(mark)) this.error(`${id}: no ${palette} palette or no \`${mark}\` to put it in`);
-        const vars = [...Object.entries(paint(p.ui, scheme === "dark")).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
+        const vars = [...Object.entries(paint(p.ui, scheme === "dark", sliders(scheme === "dark"))).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
         code = code.replace(mark, vars);
       }
       return { code, map: null };

@@ -1,7 +1,8 @@
 /* The role tokens (design lift §4.2): every color, face, size and shape the
    page draws with, by what it is for, never by value. ./look.ts paints the
-   colors and the depth on the root from the theme and the Look sliders;
-   the values here, Slate's, are what a page that never runs it shows.
+   colors and the depth on the root from the theme, the preset and the
+   Look sliders; the values here, Arugula dark's (design lift §4.4), are
+   what a page that never runs it shows.
 
    Below them, today's names (`--bg`, `--fg`, `--surface` …) as aliases of
    the roles, so every screen keeps drawing. A screen's phase moves its
@@ -11,60 +12,64 @@
 :root {
   /* Surfaces: the page, the rail, a section and a card on it, a card
      raised off that, a Doc's paper, and the well a terminal sits in. */
-  --canvas: #0c1118;
-  --rail: #090d13;
-  --section: #090d13;
-  --card: #090d13;
-  --card-raised: #1a2230;
-  --paper: #0c1118;
-  --well: #06090d;
+  --canvas: #08121b;
+  --rail: #050e17;
+  --section: #0f1922;
+  --card: #16202a;
+  --card-raised: #212b35;
+  --paper: #1a242e;
+  --well: #01080f;
 
   /* Ink: words, on the surfaces and in a well, and on a colored fill. */
-  --ink: #d6dee9;
-  --ink-dim: #8b98ab;
-  --ink-faint: #3a4658;
-  --well-ink: #d6dee9;
-  --well-dim: #8b98ab;
-  --on-accent: #06090d;
-  --on-needs: #06090d;
+  --ink: #e2ebf4;
+  --ink-dim: #99a5b2;
+  --ink-faint: #697481;
+  --well-ink: #dbe4ec;
+  --well-dim: #9ba8b5;
+  --on-accent: #172a11;
+  --on-needs: #2a1d00;
 
   /* Lines: a rule or a border; the frame and a border on a raised fill; a
      hovered row; the focus ring. */
-  --line: #1a2230;
-  --line-strong: color-mix(in srgb, var(--ink-faint) 55%, var(--section));
-  --hover: #243042;
+  --line: rgb(211 225 238 / 0.085);
+  --line-strong: rgb(211 225 238 / 0.16);
+  --hover: rgb(211 225 238 / 0.035);
   --focus: var(--accent);
 
-  /* Signal: the brand and live work; what asks or waits on you; what
-     failed; what's in review; what's done; what dims the page under a
-     sheet. */
-  --accent: #56c8dc;
-  --needs: #f0b45a;
+  /* Signal: the brand and live work (its words, and a fill: a primary
+     button, send, a bar, the logo, which in light stays brighter than the
+     words); what asks or waits on you; what failed; what's in review;
+     what's done; what dims the page under a sheet. --on-accent is a word
+     on the accent's fill, --on-needs one on a needs or fail fill. */
+  --accent: #78ce57;
+  --accent-fill: var(--accent);
+  --needs: #eea54a;
   --needs-tint: color-mix(in srgb, var(--needs) 14%, transparent);
-  --fail: #f2778a;
+  --fail: #ec6c5f;
   --fail-tint: color-mix(in srgb, var(--fail) 14%, transparent);
-  --review: #7aa7f0;
+  --review: #8fb4dc;
   --done: #5fd394;
   --backdrop: rgb(0 0 0 / 0.4);
 
   /* Depth: a card's shadow, a raised thing's (a popover, a menu), a top
-     highlight, a sheen down a surface and the composer's glow. `--shadow-k`
-     is how strong the shadows are: look.ts sets it from the theme and the
-     depth slider. */
-  --shadow-k: 1;
-  --shadow-card: 0 2px 8px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
-  --shadow-raised: 0 6px 24px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
+     highlight, a sheen down a surface and the composer's glow. look.ts
+     sets the first four from the theme and the depth slider; Arugula's
+     default is flat. */
+  --shadow-card: none;
+  --shadow-raised: 0 2px 6px rgb(0 0 0 / 0.3), 0 18px 40px -10px rgb(0 0 0 / 0.6);
   --highlight: inset 0 1px 0 rgb(255 255 255 / 0);
   --sheen: linear-gradient(180deg, rgb(255 255 255 / 0), transparent 90px);
   --glow: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent);
 
-  /* Type: the faces, where mono goes (an id, a meta line: each is the sans
-     or the mono), and the sizes. */
-  --font-sans: "Instrument Sans", system-ui, sans-serif;
-  --font-title: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
-  --font-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  /* Type: the faces, system stacks with nothing bundled (§4.4), where mono
+     goes, and the sizes. Mono level 3: code, ids and meta lines (an id, a
+     count, a time, a section label, a row's kind, a state word) are mono;
+     titles are the sans, bold. */
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-title: var(--font-sans);
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
   --font-id: var(--font-mono);
-  --font-meta: var(--font-sans);
+  --font-meta: var(--font-mono);
   --text-label: 11px;
   --text-meta: 12px;
   --text-body: 13px;
@@ -80,10 +85,6 @@
   --row: 32px;
   --rail-w: 56px;
   --panel-w: 420px;
-}
-
-html[data-scheme="light"] {
-  --shadow-k: 0.35;
 }
 
 /* Today's names, on the roles. */
@@ -104,10 +105,6 @@ html[data-scheme="light"] {
   --divider: var(--line);
   --shadow-sm: var(--shadow-card);
   --shadow-md: var(--shadow-raised);
-  --f-ui: var(--font-sans);
-  --f-display: var(--font-title);
-  --f-mono: var(--font-mono);
-  --mono: var(--font-mono);
   --text-xs: var(--text-label);
   --text-sm: var(--text-meta);
   --text-md: var(--text-body);

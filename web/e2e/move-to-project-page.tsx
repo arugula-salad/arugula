@@ -6,7 +6,6 @@
 // with Vite and served at /p/… on the daemon's origin.
 
 import { render } from "preact";
-import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
 import "../src/platform/platform.css";

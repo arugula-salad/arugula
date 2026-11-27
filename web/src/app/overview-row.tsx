@@ -22,7 +22,9 @@ const LINE_EVERY_MS = 6000;
 const HOVER_MS = 250;
 
 /** The colour of a row's word: what waits on you, what failed, what waits on someone else, what's working; the rest, quiet too, plain. */
-const TONE: Partial<Record<Standing, Tone>> = { needs: "accent", asks: "accent", failed: "danger", checks_failing: "danger", waits: "info", working: "warn" };
+// The brand (design lift §4.4): amber is what needs or asks you, the accent
+// is working.
+const TONE: Partial<Record<Standing, Tone>> = { needs: "warn", asks: "warn", failed: "danger", checks_failing: "danger", waits: "info", working: "accent" };
 
 type Data = { [data: `data-${string}`]: unknown };
 

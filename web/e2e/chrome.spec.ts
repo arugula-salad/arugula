@@ -258,13 +258,13 @@ test.describe("on a computer", () => {
     await expect(page.locator(".app-bar")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
-    expect(saved).toEqual({ theme: "light", light: 0.5, warmth: 0.5, depth: 0.5 });
+    expect(saved).toEqual({ theme: "light", preset: "arugula", light: null, warmth: 0, depth: 0 });
     // Appearance has no switch any more.
     await expect((await openSettingsPage(page)).locator("[data-appearance-controls]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
     await page.locator('[data-theme-choice="dark"]').click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!))).toEqual({ theme: "dark", light: 0.5, warmth: 0.5, depth: 0.5 });
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!))).toEqual({ theme: "dark", preset: "arugula", light: null, warmth: 0, depth: 0 });
 
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });

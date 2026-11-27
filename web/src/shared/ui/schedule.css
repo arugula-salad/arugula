@@ -20,7 +20,7 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--btn-radius);
   color: var(--subtle);
-  font: 600 var(--text-sm) / 1 var(--f-ui);
+  font: 600 var(--text-sm) / 1 var(--font-sans);
   cursor: pointer;
   transition:
     border-color 0.12s,
@@ -35,7 +35,7 @@
 
 .weekdays > button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 18%, var(--bg));
   color: var(--accent);
 }
 
@@ -92,7 +92,7 @@
   width: 116px;
   padding: 0 4px;
   color: var(--fg);
-  font: 500 var(--t-field) var(--f-mono);
+  font: 500 var(--t-field) var(--font-mono);
 }
 
 .time-range > input::-webkit-calendar-picker-indicator {
@@ -135,7 +135,7 @@
   width: 100%;
   max-width: 520px;
   color: var(--dim);
-  font: 500 var(--text-xs) / 14px var(--f-mono);
+  font: 500 var(--text-xs) / 14px var(--font-mono);
 }
 
 .week-caption {
@@ -162,7 +162,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-fill) 55%, transparent);
 }
 
 .week-ticks {

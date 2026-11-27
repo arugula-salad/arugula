@@ -42,7 +42,7 @@ export function SessionChip({ s, project }: { s: BoardRowSession; project: strin
     <ObjectChip
       class={s.live ? undefined : "dim"}
       title={s.live ? "An agent session working on this issue" : "An agent session that has stopped moving this row"}
-      fact={{ tone: s.live ? (s.state === "needs_input" ? "accent" : "muted") : "muted", text: state }}
+      fact={{ tone: s.live ? (s.state === "needs_input" ? "warn" : "muted") : "muted", text: state }}
       data-board-session={s.session}
       data-board-session-live={s.live ? "" : undefined}
     >
@@ -73,7 +73,7 @@ export function RowSessionChip({ s, project }: { s: RowSession; project: string 
   // The app opens its pane in Build; the platform page says where panes open.
   const go = o?.kind === "pane" ? () => api.goToPane(o.machine, o.pane, null) : null;
   return (
-    <ObjectChip title={s.where ? `On ${s.where}` : "In a cloud workspace"} fact={s.state ? { tone: s.needs ? "accent" : "muted", text: s.state } : null} data-board-card-session={s.key} data-board-card-session-needs={s.needs ? "" : undefined}>
+    <ObjectChip title={s.where ? `On ${s.where}` : "In a cloud workspace"} fact={s.state ? { tone: s.needs ? "warn" : "muted", text: s.state } : null} data-board-card-session={s.key} data-board-card-session-needs={s.needs ? "" : undefined}>
       {go ? (
         <a class="board-ptr" href="#" title="Open its pane" data-board-card-session-open onClick={(e) => (e.preventDefault(), go())}>
           {s.name}
@@ -379,17 +379,17 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
       {((marks.stalled && !holding && !waiting) || (waiting && !holding) || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
         <div class="board-line" data-board-drawer-marks>
           {r.marks?.some((m) => m.kind === "cycle") && (
-            <StateChip tone="warn" data-board-mark="cycle" title="This row and others wait on each other, so they share a step">
+            <StateChip tone="danger" data-board-mark="cycle" title="This row and others wait on each other, so they share a step">
               cycle
             </StateChip>
           )}
           {marks.stalled && !holding && !waiting && (
-            <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+            <StateChip tone="danger" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
               {marks.stalled.words}
             </StateChip>
           )}
           {waiting && !holding && (
-            <StateChip tone={waiting.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+            <StateChip tone={waiting.mine ? "warn" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
               {waiting.words}
             </StateChip>
           )}
@@ -610,7 +610,7 @@ function LiveSession({ r, project, all, s, pick, who, write, act, id }: { r: Boa
           ))}
         </div>
       )}
-      <Card tone={s.needs ? "accent" : null} class={s.kind === "hosted" && !s.live ? "board-live-state dim" : "board-live-state"} data-board-live-card={s.kind} {...(all.length > 1 ? {} : hooks(s))}>
+      <Card tone={s.needs ? "warn" : null} class={s.kind === "hosted" && !s.live ? "board-live-state dim" : "board-live-state"} data-board-live-card={s.kind} {...(all.length > 1 ? {} : hooks(s))}>
         <div class="board-line">
           <StateChip tone={s.tone}>{s.word}</StateChip>
           {sessionHref ? (

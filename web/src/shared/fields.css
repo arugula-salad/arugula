@@ -123,7 +123,7 @@ select.field {
    color-scheme in either palette: mid-grey reads on both. */
 :where(input[type="time"]) {
   padding-right: 6px;
-  font-family: var(--f-mono);
+  font-family: var(--font-mono);
   font-size: var(--text-sm);
 }
 
@@ -228,7 +228,7 @@ select.field {
    a checkbox's indeterminate is "some". */
 :where(input[type="checkbox"]:not(.sw-switch):is(:checked, :indeterminate), input[type="radio"]:checked) {
   border-color: var(--accent);
-  background-color: var(--accent);
+  background-color: var(--accent-fill);
 }
 
 :where(input[type="checkbox"]:not(.sw-switch):is(:checked, :indeterminate), input[type="radio"]:checked)::before {

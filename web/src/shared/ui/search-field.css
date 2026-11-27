@@ -72,7 +72,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 3px;
   color: var(--dim);
-  font: 500 var(--text-xs)/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--font-mono);
 }
 
 /* The key is for what's empty, and for a keyboard. */

@@ -430,7 +430,7 @@
   margin-left: auto;
   border: 0;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
@@ -478,7 +478,7 @@
 }
 .k-button.is-primary {
   border-color: transparent;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
   font-weight: 600;
 }
@@ -566,7 +566,7 @@
 }
 [aria-checked="true"] > .k-toggle-track {
   border-color: var(--accent);
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 [aria-checked="true"] > .k-toggle-track::after {
   left: 14px;

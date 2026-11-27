@@ -252,7 +252,7 @@ details.issues-note > summary {
   border: 1px solid var(--line);
   background: var(--letterbox);
   color: var(--peach);
-  font: var(--text-sm) var(--f-mono);
+  font: var(--text-sm) var(--font-mono);
 }
 
 /* The thread is part of the page: the page scrolls, and the box to write

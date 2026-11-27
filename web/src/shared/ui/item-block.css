@@ -171,7 +171,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-4);
-  font: var(--text-sm)/1.4 var(--f-mono);
+  font: var(--text-sm)/1.4 var(--font-mono);
   color: var(--subtle);
 }
 
@@ -225,7 +225,7 @@
   border-radius: 50%;
   background: var(--raised-hover);
   color: var(--fg);
-  font: 600 10px/1 var(--f-mono); /* off-scale: avatar initials */
+  font: 600 10px/1 var(--font-mono); /* off-scale: avatar initials */
 }
 
 .item-avatar[data-ring="asked"] {
@@ -334,7 +334,7 @@
 }
 
 .item-tab-count {
-  font: var(--text-xs) var(--f-mono);
+  font: var(--text-xs) var(--font-mono);
   opacity: 0.85;
 }
 

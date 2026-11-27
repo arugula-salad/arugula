@@ -31,7 +31,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: 600 var(--text-md) var(--f-ui);
+  font: 600 var(--text-md) var(--font-sans);
   color: inherit;
   text-decoration: none;
 }
@@ -70,7 +70,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: 600 var(--text-md) var(--f-ui);
+  font: 600 var(--text-md) var(--font-sans);
   color: inherit;
   text-decoration: none;
 }
@@ -84,7 +84,7 @@
 .platform-section .machines-tab {
   margin: var(--space-2) 0 0;
   padding: 0 var(--space-2);
-  font: 500 var(--text-xs) var(--f-ui);
+  font: 500 var(--text-xs) var(--font-sans);
 }
 /* "+N more tabs", under a busy session's first few. */
 .platform-section .machines-more {
@@ -108,7 +108,7 @@
   padding: var(--space-1) var(--space-2);
   border-radius: var(--field-radius);
   color: inherit;
-  font: var(--text-sm) / 1.4 var(--f-ui);
+  font: var(--text-sm) / 1.4 var(--font-sans);
   text-decoration: none;
 }
 .panes-row:hover,
@@ -148,7 +148,7 @@
   align-items: center;
   gap: var(--space-1);
   margin: 0;
-  font: 600 var(--text-md) var(--f-ui);
+  font: 600 var(--text-md) var(--font-sans);
 }
 
 /* The machines with nothing of the project: one line, open to a list. */

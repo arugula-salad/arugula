@@ -29,7 +29,7 @@
 :root input.sw-switch:checked {
   --knob: var(--on-color);
   border-color: var(--accent);
-  background-color: var(--accent);
+  background-color: var(--accent-fill);
   background-position: 100% 50%;
 }
 

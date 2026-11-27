@@ -16,7 +16,7 @@
 }
 
 .grid.pane-chrome .pane-header.live.active {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  background: color-mix(in srgb, var(--accent-fill) 7%, var(--surface));
   color: var(--fg);
   box-shadow: none;
 }
@@ -70,7 +70,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
 
 .grid.pane-chrome .divider.live:hover::after,
 .grid.pane-chrome .divider.live:active::after {
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 
 @container (max-width: 350px) {
@@ -91,7 +91,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
 /* Two sizes in the header: 13px for the title, 11px for everything about
    it (UI audit #171). */
 .grid.pane-chrome .pane-header-n {
-  font: var(--text-xs) var(--f-mono);
+  font: var(--text-xs) var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .grid.pane-chrome .pane-header-branch { font-size: var(--text-xs); }
@@ -136,7 +136,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
   padding: 0 8px;
   border-radius: var(--chip-radius);
   background: var(--warn);
-  color: var(--on-color);
+  color: var(--on-needs);
   font-family: inherit;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -250,7 +250,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--tag-radius);
-  font: 500 var(--text-xs)/1 var(--f-mono);
+  font: 500 var(--text-xs)/1 var(--font-mono);
 }
 .pane-tip .modal-close {
   position: absolute;

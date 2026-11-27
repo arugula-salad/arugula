@@ -8,14 +8,12 @@
 // teammates' machines to the page's fleet beside the daemon.
 
 import { render } from "preact";
-import "../src/shared/fonts.css";
 import "../src/shared/style.css";
 import "../src/shared/frame.css";
 import "../src/platform/platform.css";
 import "../src/platform/swarm.css";
 import "../src/shared/ui/settings-section.css";
 import "../src/platform/settings.css";
-import "../src/platform/finish.css";
 import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { startPageKey } from "../src/shell/local-key";
@@ -30,6 +28,7 @@ import { appMachineSettings } from "../src/app/settings";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
 import { session } from "../src/platform/session";
 import { signedInOf } from "../src/app/signed-in";
+import { apply as applyAppearance } from "../src/shared/appearance";
 import { setSignedIn } from "../src/shell/signed-in";
 import { setPlatformHere } from "../src/shell/platform-links";
 import { followPlatformLinks } from "../src/app/platform-here";
@@ -198,6 +197,9 @@ function machines() {
 
 const root = document.getElementById("root")!;
 root.classList.add("frame");
+// The look, as the app paints it before anything draws.
+applyAppearance();
+
 render(
   <PlatformApiContext.Provider
     value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === HERE ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === HERE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/${P}/machines?pane=${pane}`) }}

@@ -3,10 +3,8 @@
    Slate for a reader whose system is dark, Latte for one whose is light,
    the colors the app draws with no palette picked, for the page and for the
    Doc (its `--doc-*`). The Doc wears the same in the app whatever the
-   palette. The column the Doc fills, in its own fonts (fonts.css: the CSP's
-   `font-src 'self'`, #255). */
+   palette. The column the Doc fills, in the brand's system fonts. */
 @import "../shared/style.css";
-@import "../shared/fonts.css";
 
 /* `:root:root`, to win over style.css's `:root` whatever the order. The
    build writes the palettes' colors in for the markers, from appearance.ts
@@ -21,7 +19,6 @@
     /* PALETTES: latte */
     /* The page is the Doc's paper: no darker letterbox around it. */
     --well: var(--canvas);
-    --shadow-k: 0.35;
     color-scheme: light;
   }
 }
@@ -44,7 +41,7 @@
   margin: 0;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--doc-line);
-  font: 800 var(--text-doc)/1.05 var(--f-display);
+  font: 700 var(--text-doc)/1.05 var(--font-title);
   letter-spacing: var(--track-display);
   text-wrap: balance;
 }

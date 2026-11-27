@@ -20,7 +20,7 @@
 
 .primary,
 .secondary {
-  --btn-fill: var(--accent);
+  --btn-fill: var(--accent-fill);
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -64,6 +64,7 @@
 
 .primary.danger {
   --btn-fill: var(--danger);
+  color: var(--on-needs);
 }
 
 .secondary.danger {
@@ -262,8 +263,8 @@ a.secondary.danger:hover {
    On bg and surface only, never raised (appearance.ts's legible() checks
    the accent on it). A finish redraws it through the token. */
 :root {
-  --on-fill: color-mix(in srgb, var(--accent) 18%, transparent);
-  --on-fill-hover: color-mix(in srgb, var(--accent) 26%, transparent);
+  --on-fill: color-mix(in srgb, var(--accent-fill) 18%, transparent);
+  --on-fill-hover: color-mix(in srgb, var(--accent-fill) 26%, transparent);
 }
 
 .bar-btn:hover:not(:disabled),
@@ -352,11 +353,11 @@ a.secondary.danger:hover {
    track's own 6%: legible() checks the accent on the tint over bg, and the
    track's fill under it took Latte to 4.43:1. */
 .seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
-  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 18%, var(--bg));
 }
 
 .seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 26%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 26%, var(--bg));
 }
 
 /* A filter that's set: the .secondary with accent text and edge, not a

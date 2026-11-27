@@ -14,11 +14,11 @@
   transition: width 0.2s;
 }
 
-/* Done ok, Review accent, Doing warn: the lanes' own tones, which a card takes too (cardTone). */
+/* Done ok, Review in-review blue, Doing the accent (working): the lanes' own tones, which a card takes too (cardTone). Amber is only for what needs you. */
 .board-bar i[data-lane="review"] {
-  background: var(--accent);
+  background: var(--review);
 }
 
 .board-bar i[data-lane="doing"] {
-  background: var(--warn);
+  background: var(--accent-fill);
 }

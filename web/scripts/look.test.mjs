@@ -1,11 +1,13 @@
-// Look (shared/kit/look.ts): at the default sliders a theme paints exactly
-// the colors it had; the sliders move the neutrals; whatever they say, every
-// word reads at 4.5:1. Run with `node --experimental-strip-types`.
+// Look (shared/kit/look.ts): the brand (design lift §4.4) paints Aaron's
+// picks at Arugula's own sliders; every preset keeps its accent clear of
+// the signals; the sliders move the neutrals and leave the signals; and
+// whatever the preset, theme and sliders, every word reads at 4.5:1. Run
+// with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { contrast, fix, fromOklch, oklch, paint, slide, SLIDERS } from "../src/shared/kit/look.ts";
+import { contrast, mix, oklch, paint, PRESETS, preset, sliders, tooClose } from "../src/shared/kit/look.ts";
 
-// appearance.ts's Slate and Latte.
+// appearance.ts's Slate and Latte: the legacy hues no role covers.
 const slate = {
   bg: "#0c1118", fg: "#d6dee9", dim: "#8b98ab", surface: "#090d13", letterbox: "#06090d", raised: "#1a2230", "raised-hover": "#243042",
   accent: "#56c8dc", danger: "#f2778a", ok: "#5fd394", warn: "#f0b45a", info: "#7aa7f0", peach: "#f29b6b", teal: "#5fd3c4", pink: "#ad9cf2",
@@ -16,60 +18,75 @@ const latte = {
   accent: "#8839ef", danger: "#d20f39", ok: "#40a02b", warn: "#df8e1d", info: "#1e66f5", peach: "#fe640b", teal: "#179299", pink: "#ea76cb",
   merged: "#8250df", muted: "#9ca0b0", subtle: "#5c5f77", "on-color": "#ffffff",
 };
-const themes = [["slate", slate, true], ["latte", latte, false]];
+const themes = [["dark", slate, true], ["light", latte, false]];
 
-test("OKLCH round-trips a color", () => {
-  for (const hex of ["#0c1118", "#eff1f5", "#56c8dc", "#df8e1d", "#000000", "#ffffff"]) assert.equal(fromOklch(oklch(hex)), hex);
+test("Arugula at its own sliders is Aaron's picks: #78ce57 in dark, #3e5a05 in light", () => {
+  assert.equal(PRESETS[0].id, "arugula");
+  assert.equal(paint(slate, true, sliders(true)).accent, "#78ce57");
+  assert.equal(paint(latte, false, sliders(false)).accent, "#3e5a05");
+  // Light's fills stay bright, with dark words on them.
+  const light = paint(latte, false, sliders(false));
+  assert.ok(oklch(light["accent-fill"])[0] > 0.8, light["accent-fill"]);
+  assert.ok(contrast(light["on-accent"], light["accent-fill"]) >= 4.5);
+  assert.deepEqual(sliders(true), { light: 1, warmth: 0, depth: 0 });
+  assert.equal(preset("nope").id, "arugula");
 });
 
-test("at the default sliders a theme paints the colors it always had", () => {
-  for (const [name, ui, dark] of themes) {
-    assert.deepEqual(slide(ui, dark, SLIDERS), ui, name);
-    const u = fix(ui, dark);
-    const p = paint(ui, dark);
-    const was = { canvas: u.bg, rail: u.surface, section: u.surface, card: u.surface, "card-raised": u.raised, well: u.letterbox, ink: u.fg, "ink-dim": u.dim, "ink-faint": u.muted, line: u.raised, hover: u["raised-hover"], accent: u.accent, needs: u.warn, fail: u.danger, review: u.info, done: u.ok, "on-accent": u["on-color"], subtle: u.subtle };
-    for (const [k, v] of Object.entries(was)) assert.equal(p[k], v, `${name} --${k}`);
-    assert.equal(p["shadow-k"], dark ? "1" : "0.35");
-  }
-  // Slate and Latte were legible already: fix() leaves them be.
-  assert.deepEqual(fix(slate, true), slate);
-});
-
-test("the sliders move the surfaces and leave the signal colors", () => {
-  for (const [name, ui, dark] of themes) {
-    const darker = paint(ui, dark, { ...SLIDERS, light: 1 });
-    assert.ok(oklch(darker.canvas)[0] < oklch(ui.bg)[0], `${name}: darker`);
-    const flat = paint(ui, dark, { ...SLIDERS, depth: 0 });
-    const deep = paint(ui, dark, { ...SLIDERS, depth: 1 });
-    const step = (p) => Math.abs(oklch(p["card-raised"])[0] - oklch(p.canvas)[0]);
-    assert.ok(step(flat) < step(deep), `${name}: depth steps the surfaces`);
-    assert.equal(flat["shadow-k"], "0");
-    const warm = paint(ui, dark, { ...SLIDERS, warmth: 1 });
-    const h = oklch(warm.canvas)[2];
-    assert.ok(h > 30 && h < 100, `${name}: warm canvas hue ${h}`);
-    assert.equal(warm.needs, paint(ui, dark).needs, `${name}: needs stays`);
-  }
-});
-
-test("the neutral tint never passes through green", () => {
-  for (const [, ui, dark] of themes)
-    for (let w = 0; w <= 1; w += 0.1) {
-      const [, c, h] = oklch(paint(ui, dark, { ...SLIDERS, warmth: w }).canvas);
-      assert.ok(c < 0.01 || h < 100 || h > 170, `hue ${h} at warmth ${w}`);
+test("five presets, each accent kept 28° from amber and red, 22° from in-review blue", () => {
+  assert.deepEqual(
+    PRESETS.map((p) => p.name),
+    ["Arugula", "Moss", "Sea glass", "Stone & ink", "Graphite & acid"],
+  );
+  for (const p of PRESETS)
+    for (const [name, ui, dark] of themes) {
+      assert.deepEqual(tooClose((dark ? p.dark : p.light).hue), [], `${p.id} ${name}`);
+      const a = paint(ui, dark, sliders(dark, p)).accent;
+      assert.deepEqual(tooClose(oklch(a)[2]), [], `${p.id} ${name}: painted ${a}`);
     }
+  assert.deepEqual(tooClose(60), ["needs"]);
+  assert.deepEqual(tooClose(10), ["fail"]);
 });
 
-test("every word reads at 4.5:1 on the page, a section and a raised card, whatever the sliders", () => {
+test("the sliders move the surfaces and leave the signals", () => {
+  for (const [name, ui, dark] of themes) {
+    const at = (s) => paint(ui, dark, { ...sliders(dark), ...s });
+    assert.ok(oklch(at({ light: 1 }).canvas)[0] < oklch(at({ light: 0 }).canvas)[0], `${name}: darker`);
+    const step = (p) => Math.abs(oklch(p.card)[0] - oklch(p.canvas)[0]);
+    assert.ok(step(at({ depth: 0 })) < step(at({ depth: 1 })), `${name}: depth steps the surfaces`);
+    assert.match(at({ depth: 0 })["shadow-card"], /rgb\(0 0 0 \/ 0\)/);
+    // Warmth on an untinted preset (Arugula's dark tint is blue).
+    const h = oklch(paint(ui, dark, { ...sliders(dark), warmth: 1 }, preset("moss")).canvas)[2];
+    assert.ok(h > 30 && h < 100, `${name}: warm canvas hue ${h}`);
+    // Needs-you only steps its lightness to stay legible: its hue stays.
+    const hue = (p) => oklch(p.needs)[2];
+    assert.ok(Math.abs(hue(at({ warmth: 1, depth: 1 })) - hue(at({}))) < 4, `${name}: needs stays amber`);
+  }
+});
+
+test("whatever the preset, theme and sliders, every word reads at 4.5:1 and needs-you stays amber", () => {
   const steps = [0, 0.25, 0.5, 0.75, 1];
-  for (const [name, ui, dark] of themes)
-    for (const light of steps)
-      for (const warmth of steps)
-        for (const depth of steps) {
-          const p = paint(ui, dark, { light, warmth, depth });
-          for (const word of ["ink", "ink-dim", "accent", "needs", "fail", "done", "review"])
-            for (const on of ["canvas", "section", "card-raised"]) {
-              const r = contrast(p[word], p[on]);
-              assert.ok(r >= 4.5, `${name} ${light}/${warmth}/${depth}: --${word} on --${on} is ${r.toFixed(2)}`);
-            }
-        }
+  for (const p of PRESETS)
+    for (const [name, ui, dark] of themes)
+      for (const light of steps)
+        for (const warmth of steps)
+          for (const depth of steps) {
+            const t = paint(ui, dark, { light, warmth, depth }, p);
+            const at = `${p.id} ${name} ${light}/${warmth}/${depth}`;
+            for (const word of ["ink", "ink-dim", "accent", "needs", "fail", "done", "review", "subtle", "merged"])
+              for (const on of ["canvas", "section", "card", "card-raised"]) {
+                const r = contrast(t[word], t[on]);
+                assert.ok(r >= 4.5, `${at}: --${word} on --${on} is ${r.toFixed(2)}`);
+              }
+            assert.ok(contrast(t["on-accent"], t["accent-fill"]) >= 4.5, `${at}: on-accent`);
+            // The accent's words on its own tints: selected, "on", under the pointer.
+            for (const on of ["canvas", "section", "card"])
+              for (const k of [0.14, 0.18, 0.26]) {
+                const r = contrast(t.accent, mix(t[on], t["accent-fill"], k));
+                assert.ok(r >= 4.5, `${at}: --accent on its ${k * 100}% tint over --${on} is ${r.toFixed(2)}`);
+              }
+            assert.ok(contrast(t["on-needs"], t.needs) >= 4.5, `${at}: on-needs`);
+            assert.ok(contrast(t["well-ink"], t.well) >= 4.5 && contrast(t["well-dim"], t.well) >= 4.5, `${at}: the well`);
+            const [, , h] = oklch(t.needs);
+            assert.ok(h >= 40 && h <= 80, `${at}: needs hue ${h}`);
+          }
 });

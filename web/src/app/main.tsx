@@ -7,7 +7,6 @@
 // (./session), and open on control's page while the hub can't from here.
 
 import { render } from "preact";
-import "../shared/fonts.css";
 import "../shared/style.css";
 import "../shared/frame.css";
 import "../platform/platform.css";

@@ -10,3 +10,6 @@ if people miss it. Newest at the bottom.
 - **"Use the Slate look":** Reset does the same (Arugula #1477).
 - **The footer's machine, and the focused pane's repository and branch:** the crumb says where you are (Lift 3, Arugula #1479).
 - **The footer's "N need you":** the rail's Inbox is the one count (Lift 3, Arugula #1479).
+- **Slate and Latte's look:** the cyan accent on navy and the purple on cream; Arugula's green on near-black and olive on grey paper replace them, and Moss, Sea glass, Stone & ink and Graphite & acid are the other presets. Docs, terminals and editors keep Slate and Latte's colors for now (Arugula #1482).
+- **Bundled fonts:** Instrument Sans, Big Shoulders Display and JetBrains Mono ("Arugula Mono"); the app uses Helvetica Neue and SF Mono from the system (Arugula #1482).
+- **A stored slider setting from before the brand:** it starts again at Arugula's; the theme is kept (Arugula #1482).

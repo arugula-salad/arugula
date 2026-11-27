@@ -45,8 +45,8 @@ export function fmtDur(s: number): string {
 }
 
 export const FONT = {
-  display: (w: number, px: number) => `${w} ${px}px "Big Shoulders Display", "Arial Narrow", sans-serif`,
-  mono: (w: number, px: number) => `${w} ${px}px "Arugula Mono", "JetBrains Mono", ui-monospace, monospace`,
+  display: (w: number, px: number) => `${w} ${px}px "Helvetica Neue", Helvetica, Arial, sans-serif`,
+  mono: (w: number, px: number) => `${w} ${px}px "SF Mono", ui-monospace, Menlo, monospace`,
 };
 
 /** A world rectangle. */

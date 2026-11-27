@@ -17,7 +17,7 @@ import { Composer } from "../../shared/kit/composer";
 import { Crumb } from "../../shared/kit/crumb";
 import { Choice, TextField, Toggle } from "../../shared/kit/field";
 import { Kbd } from "../../shared/kit/kbd";
-import { paint as paintLook, SLIDERS, type Sliders } from "../../shared/kit/look";
+import { paint as paintLook, sliders as startAt, type Sliders } from "../../shared/kit/look";
 import { NeedList, NeedRow, type Need, type Receipt } from "../../shared/kit/need-row";
 import { Panel } from "../../shared/kit/panel";
 import { Row } from "../../shared/kit/row";
@@ -181,7 +181,7 @@ function LookSheet({ theme, sliders, set, close }: { theme: Theme; sliders: Slid
   return (
     <Sheet title="Look" onClose={close}>
       <div class="design-look" data-design-look>
-        <Choice label="Theme" value={theme} onChange={(t) => set(t, sliders)} options={[{ id: "slate", label: "Slate" }, { id: "latte", label: "Latte" }]} />
+        <Choice label="Theme" value={theme} onChange={(t) => set(t, startAt(t === "slate"))} options={[{ id: "slate", label: "Slate" }, { id: "latte", label: "Latte" }]} />
         {SLIDER_WORDS.map(([k, lo, hi]) => (
           <label key={k} class="design-slider">
             <span class="m-meta">
@@ -190,7 +190,7 @@ function LookSheet({ theme, sliders, set, close }: { theme: Theme; sliders: Slid
             <input type="range" min={0} max={1} step={0.05} value={sliders[k]} onInput={(e) => set(theme, { ...sliders, [k]: +e.currentTarget.value })} />
           </label>
         ))}
-        <Button onClick={() => set(theme, SLIDERS)}>Reset</Button>
+        <Button onClick={() => set(theme, startAt(theme === "slate"))}>Reset</Button>
       </div>
     </Sheet>
   );
@@ -217,7 +217,7 @@ const SECTIONS = [
 export function DesignPage() {
   const own = palette().id;
   const [theme, setTheme] = useState<Theme>(own === "latte" ? "latte" : "slate");
-  const [sliders, setSliders] = useState(SLIDERS);
+  const [sliders, setSliders] = useState(() => startAt(own !== "latte"));
   const [look, setLook] = useState(false);
   const set = (t: Theme, s: Sliders) => {
     paint(t, s);

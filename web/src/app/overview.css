@@ -55,7 +55,7 @@
   padding: 0;
   border: 0;
   background: none;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
   color: var(--fg);
   text-align: left;
   white-space: nowrap;
@@ -135,7 +135,7 @@ button.ov-briefing:focus-visible .ov-briefing-said {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 var(--text-md) var(--f-ui);
+  font: 600 var(--text-md) var(--font-sans);
   color: var(--fg);
   text-decoration: none;
 }
@@ -150,7 +150,7 @@ button.ov-briefing:focus-visible .ov-briefing-said {
   height: 4px;
 }
 .ov-board-count {
-  font: 500 var(--text-xs) var(--f-mono);
+  font: 500 var(--text-xs) var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--dim);
 }
@@ -178,7 +178,7 @@ button.ov-briefing:focus-visible .ov-briefing-said {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: none;
-  font: 500 var(--text-xs) var(--f-ui);
+  font: 500 var(--text-xs) var(--font-sans);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -214,16 +214,16 @@ button.ov-lead:focus-visible {
 }
 .ov-lead-dot[data-ov-lead-standing] {
   border: 0;
-  background: var(--warn);
+  background: var(--accent-fill);
 }
 .ov-lead-dot[data-ov-lead-standing="working"] {
-  background: var(--warn);
+  background: var(--accent-fill);
 }
 .ov-lead-dot[data-ov-lead-standing="quiet"] {
   background: var(--muted);
 }
 .ov-lead-dot[data-ov-lead-standing="needs"] {
-  background: var(--accent);
+  background: var(--needs);
 }
 .ov-lead-dot[data-ov-lead-standing="waits"] {
   background: var(--info);
@@ -262,7 +262,7 @@ button.ov-lead:focus-visible {
   gap: var(--space-2);
 }
 .ov-loose-head b {
-  font: 600 var(--text-md) var(--f-ui);
+  font: 600 var(--text-md) var(--font-sans);
 }
 
 /* On a phone, a board's row is two lines: its title and count, then its bar and words. */
@@ -315,7 +315,7 @@ button.ov-lead:focus-visible {
   border-radius: var(--field-radius);
   background: none;
   color: inherit;
-  font: var(--text-sm) / 1.4 var(--f-ui);
+  font: var(--text-sm) / 1.4 var(--font-sans);
   text-align: left;
   cursor: pointer;
 }
@@ -330,7 +330,7 @@ button.ov-lead:focus-visible {
 .ov-row-num,
 .ov-row-where {
   flex: none;
-  font: var(--text-xs) var(--f-mono);
+  font: var(--text-xs) var(--font-mono);
   color: var(--subtle);
 }
 .ov-row-title {
@@ -342,7 +342,7 @@ button.ov-lead:focus-visible {
 }
 .ov-word {
   flex: none;
-  font: 500 var(--text-xs) var(--f-ui);
+  font: 500 var(--text-xs) var(--font-sans);
   color: var(--muted);
 }
 .ov-word.tone-accent {
@@ -397,7 +397,7 @@ button.ov-lead:focus-visible {
   border-radius: var(--field-radius);
   background: none;
   color: inherit;
-  font: var(--text-xs) var(--f-ui);
+  font: var(--text-xs) var(--font-sans);
   text-align: left;
 }
 button.ov-peek {
@@ -449,7 +449,7 @@ button.ov-peek:disabled {
 }
 
 .ov-line {
-  font: var(--text-xs) / 1.35 var(--f-mono);
+  font: var(--text-xs) / 1.35 var(--font-mono);
   color: var(--subtle);
   white-space: nowrap;
   overflow: hidden;
@@ -513,10 +513,10 @@ button.ov-peek:disabled {
 }
 .ov-needs h2 {
   margin: 0;
-  font: 600 var(--text-lg) var(--f-ui);
+  font: 600 var(--text-lg) var(--font-sans);
 }
 .ov-needs header span {
-  font: 500 var(--text-xs) var(--f-mono);
+  font: 500 var(--text-xs) var(--font-mono);
   color: var(--subtle);
 }
 
@@ -546,11 +546,11 @@ button.ov-peek:disabled {
   justify-content: space-between;
   margin: 0;
   padding: var(--space-3) 0 var(--space-1);
-  font: 600 var(--text-xs) var(--f-ui);
+  font: 600 var(--text-xs) var(--font-sans);
   color: var(--subtle);
 }
 .ov-asks-n {
-  font: 500 var(--text-xs) var(--f-mono);
+  font: 500 var(--text-xs) var(--font-mono);
 }
 .ov-ask {
   --c: var(--s-ask);
@@ -616,14 +616,14 @@ button.ov-peek:disabled {
 }
 .ov-ask-q {
   grid-column: 2;
-  font: 500 var(--text-md)/1.35 var(--f-ui);
+  font: 500 var(--text-md)/1.35 var(--font-sans);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ov-ask-where {
   grid-column: 2;
-  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  font: 500 var(--text-xs)/1.3 var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -694,7 +694,7 @@ button.ov-peek:disabled {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
-  font: 500 var(--text-sm) var(--f-ui);
+  font: 500 var(--text-sm) var(--font-sans);
 }
 .ov-tab [role="tab"] span {
   overflow: hidden;
@@ -716,7 +716,7 @@ button.ov-peek:disabled {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--accent-fill);
 }
 /* The open conversation: chat's own room, its list scrolling, its box at the foot. */
 .ov-talk-open {
@@ -869,7 +869,7 @@ button.ov-peek:disabled {
   font-size: var(--text-md);
 }
 .ov-peek-tab-head .mono {
-  font: var(--text-sm) var(--mono);
+  font: var(--text-sm) var(--font-mono);
 }
 .ov-peek-card-link {
   margin-left: auto;
@@ -888,7 +888,7 @@ button.ov-peek:disabled {
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
   background: var(--surface);
-  font: var(--text-xs) / 1.5 var(--mono);
+  font: var(--text-xs) / 1.5 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -974,7 +974,7 @@ button.ov-peek:disabled {
   border: 0;
   background: none;
   padding: 1px var(--space-3);
-  font: var(--text-xs) var(--f-ui);
+  font: var(--text-xs) var(--font-sans);
   color: var(--dim);
   cursor: pointer;
 }
@@ -990,7 +990,7 @@ button.ov-peek:disabled {
   font-weight: 600;
 }
 .ov-zoom-hint {
-  font: var(--text-xs) var(--f-ui);
+  font: var(--text-xs) var(--font-sans);
 }
 .ov-stage {
   min-width: 0;
@@ -1038,7 +1038,7 @@ button.ov-peek:disabled {
 }
 .ov-level-head h2 {
   margin: 0;
-  font: 600 var(--text-lg) var(--f-ui);
+  font: 600 var(--text-lg) var(--font-sans);
 }
 .ov-level-head p {
   margin: 0;
@@ -1049,7 +1049,7 @@ button.ov-peek:disabled {
 }
 .ov-level-sub {
   margin: 0;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-level-list {
   list-style: none;
@@ -1069,7 +1069,7 @@ button.ov-peek:disabled {
   padding: var(--space-2);
   border: 0;
   background: none;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
   color: var(--fg);
   text-align: left;
   cursor: pointer;
@@ -1090,7 +1090,7 @@ button.ov-peek:disabled {
   align-items: baseline;
   gap: var(--space-2) var(--space-3);
   padding: var(--space-2);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 /* The Work level (./overview-work.tsx, #1289): its panes live, side by
    side, up to four; the rest as tabs above them. Each terminal keeps its
@@ -1109,14 +1109,14 @@ button.ov-peek:disabled {
   align-items: baseline;
   gap: var(--space-2);
   margin: 0;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-work-tabs {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-work-tab {
   display: inline-flex;
@@ -1160,7 +1160,7 @@ button.ov-peek:disabled {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-2);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-work-name {
   min-width: 0;
@@ -1177,7 +1177,7 @@ button.ov-peek:disabled {
 }
 .ov-work-note {
   margin: 0;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-work-slot {
   position: relative;
@@ -1205,7 +1205,7 @@ button.ov-peek:disabled {
 }
 .ov-bl-goal {
   color: var(--subtle);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-level-head .ov-bl-bar {
   height: 8px;
@@ -1220,7 +1220,7 @@ button.ov-peek:disabled {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
 }
 .ov-bl-lead-label {
   font-size: var(--text-xs);
@@ -1248,7 +1248,7 @@ button.ov-peek:disabled {
   align-items: baseline;
   gap: var(--space-2);
   margin: 0 0 var(--space-1);
-  font: 600 var(--text-sm) var(--f-ui);
+  font: 600 var(--text-sm) var(--font-sans);
 }
 .ov-bl-group h3 .dim {
   font-weight: 400;
@@ -1266,7 +1266,7 @@ button.ov-peek:disabled {
   align-items: center;
   padding: var(--space-2);
   border-bottom: 1px solid var(--line);
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
   cursor: pointer;
 }
 .ov-bl-ticket:hover,
@@ -1306,7 +1306,7 @@ button.ov-peek:disabled {
   padding: 1px var(--space-2);
   border: 1px solid var(--line);
   border-radius: 999px;
-  font: 500 var(--text-xs) var(--f-ui);
+  font: 500 var(--text-xs) var(--font-sans);
   color: var(--dim);
   white-space: nowrap;
   justify-self: start;
@@ -1324,7 +1324,7 @@ button.ov-peek:disabled {
 }
 .ov-bl-done summary {
   cursor: pointer;
-  font: var(--text-sm) var(--f-ui);
+  font: var(--text-sm) var(--font-sans);
   padding: var(--space-1) 0;
 }
 .ov.phone .ov-bl-head {
