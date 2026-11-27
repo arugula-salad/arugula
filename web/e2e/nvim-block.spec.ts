@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
 import { active, closeContexts, menuItem, panes, reset, run, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
+import { paint, sliders } from "../src/shared/kit/look";
 import { ANY, blockPort, daemonPort } from "./ports";
 import "./local-token";
 
@@ -53,10 +54,10 @@ let BLOCKS = 0;
 let daemon: ChildProcess | undefined;
 const sh = promisify(execFile);
 const lineText = (name: string, n: number) => `${name} line ${n}`;
-/** The palettes' terminal backgrounds (web/src/shared/appearance.ts):
- * an nvim block's Normal is drawn on them. */
-const SLATE_BG = "#0c1118";
-const LATTE_BG = "#eff1f5";
+/** The terminals' backgrounds, the well (web/src/shared/kit/look.ts), at
+ * Arugula's own sliders: an nvim block's Normal is drawn on them. */
+const SLATE_BG = paint(true, sliders(true)).well;
+const LATTE_BG = paint(false, sliders(false)).well;
 
 async function start() {
   daemon = spawn(
