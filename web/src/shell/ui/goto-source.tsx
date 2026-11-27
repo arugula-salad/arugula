@@ -186,7 +186,7 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
       });
     focus("focus-rail", "Move the keyboard to the rail", ".ws-rail button");
     out.push({ key: "Places/focus-sessions", kind: "keyboard", title: "Move the keyboard to the sessions (search)", command: true, run: focusSessionSearch });
-    focus("focus-tabs", "Move the keyboard to the tabs", ".ws-tabs .tab[tabindex='0']");
+    focus("focus-tabs", "Move the keyboard to the tabs", ".ws-tabs [data-tab-id][tabindex='0']");
     focus("focus-toolbar", "Move the keyboard to the pane toolbar", ".pane-toolbar button:not(:disabled)");
     focus("focus-header", "Move the keyboard to the header", ".ws-head button");
   }

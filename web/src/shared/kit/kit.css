@@ -796,6 +796,16 @@ a.k-row-line {
 .k-tab.is-peek .k-tab-title {
   font-style: italic;
 }
+.k-tab-marker {
+  align-self: stretch;
+  width: 2px;
+  margin: 6px 0;
+  background: var(--accent);
+}
+.k-tab-rename {
+  width: 14ch;
+  font: inherit;
+}
 .k-tab-after {
   display: flex;
   align-items: center;

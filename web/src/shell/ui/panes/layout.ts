@@ -8,10 +8,12 @@ import { keyHint } from "../../../shared/keys";
 import type { MenuItem } from "../../../shared/ui/menu";
 import { offlineWhy } from "../shell/live";
 
+/** Tamed (the active pane large, the rest beside it: Lift 6a's word for
+ * Main + stack), Grid and Columns. */
 export const PRESETS: { preset: Preset; label: string }[] = [
-  { preset: "columns", label: "Columns" },
+  { preset: "main_stack", label: "Tamed" },
   { preset: "grid", label: "Grid" },
-  { preset: "main_stack", label: "Main + stack" },
+  { preset: "columns", label: "Columns" },
 ];
 
 /** A pane's number in its tab, in reading order: what Ctrl+Shift+N goes to

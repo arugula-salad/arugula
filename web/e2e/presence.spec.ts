@@ -92,7 +92,7 @@ test("three people in one session see each other", async ({ browser }) => {
   // The owner sees the friend (once, for two clients), focused on the pane,
   // in the workspace's header (M113) and on the tab they're on.
   await expect(owner.locator(`[data-top] .people [data-who="tailnet:${FRIEND}"]`)).toHaveCount(1);
-  await expect(owner.locator(".ws-tabs .tab.selected .tab-people .tab-dot")).toHaveCount(1);
+  await expect(owner.locator(".ws-tabs [data-tab-id][aria-selected=true] .tab-people .tab-dot")).toHaveCount(1);
   await expect(owner.locator(`[data-pane="${pane}"] .pane-person`)).toContainText("friend");
   // The friend sees the owner.
   await expect(friend.locator(`[data-top] .people [data-who="owner"]`)).toHaveCount(1);

@@ -63,7 +63,7 @@ export function targetAt(x: number, y: number): Target {
     const i = Number(tab.dataset.tabIndex);
     return { kind: "tabbar", index: x < r.left + r.width / 2 ? i : i + 1 };
   }
-  if (el?.closest(".tabbar")) {
+  if (el?.closest("[data-tab-bar]")) {
     return { kind: "tabbar", index: Number.MAX_SAFE_INTEGER };
   }
   return null;

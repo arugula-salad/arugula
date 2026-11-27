@@ -105,18 +105,6 @@
   padding-inline: 8px;
 }
 
-.ws-tabs .tab {
-  border-radius: var(--radius-control) var(--radius-control) 0 0;
-  color: var(--ink-dim);
-}
-
-.ws-tabs .tab.selected {
-  background: var(--chrome-selected);
-  border-color: var(--chrome-selected-line);
-  color: var(--ink);
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
 .pane-toolbar {
   border-bottom-color: var(--line-strong);
   gap: 8px;
@@ -187,13 +175,6 @@
 .ws-session-sub { padding-right: 0; }
 
 .ws-group:not(:first-child) { border-top-color: var(--line-strong); }
-.ws-tabs .tab {
-  border-color: var(--line-strong);
-  background: var(--chrome-panel);
-  padding-inline: 12px;
-  font-weight: 400;
-}
-.ws-tabs .tab.selected { font-weight: 500; }
 .pane-toolbar {
   background: var(--section);
   padding-inline: 10px;
@@ -256,3 +237,13 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws
 /* The header's stack takes the Overview's crumb type (.app-path): its steps
    are the machine menu, the session menu and the tab's name. */
 
+
+/* The tab's head line (Lift 6a): its state, name, machine and kind before the pane controls. */
+.pt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-right: 8px;
+  white-space: nowrap;
+}
