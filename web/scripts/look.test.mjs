@@ -20,10 +20,10 @@ const latte = {
 };
 const themes = [["dark", slate, true], ["light", latte, false]];
 
-test("Arugula at its own sliders is Aaron's picks: #78ce57 in dark, #496904 in light", () => {
+test("Arugula at its own sliders is Aaron's picks: #78ce57 in dark, #3e5a05 in light", () => {
   assert.equal(PRESETS[0].id, "arugula");
   assert.equal(paint(slate, true, sliders(true)).accent, "#78ce57");
-  assert.equal(paint(latte, false, sliders(false)).accent, "#496904");
+  assert.equal(paint(latte, false, sliders(false)).accent, "#3e5a05");
   // Light's fills stay bright, with dark words on them.
   const light = paint(latte, false, sliders(false));
   assert.ok(oklch(light["accent-fill"])[0] > 0.8, light["accent-fill"]);

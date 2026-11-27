@@ -154,10 +154,10 @@ export interface Preset {
 
 const both = (h: Hue) => ({ dark: h, light: h });
 
-/** Arugula first, the default: Aaron's picks (design-pass brand2's
- * brief), a near-black with a faint blue tint and a saturated green
- * (#78ce57), and a flat, faintly cool paper with no tint, a deep
- * olive-green (#496904) and bright fills. */
+/** Arugula first, the default: Aaron's picks after brand v2 (plan §4.4),
+ * a near-black with a faint blue tint and a saturated green (#78ce57), and
+ * a flat, faintly cool grey paper with no tint, a deep olive-green
+ * (#3e5a05) and bright fills. */
 export const PRESETS: Preset[] = [
   {
     id: "arugula",
@@ -177,9 +177,9 @@ export const PRESETS: Preset[] = [
 export const preset = (id?: string): Preset => PRESETS.find((p) => p.id === id) ?? PRESETS[0];
 
 /** Where a preset starts the sliders in a theme: the darkest dark, or a
- * near-white paper (13 of the light range's 49, Aaron's), and the preset's
- * warmth and depth. */
-export const sliders = (dark: boolean, p: Preset = PRESETS[0]): Sliders => ({ light: dark ? 1 : 13 / 49, warmth: p.warmth, depth: p.depth });
+ * grey paper (38 of the light range's 49, Aaron's), and the preset's warmth
+ * and depth. */
+export const sliders = (dark: boolean, p: Preset = PRESETS[0]): Sliders => ({ light: dark ? 1 : 38 / 49, warmth: p.warmth, depth: p.depth });
 
 /** The fixed signals' OKLCH hues: needs-you amber, failing red, in-review
  * blue. */
