@@ -5,7 +5,8 @@
 // options, a permission's Allow/Deny, a folder's trust, an approval's
 // Start/Not now, a to-do's Done/Can't with a note, or (a question with no
 // options) a typed answer, sent as an option with no id. Answered, it is a dim
-// receipt. It holds at a third of a wide screen or a phone (360–480px):
+// receipt. A teammate's row is neutral: no tick, and its mark is dim, not
+// amber (Arugula #1469). It holds at a third of a wide screen or a phone (360–480px):
 // put rows in a `NeedList`, and the meta wraps under the title.
 //
 // The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
@@ -130,6 +131,7 @@ export function NeedRow({
       open={receipt ? undefined : open}
       onClick={onToggle}
       data-need={need.kind}
+      data-need-for={mine ? "you" : need.for}
       data-need-item={item}
       data-selected={selected || undefined}
     >

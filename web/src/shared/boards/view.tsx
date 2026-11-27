@@ -28,7 +28,7 @@
 // (409): the view reads the board again and says so, and the change is theirs
 // to make again.
 
-import { useEffect, useId, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useId, useRef, useState } from "preact/hooks";
 import type { BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -49,7 +49,7 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, deskTabs } from "./desk";
+import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, RowItems, deskTabs, rowItemWords, useBoardInbox } from "./desk";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
 import { Mark } from "../kit/state-mark";
@@ -205,6 +205,9 @@ export function BoardPanel({
       : [],
     [desk, shown, !!view, tabs.map((t) => t.id).join(), id],
   );
+  // The agents' items on the board's issues, from the project's Inbox (Arugula #1469).
+  const inbox = useBoardInbox(placement === "desk" ? view : null);
+  const itemWords = rowItemWords(inbox);
   const byCard = useLiveRowSessions(project, view?.zones.flatMap((z) => z.rows) ?? [], { shown, cards: !!cardSessions }, () => again());
 
   const again = () => {
@@ -574,26 +577,28 @@ export function BoardPanel({
   const pr = prs.find((p) => p.id === tab);
   return (
     <CardSessions.Provider value={byCard}>
-      <div class="board-desk" data-board-desk={id}>
-        <section class="board-desk-main" aria-label={view.board.title}>
-          <DeskTabs tabs={tabs} current={doc || pr ? tab : "board"} pick={setTab} close={closeTab} />
-          {doc ? (
-            <div class="board-desk-tab" data-board-tab-doc={doc.id}>
-              {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id) : <DocLink d={doc} project={view.board.project} platform={platform} />}
-            </div>
-          ) : pr ? (
-            <div class="board-desk-tab" data-board-tab-pr={pr.id}>
-              <Drawer place="column" r={pr.row} platform={platform} close={() => setTab("board")} project={view.board.project} others={allRows} write={write} act={act} id={id} />
-            </div>
-          ) : (
-            board
-          )}
-        </section>
-        <div class="board-desk-side">
-          <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} />
-          <LeadPanel view={view} id={id} phone={phone} />
+      <RowItems.Provider value={itemWords}>
+        <div class="board-desk" data-board-desk={id}>
+          <section class="board-desk-main" aria-label={view.board.title}>
+            <DeskTabs tabs={tabs} current={doc || pr ? tab : "board"} pick={setTab} close={closeTab} />
+            {doc ? (
+              <div class="board-desk-tab" data-board-tab-doc={doc.id}>
+                {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id) : <DocLink d={doc} project={view.board.project} platform={platform} />}
+              </div>
+            ) : pr ? (
+              <div class="board-desk-tab" data-board-tab-pr={pr.id}>
+                <Drawer place="column" r={pr.row} platform={platform} close={() => setTab("board")} project={view.board.project} others={allRows} write={write} act={act} id={id} />
+              </div>
+            ) : (
+              board
+            )}
+          </section>
+          <div class="board-desk-side">
+            <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} />
+            <LeadPanel view={view} id={id} phone={phone} />
+          </div>
         </div>
-      </div>
+      </RowItems.Provider>
     </CardSessions.Provider>
   );
 }
@@ -1105,7 +1110,8 @@ function Lane({
   const n = laneCount(z);
   /** Done shows its first rows, then "N more" (Lift 5a). */
   const [all, setAll] = useState(false);
-  const rows = needsFirst(z.rows);
+  const items = useContext(RowItems);
+  const rows = needsFirst(z.rows, (r) => !!items.get(r.id)?.mine);
   const cut = z.id === "lane_done" && !all && rows.length > DONE_SHOWN + 1 ? DONE_SHOWN : rows.length;
   // No lane takes a dropped card: a row's lane follows its work (Arugula #1383). A card dragged to another group drops on the group (#664).
   return (
@@ -1226,7 +1232,8 @@ function BoardItemRow({
   const own = liveSessions(r, waitingOf(r), marksOf(r).stalled?.words)[0];
   const other = cardSessions.find((x) => x.needs) ?? cardSessions[0];
   const who = own && !(other?.needs && !own.needs) ? { name: own.name, word: own.word } : other ? { name: other.name, word: other.state ?? "" } : undefined;
-  const st = tileState(r, Date.now(), !!own?.needs || !!other?.needs);
+  const item = useContext(RowItems).get(r.id);
+  const st = tileState(r, Date.now(), !!own?.needs || !!other?.needs, item);
   const meta = tileMeta(r, who);
   const more = (e: MouseEvent) =>
     menuAt(e, [

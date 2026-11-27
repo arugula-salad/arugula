@@ -91,10 +91,54 @@ test("Needs you: your ask is a row with its options, a teammate's folded under o
   await expect.poll(() => answers).toEqual([{ option: "Truncate middle", text: null }]);
   // Jake's is folded: one row says so, and opens to his.
   const others = needs.locator("[data-board-needs-others]");
-  await expect(others).toContainText("1 ask for Jake");
+  await expect(others).toContainText("· 1 for Jake ›");
   await expect(needs.locator('[data-board-ask="ask_2"]')).toHaveCount(0);
   await others.locator(".k-row-line").first().click();
   await expect(needs.locator('[data-board-ask="ask_2"]')).toContainText("asks Jake");
+});
+
+// The agents' items on the board's issues, from the project's Inbox (Arugula #1469): a to-do for you, an agent's ask for Jo.
+const ITEMS = [
+  { id: "prp_t1", kind: "todo", group: "decide", counts: true, title: "Rotate the CI deploy key", lines: ["Why: the deploy key expired"], from: { agent: "claude@geek", machine: "m_geek" }, subject: { type: "proposal", id: "prp_t1", url: "/inbox", project: P, issue: "iss_1622" }, answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 3 * 60_000 },
+  { id: "ses_j:1", kind: "agent_ask", group: "decide", counts: false, for: "acct_b", title: "Which crumb width?", from: { agent: "ses_j" }, subject: { type: "session", id: "ses_j", url: `/p/${P}/chat/room_j?msg=1`, project: P, issue: "iss_1443" }, answer: { via: "session_action", options: [] }, since: Date.now() - 60_000 },
+];
+
+test("Needs you takes the agents' items on its issues: yours answered there, a teammate's neutral, folded and named; tiles say who is asked", async ({ page }, info) => {
+  await page.addInitScript((items) => ((window as unknown as { __inbox: unknown }).__inbox = items), ITEMS);
+  await openDesk(page);
+  const needs = page.locator("[data-board-needs]");
+  // Yours: your ask and your to-do.
+  await expect(needs).toHaveAttribute("data-board-needs", "2");
+  const todo = needs.locator('[data-board-item="prp_t1"]');
+  await expect(todo).toContainText("waits on you");
+  await expect(todo).toContainText("#1622");
+  // A teammate's: one neutral fold each, naming them, and no row of theirs until it opens.
+  const jo = needs.locator('[data-board-needs-for="Jo"]');
+  await expect(jo).toContainText("· 1 for Jo ›");
+  await expect(needs.locator('[data-board-needs-for="Jake"]')).toContainText("· 1 for Jake ›");
+  await expect(jo.locator(".k-mark")).toHaveCount(0);
+  await expect(jo).not.toHaveClass(/is-need/);
+  await expect(needs.locator('[data-board-item="ses_j:1"]')).toHaveCount(0);
+  await jo.locator(".k-row-line").first().click();
+  const theirs = needs.locator('[data-board-item="ses_j:1"] [data-need]');
+  await expect(theirs).toContainText("asks Jo");
+  await expect(theirs).toHaveAttribute("data-need-for", "Jo");
+  await expect(theirs).toHaveClass(/is-plain/);
+  await expect(theirs.getByRole("button", { name: "Send" })).toHaveCount(0);
+  // Its mark isn't amber: yours is.
+  const colour = (l: ReturnType<Page["locator"]>) => l.locator(".k-mark").first().evaluate((e) => getComputedStyle(e).color);
+  expect(await colour(theirs)).not.toBe(await colour(needs.locator('[data-board-ask="ask_1"] [data-need]')));
+  // The tiles name who is asked.
+  await expect(page.locator('[data-board-row="row_1622"] [data-board-tile-word]')).toHaveText("waits on you");
+  await expect(page.locator('[data-board-row="row_1443"] [data-board-tile-word]')).toHaveText("asks Jo");
+  await page.screenshot({ path: info.outputPath("board-needs-1440.png") });
+  // Your to-do answers in place, with its note.
+  await todo.locator(".k-row-line").first().click();
+  await todo.getByLabel("Note").fill("rotated in the vault");
+  await todo.getByRole("button", { name: "Done" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __inboxPosted?: unknown[] }).__inboxPosted)).toEqual([{ id: "prp_t1", choice: "Done", note: "rotated in the vault" }]);
+  await page.setViewportSize({ width: 360, height: 800 });
+  await needs.screenshot({ path: info.outputPath("board-needs-360.png") });
 });
 
 test("tabs: 1 is the board, 2 its Doc; a PR from the fold opens as a tab that closes", async ({ page }) => {

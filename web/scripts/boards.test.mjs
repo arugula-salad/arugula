@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -651,4 +651,49 @@ test("a tile says its state in a word and who it waits on, no fill; those that w
   assert.deepEqual(tileMeta(row("done", { live: { state: "closed", kind: "native", number: 3, title: "t" } }), undefined), ["closed"]);
   assert.deepEqual(tileMeta(row("next"), undefined), ["no agent yet"]);
   assert.deepEqual(needsFirst([row("a"), row("b", { ask: ask(true) }), row("c")]).map((r) => r.id), ["b", "a", "c"]);
+});
+
+test("the agents' items on a board's issues: by row, oldest first; who they wait on; a tile's word; the fold; an answer's Activity words (Arugula #1469)", () => {
+  const rows = [
+    { id: "row_1", pointer: { kind: "issue", id: "iss_1" } },
+    { id: "row_2", pointer: { kind: "issue", id: "iss_2" } },
+    { id: "row_3", pointer: { kind: "forge_item", id: "fi_3" } },
+  ];
+  const item = (id, more = {}) => ({ id, kind: "todo", group: "decide", counts: true, title: id, from: {}, subject: { type: "proposal", id, url: "/inbox", issue: "iss_1" }, since: 2, ...more });
+  const items = [
+    item("prp_b", { since: 5 }),
+    item("prp_a", { since: 1, kind: "approval", answer: { via: "card", options: ["Approve", "Deny"] } }),
+    item("ses_1:9", { kind: "agent_ask", subject: { type: "session", id: "ses_1", url: "/p/x/chat/r?msg=1", issue: "iss_2" }, for: "acc_jake" }),
+    item("ask_1", { kind: "board_ask" }),
+    item("fi_9:checks_failed", { kind: "checks_failed" }),
+    item("prp_done", { done_at: 3 }),
+    item("prp_other", { subject: { type: "proposal", id: "prp_other", url: "/inbox", issue: "iss_9" } }),
+    item("prp_none", { subject: { type: "proposal", id: "prp_none", url: "/inbox" } }),
+  ];
+  const by = boardItems(rows, items);
+  assert.deepEqual([...by.keys()], ["row_1", "row_2"]);
+  assert.deepEqual(by.get("row_1").map((i) => i.id), ["prp_a", "prp_b"], "a board ask is the row's own, an alert isn't Needs you, done ones go");
+  const name = (a) => (a === "acc_jake" ? "Jake" : a);
+  assert.equal(itemFor(items[2], "acc_me", name), "Jake");
+  assert.equal(itemFor(items[0], "acc_me", name), "you");
+  assert.equal(itemFor({ for: "acc_me" }, "acc_me", name), "you");
+  assert.equal(itemWord(items[0], "you"), "waits on you");
+  assert.equal(itemWord(items[2], "Jake"), "asks Jake");
+  assert.equal(forTeammateFold(1, "Jake"), "· 1 for Jake ›");
+  // A to-do's how is its line with newlines; an approval answers in place, an agent's ask opens where it is.
+  const todo = itemNeed(item("prp_t", { lines: ["Why: the key expired", "op item get\nrotate"], answer: { via: "todo", options: ["Done", "Can't"] } }), "you", 7, 2 + 5 * 60_000);
+  assert.deepEqual([todo.kind, todo.for, todo.subject.id, todo.lines, todo.how, todo.age], ["todo", "you", "#7", ["Why: the key expired"], "op item get\nrotate", "5m"]);
+  assert.deepEqual(todo.answer, { via: "todo", options: [{ id: "Done", label: "Done" }, { id: "Can't", label: "Can't" }] });
+  assert.equal(itemNeed(items[1], "you", 1).answer.via, "card");
+  assert.equal(itemNeed(items[2], "Jake", 2).answer, undefined);
+  // A tile names who is asked; one that waits on you sorts first.
+  const tile = (id, more = {}) => ({ id, lane: "doing", pointer: { kind: "issue", id }, live: null, attachments: [], marks: [], ...more });
+  assert.deepEqual(tileState(tile("a"), 0, false, { word: "waits on you", mine: true }), { mark: "asks", word: "waits on you", needs: true });
+  assert.deepEqual(tileState(tile("a"), 0, false, { word: "asks Jake", mine: false }), { mark: "waits", word: "asks Jake" });
+  assert.deepEqual(needsFirst([tile("a"), tile("b")], (r) => r.id === "b").map((r) => r.id), ["b", "a"]);
+  // Activity: a board ask's and an approval's answer; a to-do's what and the note its record keeps.
+  assert.deepEqual(answeredWords({ question: "Squash?", answer: "Squash" }), { verb: "answered", what: "Squash" });
+  assert.deepEqual(answeredWords({ kind: "approval", question: "Start?", answer: "Approve" }), { verb: "answered", what: "Approve" });
+  assert.deepEqual(answeredWords({ kind: "todo", question: "Rotate the key", answer: "Done", note: "in 1Password" }), { verb: "did", what: "Rotate the key", note: "in 1Password" });
+  assert.deepEqual(answeredWords({ kind: "todo", question: "Rotate the key", answer: "Can't" }), { verb: "couldn't do", what: "Rotate the key", note: undefined });
 });

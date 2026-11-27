@@ -133,6 +133,10 @@
 .k-needs {
   color: var(--needs);
 }
+/* A teammate's need row is neutral (Arugula #1469): its mark isn't amber. */
+.k-row.is-plain[data-need] [data-state] > .k-mark {
+  color: var(--ink-dim);
+}
 .k-row-body {
   display: grid;
   gap: 8px;
