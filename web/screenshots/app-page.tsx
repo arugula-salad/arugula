@@ -32,7 +32,7 @@ import { apply as applyAppearance } from "../src/shared/appearance";
 import { setSignedIn } from "../src/shell/signed-in";
 import { setPlatformHere } from "../src/shell/platform-links";
 import { followPlatformLinks } from "../src/app/platform-here";
-import { boards, cardOf, HERE, issues, LABELS, MACHINES, ME, messages, P, PEOPLE, PERSONAL, proposalAsk, room, ROOMS, STAFF, staffMessages, staffRoom, TEAM, view } from "./team";
+import { boards, cardOf, HERE, issues, LABELS, MACHINES, ME, messages, P, PEOPLE, PERSONAL, PROPOSAL, proposalAsk, room, ROOMS, STAFF, staffMessages, staffRoom, TEAM, view } from "./team";
 
 await startPageKey();
 
@@ -58,10 +58,18 @@ window.fetch = async (input, init) => {
       ],
       hosted: false,
     });
-  // What wants Priya: Jen's PR for review, and an issue of hers.
+  // What wants Priya: Jen's PR for review, and an issue of hers; with the
+  // proposal's pictures, the chief of staff's approval (Arugula #1467),
+  // answered here as its staff card is.
+  if (path === `/api/inbox/${PROPOSAL.id}` && method === "POST") {
+    sessionStorage.setItem("shots.proposal", "approved");
+    return json({ item: PROPOSAL.id, marked: 1 });
+  }
   if (path === "/api/inbox") {
     const entry = (n: number, kind: string, reason: string, title: string) => ({ item: kind === "pr" ? `gamenight/app#${n}` : `iss_${n}`, reason, repo: "gamenight/app", number: n, kind, state: "open", title, author: "jen", url: "", project: P, seen_at: null });
-    return json({ entries: [entry(41, "pr", "review_requested", "Vote on which games to play"), entry(14, "issue", "assigned", "Fix the flaky session expiry test")] });
+    const approval = { id: PROPOSAL.id, kind: "approval", group: "decide", counts: true, title: `Start an agent on #${PROPOSAL.issue.number}?`, lines: [`${PROPOSAL.issue.title} · in ${PROPOSAL.repo}`, `Why: ${PROPOSAL.why}`], from: { name: "Chief of staff · Game night" }, subject: { type: "proposal", id: PROPOSAL.id, url: `/p/${P}`, project: P, room: STAFF, seq: 2 }, answer: { via: "card", options: ["Approve", "Deny"] }, since: now - 6 * 60_000 };
+    const items = proposal() === "open" ? [approval] : [];
+    return json({ entries: [entry(41, "pr", "review_requested", "Vote on which games to play"), entry(14, "issue", "assigned", "Fix the flaky session expiry test")], items, count: items.length, by_project: items.length ? { [P]: items.length } : {}, handled: 0 });
   }
   // The daemon itself, by the id control would give it (and no address, so
   // it isn't listed twice): the Overview's Work level reaches its panes by
@@ -83,12 +91,6 @@ window.fetch = async (input, init) => {
   if (path === `/api/projects/${P}/sessions/by-card`) return json({ project: P, groups: [] });
   if (path === `/api/projects/${P}/trackers`) return json({ connections: [] });
   if (path === `/api/projects/${P}/work`) return json({ project: P, items: [], next: null, total: 0, labels: [] });
-  // The briefing: since last night, two merged and a PR waiting on you.
-  if (path === `/api/projects/${P}/overview/seen`) return json({ seq: 100, at_ms: now - 15 * 3_600_000 });
-  if (path === `/api/projects/${P}/events`) {
-    const ev = (seq: number, type: string, pr: number) => ({ id: `evt_${seq}`, seq, type, v: 1, source: "github", scope: { team: TEAM, project: P }, subject: `gamenight/app#${pr}`, actor: null, at_ms: now - (130 - seq) * 600_000, recorded_ms: now, data: { repo: "gamenight/app", pr, branch: `b${pr}` }, key: `k${seq}` });
-    return json({ events: [ev(101, "github.pr.merged", 38), ev(104, "github.pr.merged", 39), ev(110, "github.pr.ready", 41)], next_after: 120, head: 120 });
-  }
 
   // Issues.
   if (path === `/api/projects/${P}/issues`) return json({ project: P, issues: issues(now, url.searchParams.get("state") ?? "open"), more: false });
@@ -98,10 +100,9 @@ window.fetch = async (input, init) => {
     return i ? json(i) : json({ error: "not found" }, 404);
   }
 
-  // The chief of staff's proposal: its staff room, the project's open asks, the ask and its answer.
+  // The chief of staff's proposal: its staff room, the ask and its answer.
   if (proposal()) {
     const open = proposal() === "open";
-    if (path === `/api/projects/${P}/asks`) return json({ asks: open ? [proposalAsk(true)] : [] });
     if (path === `/api/chat/rooms/${STAFF}/messages`) return json({ room: staffRoom(open), messages: staffMessages(now, open), more: false });
     if (path === `/api/chat/rooms/${STAFF}/read`) return json({});
     if (path === `/api/chat/rooms/${STAFF}/asks/2`) {

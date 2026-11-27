@@ -55,7 +55,8 @@ export function ProjectHome({ id, board, card, zoom }: { id: string; board?: str
   const sections = <HomeSections p={p} boards={boards} workspaces={workspaces} rooms={rooms} chatPath={chatPath} workspacesPath={workspacesPath} />;
   return (
     <section class="platform-section sw-page" data-project-home={p.id}>
-      <PageHeader title={p.name} named actions={chat.on && p.team ? <Faces p={p} /> : undefined} />
+      {/* The Overview has its own title line, with the faces (Lift 4). */}
+      {!Overview && <PageHeader title={p.name} named actions={chat.on && p.team ? <Faces p={p} /> : undefined} />}
       {Overview ? (
         <Overview project={p.id} board={board} card={card} zoom={zoom}>
           {sections}
@@ -348,7 +349,7 @@ function Members({ p }: { p: PlatformProject }) {
 
 /** The team's faces in the header (#1088), each with its dot (who's
  * around, ../../shared/chat/presence.ts): drawn only while chat is on. */
-function Faces({ p }: { p: PlatformProject }) {
+export function Faces({ p }: { p: PlatformProject }) {
   return (
     <ul class="project-faces" aria-label={`${p.team!.name}'s people`} data-project-faces>
       {p.team!.members.map((m) => (

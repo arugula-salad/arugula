@@ -32,3 +32,14 @@ if people miss it. Newest at the bottom.
 - **An issue's label and assignee Edit buttons:** the labels and the people are the buttons (click to edit), in the card's properties (Lift 5a, Arugula #1481).
 - **The New issue page:** New issue and Add row are a sheet (title, description, Start an agent on it); labels and assignees are set on the issue after; `/p/:project/issues/new` opens All issues with the sheet (Lift 5a, Arugula #1481).
 - **A board's New issue in ⋯:** Add row opens the issue and puts it on the board; Add an existing item… adds an issue or PR that's there already (Lift 5a, Arugula #1481).
+- **The Overview's zoom:** the Project / Board / Work pill, the board and work levels and their transition; a board's card opens its board, and the old zoom addresses land there (Lift 4, Arugula #1480).
+- **The Overview's divider:** the right column is a third, fixed (Lift 4, Arugula #1480).
+- **The briefing line:** "since 1:35 AM…" and its counts from the event log; the chief of staff's room says what moved (Lift 4, Arugula #1480).
+- **A board's cards in flight on the Overview, with their previews:** the board shows them (Lift 4, Arugula #1480).
+- **Not on a card:** its sessions are on Machines; an ask from one is a Needs-you row saying "not on a card" (Lift 4, Arugula #1480).
+- **Your work on the personal project's Overview:** your Claude Code and Codex conversations are on your machine's page (Lift 4, Arugula #1480).
+- **A board's lead chip and thread button on the Overview:** the board has both (Lift 4, Arugula #1480).
+- **Alerts in Needs you** (checks or a run failed): the board's and Running's (Lift 4, Arugula #1480).
+- **The proposals' cards in Needs you:** an approval is a Needs-you row, answered there; its card stays in the staff room (Lift 4, Arugula #1480).
+- **Answering a form, or several questions, from Needs you:** Open takes you to the pane, which answers it (Lift 4, Arugula #1480).
+- **`web/screenshots/dive.mjs`:** the README's dive.gif toured the zoom, which is gone (Lift 4, Arugula #1480).

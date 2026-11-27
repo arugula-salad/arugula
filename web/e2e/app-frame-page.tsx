@@ -56,6 +56,15 @@ window.fetch = async (input, init) => {
   // (`window.__inbox`); with `project`, that project's alone. The count
   // and its split by project follow the server's rule: counted, and for
   // the reader (acct_a) or no one.
+  // Answering an item (Arugula #1467): kept in `window.__inboxPosted`, and the item leaves the list.
+  const answering = /^\/api\/inbox\/(.+)$/.exec(url.pathname);
+  if (answering && init?.method === "POST") {
+    const w = window as unknown as { __inbox?: InboxItem[]; __inboxPosted?: unknown[] };
+    const id = decodeURIComponent(answering[1]!);
+    (w.__inboxPosted ??= []).push({ id, ...(JSON.parse(String(init.body)) as object) });
+    w.__inbox = (w.__inbox ?? []).filter((i) => i.id !== id);
+    return json({ item: id, marked: 1 });
+  }
   if (url.pathname === "/api/inbox") {
     const project = url.searchParams.get("project");
     const item = (n: number, project: string | null) => ({ id: `iss_${n}:assigned`, kind: "assigned", group: "named", counts: true, title: `#${n} Thing ${n}`, from: {}, subject: { type: "issue", id: `iss_${n}`, url: "", ...(project ? { project } : {}) }, since: n });

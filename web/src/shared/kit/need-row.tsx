@@ -9,7 +9,9 @@
 // put rows in a `NeedList`, and the meta wraps under the title.
 //
 // The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
-// table binds them.
+// table binds them, and presses a row's answer by its `data-answer` (the
+// option's place: 0 is `y` or `D`, 1 is `x`). `extra` holds what a row
+// can do besides answer (Open, where it can't be answered here).
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
@@ -82,17 +84,25 @@ export function who(n: Pick<Need, "kind" | "for">): string {
 
 export function NeedRow({
   need,
+  item,
   open,
+  selected,
   onToggle,
   onAnswer,
   receipt,
+  extra,
 }: {
   need: Need;
+  /** The item's id, as `data-need-item`, for the screen's keys. */
+  item?: string;
+  /** The keys' row: a ring, as a picked surface has. */
+  selected?: boolean;
   open?: boolean;
   onToggle?: () => void;
   /** The option picked, and a to-do's note. */
   onAnswer?: (option: NeedOption, note?: string) => void;
   receipt?: Receipt;
+  extra?: ComponentChildren;
 }) {
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
@@ -120,6 +130,8 @@ export function NeedRow({
       open={receipt ? undefined : open}
       onClick={onToggle}
       data-need={need.kind}
+      data-need-item={item}
+      data-selected={selected || undefined}
     >
       {need.lines?.map((l, i) =>
         need.kind === "permission" && i === 0 ? (
@@ -149,13 +161,16 @@ export function NeedRow({
           </div>
         </>
       ) : null}
-      {mine && options.length ? (
+      {(mine && options.length) || extra ? (
         <div class="k-row-actions">
-          {options.map((o, i) => (
-            <Button key={o.id} kind={i === 0 ? "primary" : "plain"} keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]} onClick={() => onAnswer?.(o, todo ? note : undefined)}>
-              {o.label}
-            </Button>
-          ))}
+          {mine
+            ? options.map((o, i) => (
+                <Button key={o.id} kind={i === 0 ? "primary" : "plain"} keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]} data-answer={i} onClick={() => onAnswer?.(o, todo ? note : undefined)}>
+                  {o.label}
+                </Button>
+              ))
+            : null}
+          {extra}
         </div>
       ) : null}
     </Row>

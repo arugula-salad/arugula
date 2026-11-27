@@ -86,7 +86,8 @@
 .k-row:hover {
   background: var(--hover);
 }
-.k-row.is-selected {
+.k-row.is-selected,
+.k-row[data-selected] {
   background: var(--card-raised);
   box-shadow: inset 2px 0 0 var(--ink);
 }
@@ -169,6 +170,7 @@
 }
 .k-need-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   container: k-need / inline-size;
 }
