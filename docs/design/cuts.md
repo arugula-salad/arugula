@@ -30,3 +30,5 @@ if people miss it. Newest at the bottom.
 - **The Issues page, and its stats line:** the project's issues are All issues, a row of Boards (`/p/:project/issues` selects it), with Open/Closed, search, Label, Assignee and Export as before (Lift 5a, Arugula #1481).
 - **Not on a board when it's empty:** its row shows only while some open issue is on no board (Lift 5a, Arugula #1481).
 - **An issue's label and assignee Edit buttons:** the labels and the people are the buttons (click to edit), in the card's properties (Lift 5a, Arugula #1481).
+- **The New issue page:** New issue and Add row are a sheet (title, description, Start an agent on it); labels and assignees are set on the issue after; `/p/:project/issues/new` opens All issues with the sheet (Lift 5a, Arugula #1481).
+- **A board's New issue in ⋯:** Add row opens the issue and puts it on the board; Add an existing item… adds an issue or PR that's there already (Lift 5a, Arugula #1481).

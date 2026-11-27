@@ -172,6 +172,14 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-list-preview] [data-issues-closed]")).toHaveAttribute("aria-pressed", "true");
   });
 
+  test("New issue's old address opens All issues with the New issue sheet (Lift 5a)", async ({ page }) => {
+    await openApp(page, `/p/${P}/issues/new`);
+    await expect(page.locator("[data-list-rows] [data-boards-all]")).toHaveAttribute("aria-selected", "true");
+    const sheet = page.getByRole("dialog", { name: "New issue" });
+    await expect(sheet.locator("[data-add-row-title]")).toBeFocused();
+    await expect(sheet.locator("[data-add-row-add]")).toHaveText("Open issue");
+  });
+
   test("Not on a board shows only while it has issues", async ({ page }) => {
     await openApp(page, `/p/${P}/boards`);
     await page.route(new RegExp(`/api/projects/${P}/work\\?`), (r) => r.fulfill({ json: { project: P, items: [], next: null, total: 0, labels: [] } }));

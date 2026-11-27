@@ -390,39 +390,6 @@ details.issues-note > summary {
   max-width: 680px;
 }
 
-.issue-form label {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.issue-form label.control-confirm {
-  display: block;
-}
-
-/* Labels and Assignees: a label over their chips or boxes, as the other
-   fields have, with no box of their own (UI audit #163). */
-.issue-assignees {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.issue-form-part {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.issue-form-label {
-  padding: 0;
-}
-
-.issue-form .ws-tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
 /* An issue in a narrow place (a phone, a block in a split): its labels
    and assignees sit above its text, side by side. */
 .issue-page {

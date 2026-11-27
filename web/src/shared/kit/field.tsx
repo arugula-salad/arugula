@@ -12,6 +12,9 @@ export function TextField({
   placeholder,
   hint,
   disabled,
+  lines,
+  autoFocus,
+  ...data
 }: {
   label: string;
   value: string;
@@ -21,12 +24,27 @@ export function TextField({
   /** A word or two after the box: "no secrets". */
   hint?: string;
   disabled?: boolean;
+  /** A box of this many lines (a description), where Enter is a new line. */
+  lines?: number;
+  autoFocus?: boolean;
+  [data: `data-${string}`]: unknown;
 }) {
+  if (lines)
+    return (
+      <label class="k-field" data-kit="field">
+        {label}
+        <span class="k-field-box is-lines">
+          <textarea rows={lines} value={value} placeholder={placeholder} autoFocus={autoFocus} onInput={(e) => onInput(e.currentTarget.value)} disabled={disabled} {...data} />
+        </span>
+      </label>
+    );
   return (
     <label class="k-field" data-kit="field">
       {label}
       <span class="k-field-box">
         <input
+          autoFocus={autoFocus}
+          {...data}
           value={value}
           placeholder={placeholder}
           onInput={(e) => onInput(e.currentTarget.value)}

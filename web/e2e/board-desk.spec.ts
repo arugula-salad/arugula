@@ -118,7 +118,7 @@ test("tabs: 1 is the board, 2 its Doc; a PR from the fold opens as a tab that cl
   await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
 });
 
-test("Filter (f) shows the find bar; Add row (a) its form; the sidebar's adds are in ⋯", async ({ page }) => {
+test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
   await openDesk(page);
   await expect(page.locator("[data-board-find]")).toHaveCount(0);
   await page.keyboard.press("f");
@@ -126,9 +126,11 @@ test("Filter (f) shows the find bar; Add row (a) its form; the sidebar's adds ar
   await page.keyboard.press("Escape");
   await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("a");
-  await expect(page.locator("[data-board-row-form], .board-form").first()).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Add row" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Add row" })).toHaveCount(0);
   await page.locator("[data-board-more]").click();
-  for (const hook of ["[data-board-doc-add]", "[data-board-add-group]", "[data-board-new-issue]", "[data-board-workers]", "[data-copy-link]"]) await expect(page.locator(`[role=menu] ${hook}`)).toBeVisible();
+  for (const hook of ["[data-board-add-existing]", "[data-board-doc-add]", "[data-board-add-group]", "[data-board-workers]", "[data-copy-link]"]) await expect(page.locator(`[role=menu] ${hook}`)).toBeVisible();
 });
 
 test("every project's old Boards addresses still land: /boards on a project's Boards, /boards/:board on its page", async ({ page }) => {
@@ -181,4 +183,22 @@ test("j and k move between tiles; Enter opens one", async ({ page }) => {
   await expect(page.locator("[data-board-row]").first()).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-board-drawer]")).toBeVisible();
+});
+
+test("Add row is a sheet: a title, a description and Start an agent on it; it opens the issue, puts it on the board and asks for its agent", async ({ page }, info) => {
+  await openDesk(page);
+  const made = { id: `iss_${"9".padStart(32, "0")}`, project: P, number: 1700, title: "Tabs keep their order", body: "", state: "open", close_reason: null, author: "acct_a", agent: null, labels: [], assignees: [], github: null, created_at: 1, updated_at: 1, closed_at: null };
+  const calls: string[] = [];
+  await page.route(`**/api/projects/${P}/issues`, (r) => (calls.push(`issue ${r.request().postDataJSON().title}`), r.fulfill({ json: made })));
+  await page.route(`**/api/boards/${B}/entries`, (r) => (calls.push(`row ${r.request().postDataJSON().pointer.id}`), r.fulfill({ json: VIEW })));
+  await page.route(`**/api/issues/${made.id}/agent`, (r) => (calls.push("agent"), r.fulfill({ json: { started: true } })));
+  await page.locator("[data-board-add-row]").click();
+  const sheet = page.getByRole("dialog", { name: "Add row" });
+  await sheet.locator("[data-add-row-title]").fill("Tabs keep their order");
+  await sheet.locator("[data-add-row-body]").fill("Across a reload.");
+  await sheet.getByRole("switch", { name: "Start an agent on it" }).click();
+  await page.screenshot({ path: info.outputPath("add-row.png") });
+  await sheet.locator("[data-add-row-add]").click();
+  await expect.poll(() => calls).toEqual(["issue Tabs keep their order", `row ${made.id}`, "agent"]);
+  await expect(sheet).toHaveCount(0);
 });

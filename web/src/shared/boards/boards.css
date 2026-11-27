@@ -390,22 +390,6 @@
   min-width: 0;
 }
 
-/* Initials in a small circle (#547). */
-.board-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  box-sizing: border-box;
-  padding: 0 3px;
-  border-radius: 9px;
-  background: var(--raised);
-  color: var(--fg);
-  font-size: 10px; /* off-scale: avatar initials */
-  font-weight: 600;
-}
-
 .board-who {
   gap: 2px;
 }
@@ -1158,4 +1142,11 @@ a.board-tile-title:focus-visible {
     border-top: 0;
     border-radius: 0;
   }
+}
+
+/* Add row's sheet (Lift 5a): its fields one under the other. */
+.add-row-form {
+  display: grid;
+  gap: 12px;
+  width: min(520px, 80vw);
 }

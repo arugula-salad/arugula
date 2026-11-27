@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -565,10 +565,6 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
   assert.equal(filterHash(g), "group=zone_a&group=none");
   assert.deepEqual(parseFilterHash("#group=zone_a&group=none"), g);
   assert.deepEqual(topAndMore(["a"], 3), { top: ["a"], more: 0 });
-  assert.equal(initialsOf("Ana Diaz"), "AD");
-  assert.equal(initialsOf("alice"), "A");
-  assert.equal(initialsOf("bob-the_builder x"), "BT");
-  assert.equal(initialsOf(""), "?");
 });
 
 // The Steps view (Arugula #763): a reorder keeps to its group's order, a link is an arrow the way its kind runs.

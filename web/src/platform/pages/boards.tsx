@@ -133,11 +133,11 @@ export function AllBoardsPage({ board }: { board?: string }) {
 /** `/p/:project/boards`, `/p/:project/boards/:board` (that board's row
  * selected) and `/p/:project/triage` (Not on a board's row selected): one page,
  * so going between them keeps the list as it is. */
-export function BoardsPage({ project, board, triage, issues }: { project: string; board?: string; triage?: boolean; issues?: IssueFilter }) {
+export function BoardsPage({ project, board, triage, issues, adding }: { project: string; board?: string; triage?: boolean; issues?: IssueFilter; adding?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return board ? <BoardDesk key={board} p={p} id={board} /> : <BoardList p={p} triage={triage} issues={issues} />;
+  return board ? <BoardDesk key={board} p={p} id={board} /> : <BoardList p={p} triage={triage} issues={issues} adding={adding} />;
 }
 
 /** The names of the machines of the reader's whose agents can't see the project's boards (#313); none while the grants load or when they can't be read. */
@@ -186,7 +186,7 @@ const isAll = (r: BoardRow): r is typeof ALL => "all" in r;
  * groups; the board itself in the middle. Not on a board is the first row,
  * with its count (Arugula #1130): selected, its issues go in the middle, and
  * one dragged onto a board's row goes on that board. */
-function BoardList({ p, triage, issues }: { p: PlatformProject; triage?: boolean; issues?: IssueFilter }) {
+function BoardList({ p, triage, issues, adding }: { p: PlatformProject; triage?: boolean; issues?: IssueFilter; adding?: boolean }) {
   const list = useBoards(p.id);
   const [q, setQ] = useState("");
   const [making, setMaking] = useState(false);
@@ -283,7 +283,7 @@ function BoardList({ p, triage, issues }: { p: PlatformProject; triage?: boolean
             };
           return { ...boardRow(r), attrs: { "data-board-item": r.id, ...(r.closed_at == null ? { "data-drop-target": "" } : {}) } };
         }}
-        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : isAll(r) ? <IssueList p={p} filter={issues ?? {}} /> : null)}
+        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : isAll(r) ? <IssueList p={p} filter={issues ?? {}} adding={adding} /> : null)}
       />
     </div>
   );

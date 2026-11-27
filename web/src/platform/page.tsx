@@ -23,7 +23,6 @@ import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
 import { IssuePage } from "./pages/issue";
-import { NewIssuePage } from "./pages/issues";
 import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
@@ -131,7 +130,8 @@ function body(r: Route, lost: string | null) {
     case "issues":
       return <BoardsPage project={r.project} issues={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
     case "new-issue":
-      return <NewIssuePage project={r.project} />;
+      // New issue is a sheet over All issues (Lift 5a).
+      return <BoardsPage project={r.project} issues={{}} adding />;
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} thread={r.thread} />;
     case "triage":

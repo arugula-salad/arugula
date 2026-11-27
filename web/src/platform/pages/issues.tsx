@@ -18,10 +18,11 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../../shared/ui/settings-section";
+import { AddRowSheet } from "../../shared/boards/add-row";
 import { issues, type IssueFilter } from "../../shared/issues/store";
 import { githubNewIssue, rowLine } from "../../shared/issues/text";
 import { when } from "../../shared/time";
-import { LabelChip, pickLabels } from "../../shared/issues/view";
+import { LabelChip } from "../../shared/issues/view";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
@@ -83,7 +84,9 @@ const menuAt = (e: MouseEvent, items: MenuItem[]) => {
 };
 
 /** All issues (Lift 5a): a row of the project's Boards list, the Issues page that was; `/p/:project/issues` selects it. */
-export function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
+export function IssueList({ p, filter, adding: addAtFirst = false }: { p: PlatformProject; filter: IssueFilter; adding?: boolean }) {
+  /** New issue's sheet is open (`/p/:project/issues/new` opens it). */
+  const [adding, setAdding] = useState(addAtFirst && mayWrite(p));
   const [list, setList] = useState<NativeIssue[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,7 +164,7 @@ export function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilt
             <button class="secondary issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
               Export <Caret />
             </button>
-            {mayWrite(p) && <NewIssueButton p={p} home={home} />}
+            {mayWrite(p) && <NewIssueButton p={p} home={home} open={() => setAdding(true)} />}
           </>
         }
       />
@@ -224,6 +227,7 @@ export function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilt
           More issues
         </button>
       )}
+      {adding && home?.home !== "github" && <AddRowSheet project={p.id} close={() => setAdding(false)} done={(i) => go(pathOf({ page: "issue", project: p.id, issue: i.id }, names))} />}
     </section>
   );
 }
@@ -274,7 +278,7 @@ function useHome(project: string): [IssueHome | null, (h: IssueHome) => void] {
 /** "New issue": the form here, or GitHub's page when the project's issues
  * live there (a menu of its repos when it links several). Nothing until
  * the home is known. `small`: the project home's, beside its heading. */
-function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHome | null; small?: boolean }) {
+function NewIssueButton({ p, home, small, open: sheet }: { p: PlatformProject; home: IssueHome | null; small?: boolean; open?: () => void }) {
   if (!home) return null;
   // The project home's is a small button beside its heading (UI audit #162).
   const cls = small ? "secondary small" : "primary issues-new";
@@ -304,9 +308,10 @@ function NewIssueButton({ p, home, small }: { p: PlatformProject; home: IssueHom
       </button>
     );
   }
+  // Here: the New issue sheet (Lift 5a), or All issues with it open.
   const to = pathOf({ page: "new-issue", project: p.id }, names);
   return (
-    <a class={cls} href={to} title={title} data-issue-new={small ? undefined : ""} data-project-new-issue={small ? "" : undefined} onClick={(e) => follow(e, to)}>
+    <a class={cls} href={to} title={title} data-issue-new={small ? undefined : ""} data-project-new-issue={small ? "" : undefined} onClick={(e) => (sheet && !(e.metaKey || e.ctrlKey || e.shiftKey) ? (e.preventDefault(), sheet()) : follow(e, to))}>
       {label}
     </a>
   );
@@ -392,135 +397,6 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
 }
 
 // ---- a new issue
-
-export function NewIssuePage({ project }: { project: string }) {
-  const on = useIssuesOn(project);
-  if ("show" in on) return on.show;
-  return <NewIssue p={on.p} />;
-}
-
-function NewIssue({ p }: { p: PlatformProject }) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [labels, setLabels] = useState<string[]>([]);
-  const [assignees, setAssignees] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [home] = useHome(p.id);
-  const list = pathOf({ page: "issues", project: p.id }, names);
-  const back = { href: list, label: "Issues", onClick: (e: MouseEvent) => follow(e, list) };
-  if (!mayWrite(p)) {
-    return (
-      <section class="platform-section sw-page" data-issue-new-viewer>
-        <PageHeader title="New issue" back={back} />
-        <p class="dim">You're a viewer in {p.team?.name}: you read its issues and comment on them, and its owners and editors open them.</p>
-      </section>
-    );
-  }
-  if (!home) return <p class="platform-section dim">Loading…</p>;
-  if (home.home === "github") {
-    return (
-      <section class="platform-section sw-page issue-new" data-issue-new-github-only>
-        <PageHeader title="New issue" back={back} />
-        <p>
-          This project's new issues go to GitHub
-          {home.repos.length > 1 ? ": open one on the repo it's about." : "."}
-        </p>
-        <ul class="platform-list">
-          {home.repos.map((r) => (
-            <li key={r}>
-              <a href={githubNewIssue(r)} target="_blank" rel="noopener" data-issue-new-github={r}>
-                New issue on {r} <ExternalIcon size="xs" />
-              </a>
-            </li>
-          ))}
-        </ul>
-        <p class="dim">
-          An owner or editor can keep them here instead, under{" "}
-          <a href={pathOf({ page: "settings", scope: "project", project: p.id, section: "issues" }, names)} onClick={(e) => follow(e, pathOf({ page: "settings", scope: "project", project: p.id, section: "issues" }, names))}>
-            Where new issues go
-          </a>{" "}
-          in the project's settings.
-        </p>
-      </section>
-    );
-  }
-  const people = membersOf(p);
-  const submit = async (e: Event) => {
-    e.preventDefault();
-    if (!title.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const i = await issues.create(p.id, { title: title.trim(), body, labels, assignees });
-      go(pathOf({ page: "issue", project: p.id, issue: i.id }, names), true);
-    } catch (err) {
-      setError((err as Error).message);
-      setBusy(false);
-    }
-  };
-  return (
-    <section class="platform-section sw-page issue-new" data-issue-new-form>
-      <PageHeader title="New issue" back={back} />
-      <form class="issue-form" onSubmit={(e) => void submit(e)}>
-        <label>
-          Title
-          <input required maxLength={256} value={title} autoFocus data-issue-title-input onInput={(e) => setTitle(e.currentTarget.value)} />
-        </label>
-        <label>
-          Description
-          <textarea rows={8} value={body} placeholder="What's it about?" data-issue-body-input onInput={(e) => setBody(e.currentTarget.value)} />
-        </label>
-        {/* The issue page's label picker (UI audit #163). */}
-        <div class="issue-form-part" data-issue-labels-input>
-          <span class="issue-form-label">Labels</span>
-          <div class="ws-tags">
-            {labels.map((l) => (
-              <LabelChip key={l} label={l} />
-            ))}
-            <button
-              type="button"
-              class="secondary small"
-              data-issue-labels-pick
-              onClick={(e) => pickLabels(e, home.labels ?? [], labels, (l, on) => setLabels(on ? [...labels, l] : labels.filter((x) => x !== l)))}
-            >
-              {labels.length ? "Edit" : "Add labels"}
-            </button>
-          </div>
-        </div>
-        {people.length > 0 && (
-          <fieldset class="issue-assignees">
-            <legend class="issue-form-label">Assignees</legend>
-            {people.map((m) => (
-              <label key={m.account} class="control-confirm">
-                <input
-                  type="checkbox"
-                  checked={assignees.includes(m.account)}
-                  data-issue-assignee-input={m.account}
-                  onChange={(e) => setAssignees(e.currentTarget.checked ? [...assignees, m.account] : assignees.filter((a) => a !== m.account))}
-                />{" "}
-                {m.name}
-              </label>
-            ))}
-          </fieldset>
-        )}
-        {error && (
-          <p role="alert" class="control-error">
-            {error}
-          </p>
-        )}
-        <div class="prompt-buttons">
-          <button type="button" class="secondary" data-issue-cancel onClick={() => go(list)}>
-            Cancel
-          </button>
-          <button class="primary" disabled={busy || !title.trim()} data-issue-create>
-            {busy ? "Opening…" : "Open issue"}
-          </button>
-        </div>
-      </form>
-    </section>
-  );
-}
 
 // ---- on the project's home
 

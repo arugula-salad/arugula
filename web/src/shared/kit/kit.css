@@ -528,7 +528,12 @@
 .k-field-box:focus-within {
   border-color: var(--focus);
 }
-.k-field-box input {
+.k-field-box.is-lines {
+  height: auto;
+  padding: 6px 10px;
+}
+.k-field-box input,
+.k-field-box textarea {
   flex: 1;
   min-width: 0;
   height: auto;
@@ -540,7 +545,11 @@
   color: var(--ink);
   font: var(--text-body) var(--font-sans);
 }
-.k-field-box input::placeholder {
+.k-field-box textarea {
+  resize: vertical;
+}
+.k-field-box input::placeholder,
+.k-field-box textarea::placeholder {
   color: var(--ink-dim);
 }
 .k-field-hint {
