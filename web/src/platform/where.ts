@@ -9,6 +9,8 @@ import type { Route } from "./paths";
 let deploy: { id: string; project: string } | null = null;
 /** The card open on the Overview, as its path names it (`#983`). */
 let card: { row: string; label: string } | null = null;
+/** The board an issue's page found it on (Lift 5a): the crumb's step up. */
+let issueBoard: { issue: string; board: string; title: string } | null = null;
 const listeners = new Set<() => void>();
 
 export const where = {
@@ -29,6 +31,18 @@ export const where = {
     card = { row, label };
     listeners.forEach((fn) => fn());
   },
+  /** A board's page has read (or renamed) its board: the crumb says its title (`boards.title`). */
+  boardRead() {
+    listeners.forEach((fn) => fn());
+  },
+  /** An issue's page found its row on a board: the crumb climbs through it. */
+  issueOn(issue: string, on: { board: string; title: string }) {
+    if (issueBoard?.issue === issue && issueBoard.board === on.board && issueBoard.title === on.title) return;
+    issueBoard = { issue, ...on };
+    listeners.forEach((fn) => fn());
+  },
+  /** The board an issue is on, once its page has said. */
+  boardOf: (issue: string): { board: string; title: string } | undefined => (issueBoard?.issue === issue ? issueBoard : undefined),
   /** The open card's words, once the Overview has said them. */
   cardLabel: (row: string): string | undefined => (card?.row === row ? card.label : undefined),
 };

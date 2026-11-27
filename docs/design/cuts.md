@@ -19,6 +19,19 @@ if people miss it. Newest at the bottom.
 - **The Machines rail count:** it counted unread run threads; Runs' own view still does (Lift 3, Arugula #1479).
 - **Your picture on the rail:** the kit's Avatar draws your initials, on the rail and a phone's bar (Lift 3, Arugula #1479).
 - **The team as the crumb's first step:** the crumb starts at the project; a team's pages are under Settings and Chat (Lift 3, Arugula #1479).
+- **A board's Steps view:** the board is its lanes, on a phone too; an agent still orders a group's rows for `board_read`'s Steps block (Lift 5a, Arugula #1481).
+- **The board's sidebar:** View, Find, Docs, Add and Workers go; Filter and Add row are in the board's title block, the Docs are its tabs, and Link a Doc, Add a group, New issue, Copy link and Workers are in its ⋯ (Lift 5a, Arugula #1481).
+- **A row's drawer in the right column:** it's a sheet over the board; the right third is Needs you and the lead (Lift 5a, Arugula #1481).
+- **A board's made and edited times, and Open in browser:** the title block has the lead, the machine and the progress (Lift 5a, Arugula #1481).
+- **Every project's Boards (`/boards`):** Go to… finds a board; `/boards` opens the current project's Boards, and a board's old address its page (Lift 5a, Arugula #1481).
+- **A board beside the Boards list:** a board opens on its own page (Lift 5a, Arugula #1481).
+- **A board tile's chips:** its labels, assignees' initials, attachments, sessions, Docs, earlier agents, note and marks as chips; a tile is its mark, number, state word, title and one meta line, and the drawer has the rest (Lift 5a, Arugula #1481).
+- **"no proof" on a Done tile, and a tile's fill by lane:** a proven one says "proven"; tiles are one card colour, with an amber edge when one waits on you (Lift 5a, Arugula #1481).
+- **The Issues page, and its stats line:** the project's issues are All issues, a row of Boards (`/p/:project/issues` selects it), with Open/Closed, search, Label, Assignee and Export as before (Lift 5a, Arugula #1481).
+- **Not on a board when it's empty:** its row shows only while some open issue is on no board (Lift 5a, Arugula #1481).
+- **An issue's label and assignee Edit buttons:** the labels and the people are the buttons (click to edit), in the card's properties (Lift 5a, Arugula #1481).
+- **The New issue page:** New issue and Add row are a sheet (title, description, Start an agent on it); labels and assignees are set on the issue after; `/p/:project/issues/new` opens All issues with the sheet (Lift 5a, Arugula #1481).
+- **A board's New issue in ⋯:** Add row opens the issue and puts it on the board; Add an existing item… adds an issue or PR that's there already (Lift 5a, Arugula #1481).
 - **The Overview's zoom:** the Project / Board / Work pill, the board and work levels and their transition; a board's card opens its board, and the old zoom addresses land there (Lift 4, Arugula #1480).
 - **The Overview's divider:** the right column is a third, fixed (Lift 4, Arugula #1480).
 - **The briefing line:** "since 1:35 AM…" and its counts from the event log; the chief of staff's room says what moved (Lift 4, Arugula #1480).

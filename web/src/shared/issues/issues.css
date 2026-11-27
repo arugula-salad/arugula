@@ -119,8 +119,7 @@ details.issues-note > summary {
   gap: 2px;
 }
 
-.issue-row-who .msg-avatar,
-.issue-side .msg-avatar {
+.issue-row-who .msg-avatar {
   width: 20px;
   height: 20px;
   font-size: 10px; /* off-scale: avatar initials */
@@ -195,7 +194,7 @@ details.issues-note > summary {
 
 .issue-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 200px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 24px;
 }
 
@@ -210,20 +209,75 @@ details.issues-note > summary {
   min-width: 0;
 }
 
-.issue-side-part h3 {
-  display: flex;
-  align-items: center;
-  margin: 0 0 6px;
-  font-size: var(--text-sm);
-  color: var(--dim);
-}
-
-.issue-side-part + .issue-side-part {
-  margin-top: 16px;
-}
-
-.issue-side-part p {
+/* The properties (Lift 5a, v6's card): a name and its value a line; labels and assignees are their own button (click to edit). */
+.issue-props {
+  display: grid;
+  gap: 10px;
   margin: 0;
+}
+
+.issue-prop {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+}
+
+.issue-prop dt {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
+.issue-prop dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.issue-prop-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.issue-prop-edit:hover,
+.issue-prop-edit:focus-visible {
+  background: var(--hover);
+}
+
+.issue-prop-who {
+  display: grid;
+  gap: 4px;
+}
+
+/* A card's open ask, above Activity (Lift 5a). */
+.card-ask {
+  margin: 16px 0;
+}
+
+.card-ask h2,
+.issue-activity-head {
+  margin: 20px 0 8px;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.card-ask h2 span {
+  margin-left: 6px;
+  font: 400 var(--text-meta) / 1 var(--font-meta);
 }
 
 .issue-post {
@@ -336,39 +390,6 @@ details.issues-note > summary {
   max-width: 680px;
 }
 
-.issue-form label {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.issue-form label.control-confirm {
-  display: block;
-}
-
-/* Labels and Assignees: a label over their chips or boxes, as the other
-   fields have, with no box of their own (UI audit #163). */
-.issue-assignees {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.issue-form-part {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.issue-form-label {
-  padding: 0;
-}
-
-.issue-form .ws-tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
 /* An issue in a narrow place (a phone, a block in a split): its labels
    and assignees sit above its text, side by side. */
 .issue-page {
@@ -385,9 +406,6 @@ details.issues-note > summary {
     display: contents;
   }
 
-  .issue-side-part + .issue-side-part {
-    margin-top: 0;
-  }
 
   .issue-main {
     grid-column: 1 / -1;

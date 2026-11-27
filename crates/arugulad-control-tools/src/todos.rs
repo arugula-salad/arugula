@@ -186,7 +186,14 @@ async fn add(c: &Call<'_>, a: AddArgs) -> Out {
     let Proposal::Todo { what, .. } = &proposal else { unreachable!("proposal makes a to-do") };
     let what = what.clone();
     let conversation = me.conversation.clone();
-    let body = MachinePropose { proposal, session: me.session.clone(), pane: me.pane, blocks: vec![], conversation };
+    let body = MachinePropose {
+        proposal,
+        session: me.session.clone(),
+        pane: me.pane,
+        blocks: vec![],
+        conversation,
+        supersedes: None,
+    };
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, &agent_proposals(&project), Some(&body)).await.map_err(refused)?;
     let p: MachineProposed = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;

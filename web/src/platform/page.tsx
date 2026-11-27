@@ -16,14 +16,13 @@ import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { current, go, onRoute, pathOf, popCount, useRoute, type Route } from "./router";
+import { current, go, onRoute, pathOf, popCount, pushCount, useRoute, type Route } from "./router";
 import { installStack } from "../shared/kit/frame/stack";
 import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
 import { IssuePage } from "./pages/issue";
-import { IssuesPage, NewIssuePage } from "./pages/issues";
 import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
@@ -129,9 +128,10 @@ function body(r: Route, lost: string | null) {
     case "project":
       return <ProjectHome id={r.project} board={r.board} card={r.card} zoom={r.zoom} />;
     case "issues":
-      return <IssuesPage project={r.project} filter={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
+      return <BoardsPage project={r.project} issues={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
     case "new-issue":
-      return <NewIssuePage project={r.project} />;
+      // New issue is a sheet over All issues (Lift 5a).
+      return <BoardsPage project={r.project} issues={{}} adding />;
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} thread={r.thread} />;
     case "triage":
@@ -170,7 +170,7 @@ function body(r: Route, lost: string | null) {
     case "inbox":
       return <InboxPage all={r.all} />;
     case "all-boards":
-      return <AllBoardsPage all={r.all} board={r.board} />;
+      return <AllBoardsPage board={r.board} />;
     case "settings":
       return <SettingsPage r={r} />;
     case "deploy":
@@ -375,12 +375,13 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(movedPage(r), known));
-  // Not after a Back: the effect runs after the paint, and a Back before
-  // then would have it replace the entry Back went to with this page's
-  // (Arugula #1074).
+  // Not after a Back, nor after a step to elsewhere: the effect runs after
+  // the paint, and a Back (or Escape's step to the Overview) before then
+  // would have it replace the entry gone to with this page's (Arugula #1074).
   const pops = popCount();
+  const pushes = pushCount();
   useEffect(() => {
     // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
-    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
+    if (want && want !== location.pathname + location.search && popCount() === pops && pushCount() === pushes && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }

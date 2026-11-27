@@ -3,11 +3,12 @@
 // It takes the wire's item as it is (kind, from, for, subject, lines,
 // answer, escalated; a to-do's how) and answers in place: a question's
 // options, a permission's Allow/Deny, a folder's trust, an approval's
-// Start/Not now, or a to-do's Done/Can't with a note. Answered, it is a dim
+// Start/Not now, a to-do's Done/Can't with a note, or (a question with no
+// options) a typed answer, sent as an option with no id. Answered, it is a dim
 // receipt. A to-do's note is checked as it's typed: one that looks like a
 // secret says so, and isn't sent until it's gone. It holds at a third of a
-// wide screen or a phone (360–480px): put rows in a `NeedList`, and the
-// meta wraps under the title.
+// wide screen or a phone (360–480px): put rows in a `NeedList`, and the meta
+// wraps under the title.
 //
 // The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
 // table binds them, and presses a row's answer by its `data-answer` (the
@@ -23,8 +24,7 @@ import { Row } from "./row";
 import { Well } from "./well";
 import "./kit.css";
 
-export type NeedKind =
-  "ask" | "permission" | "trust" | "approval" | "todo" | (string & {});
+export type NeedKind = "ask" | "permission" | "trust" | "approval" | "todo" | (string & {});
 
 export interface NeedOption {
   id: string;
@@ -112,10 +112,7 @@ export function NeedRow({
   const mine = need.for === "you";
   const todo = need.kind === "todo";
   const meta: ComponentChildren[] = [];
-  if (receipt)
-    meta.push(
-      `${receipt.what} by ${receipt.by} ${receipt.at}${receipt.note ? ` · ${receipt.note}` : ""}`,
-    );
+  if (receipt) meta.push(`${receipt.what} by ${receipt.by} ${receipt.at}${receipt.note ? ` · ${receipt.note}` : ""}`);
   else meta.push(<span class={mine ? "k-needs" : undefined}>{who(need)}</span>);
   if (need.escalated) meta.push("escalated");
   if (need.subject) meta.push(<span class="m-id">{need.subject.id}</span>);
@@ -123,9 +120,7 @@ export function NeedRow({
 
   // The note's check, as it's typed: what it looks like, if a secret.
   const secret = todo ? looksSecret(note) : null;
-  const options = need.answer?.options?.length
-    ? need.answer.options
-    : (DEFAULTS[need.kind] ?? []);
+  const options = need.answer?.options?.length ? need.answer.options : (DEFAULTS[need.kind] ?? []);
   const copy = () => {
     void navigator.clipboard?.writeText(need.how ?? "");
     setCopied(true);
@@ -170,6 +165,16 @@ export function NeedRow({
           onEnter={() => !secret && onAnswer?.(options[0]!, note)}
         />
       ) : null}
+      {mine && !todo && !options.length ? (
+        <>
+          <TextField label="Your answer" value={note} onInput={setNote} onEnter={() => note.trim() && onAnswer?.({ id: "", label: note.trim() })} />
+          <div class="k-row-actions">
+            <Button kind="primary" disabled={!note.trim()} onClick={() => onAnswer?.({ id: "", label: note.trim() })}>
+              Send
+            </Button>
+          </div>
+        </>
+      ) : null}
       {(mine && options.length) || extra ? (
         <div class="k-row-actions">
           {mine
@@ -195,20 +200,9 @@ export function NeedRow({
 
 /** Need rows in a column that may be a third of the screen: under 480px
  * each row's meta wraps under its title. */
-export function NeedList({
-  label,
-  children,
-}: {
-  label: string;
-  children: ComponentChildren;
-}) {
+export function NeedList({ label, children }: { label: string; children: ComponentChildren }) {
   return (
-    <div
-      class="k-need-list"
-      role="group"
-      aria-label={label}
-      data-kit="need-list"
-    >
+    <div class="k-need-list" role="group" aria-label={label} data-kit="need-list">
       {children}
     </div>
   );

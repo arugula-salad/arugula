@@ -16,15 +16,9 @@ const TOKENS: [RegExp, string][] = [
   [/\bAIza[A-Za-z0-9_-]{35}\b/, "a Google key"],
   [/\bnpm_[A-Za-z0-9]{36}\b/, "an npm token"],
   [/\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{16,}/, "a Stripe key"],
-  [
-    /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
-    "a token",
-  ],
+  [/\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, "a token"],
   [/\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i, "a password in a link"],
-  [
-    /\b(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S{6,}/i,
-    "a password",
-  ],
+  [/\b(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S{6,}/i, "a password"],
 ];
 
 /** A run of 32 or more characters with no break a word or a path has. */
@@ -41,10 +35,5 @@ export function looksSecret(text: string): string | null {
  * let pass. */
 function random(run: string): boolean {
   if (/[a-z]/.test(run) && /[A-Z]/.test(run) && /[0-9]/.test(run)) return true;
-  return (
-    /^[0-9a-fA-F]+$/.test(run) &&
-    /[0-9]/.test(run) &&
-    /[a-fA-F]/.test(run) &&
-    run.length !== 40
-  );
+  return /^[0-9a-fA-F]+$/.test(run) && /[0-9]/.test(run) && /[a-fA-F]/.test(run) && run.length !== 40;
 }

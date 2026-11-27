@@ -26,6 +26,7 @@ import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
 import { ThreadBeside } from "../chat/thread-beside";
 import { Time } from "../ui/time";
+import { Avatar } from "../kit/avatar";
 import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
 import { Markdown } from "../ui/markdown";
@@ -147,6 +148,7 @@ export function IssueView({
   refresh,
   Missing = Gone,
   class: cls = "",
+  card,
 }: {
   place: IssuePlace;
   id: string;
@@ -162,6 +164,8 @@ export function IssueView({
   refresh?: unknown;
   Missing?: ComponentType<{ what: string }>;
   class?: string;
+  /** The issue as a board's card (Lift 5a, the platform's page): its row's properties (board, lead, worker…) as `dt`/`dd` pairs, its open ask above Activity, and lines for its answers in Activity. */
+  card?: { props?: ComponentChildren; ask?: ComponentChildren; between?: Between[] };
 }) {
   const api = useContext(IssueApiContext);
   const { toast, projectName } = usePlatformApi();
@@ -241,10 +245,13 @@ export function IssueView({
       })),
     ]);
 
-  const between: Between[] = events.flatMap((e) => {
-    const line = eventLine(e, nameOf);
-    return line === null ? [] : [{ key: `e${e.id}`, at: e.at, el: <IssueEventRow e={e} line={line} nameOf={nameOf} /> }];
-  });
+  const between: Between[] = [
+    ...events.flatMap((e) => {
+      const line = eventLine(e, nameOf);
+      return line === null ? [] : [{ key: `e${e.id}`, at: e.at, el: <IssueEventRow e={e} line={line} nameOf={nameOf} /> }];
+    }),
+    ...(card?.between ?? []),
+  ].sort((a, b) => a.at - b.at);
 
   // Two labelled actions at most (#686): closing, and the agent. Editing
   // the title and sending it to GitHub are in ⋯.
@@ -336,9 +343,18 @@ export function IssueView({
         </p>
       )}
       <div class="issue-cols">
-        <aside class="issue-side" aria-label="Labels and assignees">
-          <Labels api={api} issue={issue} change={change} writer={writer} />
-          <Assignees members={place.members} issue={issue} change={change} writer={writer} nameOf={nameOf} />
+        <aside class="issue-side" aria-label="Properties">
+          <dl class="issue-props" data-issue-props>
+            <div class="issue-prop">
+              <dt>Status</dt>
+              <dd>
+                <StateTag i={issue} />
+              </dd>
+            </div>
+            {card?.props}
+            <Labels api={api} issue={issue} change={change} writer={writer} />
+            <Assignees members={place.members} issue={issue} change={change} writer={writer} nameOf={nameOf} />
+          </dl>
         </aside>
         <div class="issue-main">
           <article class="issue-post" data-issue-body>
@@ -369,6 +385,8 @@ export function IssueView({
               ) : null}
             </div>
           </article>
+          {card?.ask}
+          {card && <h2 class="issue-activity-head">Activity</h2>}
           {room?.lead && (
             <p class="doc-meta issue-lead" data-issue-lead={room.lead.session} title="The comments here are told to it">
               Led by <b>{sessionLabel(room.lead.session, projectName)}</b>
@@ -499,24 +517,29 @@ function Labels({ api, issue, change, writer }: { api: IssueApi; issue: NativeIs
     for (const i of api.all()) if (i.project === issue.project) for (const l of i.labels) seen.add(l);
     pickLabels(e, seen, issue.labels, (l, on) => void change({ labels: on ? { add: [l] } : { remove: [l] } }));
   };
+  const chips = issue.labels.length ? (
+    <span class="ws-tags">
+      {issue.labels.map((l) => (
+        <LabelChip key={l} label={l} />
+      ))}
+    </span>
+  ) : (
+    <span class="dim">None</span>
+  );
+  // Click to edit (Lift 5a): the labels are the button.
   return (
-    <section class="issue-side-part" data-issue-labels>
-      <h3>
-        Labels
-        {writer && (
-          <button class="secondary small issue-edit" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
-            Edit
+    <div class="issue-prop" data-issue-labels>
+      <dt>Labels</dt>
+      <dd>
+        {writer ? (
+          <button type="button" class="issue-prop-edit" title="Add or take off labels" data-issue-labels-edit onClick={pick}>
+            {chips}
           </button>
+        ) : (
+          chips
         )}
-      </h3>
-      {issue.labels.length ? (
-        <div class="ws-tags">
-          {issue.labels.map((l) => (
-            <LabelChip key={l} label={l} />
-          ))}
-        </div>
-      ) : null}
-    </section>
+      </dd>
+    </div>
   );
 }
 
@@ -541,29 +564,31 @@ function Assignees({
         return { label: m.name, checked: on, run: () => void change({ assignees: on ? { remove: [m.account] } : { add: [m.account] } }) };
       }),
     ]);
+  const who = issue.assignees.length ? (
+    <span class="issue-prop-who">
+      {issue.assignees.map((a) => (
+        <span key={a} data-issue-assignee={a}>
+          <Avatar name={nameOf(a) ?? "someone who left"} /> {nameOf(a) ?? "someone who left"}
+        </span>
+      ))}
+    </span>
+  ) : (
+    <span class="dim">Nobody</span>
+  );
+  // Click to edit (Lift 5a): the people are the button.
   return (
-    <section class="issue-side-part" data-issue-assignees>
-      <h3>
-        Assignees
-        {writer && (
-          <button class="secondary small issue-edit" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
-            Edit
+    <div class="issue-prop" data-issue-assignees>
+      <dt>Assignees</dt>
+      <dd>
+        {writer ? (
+          <button type="button" class="issue-prop-edit" title="Assign people in the project" data-issue-assignees-edit onClick={pick}>
+            {who}
           </button>
+        ) : (
+          who
         )}
-      </h3>
-      {issue.assignees.length ? (
-        <ul class="chat-people">
-          {issue.assignees.map((a) => (
-            <li key={a} data-issue-assignee={a}>
-              <MsgAvatar who={a} name={nameOf(a) ?? "?"} />
-              <span>{nameOf(a) ?? "someone who left"}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p class="dim">Nobody</p>
-      )}
-    </section>
+      </dd>
+    </div>
   );
 }
 

@@ -564,6 +564,13 @@
         "session": {
           "description": "The proposing agent's session, by its name on the machine.",
           "type": "string"
+        },
+        "supersedes": {
+          "description": "An open card of this agent's (`prp_…`) that this one replaces\n(Arugula #1513): control withdraws it, so two cards for one ask\ncan't start two agents. An older control refuses the field.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -579,12 +586,27 @@
         "ask": {
           "type": "string"
         },
+        "link": {
+          "description": "Where the person answers it: the card's page, or their Inbox for a\npersonal project (Arugula #1513). An older control sends none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "room": {
+          "description": "A personal project has no staff room: `\"\"`, and `seq` 0.",
           "type": "string"
         },
         "seq": {
           "format": "int64",
           "type": "integer"
+        },
+        "withdrew": {
+          "description": "The cards [`MachinePropose::supersedes`] withdrew.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

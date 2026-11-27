@@ -37,51 +37,17 @@ import { setHomeMachine } from "../src/shell/pins";
 // The daemon's page key on this page's requests, as its own page has.
 await startPageKey();
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {
-  const url = new URL(
-    typeof input === "string"
-      ? input
-      : input instanceof URL
-        ? input.href
-        : input.url,
-    location.href,
-  );
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
   if (url.pathname === "/api/projects")
     return json({
       me: { account: "acct_a", login: "sam", name: "Sam" },
       projects: [
-        {
-          id: "prj_aaaa0001",
-          name: "Default",
-          owner: { kind: "personal" },
-          team: null,
-        },
-        {
-          id: "prj_aaaa0002",
-          name: "Arugula",
-          owner: { kind: "team", id: "tm_1", name: "Arugula team" },
-          team: {
-            id: "tm_1",
-            name: "Arugula team",
-            role: "owner",
-            members: [
-              { account: "acct_a", name: "Sam", role: "owner" },
-              { account: "acct_b", name: "Jo", role: "editor" },
-            ],
-          },
-        },
-        {
-          id: "prj_aaaa0003",
-          name: "Site",
-          owner: { kind: "team", id: "tm_1", name: "Arugula team" },
-          team: null,
-        },
+        { id: "prj_aaaa0001", name: "Default", owner: { kind: "personal" }, team: null },
+        { id: "prj_aaaa0002", name: "Arugula", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: { id: "tm_1", name: "Arugula team", role: "owner", members: [{ account: "acct_a", name: "Sam", role: "owner" }, { account: "acct_b", name: "Jo", role: "editor" }] } },
+        { id: "prj_aaaa0003", name: "Site", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: null },
       ],
       hosted: false,
     });
@@ -91,129 +57,61 @@ window.fetch = async (input, init) => {
   // and its split by project follow the server's rule: counted, and for
   // the reader (acct_a) or no one.
   // Answering an item (Arugula #1467): kept in `window.__inboxPosted`, and the item leaves the list.
-  // A to-do's answer is kept on its card's record (#1462), as control keeps it,
-  // for `GET /api/chat/rooms/{room}/asks/{seq}`, with the note it kept
-  // (`window.__todoKept`, when a spec says it kept other words). `window.__inboxRefuse`
-  // is control's refusal instead ({status, error}).
+  // A to-do's answer is kept on its card's record (#1462), as control keeps it, for
+  // `GET /api/chat/rooms/{room}/asks/{seq}`, with the note it kept (`window.__todoKept`,
+  // when a spec says it kept other words). `window.__inboxRefuse` is control's refusal instead.
   const answering = /^\/api\/inbox\/(.+)$/.exec(url.pathname);
   if (answering && init?.method === "POST") {
-    const w = window as unknown as {
-      __inbox?: InboxItem[];
-      __inboxPosted?: unknown[];
-      __inboxRefuse?: { status: number; error: string };
-      __todos?: Record<string, unknown>;
-      __todoKept?: string;
-    };
+    const w = window as unknown as { __inbox?: InboxItem[]; __inboxPosted?: unknown[]; __inboxRefuse?: { status: number; error: string }; __todos?: Record<string, unknown>; __todoKept?: string };
     const id = decodeURIComponent(answering[1]!);
-    const body = JSON.parse(String(init.body)) as {
-      choice: string;
-      note?: string;
-    };
+    const body = JSON.parse(String(init.body)) as { choice: string; note?: string };
     (w.__inboxPosted ??= []).push({ id, ...body });
-    if (w.__inboxRefuse)
-      return json({ error: w.__inboxRefuse.error }, w.__inboxRefuse.status);
+    if (w.__inboxRefuse) return json({ error: w.__inboxRefuse.error }, w.__inboxRefuse.status);
     const it = (w.__inbox ?? []).find((i) => i.id === id);
     if (it?.kind === "todo" && it.subject.room) {
-      const state = body.choice === "Done" ? "done" : "cant";
-      (w.__todos ??= {})[`${it.subject.room}/${it.subject.seq}`] = {
-        room: it.subject.room,
-        seq: it.subject.seq,
-        kind: "proposal",
-        open: false,
-        mine: true,
-        proposal: {
-          id,
-          action: "todo",
-          state,
-          answered_by_name: "Sam",
-          why: "",
-          todo: {
-            what: it.title,
-            how: "",
-            answered_at: Date.now(),
-            ...((w.__todoKept ?? body.note)
-              ? { note: w.__todoKept ?? body.note }
-              : {}),
-          },
-        },
-      };
+      const note = w.__todoKept ?? body.note;
+      const todo = { what: it.title, how: "", answered_at: Date.now(), ...(note ? { note } : {}) };
+      const proposal = { id, action: "todo", state: body.choice === "Done" ? "done" : "cant", answered_by_name: "Sam", why: "", todo };
+      (w.__todos ??= {})[`${it.subject.room}/${it.subject.seq}`] = { room: it.subject.room, seq: it.subject.seq, kind: "proposal", open: false, mine: true, proposal };
     }
     w.__inbox = (w.__inbox ?? []).filter((i) => i.id !== id);
     return json({ item: id, marked: 1 });
   }
-  const record = /^\/api\/chat\/rooms\/([^/]+)\/asks\/(\d+)$/.exec(
-    url.pathname,
-  );
+  const record = /^\/api\/chat\/rooms\/([^/]+)\/asks\/(\d+)$/.exec(url.pathname);
   if (record) {
-    const r = (window as unknown as { __todos?: Record<string, unknown> })
-      .__todos?.[`${decodeURIComponent(record[1]!)}/${record[2]}`];
+    const r = (window as unknown as { __todos?: Record<string, unknown> }).__todos?.[`${decodeURIComponent(record[1]!)}/${record[2]}`];
     return r ? json(r) : json({ error: "not found" }, 404);
   }
   if (url.pathname === "/api/inbox") {
     const project = url.searchParams.get("project");
-    const item = (n: number, project: string | null) => ({
-      id: `iss_${n}:assigned`,
-      kind: "assigned",
-      group: "named",
-      counts: true,
-      title: `#${n} Thing ${n}`,
-      from: {},
-      subject: {
-        type: "issue",
-        id: `iss_${n}`,
-        url: "",
-        ...(project ? { project } : {}),
-      },
-      since: n,
-    });
-    const all: InboxItem[] = (window as unknown as { __inbox?: InboxItem[] })
-      .__inbox ?? [
-      item(1, "prj_aaaa0002"),
-      item(2, "prj_aaaa0002"),
-      item(3, "prj_aaaa0002"),
-      item(4, null),
-    ];
+    const item = (n: number, project: string | null) => ({ id: `iss_${n}:assigned`, kind: "assigned", group: "named", counts: true, title: `#${n} Thing ${n}`, from: {}, subject: { type: "issue", id: `iss_${n}`, url: "", ...(project ? { project } : {}) }, since: n });
+    const all: InboxItem[] = (window as unknown as { __inbox?: InboxItem[] }).__inbox ?? [item(1, "prj_aaaa0002"), item(2, "prj_aaaa0002"), item(3, "prj_aaaa0002"), item(4, null)];
     const items = all.filter((i) => !project || i.subject.project === project);
     const by_project: Record<string, number> = {};
     let count = 0;
     for (const i of items) {
       if (!i.counts || (i.for && i.for !== "acct_a")) continue;
       count++;
-      if (i.subject.project)
-        by_project[i.subject.project] =
-          (by_project[i.subject.project] ?? 0) + 1;
+      if (i.subject.project) by_project[i.subject.project] = (by_project[i.subject.project] ?? 0) + 1;
     }
     return json({ entries: [], items, count, by_project, handled: 0 });
   }
   if (url.pathname === "/api/deploys/waiting") return json({ deploys: [] });
   // A project's settings and its owner's defaults: none set.
-  if (/^\/api\/(projects|owners)\/[^/]+\/settings$/.test(url.pathname))
-    return json([]);
+  if (/^\/api\/(projects|owners)\/[^/]+\/settings$/.test(url.pathname)) return json([]);
   // The model its agent sessions use: the strongest, which follows the team's default.
-  if (/^\/api\/projects\/[^/]+\/sessions\/settings$/.test(url.pathname))
-    return json({ model: null, models: ["opus", "sonnet"] });
+  if (/^\/api\/projects\/[^/]+\/sessions\/settings$/.test(url.pathname)) return json({ model: null, models: ["opus", "sonnet"] });
   // The platform's chat and settings aren't this page's to show.
-  if (
-    url.pathname.startsWith("/api/chat") ||
-    url.pathname.startsWith("/api/notify")
-  )
-    return json({ error: "not here" }, 404);
+  if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
   return realFetch(input, init);
 };
 
 // The spec seeds chat's rooms (the unread on Boards and Machines) through this.
 (window as unknown as { __chat: typeof chat }).__chat = chat;
 // A spec's Inbox (`/api/inbox` above), said as the stream says it changed.
-(window as unknown as { __inboxSay(items: InboxItem[]): void }).__inboxSay = (
-  items,
-) => {
+(window as unknown as { __inboxSay(items: InboxItem[]): void }).__inboxSay = (items) => {
   (window as unknown as { __inbox: InboxItem[] }).__inbox = items;
-  (chat as unknown as { heard(ev: unknown): void }).heard({
-    type: "inbox",
-    count: 0,
-    by_project: {},
-    changed: [],
-  });
+  (chat as unknown as { heard(ev: unknown): void }).heard({ type: "inbox", count: 0, by_project: {}, changed: [] });
 };
 
 // Who's signed in, for the shell's blocks in a machine's pane: the
@@ -238,21 +136,7 @@ root.classList.add("frame");
 render(
   // A board card's session (board-live.spec.ts, overview.spec.ts): the machine `m_suite` is the suite's daemon, this page's origin.
   <PlatformApiContext.Provider
-    value={{
-      ...platformApi,
-      Machines: appMachines(() => null),
-      Overview: appOverview(() => null),
-      ownPane: appOwnPane(() => null),
-      ...appLive(
-        () => null,
-        (m) => (m === "m_suite" ? "" : undefined),
-      ),
-      MachineSettings: appMachineSettings(
-        () => null,
-        (m) => (m === SUITE ? "" : undefined),
-      ),
-      goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`),
-    }}
+    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
   >
     <PlatformPage />
     <MenuLayer />

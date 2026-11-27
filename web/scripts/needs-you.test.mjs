@@ -7,7 +7,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentRunning, byNeedsYou, finished, needsYou, needsYouRank, needYouText, placeOf, sortNeedsYou } from "../src/shared/needs-you.ts";
+import { agentRunning, byNeedsYou, needAge, finished, needsYou, needsYouRank, needYouText, placeOf, sortNeedsYou } from "../src/shared/needs-you.ts";
 
 const reason = (kind, since_ms = 1) => ({ kind, since_ms, headline: "", actions: [] });
 const pane = (attention, kind, over = {}) => ({ type: "terminal", attention, reason: kind ? reason(kind) : null, ...over });
@@ -80,4 +80,12 @@ test("an ask without a reason dates from its ask; ties fall to the key", () => {
   assert.ok(byNeedsYou({ rank: 1, since: 3, key: "a" }, { rank: 1, since: 3, key: "b" }) < 0);
   assert.ok(byNeedsYou({ rank: 1, since: 3, key: 9 }, { rank: 1, since: 3, key: 10 }) < 0);
   assert.equal(byNeedsYou({ rank: 2, since: 3, key: "a" }, { rank: 2, since: 3, key: "a" }), 0);
+});
+
+test("a need's age is short, and a missing or impossible time says nothing, never 1970 (Arugula #1480)", () => {
+  const now = Date.UTC(2026, 10, 27, 12);
+  assert.equal(needAge(now - 7 * 60_000, now), "7m");
+  assert.equal(needAge(now - 2 * 3_600_000, now), "2h");
+  assert.equal(needAge(now - 3 * 86_400_000, now), "3d");
+  for (const missing of [0, undefined, null, NaN, 12, 1_764_000_000]) assert.equal(needAge(missing, now), "");
 });

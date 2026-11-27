@@ -154,6 +154,8 @@ export function useTriage(project: string, added: () => void) {
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if ((e.target as Element | null)?.closest("input:not([type=checkbox]), textarea, select, [contenteditable]")) return;
+      // Taken: not a step back too (shared/kit/frame/stack.ts).
+      e.preventDefault();
       clear();
     };
     window.addEventListener("keydown", esc);

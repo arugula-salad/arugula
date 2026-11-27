@@ -82,7 +82,7 @@ the Allow was sent to in `HANDOFF/callback`, as the iPhone's `test-sim.sh` does.
 The app's own UI test (`app/src/androidTest`) taps the same flow through the
 app, as the iPhone's `FlowTests.swift` does: sign in, the five places and
 the heading's bell and picture, the board's question answered on the
-Overview, a message in chat, a command in a new terminal, Docs, and sign out
+Overview, a stand-in agent's to-do marked Done there with a note, a message in chat, a command in a new terminal, Docs, and sign out
 from your picture. Testnet's `native-android` claim runs it, with the same arguments:
 
 ```sh

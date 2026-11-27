@@ -17,18 +17,18 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ArrowIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, PlusIcon } from "../ui/icons";
+import { ChevronIcon, CloseIcon, ExternalIcon, IconButton, PlusIcon } from "../ui/icons";
 import { escapeTaken } from "../ui/menu";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
-import { usePhone, useSubscribe } from "../ui/hooks";
+import { useSubscribe } from "../ui/hooks";
+import { Avatar } from "../kit/avatar";
 import { day } from "../time";
 import { boards, type ForgeChecks } from "./store";
-import { nudge, type Reorder, type stepPlace } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import { rowSessions, type RowSession } from "./row-sessions";
 import type { SessionsByCard } from "../project-sessions";
-import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
+import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore } from "./text";
 
 export type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
@@ -145,14 +145,12 @@ export function Owners({ who, all }: { who: string[]; all?: boolean }) {
   if (!list.length) return null;
   const { top, more } = topAndMore(list, all ? list.length : 2);
   return (
-    <span class="board-who" role="img" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
+    <span class="board-who" role="group" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
       {top.map((w) => (
-        <span key={w} class="board-avatar" aria-hidden="true" data-board-avatar>
-          {initialsOf(w)}
-        </span>
+        <Avatar key={w} name={w} />
       ))}
       {more > 0 && (
-        <span class="board-avatar more" aria-hidden="true" data-board-avatar-more>
+        <span class="m-meta" data-board-avatar-more>
           +{more}
         </span>
       )}
@@ -233,13 +231,6 @@ async function readRow(r: BoardRow): Promise<Read> {
   return out;
 }
 
-/** What the card's chip says in full on hover: the words, and who marked it and when. */
-export function notFinishedTitle(n: NotFinished): string {
-  const who = n.by ? ` Marked by ${n.by}${n.at ? ` on ${day(n.at)}` : ""}.` : "";
-  const merged = n.merged ? " A PR of this row merged, and the issue stays open." : "";
-  return `${notFinishedLine(n)}.${merged}${who}`;
-}
-
 /** The drawer's Not finished section (#841), above the attachments: the reason, who marked it and when, with Clear the mark for those who may edit; with no mark, Mark not finished… opens a line for what is left. Only on a native issue or a Plane item that isn't done. */
 function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFinished | null; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
   const [marking, setMarking] = useState(false);
@@ -311,9 +302,8 @@ function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFin
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; its live session; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-export function Drawer({ steps, r, platform, close, project, others, write, act, id, who = "steer", place = "sheet" }: { /** `sheet` (the default): a side sheet over the page. `column`: the board's right column, with ‹ Board controls to go back (Arugula #1129). */ place?: "sheet" | "column"; /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+export function Drawer({ r, platform, close, project, others, write, act, id, who = "steer", place = "sheet" }: { /** `sheet` (the default): a side sheet over the page. `column`: the board's right column, with ‹ Board controls to go back (Arugula #1129). */ place?: "sheet" | "column"; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
   const [read, setRead] = useState<Read | null>(null);
-  const phone = usePhone();
   const href = pointerHref(r, platform);
   const key = `${r.id}:${r.updated_at}`;
   useEffect(() => {
@@ -351,18 +341,6 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
           {LANES.find((l) => l.lane === r.lane)?.title}
         </span>
       </div>
-      {steps?.place && phone && (
-        <div class="board-line board-drawer-steps" data-board-drawer-steps>
-          {([true, false] as const).map((up) => {
-            const m = nudge(steps.place!.group, steps.place!.step, r.id, up);
-            return (
-              <IconButton key={String(up)} label={up ? "Move up in its step" : "Move down in its step"} class="secondary small" disabled={!m} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
-                <ArrowIcon dir={up ? "up" : "down"} size="xs" />
-              </IconButton>
-            );
-          })}
-        </div>
-      )}
       <div class="board-line" title={r.live?.state === "closed" && r.lane === "done" ? liveWord(r.live) : undefined}>
         {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={queueChip(r.live)?.tone ?? liveTone(r.live.state)}>{queueChip(r.live)?.word ?? liveWord(r.live)}</StateChip>}
         {href && (

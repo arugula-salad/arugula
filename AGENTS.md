@@ -323,6 +323,7 @@ screen that hasn't moved keeps today's pieces
 | Screen | Look | Since |
 |---|---|---|
 | `/design` | the kit | Lift 2 (#1478) |
+| a board's page, its tiles and an issue on a board (its card); Add row | the kit | Lift 5a (#1481) |
 | the Overview (its agent panel comes next) | the kit | Lift 4 (#1480) |
 | everything else | today's pieces | |
 

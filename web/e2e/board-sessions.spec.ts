@@ -46,21 +46,16 @@ async function openApp(page: Page, path: (pane: number) => string): Promise<numb
   return pane;
 }
 
-test("a card's sessions are on its row: what needs you first, finished ones left out; one opens its pane", async ({ page }, info) => {
+test("a card's session is on its tile, what needs you first; the drawer has them all, finished ones left out; one opens its pane", async ({ page }, info) => {
   const pane = await openApp(page, () => `/p/${P}/boards/brd_00e2e0`);
-  // Lanes, where a row draws its chips.
-  await page.locator('[data-board-view="lanes"]').click();
   const rail = page.locator('[data-board-row="row_0970"]');
-  // The computer's session put on #970, and the hosted one whose turn ended; not the stopped one.
-  await expect(rail.locator("[data-board-card-session]")).toHaveCount(2);
-  await expect(rail.locator(`[data-board-card-session="machine:${M}:7"]`)).toContainText("rail-work");
-  await expect(rail.locator(`[data-board-card-session="machine:${M}:7"]`)).toContainText("working");
-  await expect(rail.locator('[data-board-card-session="hosted::ses_0970bbbb"]')).toHaveCount(0);
-  // #985's hosted session waits on you.
-  const sessions = page.locator('[data-board-row="row_0985"] [data-board-card-session]');
-  await expect(sessions).toHaveCount(1);
-  await expect(sessions).toHaveAttribute("data-board-card-session-needs", "");
-  await expect(sessions).toContainText("needs input");
+  // The computer's session put on #970, on its tile's meta line (Lift 5a).
+  await expect(rail.locator("[data-board-tile-meta]")).toContainText("rail-work · working");
+  // #985's hosted session waits on you: its tile says so, with an amber edge.
+  const needs = page.locator('[data-board-row="row_0985"]');
+  await expect(needs).toHaveAttribute("data-needs-you", "");
+  await expect(needs.locator("[data-board-tile-word]")).toHaveText("needs you");
+  await expect(needs.locator("[data-board-tile-meta]")).toContainText("needs input");
   await page.screenshot({ path: info.outputPath("board-card-sessions.png") });
   // The drawer says them too.
   await rail.locator("[data-board-ptr]").click();
@@ -82,7 +77,7 @@ test("the Sessions page's old address lands on Boards, slug and all, and stays t
   });
   await openApp(page, () => `/p/${P}/sessions`);
   await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
-  await expect(page.locator('a[href*="brd_00e2e0"]').first()).toBeVisible();
+  await expect(page.locator('[data-board-item="brd_00e2e0"]')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
 });
 
@@ -104,9 +99,9 @@ test("a session's state shows on its row as it moves, without a reload: its live
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: answer(pane) }));
   await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: held() }));
   await page.reload();
-  await page.locator('[data-board-view="lanes"]').click();
-  const chip = page.locator('[data-board-row="row_0985"] [data-board-card-session="hosted::ses_0985aaaa"]');
-  const mine = page.locator('[data-board-row="row_0970"] [data-board-session="ses_0970eeee"]');
+  const tile = page.locator('[data-board-row="row_0985"]');
+  const chip = tile.locator("[data-board-tile-meta]");
+  const mine = page.locator('[data-board-row="row_0970"] [data-board-tile-meta]');
   await expect(chip).toContainText("working");
   await expect(mine).toContainText("working");
   /** What the platform pushes as a session's state moves (chat's `session` event). */
@@ -116,7 +111,7 @@ test("a session's state shows on its row as it moves, without a reload: its live
   await push("ses_0985aaaa");
   await push("ses_0970eeee");
   await expect(chip).toContainText("needs input");
-  await expect(chip).toHaveAttribute("data-board-card-session-needs", "");
+  await expect(tile).toHaveAttribute("data-needs-you", "");
   await expect(mine).toContainText("needs input");
   await page.screenshot({ path: info.outputPath("board-sessions-live.png") });
   hub = own = "done";
@@ -124,7 +119,7 @@ test("a session's state shows on its row as it moves, without a reload: its live
   await push("ses_0970eeee");
   // The list is read again no sooner than BY_CARD_SOON_MS after the last read.
   await expect(chip).toContainText("done", { timeout: 15_000 });
-  await expect(chip).not.toHaveAttribute("data-board-card-session-needs", "");
+  await expect(tile).not.toHaveAttribute("data-needs-you", "");
   await expect(mine).toContainText("done");
 });
 

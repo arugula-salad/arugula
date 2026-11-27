@@ -10,13 +10,8 @@ import { overview, P, say } from "./overview-fixture";
 
 test.use({ permissions: ["local-network-access"] });
 
-const row = (page: Page, id: string) =>
-  page.locator(`[data-need-item="${id}"]`);
-const posted = (page: Page) =>
-  page.evaluate(
-    () =>
-      (window as unknown as { __inboxPosted?: unknown[] }).__inboxPosted ?? [],
-  );
+const row = (page: Page, id: string) => page.locator(`[data-need-item="${id}"]`);
+const posted = (page: Page) => page.evaluate(() => (window as unknown as { __inboxPosted?: unknown[] }).__inboxPosted ?? []);
 
 const ASK = {
   id: "prp_start",
@@ -49,10 +44,7 @@ const TODO = {
     room: "room_staff",
     seq: 41,
   },
-  lines: [
-    "Why: the printer stopped, and only you can reach it.",
-    "1. Open the lid\n2. Swap the spool\n3. Press resume",
-  ],
+  lines: ["Why: the printer stopped, and only you can reach it.", "1. Open the lid\n2. Swap the spool\n3. Press resume"],
   answer: { via: "todo", options: ["Done", "Can't"] },
   since: Date.now() - 2 * 60_000,
 };
@@ -74,39 +66,25 @@ for (const [name, viewport] of [
   test.describe(name, () => {
     test.use({ viewport });
 
-    test("a to-do is answered in its row with a note, and stays as a dim receipt read from its record", async ({
-      page,
-    }, info) => {
+    test("a to-do is answered in its row with a note, and stays as a dim receipt read from its record", async ({ page }, info) => {
       await overview(page);
       const r = await open(page);
       // After the live asks, under To do, with ◇.
-      const order = await page
-        .locator("[data-ov-needs] [data-need-item]")
-        .evaluateAll((es) => es.map((e) => e.getAttribute("data-need-item")));
+      const order = await page.locator("[data-ov-needs] [data-need-item]").evaluateAll((es) => es.map((e) => e.getAttribute("data-need-item")));
       expect(order).toEqual([ASK.id, TODO.id]);
       await expect(page.locator("[data-ov-todo]")).toContainText("To do");
       await expect(r.locator(".k-mark").first()).toHaveText("◇");
-      await expect(r).toContainText(
-        "Why: the printer stopped, and only you can reach it.",
-      );
-      await expect(r.locator("[data-kit=well] pre")).toHaveText(
-        "1. Open the lid\n2. Swap the spool\n3. Press resume",
-      );
+      await expect(r).toContainText("Why: the printer stopped, and only you can reach it.");
+      await expect(r.locator("[data-kit=well] pre")).toHaveText("1. Open the lid\n2. Swap the spool\n3. Press resume");
       await expect(r.getByRole("button", { name: /^Copy/ })).toBeVisible();
       await expect(r).toContainText("no secrets");
       // The row fits the column, expanded.
-      expect(
-        await page
-          .locator("[data-ov-needs]")
-          .evaluate((e) => e.scrollWidth <= e.clientWidth),
-      ).toBe(true);
+      expect(await page.locator("[data-ov-needs]").evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
 
       // Checked as it's typed: a key's shape (made up here) says so, and holds the answers back.
       const note = r.getByRole("textbox", { name: /Note/ });
       await note.fill(`it's ${"ghp_" + "a1B2".repeat(9)}`);
-      await expect(r.locator(".k-field-warn")).toHaveText(
-        "That looks like a GitHub token: leave it out",
-      );
+      await expect(r.locator(".k-field-warn")).toHaveText("That looks like a GitHub token: leave it out");
       await expect(r.getByRole("button", { name: /^Done/ })).toBeDisabled();
       await expect(r.getByRole("button", { name: /^Can't/ })).toBeDisabled();
       await note.press("Enter");
@@ -118,19 +96,11 @@ for (const [name, viewport] of [
       await expect(r.locator(".k-field-warn")).toHaveCount(0);
       await page.screenshot({ path: info.outputPath("todo-open.png") });
       // The record keeps the note as control does: the receipt shows its words.
-      await page.evaluate(
-        () =>
-          void ((window as unknown as { __todoKept: string }).__todoKept =
-            "swapped to PETG (kept)"),
-      );
+      await page.evaluate(() => void ((window as unknown as { __todoKept: string }).__todoKept = "swapped to PETG (kept)"));
       await r.locator("button[aria-expanded]").first().focus();
       await page.keyboard.press("Shift+D");
-      await expect
-        .poll(() => posted(page))
-        .toEqual([{ id: TODO.id, choice: "Done", note: "swapped to PETG" }]);
-      await expect(r).toContainText(
-        /Done by you .* · swapped to PETG \(kept\)/,
-      );
+      await expect.poll(() => posted(page)).toEqual([{ id: TODO.id, choice: "Done", note: "swapped to PETG" }]);
+      await expect(r).toContainText(/Done by you .* · swapped to PETG \(kept\)/);
       await expect(r).toHaveClass(/is-done/);
       await expect(r.locator(".k-mark").first()).toHaveText("✓");
       await expect(r.getByRole("textbox", { name: /Note/ })).toHaveCount(0);
@@ -141,26 +111,14 @@ for (const [name, viewport] of [
 test.describe("at 360px", () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test("control's refusal is said in its words, and the to-do can be answered again", async ({
-    page,
-  }) => {
+  test("control's refusal is said in its words, and the to-do can be answered again", async ({ page }) => {
     await overview(page);
     const r = await open(page);
-    await page.evaluate(
-      () =>
-        void ((window as unknown as { __inboxRefuse: unknown }).__inboxRefuse =
-          { status: 409, error: "it was answered already" }),
-    );
-    await r
-      .getByRole("textbox", { name: /Note/ })
-      .fill("couldn't find a spool");
+    await page.evaluate(() => void ((window as unknown as { __inboxRefuse: unknown }).__inboxRefuse = { status: 409, error: "it was answered already" }));
+    await r.getByRole("textbox", { name: /Note/ }).fill("couldn't find a spool");
     await r.getByRole("button", { name: /^Can't/ }).click();
-    await expect(
-      page.getByText("Couldn't answer it: it was answered already"),
-    ).toBeVisible();
+    await expect(page.getByText("Couldn't answer it: it was answered already")).toBeVisible();
     await expect(r.getByRole("button", { name: /^Can't/ })).toBeEnabled();
-    expect(await posted(page)).toEqual([
-      { id: TODO.id, choice: "Can't", note: "couldn't find a spool" },
-    ]);
+    expect(await posted(page)).toEqual([{ id: TODO.id, choice: "Can't", note: "couldn't find a spool" }]);
   });
 });
