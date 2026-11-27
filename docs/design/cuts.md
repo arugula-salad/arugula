@@ -69,5 +69,3 @@ if people miss it. Newest at the bottom.
 - **Settings › Project › CI alerts, Runs and workspaces, Claude spend** as rows of their own: parts of one Agents row (Lift 7, Arugula #1487).
 - **The Team page** (`/t/:team/chat`, `/members`, its tabs): its members are Settings › Team, its chat the team's project's chat (Lift 7, Arugula #1487).
 - **The avatar menu's phone-only Your account…:** the menu has each of Settings' scopes on every screen (Lift 7, Arugula #1487).
-- **The Deploys place** (`/p/:project/deploys`, a project's deploys newest first): each environment's history is in Settings › Project › Secrets and environments, where the address lands; a deploy waiting on you is a Needs-you row (Lift 7, Arugula #1487).
-- **"Plan a deploy" (`/p/:project/deploys/new`) and each environment's Deploy…:** an agent's `plan_deploy` or `arugula deploys plan` plans one; the address lands on the environments (Lift 7, Arugula #1487).
