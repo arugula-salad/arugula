@@ -130,3 +130,15 @@ test("an issue on no board is the issue, with no card parts", async ({ page }) =
   await expect(page.locator("[data-card-ask]")).toHaveCount(0);
   await expect(page.locator("[data-issue-labels]")).toBeVisible();
 });
+
+test("a card's page has the agent panel beside it, its worker in front; an issue on no board has none (#1520)", async ({ page }) => {
+  await openCard(page, ISSUE);
+  const side = page.locator(`[data-card-place="${ISSUE}"] [data-kit=panel]`);
+  const tabs = side.locator("[role=tab]");
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveText("#1443");
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await openCard(page, LOOSE);
+  await expect(page.locator("[data-card-place]")).toHaveCount(0);
+  await expect(page.locator("[data-kit=panel]")).toHaveCount(0);
+});

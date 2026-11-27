@@ -27,7 +27,7 @@ import { Row } from "../kit/row";
 import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
 import { boards } from "./store";
-import { boardItems, forTeammateFold, itemFor, itemNeed, itemWord, prWord, redLine, stalledFor, type OpenPr } from "./text";
+import { boardItems, forTeammateFold, itemFor, itemNeed, itemWord, liveSessions, prWord, redLine, stalledFor, waitingOf, type OpenPr } from "./text";
 
 export function DeskTabs({ tabs, current, pick, close }: { tabs: TabItem[]; current: string; pick: (id: string) => void; close: (id: string) => void }) {
   return (
@@ -274,6 +274,14 @@ export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view:
       )}
     </section>
   );
+}
+
+/** A row's worker as the agent panel's tab: its live agent block on a machine (the one that needs you, else the one that moved last). Null without one. */
+export function workerOf(r: BoardRow, board: string): PanelTarget | null {
+  const w = liveSessions(r, waitingOf(r))[0];
+  if (w?.kind !== "block" || !w.machine) return null;
+  const pane = Number(String(w.pane).replace(/^%/, ""));
+  return { kind: "agent", role: "worker", machine: w.machine, pane: Number.isFinite(pane) ? pane : undefined, board, row: r.id, title: r.live && "number" in r.live ? `#${r.live.number}` : w.name };
 }
 
 /** The board's right third under Needs you (#1520): the agent panel, with ✦ and the board's tab (Lead 🔒 ⇄ # channel), and `peek` (a card's worker, `j`/`k`) as a visitor; the board's thread alone where the page has no agent panel. */
