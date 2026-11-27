@@ -6,6 +6,7 @@
 
 import type { ComponentChildren, ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
+import type { AgentPanelProps } from "../shared/kit/panel";
 import type { MachineAt } from "../shared/machine-paths";
 import type { OverviewZoom, PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
@@ -15,12 +16,15 @@ import type { AppSession } from "./session";
 type Place = ComponentType<{ project: string; at: MachineAt }>;
 type Page = typeof import("./machine-page");
 type OverviewPage = typeof import("./overview");
+type PanelPage = typeof import("./panel");
 
 /** The machine page's chunk, once asked for. */
 let loading: Promise<Page> | null = null;
 const load = () => (loading ??= import("./machine-page"));
 let loadingOverview: Promise<OverviewPage> | null = null;
 const loadOverview = () => (loadingOverview ??= import("./overview"));
+let loadingPanel: Promise<PanelPage> | null = null;
+const loadPanel = () => (loadingPanel ??= import("./panel"));
 
 /** `PlatformApi.Machines` over `session`: the hub's machines, reached with
  * machine tokens. `session` null is a daemon's own page (its machines
@@ -132,5 +136,25 @@ export function appOverview(session: () => AppSession | null): ComponentType<{ p
         </p>
       );
     return <page.OverviewPlace project={project} board={board} card={card} zoom={zoom} session={s} />;
+  };
+}
+
+/** `PlatformApi.AgentPanel` over `session` (Lift 4, #1480): the agent panel
+ * (./panel), in the chunk the Overview loads too. While the hub can't reach
+ * machines from this host, only what goes over it (`above`) shows. */
+export function appAgentPanel(session: () => AppSession | null): ComponentType<AgentPanelProps> {
+  return function AgentPanel(props) {
+    const s = session();
+    useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
+    const [page, setPage] = useState<PanelPage | null>(null);
+    const reachable = !s || s.reachable !== false;
+    useEffect(() => {
+      if (!reachable) return;
+      let live = true;
+      void loadPanel().then((p) => live && setPage(() => p));
+      return () => void (live = false);
+    }, [reachable]);
+    if (!reachable || !page) return <>{props.above}</>;
+    return <page.AgentPanelPlace {...props} session={s} />;
   };
 }

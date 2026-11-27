@@ -61,6 +61,15 @@ export function paneOwner(fleet: Fleet, p: FleetPane): string | null {
   return name === fleet.me ? null : name;
 }
 
+/** Whose a pane is, as the panel and a machine's page treat it: yours, or a
+ * team's box or the project's hosted one where you may steer it, to write
+ * to; a teammate's own, to watch. */
+export function yours(fleet: Fleet, p: FleetPane): boolean {
+  if (p.person.kind === "me") return true;
+  if (p.person.kind === "team" || fleet.host(p.host)?.hosted) return fleet.role(p) !== "viewer";
+  return false;
+}
+
 /** The pane an item is about (a `pane` subject, #1431), if this page has it. */
 export function paneOfItem(fleet: Fleet, i: InboxItem): FleetPane | undefined {
   const s = i.subject;
