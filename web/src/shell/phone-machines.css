@@ -13,7 +13,7 @@
 
 .sheet-hosts .host-group {
   margin: 10px 4px 2px;
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
@@ -32,14 +32,14 @@
   padding: 0 12px;
   border: 0;
   border-left: 2px solid transparent;
-  border-radius: var(--card-radius);
+  border-radius: var(--radius);
   background: none;
   text-align: left;
 }
 
 .sheet-host.current {
   border-left-color: var(--accent);
-  background: var(--raised);
+  background: var(--card-raised);
 }
 
 .host-dot {
@@ -47,15 +47,15 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--ink-faint);
 }
 
 .host-dot[data-dot="on"] {
-  background: var(--ok);
+  background: var(--done);
 }
 
 .host-dot[data-dot="mid"] {
-  background: var(--warn);
+  background: var(--needs);
 }
 
 .sheet-host .host-name {
@@ -64,7 +64,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 var(--text-md) var(--font-mono);
+  font: 600 var(--text-body) var(--font-mono);
 }
 
 /* Not a chip: the VM tag is a Chip (shared/ui/state-chip.tsx). The
@@ -72,12 +72,12 @@
 .sheet-host .host-panes,
 .sheet-host .host-state {
   flex: none;
-  color: var(--dim);
-  font: var(--text-sm) var(--font-mono);
+  color: var(--ink-dim);
+  font: var(--text-meta) var(--font-mono);
 }
 
 .sheet-host .host-state {
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .sheet-host.current .host-state {
@@ -112,7 +112,7 @@
 
 .host-count {
   font-family: var(--font-mono);
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .host-caveat {
@@ -121,7 +121,7 @@
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
-  color: var(--warn);
+  color: var(--needs);
 }
 
 .host-add {

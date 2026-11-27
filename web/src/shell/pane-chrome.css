@@ -9,29 +9,29 @@
   padding: 0 var(--space-2);
   gap: var(--space-2);
   border-radius: var(--pane-radius, 0) var(--pane-radius, 0) 0 0;
-  background: var(--chrome-panel, var(--surface));
-  color: var(--subtle);
-  font-size: var(--text-xs);
-  border-bottom: 1px solid var(--chrome-line, var(--raised));
+  background: var(--chrome-panel, var(--section));
+  color: var(--ink-dim);
+  font-size: var(--text-label);
+  border-bottom: 1px solid var(--chrome-line, var(--card-raised));
 }
 
 .grid.pane-chrome .pane-header.live.active {
-  background: color-mix(in srgb, var(--accent-fill) 7%, var(--surface));
-  color: var(--fg);
+  background: color-mix(in srgb, var(--accent-fill) 7%, var(--section));
+  color: var(--ink);
   box-shadow: none;
 }
 
 .grid.pane-chrome .pane-header.live .pane-header-title {
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: 500;
   min-width: 0;
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .grid.pane-chrome .pane-header-n {
   background: none;
-  color: var(--subtle);
-  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  font-size: var(--text-label);
   padding: 0;
 }
 
@@ -57,7 +57,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
   z-index: 5;
   pointer-events: none;
   border-radius: var(--pane-radius, 0);
-  box-shadow: inset 0 0 0 1px var(--chrome-line, var(--raised));
+  box-shadow: inset 0 0 0 1px var(--chrome-line, var(--card-raised));
 }
 
 .pane-frame.active {
@@ -91,10 +91,10 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
 /* Two sizes in the header: 13px for the title, 11px for everything about
    it (UI audit #171). */
 .grid.pane-chrome .pane-header-n {
-  font: var(--text-xs) var(--font-mono);
+  font: var(--text-label) var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
-.grid.pane-chrome .pane-header-branch { font-size: var(--text-xs); }
+.grid.pane-chrome .pane-header-branch { font-size: var(--text-label); }
 .grid.pane-chrome .pane-header-type {
   display: inline-flex;
   flex: none;
@@ -107,7 +107,7 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
   border-left: 1px solid var(--chrome-line);
 }
 .grid.pane-chrome :is(.pane-header-where, .pane-header-branch, .pane-header-host) {
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 .grid.pane-chrome .pane-header-button { flex: none; }
 @container (max-width: 560px) {
@@ -125,20 +125,20 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
   height: 22px;
   padding: 0 2px 0 8px;
   border-radius: var(--chip-radius);
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-  color: var(--fg);
-  font-size: var(--text-xs);
+  background: color-mix(in srgb, var(--needs) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--needs) 40%, transparent);
+  color: var(--ink);
+  font-size: var(--text-label);
   cursor: default;
 }
 .grid.pane-chrome .pane-header-sized button {
   height: 18px;
   padding: 0 8px;
   border-radius: var(--chip-radius);
-  background: var(--warn);
+  background: var(--needs);
   color: var(--on-needs);
   font-family: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -218,7 +218,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   padding: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   line-height: 1.45;
   container-type: size;
 }
@@ -239,7 +239,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
 .pane-tip h2 { margin: 0 0 10px; }
 .pane-tip h3 {
   margin: 12px 0 4px;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   scroll-margin-top: 8px;
 }
 .pane-tip p,
@@ -250,7 +250,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--tag-radius);
-  font: 500 var(--text-xs)/1 var(--font-mono);
+  font: 500 var(--text-label)/1 var(--font-mono);
 }
 .pane-tip .modal-close {
   position: absolute;
@@ -274,26 +274,26 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   align-items: center;
   gap: 6px;
   margin-right: auto;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   font-weight: 400;
 }
 .pane-tip-never input { margin: 0; padding: 0; }
 
 /* A narrow or short panel: tighter type and spacing. */
 @container (max-width: 340px) or (max-height: 320px) {
-  .pane-tip { font-size: var(--text-sm); }
+  .pane-tip { font-size: var(--text-meta); }
   .pane-tip-scroll { padding: 12px 10px; }
   .pane-tip h2 { margin-bottom: 6px; }
-  .pane-tip h3 { margin-top: 8px; font-size: var(--text-sm); }
+  .pane-tip h3 { margin-top: 8px; font-size: var(--text-meta); }
   .pane-tip p,
   .pane-tip ul { margin-bottom: 6px; }
   /* The buttons take the compact size and centre, and the opt-out gets a
      row of its own under them, so a narrow pane's footer stays a few short
      rows rather than one per button. */
   .pane-tip > .prompt-buttons { gap: 4px; padding: 6px 8px; justify-content: center; }
-  .pane-tip > .prompt-buttons :is(.primary, .secondary) { min-height: 24px; padding: 3px 8px; font-size: var(--text-sm); }
-  .prompt .pane-tip-never { order: 1; flex-basis: 100%; justify-content: center; margin-right: 0; font-size: var(--text-xs); }
+  .pane-tip > .prompt-buttons :is(.primary, .secondary) { min-height: 24px; padding: 3px 8px; font-size: var(--text-meta); }
+  .prompt .pane-tip-never { order: 1; flex-basis: 100%; justify-content: center; margin-right: 0; font-size: var(--text-label); }
 }
 
 /* A pane in a fixed slot outside the grid (ui/panes/live-slot.tsx): a board
@@ -304,7 +304,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   margin: 8px 0;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: var(--card-radius);
+  border-radius: var(--radius);
 }
 
 /* The pane's card under a phone's bar (Arugula inversion): project > #983
@@ -325,7 +325,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   min-height: 20px;
   overflow: hidden;
   white-space: nowrap;
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
 }
 .chip-object.pane-work .chip-object-id {
   flex: none;
@@ -337,7 +337,7 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   flex: 0 100 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 .pane-work-title {
   flex: 0 10 auto;

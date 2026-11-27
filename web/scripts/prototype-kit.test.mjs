@@ -144,9 +144,11 @@ test("the runner writes the kit into the prototype's document, after the policy"
 
 test("the kit's type scale is style.css's: the same sizes and line-heights", () => {
   const style = appStyle();
+  // The kit's steps by their old names; the app's by the role each is now (Lift 7).
+  const role = { xs: "label", sm: "meta", md: "body", lg: "title", xl: "xl", "2xl": "hero", doc: "doc" };
   for (const step of ["xs", "sm", "md", "lg", "xl", "2xl", "doc"]) {
-    const app = style.match(new RegExp(`--text-${step}: ([\\d.]+px);`))?.[1];
-    assert.ok(app, `style.css declares --text-${step}`);
+    const app = style.match(new RegExp(`--text-${role[step]}: ([\\d.]+px);`))?.[1];
+    assert.ok(app, `the app declares --text-${role[step]}`);
     assert.equal(kit.match(new RegExp(`--ar-text-${step}: ([\\d.]+px);`))?.[1], app, `--ar-text-${step} is ${app}`);
   }
   for (const step of ["xs", "sm", "md", "lg", "prose"]) {

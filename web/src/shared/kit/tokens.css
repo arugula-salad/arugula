@@ -4,10 +4,8 @@
    Look sliders; the values here, Arugula dark's (design lift §4.4), are
    what a page that never runs it shows.
 
-   Below them, today's names (`--bg`, `--fg`, `--surface` …) as aliases of
-   the roles, so every screen keeps drawing. A screen's phase moves its
-   rules onto the roles and drops the aliases it used; after the last, only
-   the roles are left. New CSS names a role, never an alias. */
+   Only the roles: today's names (`--bg`, `--fg`, `--surface` …) went in
+   Lift 7 (#1487), and check-colour refuses them. */
 
 :root {
   /* Surfaces: the page, the rail, a section and a card on it, a card
@@ -85,38 +83,4 @@
   --row: 32px;
   --rail-w: 56px;
   --panel-w: 420px;
-}
-
-/* Today's names, on the roles. */
-:root {
-  --bg: var(--canvas);
-  --fg: var(--ink);
-  --dim: var(--ink-dim);
-  --surface: var(--section);
-  --letterbox: var(--well);
-  --raised: var(--card-raised);
-  --raised-hover: var(--hover);
-  --muted: var(--ink-faint);
-  --on-color: var(--on-accent);
-  --danger: var(--fail);
-  --ok: var(--done);
-  --warn: var(--needs);
-  --info: var(--review);
-  --divider: var(--line);
-  --shadow-sm: var(--shadow-card);
-  --shadow-md: var(--shadow-raised);
-  --text-xs: var(--text-label);
-  --text-sm: var(--text-meta);
-  --text-md: var(--text-body);
-  --text-lg: var(--text-title);
-  --text-2xl: var(--text-hero);
-  --card-radius: var(--radius);
-  --btn-radius: var(--radius-control);
-  --field-radius: var(--radius-control);
-  /* Colors no role covers yet; look.ts paints them. */
-  --subtle: #bec8d3;
-  --peach: #f2985f;
-  --teal: #25cbb7;
-  --pink: #e490d2;
-  --merged: #bb9ef9;
 }

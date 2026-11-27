@@ -65,7 +65,7 @@
 /* A section's count, beside its heading, as /settings has it. */
 .settings-place .settings-sec > h2 > .dim {
   margin-left: 4px;
-  font: 700 var(--text-sm)/1 var(--font-mono);
+  font: 700 var(--text-meta)/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   vertical-align: 2px;
 }

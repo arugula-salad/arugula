@@ -43,9 +43,9 @@ type Sized = { size?: IconSize };
 /** Arugula's own mark (public/icon.svg): a prompt and a cursor. */
 export const Mark = () => (
   <svg class="icon mark" width="22" height="22" viewBox="0 0 64 64" aria-hidden="true">
-    <rect width="64" height="64" rx="14" fill="var(--raised)" />
+    <rect width="64" height="64" rx="14" fill="var(--card-raised)" />
     <path d="M16 22l12 10-12 10" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-    <path d="M33 44h15" stroke="var(--fg)" stroke-width="5" stroke-linecap="round" />
+    <path d="M33 44h15" stroke="var(--ink)" stroke-width="5" stroke-linecap="round" />
   </svg>
 );
 

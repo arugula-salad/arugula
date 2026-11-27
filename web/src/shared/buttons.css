@@ -29,7 +29,7 @@
   min-height: 32px;
   padding: 6px 14px;
   border: 1px solid transparent;
-  border-radius: var(--btn-radius);
+  border-radius: var(--radius-control);
   font: inherit;
   font-weight: 600;
   line-height: 1.2;
@@ -42,40 +42,40 @@
 .primary {
   background: var(--btn-fill);
   border-color: var(--btn-fill);
-  color: var(--on-color);
+  color: var(--on-accent);
 }
 
 .primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--btn-fill) 85%, var(--fg));
+  background: color-mix(in srgb, var(--btn-fill) 85%, var(--ink));
 }
 
 /* A tint of the text's color and an edge of it: reads on the page, a card,
    a dialog and the letterbox, light or dark. */
 .secondary {
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border-color: color-mix(in srgb, var(--fg) 18%, transparent);
-  color: var(--fg);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
+  color: var(--ink);
 }
 
 .secondary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .primary.danger {
-  --btn-fill: var(--danger);
+  --btn-fill: var(--fail);
   color: var(--on-needs);
 }
 
 .secondary.danger {
   background: none;
-  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
-  color: var(--danger);
+  border-color: color-mix(in srgb, var(--fail) 50%, transparent);
+  color: var(--fail);
 }
 
 .secondary.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
-  border-color: var(--danger);
+  background: color-mix(in srgb, var(--fail) 15%, transparent);
+  border-color: var(--fail);
 }
 
 .link {
@@ -94,33 +94,33 @@
 }
 
 .link.danger {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 /* A link that's a button: page rules for links (.platform-section a and
    the like) don't recolor it. This file loads last for the same reason. */
 a.primary,
 a.primary:hover {
-  color: var(--on-color);
+  color: var(--on-accent);
   text-decoration: none;
 }
 
 a.secondary,
 a.secondary:hover {
-  color: var(--fg);
+  color: var(--ink);
   text-decoration: none;
 }
 
 a.secondary.danger,
 a.secondary.danger:hover {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .primary.small,
 .secondary.small {
   min-height: 24px;
   padding: 3px 10px;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 /* An icon-only secondary: a square as tall as the set's size, its glyph
@@ -135,7 +135,7 @@ a.secondary.danger:hover {
 }
 
 .link.small {
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 /* A finger, not a pointer (UI audit #186): on a touch screen the set is
@@ -210,9 +210,9 @@ a.secondary.danger:hover {
    still reads as the thing to do (UI audit #179). Its fill is the
    variable, so every finish draws it grey. */
 .primary:disabled {
-  --btn-fill: color-mix(in srgb, var(--fg) 9%, transparent);
-  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
-  color: var(--dim);
+  --btn-fill: color-mix(in srgb, var(--ink) 9%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 16%, transparent);
+  color: var(--ink-dim);
   text-shadow: none;
   opacity: 1;
 }
@@ -243,11 +243,11 @@ a.secondary.danger:hover {
   min-width: 24px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--btn-radius);
+  border-radius: var(--radius-control);
   background: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
@@ -271,8 +271,8 @@ a.secondary.danger:hover {
 :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button:where(:not(.primary, .secondary, .link)):hover:not(:disabled),
 .block-open:hover,
 .seg > button:hover:not(:disabled) {
-  background: var(--raised);
-  color: var(--fg);
+  background: var(--card-raised);
+  color: var(--ink);
 }
 
 :is(.bar-btn, .seg > button, :where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) button):is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
@@ -312,9 +312,9 @@ a.secondary.danger:hover {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-  border-radius: var(--btn-radius);
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 .seg > button {
@@ -327,11 +327,11 @@ a.secondary.danger:hover {
   min-height: 26px;
   padding: 0 12px;
   border: 0;
-  border-radius: max(0px, calc(var(--btn-radius) - 2px));
+  border-radius: max(0px, calc(var(--radius-control) - 2px));
   background: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
   font: inherit;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -342,7 +342,7 @@ a.secondary.danger:hover {
 .seg.small > button {
   min-height: 18px;
   padding: 0 8px;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 .seg.touch > button {
@@ -353,11 +353,11 @@ a.secondary.danger:hover {
    track's own 6%: legible() checks the accent on the tint over bg, and the
    track's fill under it took Latte to 4.43:1. */
 .seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]) {
-  background: color-mix(in srgb, var(--accent-fill) 18%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 18%, var(--canvas));
 }
 
 .seg > button:is(.on, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-fill) 26%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 26%, var(--canvas));
 }
 
 /* A filter that's set: the .secondary with accent text and edge, not a

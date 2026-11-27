@@ -161,7 +161,7 @@ test("Open in editor: VS Code on the pane's directory, on the block's own origin
     .poll(() => f.locator(".monaco-workbench .part.sidebar").evaluate((e) => getComputedStyle(e).backgroundColor))
     .toBe(await page.locator(".app").evaluate((e) => {
       const probe = document.createElement("span");
-      probe.style.background = "var(--surface)";
+      probe.style.background = "var(--section)";
       e.append(probe);
       const color = getComputedStyle(probe).backgroundColor;
       probe.remove();

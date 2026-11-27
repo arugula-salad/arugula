@@ -370,9 +370,8 @@ export function fix(ui: Ui, dark: boolean): Ui {
 const rgba = (c: Rgb, a: number) => `rgb(${c.join(" ")} / ${a})`;
 const n = (v: number) => +v.toFixed(3);
 
-/** The custom properties a look sets on the root: tokens.css's roles, the
- * depth's shadows and highlights, and the few legacy colors no role covers
- * yet (the theme's `ui`, made legible on the brand's surfaces). */
+/** The custom properties a look sets on the root: tokens.css's roles and
+ * the depth's shadows and highlights. */
 export function paint(dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record<string, string> {
   const own = dark ? p.dark : p.light;
   const b = neutrals(dark, s, own);
@@ -422,12 +421,6 @@ export function paint(dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record
     "shadow-raised": `0 2px 6px rgb(0 0 0 / ${n(0.3 * k)}), 0 18px 40px -10px rgb(0 0 0 / ${n(0.6 * k)})`,
     highlight: `inset 0 1px 0 rgb(255 255 255 / ${n((dark ? 0.07 : 0.9) * dp)})`,
     sheen: `linear-gradient(180deg, rgb(255 255 255 / ${n((dark ? 0.025 : 0.4) * dp)}), transparent 90px)`,
-    // Legacy colors with no role: each screen's phase drops its uses.
-    subtle: toHex(lift(N2(b.ink, b.dim), b.on, dark)),
-    peach: hue("peach"),
-    teal: hue("teal"),
-    pink: hue("pink"),
-    merged: hue("plum"),
   };
 }
 

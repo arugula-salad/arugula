@@ -11,9 +11,9 @@
   height: var(--field-h);
   padding: 0 var(--space-2);
   border: 1px solid var(--field-line);
-  border-radius: var(--field-radius);
-  background-color: var(--bg);
-  color: var(--dim);
+  border-radius: var(--radius-control);
+  background-color: var(--canvas);
+  color: var(--ink-dim);
   cursor: text;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -50,13 +50,13 @@
   background: none;
   box-shadow: none;
   outline: none;
-  color: var(--fg);
+  color: var(--ink);
   font: inherit;
   font-size: var(--t-field);
 }
 
 .search-field.small > input {
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 /* The browser's ✕ on a mouse: Esc clears it. A finger keeps it. */
@@ -71,8 +71,8 @@
   padding: 0 var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: 3px;
-  color: var(--dim);
-  font: 500 var(--text-xs)/1.4 var(--font-mono);
+  color: var(--ink-dim);
+  font: 500 var(--text-label)/1.4 var(--font-mono);
 }
 
 /* The key is for what's empty, and for a keyboard. */
