@@ -10,7 +10,6 @@ import type { Fleet } from "../fleet";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ago } from "../../shared/time";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
-import { SWARM_ABOUT, openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 import { Caret, ChevronIcon } from "../../shared/ui/icons";
@@ -197,8 +196,6 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
         items.push({ label: h.name, detail: `arugula --host ${h.name} ls`, current: false, disabled: true, run: () => {} });
       }
     }
-    // One description of the swarm, as the rail's (UI audit #176).
-    items.push("separator", { label: "Go to Swarm", detail: SWARM_ABOUT, run: openSwarm });
     // The shown machine's own settings: a row to the Settings page, or (no rail) the rows.
     const mine = machineItems();
     // #778: what its place means is its row's tooltip (UI audit #175: the

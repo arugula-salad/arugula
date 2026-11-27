@@ -9,7 +9,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import type { CodeView } from "../swarm/code";
+import type { CodeView } from "./code";
 import { registerBlock, type BlockView } from "./view";
 import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import { editFile } from "./diff";
@@ -44,7 +44,7 @@ function FileBlock({ client, id, s }: { client: Client; id: PaneId; s: FileState
 
   useEffect(() => {
     let dead = false;
-    void import("../swarm/code").then(({ CodeView }) => {
+    void import("./code").then(({ CodeView }) => {
       if (dead || !box.current) return;
       code.current = new CodeView(box.current, "read-only");
       setReady(true);

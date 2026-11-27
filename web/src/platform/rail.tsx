@@ -56,7 +56,6 @@ function usePlaces() {
   useSubscribe(onCurrentProject);
   useSubscribe(subscribeSeen);
   const r = useRoute();
-  const phone = usePhone();
   const { Machines } = usePlatformApi();
   // The only count across projects: the server's, as it is (Lift 6d, #1486).
   const inbox = useInboxCounts();
@@ -76,30 +75,24 @@ function usePlaces() {
   // The machines are the app's own places where it has them; else control's page.
   const m = r.page === "machines" ? r.at : null;
   const machines = !!Machines && !!project;
-  const swarm = m?.at === "swarm";
   // Machines opens on the Machines page (Arugula #1346); a pane opens on its machine's page.
   const machinesTo = machines ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : `${controlOrigin()}/`;
-  // The Swarm is the Overview's view (Arugula #1348 moves it in): its route lights the Overview.
-  const overviewViews: PlaceLink[] = machines && !phone
-    ? [
-        { key: "overview", label: "Overview", tip: "Overview: this project's work", to: at("project"), here: section === "home" },
-        { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: swarm },
-      ]
-    : [];
+  // The Overview has no views of its own: Swarm, its other one, went in Lift 6a (#1483).
+  const overviewViews: PlaceLink[] = [];
   // A run is a session in a cloud workspace (decision 6): Runs and Workspaces are Machines' (Arugula #1082).
   const machineViews: PlaceLink[] = !machines
     ? []
     : [
-        { key: "machines", label: "Machines", tip: "Machines: every machine's sessions and panes", to: machinesTo, here: !!m && !swarm },
+        { key: "machines", label: "Machines", tip: "Machines: every machine's sessions and panes", to: machinesTo, here: !!m },
         { key: "runs", label: "Runs", tip: "Runs: this project's runs", to: at("runs"), here: section === "runs", count: runs },
         ...(session.hosted ? [{ key: "workspaces", label: "Workspaces", tip: "Workspaces: this project's cloud workspaces", to: at("workspaces"), here: section === "workspaces" }] : []),
       ];
   const places: (PlaceLink & { key: PlaceKey; views: PlaceLink[] })[] = [
     // A deploy's page opens from a link (its Needs-you row, a push): it's the Overview's.
-    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home" || swarm, views: overviewViews },
+    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home", views: overviewViews },
     { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards", count: issues, views: [] },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs", views: [] },
-    { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: (!!m && !swarm) || section === "workspaces" || section === "runs", views: machineViews },
+    { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: !!m || section === "workspaces" || section === "runs", views: machineViews },
     { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: talk, views: [] },
   ];
   const foot: PlaceLink[] = [

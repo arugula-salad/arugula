@@ -88,12 +88,9 @@ export function SidebarToggle({ client }: { client: Client }) {
 export function ContextHeader({
   client,
   setRenaming,
-  onSwarm,
 }: {
   client: Client;
   setRenaming: (r: Renaming) => void;
-  /** The app's Swarm, among this machine's places (Arugula #989). */
-  onSwarm?: () => void;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
   const at = usePlace(client);
@@ -124,7 +121,7 @@ export function ContextHeader({
       <ConnectionChip client={client} />
       {/* Docs sits under this head (Arugula #796); the other places cover it
           with a bar of their own (AppBar). */}
-      {panes && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
+      {panes && <MachinePlaces client={client} at={at} />}
     </>
   );
   const tools = (

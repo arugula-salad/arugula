@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardLead, boardSays, leadAwake, overviewOf, staffSpots, STATE_WORD, wordOf } from "../src/shell/swarm/overview.ts";
+import { boardLead, boardSays, leadAwake, overviewOf, staffSpots, STATE_WORD, wordOf } from "../src/shell/fleet-overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 

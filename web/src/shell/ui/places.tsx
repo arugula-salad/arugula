@@ -1,4 +1,4 @@
-// The places a person moves between (the panes, the swarm, agents) and
+// The places a person moves between (the panes, agents) and
 // chat, which is on the platform page (M153): the places bar's Chat opens
 // it there. The shell draws no chat page of its own since M155.
 
@@ -6,13 +6,12 @@ import { closeSettings, settingsRoute } from "./settings-route";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { directory } from "../hosts";
-import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { DOCS_TO } from "./docs-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
-import { landOnPlatform, openPlatform, platformHere, platformHref, platformOrigin } from "../platform-links";
+import { landOnPlatform, openPlatform, platformHref, platformOrigin } from "../platform-links";
 import { machinesPath } from "../../shared/machine-paths";
 import { Count } from "../../shared/ui/state-chip";
 
@@ -100,10 +99,10 @@ export function useChatTick(client: Client) {
   }, [client]);
 }
 
-// ---- the places: the panes, the swarm and agents
+// ---- the places: the panes and agents (Swarm went in Lift 6a: `#swarm` lands on the panes)
 
-/** Where a person is: the panes, the swarm or agents. */
-export type Place = "panes" | "swarm" | "agents" | "settings";
+/** Where a person is: the panes or agents. */
+export type Place = "panes" | "agents" | "settings";
 
 /** The Machines page at the machine `client` shows (its id, or its name
  * where it has none), and at `session`'s card (Arugula #1349): what M111's
@@ -140,7 +139,6 @@ export function landOldOverview(client: Client, show: (session: number) => void)
 
 /** Where the page is now, from the route. */
 export function currentPlace(): Place {
-  if (swarmRoute()) return "swarm";
   if (agentsRoute()) return "agents";
   if (settingsRoute()) return "settings";
   return "panes";
@@ -150,10 +148,9 @@ export function currentPlace(): Place {
 export function closePlace(at: Place) {
   if (at === "agents") closeAgentsPage();
   else if (at === "settings") closeSettings();
-  else if (at === "swarm") closeSwarm();
 }
 
-/** Panes · Swarm · Chat · Boards · Docs · Agents, in the bar every place
+/** Panes · Chat · Boards · Docs · Agents, in the bar every place
  * shares (./app-bar). Chat, Boards and Docs open the platform page. Agents
  * (#403) is the machine owner's, with its flag. */
 export function Places({ client, at }: { client: Client; at: Place }) {
@@ -161,7 +158,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
   const { n, mention } = chatUnread();
   const agents = client.flag("agent-delegation") && !client.state?.roles;
   const docs = !client.state?.roles && !!platformHref(DOCS_TO);
-  // No machine yet: no panes or swarm to go to.
+  // No machine yet: no panes to go to.
   const machines = !!client.state || directory.names.length > 0;
   return (
     <div class="places" role="group" aria-label="Places">
@@ -174,17 +171,6 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           onClick={() => closePlace(at)}
         >
           Panes
-        </button>
-      )}
-      {machines && (
-        <button
-          class={at === "swarm" ? "place here" : "place"}
-          title={`Swarm: ${SWARM_ABOUT}`}
-          data-open-swarm
-          aria-pressed={at === "swarm"}
-          onClick={() => at !== "swarm" && openSwarm()}
-        >
-          Swarm
         </button>
       )}
       {hasChat() && (
@@ -234,7 +220,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
  * Runs its runs, where control has a platform page; a machine on its own
  * keeps its Panes and Swarm (its Docs are in Go to…; the app's Docs are
  * the rail's). Recipes is this machine's. */
-export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Place; onSwarm?: () => void }) {
+export function MachinePlaces({ client, at }: { client: Client; at: Place }) {
   const owner = !client.state?.roles;
   const recipes = client.flag("agent-delegation") && owner;
   const panes = at === "panes";
@@ -263,8 +249,6 @@ export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Pla
         ? item("Machines", "machines", panes, "Machines: every machine's sessions and panes", back)
         : item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", back)}
       {runs && item("Runs", "runs", false, "Runs: your project's runs", () => openPlatform(RUNS_TO))}
-      {/* The app's Swarm is the Overview's (Arugula #1345); a page of its own keeps its own. */}
-      {!platformHere() && item("Swarm", "swarm", at === "swarm", `Swarm: ${SWARM_ABOUT}`, () => at !== "swarm" && (onSwarm ? onSwarm() : openSwarm()))}
       {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
     </nav>
   );

@@ -30,8 +30,8 @@ import { Surface } from "../shared/kit/surface";
 import { useSubscribe } from "../shared/ui/hooks";
 import type { Fleet } from "../shell/fleet";
 import { directory } from "../shell/hosts";
-import { shortHost } from "../shell/swarm/model";
-import { staffSpots, type StaffSpot } from "../shell/swarm/overview";
+import { shortHost } from "../shell/fleet-model";
+import { staffSpots, type StaffSpot } from "../shell/fleet-overview";
 import { dmPowersMissing, type Grant } from "../platform/settings/grants";
 
 /** What `start_agent` answers through `/api/mcp/call`: a tool's result. */

@@ -323,34 +323,6 @@ test("from another site, in a browser that blocks third-party cookies: the file 
   }
 });
 
-test("in the swarm: an editor tile with its file, and Open in editor from a tile", async ({ page }) => {
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.filter((p) => p.info.kind === "editor").length)).toBeGreaterThanOrEqual(2);
-  const ed = await page.evaluate(() => window.__arugula.fleet.panes.find((p) => p.info.kind === "editor" && p.info.file)!);
-  expect(ed.info.project?.name).toBe("arugula");
-  expect(ed.info.file).toBe(AUTH);
-  // Its preview: the file and the lines around the cursor.
-  await page.waitForTimeout(1500);
-  const at = (key: string) => page.evaluate((k) => (window.__arugula.swarm as { screenOf(k: string): { x: number; y: number } }).screenOf(k), key);
-  let pos = (await at(ed.key))!;
-  await page.mouse.move(pos.x, pos.y);
-  await expect(page.locator(".swarm-peek pre")).toContainText(`${AUTH}:`, { timeout: 10_000 });
-
-  // Right-click the terminal's tile: VS Code where it runs.
-  const before = (await editors(page)).length;
-  const key = await page.evaluate((t) => window.__arugula.fleet.panes.find((p) => p.id === t)!.key, term);
-  pos = (await at(key))!;
-  await page.mouse.click(pos.x, pos.y, { button: "right" });
-  await (await menuItem(page, "Open in editor")).click();
-  await expect(page.locator(".swarm")).toHaveCount(0);
-  await expect.poll(async () => (await editors(page)).length).toBe(before + 1);
-  const made = (await editors(page)).at(-1)!;
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(made);
-  await expect(frame(page, made).locator(".monaco-workbench")).toBeVisible({ timeout: 30_000 });
-  expect((await blockState(page, made))?.folder).toBe(proj);
-});
-
 test("the block survives a daemon restart, and a reboot, with the file still open", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto("/");

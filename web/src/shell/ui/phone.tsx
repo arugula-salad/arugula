@@ -13,7 +13,6 @@ import { EXPIRE_TITLE, gateKey } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
-import { openSwarm } from "../swarm/route";
 import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./places";
 import { noticeRoom, noticeTitle, sortNotices } from "../../shared/notice";
 import { GrantActs } from "./grant-acts";
@@ -385,9 +384,6 @@ function PhoneSheet({ client, close }: { client: Client; close: () => void }) {
               <section class="sheet-group">
                 <h2>Open</h2>
                 <div class="sheet-actions">
-                  <button data-open-swarm onClick={act(openSwarm)}>
-                    Swarm
-                  </button>
                   <button data-open-palette onClick={act(() => openGoTo())}>
                     Go to…
                   </button>

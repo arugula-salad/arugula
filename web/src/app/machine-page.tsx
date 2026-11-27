@@ -15,15 +15,14 @@ import "../shell/settings-page.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { MachineAt } from "../shared/machine-paths";
 import { PlatformApiContext } from "../shared/platform-api";
-import { usePhone, useSubscribe } from "../shared/ui/hooks";
+import { useSubscribe } from "../shared/ui/hooks";
 import { directory } from "../shell/hosts";
 import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
-import { SwarmView } from "../shell/swarm/view";
 import { AgentDialogLayer, startAgent } from "../shell/ui/agent-dialog";
 import { measureCell, type Cell } from "../shell/ui/cells";
 import { installKeys } from "../shell/ui/keys";
-import { MachineView, Swarm } from "../shell/views";
+import { MachineView, SwarmLanding } from "../shell/views";
 import { names } from "../platform/links";
 import { session as platform } from "../platform/session";
 import { current, go, pathOf } from "../platform/router";
@@ -233,7 +232,6 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
 function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
-  const phone = usePhone();
   // Everything here shows this project's sessions only (Arugula #1164), and a session made here starts in it (Arugula #1163).
   const p = platform.project(project);
   const shown = { id: project, name: p?.name ?? "this project", personal: platform.personal()?.id === project };
@@ -271,7 +269,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       });
   }, [project, machine, name, pane, known, list]);
 
-  if (at.at === "swarm") return <SwarmPlace project={project} at={at} machines={machines} phone={phone} />;
+  if (at.at === "swarm") return <SwarmPlace project={project} at={at} />;
   if (list)
     return (
       // In the panel the project's other pages sit in.
@@ -293,11 +291,11 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   return (
     // What a pane's thread and blocks reach the machine through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
-      <MachineView client={client} cell={cell} pop={pop} frame="app" onSwarm={() => go(pathOf({ page: "machines", project, at: { at: "swarm" } }, names))} />
+      <MachineView client={client} cell={cell} pop={pop} frame="app" />
       {!pop && <KeepPane key={client.base} project={project} client={client} asked={at.pane} />}
       {at.pane !== undefined && <PaneProject key={client.base} project={project} client={client} at={at} />}
-      {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
-      <Swarm machines={machines} client={client} ready={() => true} />
+      {/* An old `#swarm` link lands here (Lift 6a). */}
+      <SwarmLanding client={client} />
       <AgentDialogLayer />
     </PlatformApiContext.Provider>
   );
@@ -343,21 +341,12 @@ function PaneProject({ project, client, at }: { project: string; client: Client;
   return null;
 }
 
-/** Swarm, the Overview's view (Arugula #1348): under the bar, beside the
- * rail, as any other page. Escape (and the bar's Overview) goes back to the
- * Overview; a card's pane opens on its machine's page, whose Back comes back
- * here. A computer's only: a phone has the Overview instead. */
-function SwarmPlace({ project, at, machines, phone }: { project: string; at: Extract<MachineAt, { at: "swarm" }>; machines: Machines; phone: boolean }) {
-  const overview = pathOf({ page: "project", project }, names);
+/** Swarm's old address (Lift 6a, #1483: Swarm is gone): Machines, at the
+ * pane it named. */
+function SwarmPlace({ project, at }: { project: string; at: Extract<MachineAt, { at: "swarm" }> }) {
   useEffect(() => {
-    if (phone) go(overview, true);
-  }, [phone, overview]);
-  if (phone) return null;
-  const f = at.focus;
-  const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
-  return (
-    <div class="app-swarm" data-app-swarm>
-      <SwarmView fleet={machines.fleet} back={() => go(overview)} leave={() => {}} inBar focus={f && host ? { host, pane: f.pane } : null} board={at.board ?? null} />
-    </div>
-  );
+    const f = at.focus;
+    go(pathOf({ page: "machines", project, at: f ? (f.machine ? { at: "machine", machine: f.machine, pane: f.pane } : { at: "machines", pane: f.pane }) : { at: "machines" } }, names), true);
+  }, []);
+  return null;
 }

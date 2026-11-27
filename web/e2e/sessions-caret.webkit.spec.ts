@@ -62,8 +62,8 @@ test("the caret is the panes' only, and Machines brings the sidebar back", async
   const sidebar = page.locator("[data-session-sidebar]");
   await expect(sidebar).toBeVisible();
 
-  await page.locator("[data-machine-places] [data-machine-swarm]").click();
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
+  // Another place (Settings; Swarm went in Lift 6a) has no caret.
+  await page.locator("[data-rail] [data-open-settings]").click();
   await expect(page.locator("[data-open-sessions]")).toHaveCount(0);
   await page.locator("[data-rail] [data-open-machines]").click();
   await expect(caret).toBeVisible();

@@ -77,15 +77,6 @@ test("panes, sessions sidebar closed", async ({ page }) => {
   });
 });
 
-test("swarm", async ({ page }) => {
-  await prepare(page);
-  await everyWay(page, "swarm", async () => {
-    await page.goto("/#swarm");
-    await expect(page.locator(".swarm")).toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.__arugula.client.connected)).toBe(true);
-  });
-});
-
 test("agents: Recipes", async ({ page }) => {
   // A project of its own, so the home directory's recipes aren't what's made.
   const project = join(dir, "project");

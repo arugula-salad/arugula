@@ -72,8 +72,7 @@ import { shellTitle } from "./titles";
  * holds the places instead. */
 export type Frame = "own" | "app";
 
-/** `onSwarm`: the app's Swarm, offered among the machine's places. */
-export function App({ client, cell, frame = "own", onSwarm }: { client: Client; cell: Cell; frame?: Frame; onSwarm?: () => void }) {
+export function App({ client, cell, frame = "own" }: { client: Client; cell: Cell; frame?: Frame }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
   const [renaming, setRenaming] = useState<Renaming>(null);
@@ -205,7 +204,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <div class={stale ? "app ws frame stale" : "app ws frame"}>
         {frame === "own" && <Rail client={client} />}
         <div class="ws-shell-body">
-          <ContextHeader client={client} setRenaming={setRenaming} onSwarm={onSwarm} />
+          <ContextHeader client={client} setRenaming={setRenaming} />
           <div class="ws-row">
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
@@ -474,7 +473,7 @@ function PlaceGuard({ client, at, inWorkspace, children }: { client: Client; at:
 }
 
 /** The places' names, for the footer. */
-const PLACE_NAME: Record<Place, string> = { panes: "Machines", swarm: "Swarm", agents: "Agents", settings: "Settings" };
+const PLACE_NAME: Record<Place, string> = { panes: "Machines", agents: "Agents", settings: "Settings" };
 
 /** The frame's footer: the place, its keys, the agents running on this
  * machine (not while the link is down: they may not be, M113; a stopped

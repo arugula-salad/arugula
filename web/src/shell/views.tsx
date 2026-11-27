@@ -1,31 +1,25 @@
 // What a page draws of its machines (Arugula #989): the machine shown (its
-// sessions, tabs and panes) and the swarm. Control's page and the daemon's
+// sessions, tabs and panes). Control's page and the daemon's
 // own draw them in their own frame (./main.tsx); the app on app.arugula.io
 // will draw them in its.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 import { PageGuard } from "../shared/ui/guard";
-import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import type { Client } from "./client";
-import { directory } from "./hosts";
-import type { Machines } from "./machines";
-import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
-import { SwarmView } from "./swarm/view";
 import { App, type Frame } from "./ui/app";
-import { AppBar } from "./ui/app-bar";
 import type { Cell } from "./ui/cells";
 import { PopOutPage } from "./ui/panes/pop-out";
 
 /** The machine shown: its sessions, tabs and panes, or, popped out into a
  * window of its own (#497, `pop`), one pane alone. */
-export function MachineView({ client, cell, pop, frame, onSwarm }: { client: Client; cell: Cell; pop?: { daemon?: string; pane: number } | null; frame?: Frame; onSwarm?: () => void }) {
+export function MachineView({ client, cell, pop, frame }: { client: Client; cell: Cell; pop?: { daemon?: string; pane: number } | null; frame?: Frame }) {
   // The workspace guards its own places (ui/app.tsx, Arugula #615).
   return pop ? (
     <PageGuard>
       <PopOutPage client={client} pane={pop.pane} daemon={pop.daemon} />
     </PageGuard>
   ) : (
-    <App key={client.base} client={client} cell={cell} frame={frame} onSwarm={onSwarm} />
+    <App key={client.base} client={client} cell={cell} frame={frame} />
   );
 }
 
@@ -38,35 +32,22 @@ export function Connecting({ name }: { name: string }) {
   );
 }
 
-/** The swarm (M26) over the tab view, when `/#swarm` says so. Not on a
- * link's page, nor while the account isn't `ready`. */
-export function Swarm({ machines, client, ready }: { machines: Machines; client: Client; ready: () => boolean }) {
-  const [, set] = useState(0);
-  useEffect(() => onSwarmRoute(() => set((n) => n + 1)), []);
-  // The home machine's name arrives with the directory, after a cold load.
-  useSubscribe((fn) => directory.subscribe(fn));
-  // The shared bar shows once the shown machine has answered.
-  useSubscribe((fn) => client.subscribe(fn));
-  const phone = usePhone();
-  const route = swarmRoute();
-  if (!route || machines.link || !ready()) return null;
-  const f = route.focus;
-  // A notification through control names its daemon; else it's this page's.
-  const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
-  // In its guard (Arugula #615): a swarm that throws while drawing says so
-  // where it was, under the bar.
-  const view = (bar: boolean) => (
-    <PageGuard at="swarm" frame={(note) => <div class="swarm" data-page-failed-at="swarm">{note}</div>}>
-      <SwarmView fleet={machines.fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} board={route.board} inBar={bar} />
-    </PageGuard>
-  );
-  // The bar every place shares, over it, once a machine is shown; a phone
-  // has its own header, and the swarm its Panes button.
-  if (!client.state || phone) return view(false);
-  return (
-    <div class="swarm-shell">
-      <AppBar client={client} at="swarm" all />
-      {view(true)}
-    </div>
-  );
+/** An old `#swarm` link (Swarm went in Lift 6a, #1483; the fragment stays
+ * forever): it lands on Machines, at the pane it named where this page has
+ * it. */
+export function SwarmLanding({ client }: { client: Client }) {
+  useEffect(() => {
+    const land = () => {
+      const m = /^#swarm(?:=(?:board:[\w-]+|(?:[0-9a-f]+\.)?(\d+)))?$/.exec(location.hash);
+      if (!m) return;
+      history.replaceState(history.state, "", location.pathname + location.search);
+      dispatchEvent(new HashChangeEvent("hashchange"));
+      const pane = m[1] ? Number(m[1]) : undefined;
+      if (pane !== undefined && client.info(pane)) client.setActive(pane);
+    };
+    land();
+    addEventListener("hashchange", land);
+    return () => removeEventListener("hashchange", land);
+  }, [client]);
+  return null;
 }

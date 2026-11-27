@@ -12,9 +12,6 @@ const APP = "Arugula";
 export function shellTitle(place: Place, machine: string | null | undefined, session: string | null | undefined): string {
   const parts = (...xs: (string | null | undefined)[]) => [...xs, APP].filter(Boolean).join(" · ");
   switch (place) {
-    // Every machine's: no one machine's name.
-    case "swarm":
-      return parts("Swarm");
     case "agents":
       return parts("Agents", machine);
     case "settings":

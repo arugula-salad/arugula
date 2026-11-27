@@ -130,16 +130,9 @@ test.describe("on a computer", () => {
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);
 
-    // Swarm is Machines', in the bar.
-    await page.locator("[data-machine-places] [data-machine-swarm]").click();
-    await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
-    await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
-    // The swarm's bar keeps Machines' views, Swarm lit.
-    const swarm = page.locator("[data-top] [data-machine-swarm]");
-    await expect(swarm).toHaveAttribute("aria-current", "page");
-    await expect(swarm).toHaveAttribute("title", /all machines/);
-
-    await rail.locator("[data-open-machines]").click();
+    // No Swarm (Lift 6a): an old #swarm lands on the panes, at the same tab and pane.
+    await expect(page.locator("[data-machine-places] [data-machine-swarm]")).toHaveCount(0);
+    await page.evaluate(() => (location.hash = "#swarm"));
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     expect((await tab(page)).id).toBe(t);
