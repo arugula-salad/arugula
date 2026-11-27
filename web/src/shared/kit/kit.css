@@ -169,6 +169,13 @@ div.k-row-line {
   }
   .k-row-meta {
     order: 2;
+    flex: 0 1 auto;
+    max-width: none;
+  }
+  /* A receipt's words (who answered, and a to-do's note) wrap rather
+     than hide. */
+  .k-row.is-done .k-row-meta {
+    white-space: normal;
   }
 }
 .k-need-list {
@@ -939,6 +946,12 @@ div.k-row-line {
 .k-field-hint {
   color: var(--ink-faint);
   font-size: var(--text-label);
+}
+.k-field-warn {
+  color: var(--danger);
+}
+.k-field[data-warn] .k-field-box {
+  border-color: var(--danger);
 }
 .k-toggle {
   display: inline-flex;

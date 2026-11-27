@@ -11,6 +11,7 @@ export function TextField({
   onEnter,
   placeholder,
   hint,
+  warn,
   disabled,
   lines,
   autoFocus,
@@ -23,6 +24,9 @@ export function TextField({
   placeholder?: string;
   /** A word or two after the box: "no secrets". */
   hint?: string;
+  /** What's wrong with what's typed, under the box ("That looks like a
+   * key: leave it out"): the box's edge says so too. */
+  warn?: string;
   disabled?: boolean;
   /** A box of this many lines (a description), where Enter is a new line. */
   lines?: number;
@@ -39,7 +43,7 @@ export function TextField({
       </label>
     );
   return (
-    <label class="k-field" data-kit="field">
+    <label class="k-field" data-kit="field" data-warn={warn ? "" : undefined}>
       {label}
       <span class="k-field-box">
         <input
@@ -55,9 +59,15 @@ export function TextField({
             }
           }}
           disabled={disabled}
+          aria-invalid={warn ? true : undefined}
         />
         {hint ? <span class="k-field-hint m-meta">{hint}</span> : null}
       </span>
+      {warn ? (
+        <span class="k-field-warn" role="status">
+          {warn}
+        </span>
+      ) : null}
     </label>
   );
 }

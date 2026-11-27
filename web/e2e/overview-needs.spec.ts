@@ -32,7 +32,7 @@ const item = (id: string, kind: string, title: string, more: Record<string, unkn
   ...more,
 });
 const APPROVAL = item("prp_start", "approval", "Start a worker on #12 on geek?", { lines: ["Repo: acme/app", "Why: the release waits on it."], answer: { via: "card", options: ["Start", "Not now"] } });
-const TODO = item("prp_todo", "todo", "Swap the filament spool, then Done", { lines: ["Why: the printer stopped.", "1. Open the lid\n2. Swap the spool"], answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 60_000 });
+const TODO = item("prp_todo", "todo", "Swap the filament spool, then Done", { subject: { type: "proposal", id: "prp_todo", url: `/p/${P}/chat`, project: P, room: "room_staff", seq: 7 }, lines: ["Why: the printer stopped.", "1. Open the lid\n2. Swap the spool"], answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 60_000 });
 const ALERT = item("run_1:run_failed", "run_failed", "CI failed on main", { subject: { type: "run", id: "run_1", url: "/", project: P } });
 
 /** A Claude Code permission in the suite daemon's terminal (its hook), and the Inbox's item for it. */

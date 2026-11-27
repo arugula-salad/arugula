@@ -7,7 +7,8 @@
 // through its machine, as Swarm's cards answer it. One that can't be
 // answered here (a form, a deploy, a board's own ask) has Open. Answered, a
 // row stays as a dim receipt until you leave the page, so the list doesn't
-// jump. Alerts (checks or a run failed) aren't here: they're the board's and
+// jump; a to-do's says its note as control kept it, read from its card's
+// record (#1462), never from what was typed or a live event. Alerts (checks or a run failed) aren't here: they're the board's and
 // Running's.
 //
 // Its keys are the Overview's, in the one key table: `j` `k` move (and
@@ -16,7 +17,7 @@
 // opens it where it lives.
 
 import { useRef, useState } from "preact/hooks";
-import type { InboxItem } from "../shared/proto";
+import type { ChatAsk, InboxItem } from "../shared/proto";
 import { Button } from "../shared/kit/button";
 import { ChevronIcon } from "../shared/ui/icons";
 import { NeedList, NeedRow, type Need, type NeedOption, type Receipt } from "../shared/kit/need-row";
@@ -115,6 +116,31 @@ async function choose(id: string, choice: string, note?: string): Promise<void> 
   if (!r.ok) throw new Error(refusalOf(r.status, (await r.json().catch(() => ({}))) as { error?: string }));
 }
 
+/** "3:41 PM". */
+const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** An answered to-do's receipt from its record: its card's ask (`GET
+ * /api/chat/rooms/{room}/asks/{seq}`, the item's subject), which keeps
+ * its note (#1462). None when it can't be read; the receipt then says the
+ * answer alone. */
+async function todoRecord(i: InboxItem): Promise<Partial<Receipt> | null> {
+  const { room, seq } = i.subject;
+  if (!room || seq === undefined) return null;
+  try {
+    const r = await platformFetch(`/api/chat/rooms/${encodeURIComponent(room)}/asks/${seq}`, { credentials: "same-origin" });
+    if (!r.ok) return null;
+    const p = ((await r.json()) as ChatAsk).proposal;
+    if (!p?.todo) return null;
+    return {
+      ...(p.state === "done" ? { what: "Done" } : p.state === "cant" ? { what: "Can't" } : {}),
+      ...(p.todo.answered_at ? { at: clock(p.todo.answered_at) } : {}),
+      ...(p.todo.note ? { note: p.todo.note } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** How an item answers here, if it can. */
 function answering(fleet: Fleet, i: InboxItem): Answering | null {
   if (i.answer && (i.answer.via === "card" || i.answer.via === "todo") && i.answer.options.length)
@@ -190,7 +216,8 @@ export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxI
     setBusy(i.id);
     try {
       await a.send(o, note);
-      setReceipts((m) => new Map(m).set(i.id, { item: i, receipt: { what: o.label, by: "you", at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), ...(note?.trim() ? { note: note.trim() } : {}) } }));
+      const kept = i.kind === "todo" ? await todoRecord(i) : null;
+      setReceipts((m) => new Map(m).set(i.id, { item: i, receipt: { what: o.label, by: "you", at: clock(Date.now()), ...kept } }));
       setOpen(null);
     } catch (e) {
       toast(`Couldn't answer it: ${(e as Error).message}`);
