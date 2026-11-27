@@ -4872,7 +4872,7 @@ mod tests {
         assert!(text.contains("\n- port {port, beside?, path?}: "), "{text}");
         assert!(text.contains("\n- file {path, beside?, line?}: "), "{text}");
         let text = kinds_text("", &table(LIST), Some("panes"));
-        assert!(text.contains("\n- panes (the default): "), "{text}");
+        assert!(text.contains("\n- panes (the default) {tab?}: "), "{text}");
     }
 
     /// What a stranger can't use isn't in the instructions or in the tools'
