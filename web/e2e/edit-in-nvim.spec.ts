@@ -5,7 +5,7 @@
 // VS Code is in editor-pref.spec.ts, whose daemon has a block listener.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, reset, openSettingsPage, closeSettingsPage, paletteCommand } from "./helpers";
+import { closeContexts, menuItem, reset, openSettingsPage, closeSettingsPage, paletteCommand, setting } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -13,7 +13,7 @@ const pref = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getIte
 
 /** Settings › Editor's row for `label` is checked (or not). */
 async function settingsShows(page: Page, label: "VS Code" | "nvim" | "Ask each time", checked: boolean) {
-  await expect((await openSettingsPage(page)).getByRole("radio", { name: label, exact: true })).toBeChecked({ checked });
+  await expect((await setting(page, "radio", label))).toBeChecked({ checked });
   await closeSettingsPage(page);
 }
 

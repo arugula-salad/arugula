@@ -13,6 +13,7 @@ import { currentProject } from "./current-project";
 import { openPlatformFeedback } from "./feedback";
 import { inboxCounts, subscribeInbox } from "./inbox-count";
 import { names } from "./links";
+import { settingsPlaces } from "./settings/scopes";
 import { ownedProjects, openNewProject } from "./new-project";
 import { owners } from "./owners";
 import { parse } from "./paths";
@@ -95,8 +96,9 @@ function items(scope: "all" | "projects"): GoItem[] {
     place("docs", "Docs", at("docs", here.id));
     place("machines", "Machines", pathOf({ page: "machines", project: here.id, at: { at: "machines" } }, names));
     place("chat", "Chat", chatPath(here.id));
-    place("settings", "Settings", pathOf({ page: "settings", scope: "project", project: here.id }, names));
   }
+  // Each of Settings' scopes, here's project and its team (Lift 7).
+  for (const sp of settingsPlaces()) out.push({ key: `place/settings/${sp.key}`, kind: "place", title: sp.title, run: () => go(pathOf(sp.to, names)) });
   out.push({ key: "place/inbox", kind: "place", title: "Inbox, every project", note: counts.all ? `${counts.all} for you` : undefined, run: () => go("/inbox") });
   // Every project's boards and Docs.
   for (const o of all)

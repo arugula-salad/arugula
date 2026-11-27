@@ -213,21 +213,23 @@ test.describe("on a computer", () => {
     // The rail's Settings is Settings' Project scope, at the project you're in (Arugula #1104).
     await rail(page, "settings").click();
     await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*$`));
-    await page.locator('[data-settings-row="agents"]').click();
+    await page.locator('[data-settings-row="agents"] button[aria-expanded]').first().click();
     const line = page.locator('[data-team-default="agents_model"]');
     await expect(line).toHaveText("Team default · follows Arugula team");
     const defaults = line.locator("[data-team-default-owner]");
     await expect(defaults).toHaveAttribute("href", /^\/settings\/team\/tm_1[^/]*\/defaults$/);
     await defaults.click();
-    await expect(page.locator('[data-owner-settings="tm_1"] [data-settings-scope="team"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-owner-settings="tm_1"] [data-settings-scopes] [data-tab="team"]')).toHaveAttribute("aria-selected", "true");
   });
 
-  test("your picture's menu is your name, Send feedback… and Sign out; Settings is the rail's; presence is Chat's (Arugula #1079)", async ({ page }) => {
+  test("your picture's menu is your name, each of Settings' scopes, Send feedback… and Sign out; presence is Chat's (Arugula #1079, Lift 7)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     await page.locator("[data-rail] [data-signed-in-as]").click();
     const items = page.locator(".menu-item");
-    await expect(items).toHaveText(["Send feedback…", "Sign out of this page"]);
+    await expect(items).toHaveText(["Your settings", "Project settings", "Team settings", "Send feedback…", "Sign out of this page"]);
     await expect(page.locator(".menu", { hasText: "Your presence" })).toHaveCount(0);
+    await items.filter({ hasText: "Team settings" }).click();
+    await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*$/);
   });
 
   test("the project tile opens Go to…'s projects, each with what wants you there", async ({ page }, info) => {
@@ -447,9 +449,9 @@ test.describe("on a phone", () => {
     await expect(bell.locator("[data-count]")).toHaveText("4");
     await expect(tabs.locator("[data-tab-inbox]")).toHaveCount(0);
     await expect(page.locator("[data-platform-bar] [data-signed-in-as]")).toBeVisible();
-    // With no rail, the picture's menu keeps Your account… (Arugula #1319).
+    // With no rail, the picture's menu has Settings' scopes, as a computer's does (Lift 7).
     await page.locator("[data-platform-bar] [data-signed-in-as]").click();
-    await expect(page.locator(".menu-item").first()).toHaveText("Your account…");
+    await expect(page.locator(".menu-item").first()).toHaveText("Your settings");
     await page.keyboard.press("Escape");
     await expect(page.locator(".menu-item")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("frame-phone-boards.png") });
@@ -550,7 +552,7 @@ test.describe("at 390px", () => {
     await expect(page).toHaveURL(/\/inbox/);
     expect(await sideways(), "/inbox").toBeLessThanOrEqual(0);
     await page.locator("[data-platform-bar] [data-signed-in-as]").click();
-    await page.locator(".menu-item", { hasText: "Your account…" }).click();
+    await page.locator(".menu-item", { hasText: "Your settings" }).click();
     await expect(page).toHaveURL(/\/settings/);
     expect(await sideways(), "/settings").toBeLessThanOrEqual(0);
   });

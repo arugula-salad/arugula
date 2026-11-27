@@ -1,8 +1,8 @@
 {
   "max": {
-    "duplicateComponentNames": 19,
-    "cssLines": 25297,
-    "cssFiles": 48,
+    "duplicateComponentNames": 21,
+    "cssLines": 25325,
+    "cssFiles": 49,
     "customPropertiesDefined": 165,
     "customPropertiesReferenced": 173,
     "important": 22,

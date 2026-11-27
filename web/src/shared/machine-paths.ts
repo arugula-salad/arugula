@@ -16,8 +16,9 @@ export type MachineAt =
    * (#1032). Without either, the Machines page (Arugula #1346): every
    * machine's sessions in the project; `agents`, only the agents'; `show`,
    * scrolled to a machine (its id, or a name where it has none) and
-   * `session`, to that session's card (Arugula #1349). */
-  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true; show?: string; session?: number }
+   * `session`, to that session's card (Arugula #1349); `add`, with Add a
+   * machine open (Lift 7). */
+  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true; show?: string; session?: number; add?: true }
   /** A machine's page, with a pane to show: shared from (`share`), a person
    * to follow there (`follow`), alone in its window (`pop`); or with
    * Start an agent open (`agent`). */
@@ -64,6 +65,7 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
       ...(pane === undefined && !name && q.has("agents") ? { agents: true } : {}),
       ...(show && NAME.test(show) ? { show } : {}),
       ...(session !== undefined ? { session } : {}),
+      ...(pane === undefined && !name && q.has("add") ? { add: true } : {}),
     };
   }
   if (rest.length !== 1) return null;
@@ -115,7 +117,16 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
     if (m.follow) q.set("follow", m.follow);
   }
   // Flags as bare words, as the shell's fragments have them.
-  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : m.at === "machines" && m.agents ? ["agents"] : m.at === "panes" && m.agents ? ["agents"] : [];
+  const flags =
+    m.at === "machine"
+      ? (["share", "pop", "agent"] as const).filter((k) => m[k])
+      : m.at === "machines" && m.pop
+        ? ["pop"]
+        : m.at === "machines"
+          ? (["agents", "add"] as const).filter((k) => m[k])
+          : m.at === "panes" && m.agents
+            ? ["agents"]
+            : [];
   const qs = [q.toString(), ...flags].filter(Boolean).join("&");
   const layer = m.at === "machines" && m.layer ? `#${m.layer}` : "";
   return `${path}${qs ? `?${qs}` : ""}${layer}`;
@@ -203,9 +214,9 @@ export function settingsPath(section?: string, machine?: string): string | null 
     const sub = section === "machine" ? "" : "access";
     return machine ? `/settings/machine/${machine}${sub && `/${sub}`}` : `/settings/machine${sub && `#${sub}`}`;
   }
-  // Preferences is part of Appearance (Arugula #1318), and Account is
-  // Sign-in and security (Arugula #1311).
-  if (section === "preferences") return "/settings/you/appearance";
+  // Appearance is Look's (Lift 7): its address lands on Preferences, and
+  // Account is Sign-in and security (Arugula #1311).
+  if (section === "preferences" || section === "appearance") return "/settings/you/preferences";
   if (section === "account") return "/settings/you/security";
-  return section === "appearance" ? `/settings/you/${section}` : "/settings";
+  return "/settings";
 }

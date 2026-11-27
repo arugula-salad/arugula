@@ -60,8 +60,12 @@ if people miss it. Newest at the bottom.
 - **All issues' issue cards** (their state-coloured bars, the bold title, the "Closed" chip and the 20px avatars): each issue is a kit Row, ○ open or ✓ closed, #N, title, labels, who and when (Arugula #1521).
 - **Not on a board's own row look** (the dimmed select box until hovered, the accent-tinted selection, labels hidden on a phone): the kit Row, with its select box before it (Arugula #1521).
 - **The terminals' and editors' Slate and Latte colors:** a terminal, an editor block and nvim are drawn from the look, on the well; a Doc from Arugula's own pair, whatever the look (Arugula #1511).
-- **The shell's Docs page (`#docs`):** a machine's Docs are in Go to… by title, and the app's Docs are the rail's; an old `#docs` lands on one of them (Lift 6b, Arugula #1484).
-- **My Docs and Team Docs tabs:** one list, with a Mine filter in a team (Lift 6b, Arugula #1484).
-- **The Docs list's sort (Updated or Created), search, time groups and preview pane:** the latest changed first; Go to… finds a Doc by title; a Doc opens on its page (Lift 6b, Arugula #1484).
-- **A Docs row's ⋯ and the list's ticks (Move several to a team):** a Doc's ⋯ on its page has the same, one Doc at a time (Lift 6b, Arugula #1484).
-- **The Docs page's empty state with Start an agent:** the list's empty state says where Docs come from (Lift 6b, Arugula #1484).
+- **Settings' list and detail** (a list of sections beside the chosen one, its way back on a phone, the section index on a daemon's page): a scope is one list, each section a row that opens in place (Lift 7, Arugula #1487).
+- **Settings › You › Appearance:** Look (`s`, the top bar's Look) is the one place for theme, preset and sliders; Tips, the editor and lending this device are Preferences (Lift 7, Arugula #1487).
+- **The daemon's `#settings` Appearance section:** Look, as in the app (Lift 7, Arugula #1487).
+- **The scopes' "whose" lines** under Settings' header ("Yours, wherever you sign in…"): the tab says the scope (Lift 7, Arugula #1487).
+- **Machines as a scope in Settings' switch:** a machine's settings open from Machines (its Settings…), at the same address (Lift 7, Arugula #1487).
+- **Settings › Project › Machines** (the join token): Machines' Add a machine (Lift 7, Arugula #1487).
+- **Settings › Project › CI alerts, Runs and workspaces, Claude spend** as rows of their own: parts of one Agents row (Lift 7, Arugula #1487).
+- **The Team page** (`/t/:team/chat`, `/members`, its tabs): its members are Settings › Team, its chat the team's project's chat (Lift 7, Arugula #1487).
+- **The avatar menu's phone-only Your account…:** the menu has each of Settings' scopes on every screen (Lift 7, Arugula #1487).

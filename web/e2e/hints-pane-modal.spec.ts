@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, paneEl, panes, ready, reset, text, openSettingsPage, closeSettingsPage } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, ready, reset, text, openSettingsPage, closeSettingsPage, setting } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -335,7 +335,7 @@ test("Don't show tips like this again: every pane modal stops, chips don't; Sett
   await page.locator(`[data-pane-header="${term}"] [data-hint-dismiss]`).click();
 
   // Settings › Big tips says it's off, and turns them on again.
-  const big = (await openSettingsPage(page)).getByRole("switch", { name: "Big tips", exact: true });
+  const big = (await setting(page, "switch", "Big tips"));
   await expect(big).not.toBeChecked();
   await big.click();
   await closeSettingsPage(page);

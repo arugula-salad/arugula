@@ -34,6 +34,7 @@ import { paneOf } from "../platform/places-kept";
 import { follow, go, pathOf } from "../platform/router";
 import { machineSections, pinnedCards, statsLine, type MachineSection, type SessionCard } from "./machine-list";
 import { inShown, onShownProject } from "../shell/project-view";
+import { AddMachine } from "./add-machine";
 import type { AppSession } from "./session";
 
 type Last = { machine?: string; pane: number } | null;
@@ -86,7 +87,24 @@ const TABS = 3;
 
 type To = (at: MachineAt) => string;
 
-export function MachinesList({ project, fleet, agents, show, card, session }: { project: string; fleet: Fleet; agents: boolean; show?: string; card?: number; session: AppSession | null }) {
+export function MachinesList({
+  project,
+  fleet,
+  agents,
+  show,
+  card,
+  add,
+  session,
+}: {
+  project: string;
+  fleet: Fleet;
+  agents: boolean;
+  show?: string;
+  card?: number;
+  /** Add a machine open (`?add`). */
+  add: boolean;
+  session: AppSession | null;
+}) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
@@ -95,7 +113,8 @@ export function MachinesList({ project, fleet, agents, show, card, session }: { 
   useSubscribe((fn) => sessionPins.subscribe(fn));
   const phone = usePhone();
   const to: To = (at) => pathOf({ page: "machines", project, at }, names);
-  const here = (a: boolean) => to({ at: "machines", ...(a ? { agents: true } : {}) });
+  const here = (a: boolean, adding = false) => to({ at: "machines", ...(a ? { agents: true } : {}), ...(adding ? { add: true } : {}) });
+  const p = platform.project(project);
   const name = platform.project(project)?.name ?? "this project";
   const hosted = (id: string | undefined) => (id ? session?.daemons.find((d) => d.id === id)?.hosted : undefined);
   const last = lastPane(project);
@@ -144,10 +163,16 @@ export function MachinesList({ project, fleet, agents, show, card, session }: { 
             <button class="secondary" aria-pressed={agents} data-machines-agents onClick={() => go(here(!agents), true)}>
               Agents only
             </button>
+            {p && (
+              <button class="secondary" data-machines-add onClick={() => go(here(agents, true))}>
+                Add a machine
+              </button>
+            )}
             <NewSession fleet={fleet} to={to} />
           </>
         }
       />
+      {add && p && <AddMachine p={p} onClose={() => go(here(agents), true)} />}
       {directory.list === null ? (
         <p class="dim">Loading…</p>
       ) : !fleet.list.length ? (
