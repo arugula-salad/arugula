@@ -327,6 +327,7 @@ screen that hasn't moved keeps today's pieces
 | the Overview, with its agent panel | the kit | Lift 4 (#1480) |
 | Settings (You, Project, Team, a machine's, and a daemon's own `#settings`); Machines' Add a machine; Getting started (one Sheet, Add a machine) | the kit | Lift 7 (#1487) |
 | Docs: the list and a Doc's page (its contents, comments and author) | the kit | Lift 6b (#1484) |
+| the Inbox | the kit | Lift 6d (#1486) |
 | everything else | today's pieces | |
 
 The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase

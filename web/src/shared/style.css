@@ -10106,42 +10106,6 @@ button.thread-quote:hover {
   background: var(--card-raised);
 }
 
-.ws-bell {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 28px;
-  border-radius: var(--radius-control);
-  color: var(--ink-dim);
-}
-
-.ws-bell:hover,
-.ws-bell.on {
-  color: var(--ink);
-  background: var(--card-raised);
-}
-
-.ws-bell.has {
-  color: var(--needs);
-}
-
-.ws-bell-count {
-  position: absolute;
-  top: 0;
-  right: -2px;
-  min-width: 15px;
-  padding: 0 4px;
-  box-sizing: border-box;
-  border-radius: var(--chip-radius);
-  background: var(--needs);
-  color: var(--on-needs);
-  font-size: var(--text-label);
-  font-weight: 700;
-  line-height: 15px;
-  text-align: center;
-}
-
 .ws-group-open {
   display: inline-flex;
   align-items: center;

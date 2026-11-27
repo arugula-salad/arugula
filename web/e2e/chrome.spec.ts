@@ -87,6 +87,8 @@ test.describe("on a computer", () => {
     const places = page.locator("[data-machine-places]");
     await expect(page.locator(".ws-wordmark")).toHaveCount(0);
     await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
+    // No bell: the rail's Inbox is the one count (Lift 6d, Arugula #1486).
+    await expect(page.locator("[data-open-attention]")).toHaveCount(0);
     // The shell's Docs page went with Lift 6b (Arugula #1484): no Docs in a lone machine's bar.
     await expect(places.locator("[data-machine-docs]")).toHaveCount(0);
     await page.evaluate(() => (location.hash = "docs"));

@@ -1,7 +1,7 @@
 // The attention drawer (M111, #1026): what waits on you, on every machine,
-// from the fleet model the swarm already builds. The
-// header's bell, the footer's "needs you" and the sidebar's Needs you
-// open it, and count the same (shared/needs-you, UI audit #154). Selecting an item shows what it would run, where and who asks;
+// from the fleet model the swarm already builds. The sidebar's Needs you
+// and Go to… open it; the count across projects is the rail's Inbox's
+// (the server's, Lift 6d #1486), not this one's. Selecting an item shows what it would run, where and who asks;
 // Allow and Deny (or the question's answer) go through the existing
 // `act`, and Go to pane only goes there. Looking at the drawer, or closing
 // it, never answers or dismisses anything. Viewers see the items without
@@ -17,14 +17,13 @@ import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
 import { gateKey, type ActRequest, type Notice, type PaneInfo } from "../../../shared/proto";
-import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
+import { needsYou, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
 import type { Ask } from "../../../shared/ask";
 import { askNeed, NeedRow } from "../../../shared/kit/need-row";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
 import { editDiff } from "../term-ask";
-import { BellIcon } from "../../../shared/ui/icons";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet } from "../hosts";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
@@ -129,7 +128,7 @@ export function attentionNotices(client: Client): NoticeItem[] {
   return sortNotices(out);
 }
 
-/** How many need you, on every machine: the bell's and the footer's. */
+/** How many need you, on every machine: the push hint's (../../hints/push). */
 export function waitingCount(client: Client): number {
   return attentionItems(client).length + attentionNotices(client).length;
 }
@@ -179,11 +178,6 @@ export function closeAttention(restore = true) {
   if (restore && back?.isConnected) back.focus();
 }
 
-export function toggleAttention() {
-  if (drawer) closeAttention();
-  else openAttention();
-}
-
 export function useAttentionOpen(): boolean {
   const [, tick] = useState(0);
   useEffect(() => {
@@ -192,35 +186,6 @@ export function useAttentionOpen(): boolean {
     return () => void listeners.delete(fn);
   }, []);
   return drawer !== null;
-}
-
-// ---- the bell
-
-/** The header's bell: how many wait on you, on every machine. */
-export function AttentionBell({ client }: { client: Client }) {
-  useAttentionTick(client);
-  const open = useAttentionOpen();
-  const n = waitingCount(client);
-  const label = n ? `${NEEDS_YOU}: ${n}` : `${NEEDS_YOU}: nothing`;
-  return (
-    <button
-      class={`ws-bell${n ? " has" : ""}${open ? " on" : ""}`}
-      data-open-attention
-      data-bell-count={n}
-      aria-label={label}
-      aria-expanded={open}
-      aria-haspopup="dialog"
-      title={`${label}, on every machine (looking doesn't answer anything)`}
-      onClick={toggleAttention}
-    >
-      <BellIcon />
-      {n > 0 && (
-        <span class="ws-bell-count" aria-hidden="true">
-          {n > 99 ? "99+" : n}
-        </span>
-      )}
-    </button>
-  );
 }
 
 // ---- the drawer
