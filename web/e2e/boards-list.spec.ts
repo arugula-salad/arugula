@@ -219,7 +219,7 @@ test.describe("a board's controls on the right (Arugula #1129)", () => {
     await openApp(page, `/p/${P}/boards/brd_0a01`);
     const aside = page.locator('[data-board-page="brd_0a01"] [data-board-aside]');
     for (const hook of ["[data-board-find-input]", "[data-board-docs]", "[data-board-new-issue]", "[data-board-workers]", "[data-board-more]"]) await expect(aside.locator(hook)).toBeVisible();
-    await expect(aside.locator(".board-aside-head")).toHaveText(["View", "Find", "Add", "Board"]);
+    await expect(aside.locator(".board-aside-head")).toHaveText(["Find", "Add", "Board"]);
     // None of them over the lanes any more.
     await expect(page.locator('[data-board="brd_0a01"] :is([data-board-find], [data-board-docs], .board-foot)')).toHaveCount(0);
     expect((await box(page, '[data-board-page="brd_0a01"] [data-board-aside]')).x).toBeGreaterThan((await box(page, '[data-board="brd_0a01"]')).x + 400);
