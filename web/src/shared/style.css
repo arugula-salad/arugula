@@ -389,7 +389,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 /* The swarm under the shared bar: as wide as left and right leave it
    (beside the rail), not .bar's 100%, which ran it 56px off the right
    edge and hid half the account button (UI audit #153). */
-.swarm-shell > .bar {
+.swarm-shell > .k-top {
   position: fixed;
   z-index: 21;
   top: 0;
@@ -10864,7 +10864,7 @@ button.thread-quote:hover {
 
 /* The swarm, chat and agents sit beside the rail, under their own bars
    (which leave the places to the rail). */
-html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .bar) {
+html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .k-top) {
   left: var(--rail-w, 56px);
 }
 
@@ -10875,7 +10875,7 @@ html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .bar) {
    the wall-idle while, the cursor and the Exit button hide (a fade, which
    reduced motion's rule below takes away). Every theme and view in the
    swarm gets it from here. */
-html[data-wall] .swarm-shell > .bar {
+html[data-wall] .swarm-shell > .k-top {
   display: none;
 }
 html[data-wall] .swarm[data-wall] {

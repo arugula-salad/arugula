@@ -34,7 +34,7 @@ export function swarmWallTests() {
   async function swarm(page: Page, idleMs = 60_000) {
     await page.addInitScript((ms) => ((window as { __arugulaWallIdleMs?: number }).__arugulaWallIdleMs = ms), idleMs);
     await page.goto("/#swarm");
-    await expect(page.locator(".swarm-shell > .bar")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".swarm-shell > [data-top]")).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("[data-wall-enter]")).toBeVisible();
   }
 
@@ -45,7 +45,7 @@ export function swarmWallTests() {
   async function inWall(page: Page) {
     await expect(page.locator("html")).toHaveAttribute("data-wall", "");
     await expect(page.locator(".swarm")).toHaveAttribute("data-wall", "");
-    await expect(page.locator(".swarm-shell > .bar")).toBeHidden();
+    await expect(page.locator(".swarm-shell > [data-top]")).toBeHidden();
     await expect.poll(() => box(page)).toEqual({ x: 0, y: 0, width: 1440, height: 900 });
     for (const sel of ["[data-wall-enter]", "[data-fit]", "[data-theme-pick='blocks']", "[data-g='project']"]) await expect(page.locator(sel)).toBeHidden();
     await expect(page.locator("[data-stat='panes']")).toBeVisible();
@@ -57,7 +57,7 @@ export function swarmWallTests() {
   async function outOfWall(page: Page) {
     await expect(page.locator("html")).not.toHaveAttribute("data-wall", "");
     await expect(page.locator(".swarm")).not.toHaveAttribute("data-wall", "");
-    await expect(page.locator(".swarm-shell > .bar")).toBeVisible();
+    await expect(page.locator(".swarm-shell > [data-top]")).toBeVisible();
     await expect(page.locator("[data-wall-exit]")).toHaveCount(0);
     await expect(page.locator("[data-wall-enter]")).toBeVisible();
     const b = (await box(page))!;
