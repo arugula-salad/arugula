@@ -694,30 +694,6 @@ pub struct MachineProposed {
     pub withdrew: Vec<String>,
 }
 
-/// The route a machine's agent reads one of its cards by (Arugula #1513),
-/// `GET` with `?session=` its session's name, answered a [`ProposalRead`].
-pub fn agent_proposal_read(project: &str, ask: &str) -> String {
-    format!("/api/daemon/projects/{project}/proposals/{ask}")
-}
-
-/// [`agent_proposal_read`]'s answer: where a card stands.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ProposalRead {
-    pub ask: String,
-    pub room: String,
-    pub seq: i64,
-    pub link: String,
-    /// `open`, `approved`, `denied`, `failed` or `cancelled` (withdrawn).
-    pub state: String,
-    /// Who answered it, by name.
-    #[serde(default)]
-    pub answered_by_name: Option<String>,
-    /// What answering it did, in a line.
-    #[serde(default)]
-    pub outcome: Option<String>,
-}
-
 /// A proposal as its card draws it ([`ChatAsk::proposal`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1478,7 +1454,6 @@ mod tests {
         let op = crate::work::SessionIssuesOp::ProposalCancel { ask: "prp_1".into() };
         assert_eq!(serde_json::to_value(&op).unwrap(), serde_json::json!({ "op": "proposal_cancel", "ask": "prp_1" }));
         assert_eq!(agent_proposal_cancel("prj_1", "prp_1"), "/api/daemon/projects/prj_1/proposals/prp_1/cancel");
-        assert_eq!(agent_proposal_read("prj_1", "prp_1"), "/api/daemon/projects/prj_1/proposals/prp_1");
         // An older control's answer has no link and withdrew nothing.
         let old: MachineProposed =
             serde_json::from_value(serde_json::json!({ "ask": "prp_1", "room": "r", "seq": 3 })).unwrap();

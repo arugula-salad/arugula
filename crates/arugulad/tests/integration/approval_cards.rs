@@ -81,10 +81,6 @@ async fn any(State(f): State<Fake>, req: Request) -> Response {
         ("POST", ["api", "daemon", "projects", "prj_1", "proposals", ask, "cancel"]) => {
             Json(json!({ "ask": ask })).into_response()
         }
-        ("GET", ["api", "daemon", "projects", "prj_1", "proposals", ask]) => Json(json!({ "ask": ask,
-            "room": "dm_staff", "seq": 40, "link": "https://app.example/p/prj_1/chat/dm_staff?msg=40",
-            "state": "approved", "answered_by_name": "Ada", "outcome": "started agent block %9" }))
-        .into_response(),
         ("POST", ["api", "daemon", "watches"]) => {
             let n = f.asked("POST /api/daemon/watches").len() - 1;
             Json(json!({ "id": format!("wch_{n}"), "state": "live", "expires_ms": 1 })).into_response()
@@ -512,13 +508,6 @@ fn an_agent_supersedes_withdraws_and_reads_its_card_and_says_where_to_answer_it(
     assert!(why.contains("prp_done wasn't withdrawn: it's approved already"), "{why}");
     let why = mcp.call("ask_approval", json!({ "action": "withdraw", "project": "prj_1" })).unwrap_err();
     assert!(why.contains("withdraw needs ask"), "{why}");
-
-    // Status reads the card, as that agent.
-    let s = mcp.call("ask_approval", json!({ "action": "status", "ask": "prp_1", "project": "prj_1" })).unwrap();
-    assert_eq!((&s["state"], &s["answered_by_name"]), (&json!("approved"), &json!("Ada")), "{s}");
-    assert_eq!(s["summary"], "Card prp_1 was approved by Ada: started agent block %9", "{s}");
-    let got = f.asked("GET /api/daemon/projects/prj_1/proposals/prp_1?session=Chief+of+staff");
-    assert_eq!(got.len(), 1, "{:?}", f.calls.lock().unwrap());
 
     drop(mcp);
     drop(d);

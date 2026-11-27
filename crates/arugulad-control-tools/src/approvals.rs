@@ -10,8 +10,7 @@
 //! as a follow-up, with no watch (Arugula #1465); `ask.answered` tells
 //! anyone else watching.
 //!
-//! A card can be replaced (`supersedes`), withdrawn (`withdraw`) and read
-//! (`status`), and a propose says where to answer it (Arugula #1513): chat
+//! A card can be replaced (`supersedes`) and withdrawn (`withdraw`), and a propose says where to answer it (Arugula #1513): chat
 //! approves nothing, so the agent points its person at the card's link.
 //!
 //! The agent does nothing itself. A start on another of the person's
@@ -21,8 +20,8 @@
 
 use arugula_control_wire::sessions::{
     MachineCancel, MachinePropose, MachineProposed, PROPOSAL_CLOSE_MAX, PROPOSAL_PROMPT_MAX, PROPOSAL_WHY_MAX,
-    Proposal, ProposalCancelled, ProposalRead, ProposalSession, RUN_BOARD_CAP_MAX, RUN_BOARD_LAPSE_DAYS_MAX,
-    RUN_BOARD_MACHINES_MAX, agent_proposal_cancel, agent_proposal_read, agent_proposals,
+    Proposal, ProposalCancelled, ProposalSession, RUN_BOARD_CAP_MAX, RUN_BOARD_LAPSE_DAYS_MAX, RUN_BOARD_MACHINES_MAX,
+    agent_proposal_cancel, agent_proposals,
 };
 use arugula_proto::{BlockType, PaneId};
 use reqwest::Method;
@@ -38,11 +37,7 @@ use crate::{
 
 pub(crate) const TOOL: &str = "ask_approval";
 
-pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…) and the link to answer it: when they say approve in chat, give them the link. A newer card for the same ask: supersedes the old one's id, so two never stand. action withdraw (ask: the id) takes a card back that is no longer wanted; action status (ask) says where it stands and who answered. Their answer wakes you here with what they chose, no watch needed: end your turn or go on with other work.";
-
-/// What a control that can't read a card means for the agent.
-const NO_READ: &str =
-    "Arugula cloud can't read a card yet: tell your person to look for it in their staff room or Inbox";
+pub(crate) const DESCRIPTION: &str = "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…) and the link to answer it: when they say approve in chat, give them the link. A newer card for the same ask: supersedes the old one's id, so two never stand. action withdraw (ask: the id) takes a card back that is no longer wanted; Their answer wakes you here with what they chose, no watch needed: end your turn or go on with other work.";
 
 /// What a control from before the cards means for the agent.
 const NOT_YET: &str =
@@ -52,14 +47,13 @@ const NOT_YET: &str =
 pub struct AskApprovalArgs {
     /// start (an agent on an issue, on this machine), close (agent blocks
     /// on this machine), run_board (a board's lead, and a grant for its
-    /// issue agents), withdraw (one of your open cards, by `ask`) or status
-    /// (where one stands, by `ask`).
+    /// issue agents) or withdraw (one of your open cards, by `ask`).
     pub action: String,
     /// start, close, run_board: an open card of yours (prp_…) this one
     /// replaces: it's withdrawn, so two cards for one ask can't both run.
     #[serde(default)]
     pub supersedes: Option<String>,
-    /// withdraw, status: the card (prp_…).
+    /// withdraw: the card (prp_…).
     #[serde(default)]
     pub ask: Option<String>,
     /// start: the issue, as #N or N, in the project.
@@ -110,7 +104,7 @@ fn proposal(a: &AskApprovalArgs, blocks: Vec<PaneId>) -> Result<Proposal, String
         return Err(format!("why: at most {PROPOSAL_WHY_MAX} characters"));
     }
     if a.ask.is_some() {
-        return Err("ask goes with withdraw or status".into());
+        return Err("ask goes with withdraw".into());
     }
     let run_fields =
         a.board.is_some() || a.machine.is_some() || !a.machines.is_empty() || a.cap.is_some() || a.lapse_days.is_some();
@@ -165,7 +159,7 @@ fn proposal(a: &AskApprovalArgs, blocks: Vec<PaneId>) -> Result<Proposal, String
             }
             Ok(Proposal::RunBoard { board, machine, machines, cap: a.cap, lapse_days: a.lapse_days, prompt, why })
         }
-        a => Err(format!("action {a}: start, close, run_board, withdraw or status")),
+        a => Err(format!("action {a}: start, close, run_board or withdraw")),
     }
 }
 
@@ -212,7 +206,7 @@ fn waits_line(p: &Proposal, cards: &[ProposalSession]) -> String {
     }
 }
 
-/// `supersedes`, or `ask` for withdraw and status, as a card id.
+/// `supersedes`, or `ask` for withdraw, as a card id.
 fn card_id(v: Option<&str>, field: &str) -> Result<Option<String>, String> {
     let Some(v) = v.map(str::trim).filter(|v| !v.is_empty()) else { return Ok(None) };
     if !v.starts_with("prp_") {
@@ -244,36 +238,14 @@ fn asked_text(p: &MachineProposed, supersedes: Option<&str>, kept_old: bool) -> 
     t
 }
 
-/// A card as `status` says it.
-fn status_text(r: &ProposalRead) -> String {
-    let by = r.answered_by_name.as_deref().filter(|n| !n.is_empty());
-    let outcome = r.outcome.as_deref().filter(|o| !o.is_empty());
-    let mut t = match r.state.as_str() {
-        "open" => format!("Card {} is waiting for your person. Approve or Deny it here: {}", r.ask, r.link),
-        "approved" => format!("Card {} was approved{}", r.ask, by.map(|n| format!(" by {n}")).unwrap_or_default()),
-        "denied" => format!("Card {} was denied{}", r.ask, by.map(|n| format!(" by {n}")).unwrap_or_default()),
-        "failed" => format!(
-            "Card {} was approved{}, and doing it failed",
-            r.ask,
-            by.map(|n| format!(" by {n}")).unwrap_or_default()
-        ),
-        "cancelled" => format!("Card {} was withdrawn", r.ask),
-        s => format!("Card {} is {s}", r.ask),
-    };
-    if let Some(o) = outcome {
-        t.push_str(&format!(": {o}"));
-    }
-    t
-}
-
-/// What control's answer says about a card route it may not have.
-fn card_refused(e: CloudRefused, no_route: &str) -> String {
+/// What control's answer says when a card route fails.
+fn card_refused(e: CloudRefused) -> String {
     match e {
         CloudRefused::NotJoined => {
             "this machine hasn't joined Arugula cloud, where the card is: ask your person to join it".into()
         }
-        CloudRefused::OldControl => no_route.into(),
-        CloudRefused::Said { status: 404 | 405, said, .. } if said.starts_with("control answered") => no_route.into(),
+        CloudRefused::OldControl => NOT_YET.into(),
+        CloudRefused::Said { status: 404 | 405, said, .. } if said.starts_with("control answered") => NOT_YET.into(),
         e => e.to_string(),
     }
 }
@@ -299,7 +271,7 @@ async fn withdraw(c: &Call<'_>, a: &AskApprovalArgs) -> Out {
             c.app().mux.api(|r| Api::WaitsSettled(ask.clone(), r)).await;
             return Err(format!("{ask} wasn't withdrawn: {said}"));
         }
-        Err(e) => return Err(card_refused(e, NOT_YET)),
+        Err(e) => return Err(card_refused(e)),
     };
     let p: ProposalCancelled = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
     c.app().mux.api(|r| Api::WaitsSettled(p.ask.clone(), r)).await;
@@ -309,28 +281,9 @@ async fn withdraw(c: &Call<'_>, a: &AskApprovalArgs) -> Out {
     )
 }
 
-/// `status`: where one of this agent's cards stands.
-async fn status(c: &Call<'_>, a: &AskApprovalArgs) -> Out {
-    let ask = card_id(a.ask.as_deref(), "ask")?.ok_or("status needs ask: the card's prp_… id")?;
-    let (session, project) = mine(c, a.project.as_deref()).await?;
-    let q: String = url::form_urlencoded::Serializer::new(String::new()).append_pair("session", &session).finish();
-    let at = format!("{}?{q}", agent_proposal_read(&project, &ask));
-    let v = c.app().control.cloud(Method::GET, &at, None).await.map_err(|e| card_refused(e, NO_READ))?;
-    let r: ProposalRead = serde_json::from_value(v).map_err(|e| format!("Arugula cloud answered oddly: {e}"))?;
-    if r.state != "open" {
-        c.app().mux.api(|x| Api::WaitsSettled(r.ask.clone(), x)).await;
-    }
-    done(
-        status_text(&r),
-        json!({ "ask": r.ask, "state": r.state, "link": r.link, "answered_by_name": r.answered_by_name, "outcome": r.outcome }),
-    )
-}
-
 pub(crate) async fn ask_approval(c: &Call<'_>, a: AskApprovalArgs) -> Out {
-    match a.action.trim() {
-        "withdraw" => return withdraw(c, &a).await,
-        "status" => return status(c, &a).await,
-        _ => {}
+    if a.action.trim() == "withdraw" {
+        return withdraw(c, &a).await;
     }
     let me = c.own_pane().ok_or("ask_approval is an agent block's: call it from your own block")?;
     let mut blocks = vec![];
@@ -417,13 +370,8 @@ mod tests {
         assert!(refused(json!({ "action": "start", "why": "x" })).contains("needs issue"));
         assert!(refused(json!({ "action": "close", "why": "x" })).contains("needs blocks"));
         assert!(refused(json!({ "action": "close", "issue": "#1", "why": "x" })).contains("go with start"));
-        assert!(
-            refused(json!({ "action": "launch", "why": "x" })).contains("start, close, run_board, withdraw or status")
-        );
-        assert!(
-            refused(json!({ "action": "start", "issue": "#1", "ask": "prp_1", "why": "x" }))
-                .contains("withdraw or status")
-        );
+        assert!(refused(json!({ "action": "launch", "why": "x" })).contains("start, close, run_board or withdraw"));
+        assert!(refused(json!({ "action": "start", "issue": "#1", "ask": "prp_1", "why": "x" })).contains("withdraw"));
         assert!(refused(json!({ "action": "run_board", "why": "x" })).contains("needs board"));
         assert!(
             refused(json!({ "action": "start", "issue": "#1", "cap": 2, "why": "x" })).contains("go with run_board")
@@ -475,30 +423,6 @@ mod tests {
         let t = asked_text(&p, Some("prp_1"), true);
         assert!(!t.contains("Approve or Deny it here"), "{t}");
         assert!(t.contains("prp_1 still stands"), "{t}");
-    }
-
-    #[test]
-    fn a_cards_status_says_its_state_and_who_answered() {
-        let read = |state: &str, by: Option<&str>, outcome: Option<&str>| ProposalRead {
-            ask: "prp_1".into(),
-            room: "r".into(),
-            seq: 1,
-            link: "https://app.example/x".into(),
-            state: state.into(),
-            answered_by_name: by.map(Into::into),
-            outcome: outcome.map(Into::into),
-        };
-        assert_eq!(
-            status_text(&read("open", None, None)),
-            "Card prp_1 is waiting for your person. Approve or Deny it here: https://app.example/x"
-        );
-        assert_eq!(
-            status_text(&read("approved", Some("Jake"), Some("started %7"))),
-            "Card prp_1 was approved by Jake: started %7"
-        );
-        assert_eq!(status_text(&read("denied", Some("Jake"), None)), "Card prp_1 was denied by Jake");
-        assert_eq!(status_text(&read("cancelled", None, None)), "Card prp_1 was withdrawn");
-        assert!(status_text(&read("failed", Some("Jake"), Some("no repo"))).contains("failed: no repo"));
     }
 
     #[test]

@@ -829,52 +829,6 @@
       ],
       "type": "object"
     },
-    "ProposalRead": {
-      "description": "[`agent_proposal_read`]'s answer: where a card stands.",
-      "properties": {
-        "answered_by_name": {
-          "default": null,
-          "description": "Who answered it, by name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "ask": {
-          "type": "string"
-        },
-        "link": {
-          "type": "string"
-        },
-        "outcome": {
-          "default": null,
-          "description": "What answering it did, in a line.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "room": {
-          "type": "string"
-        },
-        "seq": {
-          "format": "int64",
-          "type": "integer"
-        },
-        "state": {
-          "description": "`open`, `approved`, `denied`, `failed` or `cancelled` (withdrawn).",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ask",
-        "room",
-        "seq",
-        "link",
-        "state"
-      ],
-      "type": "object"
-    },
     "ProposalRun": {
       "description": "A \"Run this board\" card's lines ([`ChatProposal::run`]).",
       "properties": {
