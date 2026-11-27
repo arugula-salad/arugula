@@ -1374,7 +1374,7 @@ button.k-foot-key:hover {
   padding: 0;
   border: 0;
   border-radius: 8px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
   cursor: pointer;
 }
@@ -1477,7 +1477,7 @@ button.k-foot-key:hover {
   text-align: center;
 }
 .k-rail-count.is-mention {
-  background: var(--accent);
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 .k-mark-project .k-rail-count {
