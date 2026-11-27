@@ -2157,7 +2157,8 @@ async fn fake_threads(f: FakeThreads) -> String {
                     return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
                         .into_response();
                 }
-                Json(json!({ "seq": 3, "mentions": ["a2"], "unreached": ["nobody"], "pushed": [] })).into_response()
+                Json(json!({ "seq": 3, "mentions": ["a2"], "unreached": ["nobody"], "pushed": [],
+                                  "nobody": "No one was told: @mention a person or an agent." })).into_response()
             }),
         )
         .route(
@@ -2318,6 +2319,8 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
         summary.contains("labelled as your person's agent") && summary.contains("@nobody reached nobody"),
         "{summary}"
     );
+    // #1530: control's advice for a post that reached nobody, on its own line.
+    assert!(summary.contains("\nNo one was told: @mention a person or an agent."), "{summary}");
     let why = refused(&s, "post_thread", json!({ "room": "dm_ab", "text": "hi" })).await;
     assert!(why.contains("arugula grants add geek threads.post --dms"), "{why}");
     let why = refused(&s, "read_thread", json!({ "room": "ch_nope" })).await;

@@ -1715,6 +1715,13 @@
           },
           "type": "array"
         },
+        "nobody": {
+          "description": "The advice when an agent's top-level post mentioned nobody, pushed\nnobody and went to a room no session leads; `None` otherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "pushed": {
           "description": "Whom control pushed (not those with the room open, muted, or pushed\nfor it in the last minute).",
           "items": {

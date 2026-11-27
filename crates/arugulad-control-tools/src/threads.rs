@@ -918,6 +918,10 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
             summary += &format!(" (@{word} reached nobody: {name}'s agents {they}.)");
         }
     }
+    // A post that reached nobody says so, in control's words (#1530).
+    if let Some(n) = v["nobody"].as_str().filter(|n| !n.is_empty()) {
+        summary += &format!("\n{n}");
+    }
     // Delivery is asynchronous (#419): what is known now is mostly `sending`.
     let sent = json!({ "mentions": mention_states(&v["mention_status"]) });
     let note = mentions_note(&sent);

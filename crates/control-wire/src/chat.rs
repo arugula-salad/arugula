@@ -929,6 +929,11 @@ pub struct ChatPosted {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatMentionStatus>>"))]
     pub mention_status: Vec<ChatMentionStatus>,
+    /// The advice when an agent's top-level post mentioned nobody, pushed
+    /// nobody and went to a room no session leads; `None` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub nobody: Option<String>,
 }
 
 /// A comment on an exported native issue, on its way to GitHub (M205): a
