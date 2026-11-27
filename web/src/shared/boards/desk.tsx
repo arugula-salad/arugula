@@ -220,7 +220,7 @@ export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view:
       key: t.item.id,
       who,
       since: t.item.since,
-      need: { ...itemNeed(t.item, who, undefined, now), lines: t.n > 0 ? [`tab ${t.n}`] : [] },
+      need: { ...itemNeed(t.item, who, undefined, now), kind: t.n > 0 ? `tab ${t.n}` : "tab" },
       go: t.n > 0 ? t.go : undefined,
       data: { "data-board-item": t.item.id, "data-board-for-you": t.item.subject.tab ?? "" },
     });

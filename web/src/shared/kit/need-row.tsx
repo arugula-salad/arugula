@@ -210,7 +210,7 @@ export function NeedRow({
           onEnter={() => !secret && onAnswer?.(options[0]!, note)}
         />
       ) : null}
-      {!ask && mine && !todo && !options.length ? (
+      {!ask && mine && !todo && !options.length && onAnswer ? (
         <>
           <TextField label="Your answer" value={note} onInput={setNote} onEnter={() => note.trim() && onAnswer?.({ id: "", label: note.trim() })} />
           <div class="k-row-actions">
