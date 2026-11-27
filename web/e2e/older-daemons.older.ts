@@ -56,19 +56,6 @@ test("the panes: a terminal that runs a command", async ({ page, errors }) => {
   await shows(page, errors, page.locator(`[data-pane="${pane}"]`));
 });
 
-test("Docs: the machine's Docs, or that it's older than Docs", async ({ page, errors, daemon }) => {
-  await open(page);
-  const docs = await has(daemon.url, "/api/docs");
-  if (docs) {
-    const pane = await page.evaluate(() => window.__arugula.client.active());
-    const made = await api(daemon.url, "/api/blocks", { type: "doc", config: { title: "Older plan" }, split: pane, local: true });
-    expect(made.ok, await made.text()).toBe(true);
-  }
-  await page.goto("/#docs");
-  await expect(page.locator("[data-docs-page]")).toBeVisible();
-  await shows(page, errors, docs ? page.locator("[data-doc]").filter({ hasText: "Older plan" }) : page.locator("[data-docs-older]"));
-});
-
 test("Agents: this machine's recipes, and the team's agents", async ({ page, errors }) => {
   await open(page, "#agents");
   const recipes = page.locator("[data-agents-page=recipes]");

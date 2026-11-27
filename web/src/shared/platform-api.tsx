@@ -10,6 +10,7 @@ import { useContext } from "preact/hooks";
 import type { PaneQuote } from "./chat-store";
 import type { MachineAt } from "./machine-paths";
 import type { AgentPanelProps } from "./kit/panel";
+import type { Inbox } from "./proto";
 
 /** Where a project's Overview is zoomed in to (Arugula #1287): a board
  * (its Board level), a card on it, or a session on no card by its key on
@@ -138,6 +139,18 @@ export interface PlatformApi {
     url(machine: string, link: string): Promise<string>;
     open(machine: string, link: string): Promise<number>;
     unshare(machine: string, link: string): Promise<boolean>;
+  };
+  /** One project's Inbox (Arugula #1469), where the page reads it (the
+   * platform's): a board's Needs you and its card take the agents' items on
+   * their issues from it (`subject.issue`). `me` is the reader's account,
+   * `name` a teammate's name, `answer` an approval's or a to-do's choice
+   * (`POST /api/inbox/{id}`), throwing the server's words. A page without
+   * it draws board asks alone. */
+  inbox?: {
+    read(project: string): Promise<Inbox>;
+    me(): string | null;
+    name(account: string): string;
+    answer(id: string, choice: string, note?: string): Promise<void>;
   };
   /** Whether pane `pane` of machine `machine` is in the fleet this page
    * reaches and the reader's own, as the Overview's peek tells it (a

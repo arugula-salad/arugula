@@ -4,7 +4,7 @@
 // `crates/daemon/src/mcp/tools.rs`), keeping those this machine offers (its
 // Labs flags, a forge signed in to here, control and its grants), so a new
 // tool shows here and a removed one goes. The Start-an-agent dialog shows
-// it folded, and the Docs page's empty state only the Doc line.
+// it folded (Getting started's Agents step showed it whole until Lift 7).
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -55,13 +55,10 @@ function Lines({ lines, use }: { lines: AgentCan[]; use?: (prompt: string) => vo
   );
 }
 
-/** The card. `folded`: a closed "What it can do here" (the dialog's);
- * `only`: that tool's line alone, with no heading (the Docs page's). */
-export function AgentCanCard({ client, folded, only, use }: { client: Client; folded?: boolean; only?: string; use?: (prompt: string) => void }) {
-  const all = useAgentCan(client);
-  const lines = only ? all?.filter((l) => l.tool === only) : all;
+/** The card. `folded`: a closed "What it can do here" (the dialog's). */
+export function AgentCanCard({ client, folded, use }: { client: Client; folded?: boolean; use?: (prompt: string) => void }) {
+  const lines = useAgentCan(client);
   if (!lines?.length) return null;
-  if (only) return <Lines lines={lines} use={use} />;
   if (folded) {
     return (
       <details class="agent-can" data-agent-can-card>

@@ -11,6 +11,7 @@ import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
+import { answerItem, memberName, readInbox } from "./inbox-count";
 import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string, all?: boolean): Route | null => {
@@ -61,4 +62,6 @@ export const platformApi: PlatformApi = {
   Bar: PlatformBar,
   controlHref: (hash) => `${controlOrigin()}/#${hash}`,
   sessionHref: (project, ses) => pathOf({ page: "session", project, session: ses }, names),
+  // A board's Needs you and its card take the agents' items on its issues from here (Arugula #1469).
+  inbox: { read: readInbox, me: () => session.me?.account ?? null, name: memberName, answer: answerItem },
 };

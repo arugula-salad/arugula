@@ -168,11 +168,4 @@ export async function docs(page: Page, chord = "Control+Shift+KeyK") {
   await expect(goTo(page)).toBeHidden();
   await expect.poll(async () => page.evaluate((p) => window.__arugula.client.info(p)?.type, await active(page))).toBe("doc");
   await expect(page.locator(`[data-doc-block="${await active(page)}"] .doc-title`)).toHaveText(title);
-
-  // The Docs page is a place.
-  await page.keyboard.press(chord);
-  await field(page).fill("docs on this");
-  await goTo(page).locator('[data-command="Places/docs"]').click();
-  await expect(goTo(page)).toBeHidden();
-  await expect(page.locator("[data-docs-page]")).toBeVisible();
 }

@@ -371,7 +371,7 @@ function BoardDesk({ p, id }: { p: PlatformProject; id: string }) {
         onProject={(home) => (home !== p.id ? homes.set(id, home) : where.boardRead())}
         // Closed, reopened, renamed or moved on: the lists of boards and the crumb follow (Arugula #1159).
         onBoard={() => (boardsChanged(p.id), where.boardRead())}
-        docTab={(doc) => <DocPage project={p.id} doc={doc} />}
+        docTab={(doc, more) => <DocPage project={p.id} doc={doc} more={more} />}
         // The swarm is the shell's, on control's page (#466).
         extra={[{ label: "Workers", external: true, hint: "This board's agents in the swarm", run: () => openTab(`${controlOrigin()}/#swarm=board:${id}`), attrs: { "data-board-workers": "" } }]}
       />

@@ -1,7 +1,7 @@
 // A team Doc's pictures (Arugula #1409): the platform keeps them and serves
 // each at `…/docs/<id>/assets/<name>`, and wherever a project Doc is drawn
 // an `assets/` image is that picture, loaded, not its alt text: the Doc's
-// page, the Docs list's preview and the Doc's embed page for the app. On
+// page and the Doc's embed page for the app. On
 // #971's fixture page (move-to-project-page.tsx) and the embed page; the
 // platform's answers are this spec's.
 import { expect, test, type Page, type Route } from "@playwright/test";
@@ -62,15 +62,6 @@ test("the Doc's page shows a picture the platform keeps, not its alt text", asyn
   await page.goto(`/p/${SITE}/docs/${DOC}`);
   await expectPicture(page);
   expect(seen.reads).toBe(1);
-});
-
-test("the Docs list's preview shows it too", async ({ page }) => {
-  await answers(page);
-  const body = await fixturePage("./move-to-project-page.tsx");
-  await page.route(/\/p\/prj_/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
-  await page.goto(`/p/${SITE}/docs`);
-  await expect(page.locator(`[data-doc-preview="${DOC}"]`)).toBeVisible();
-  await expectPicture(page);
 });
 
 test("the Doc's embed page for the app shows it", async ({ page }) => {

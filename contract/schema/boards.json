@@ -117,6 +117,20 @@
         "id": {
           "type": "string"
         },
+        "kind": {
+          "description": "An agent's card on the row's issue (Arugula #1469): `todo` (its\n`question` is what it asked to be done, its `answer` Done or\nCan't) or `approval` (Approve or Deny). None: a board ask.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "A to-do's note, as its record keeps it, for its person alone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "question": {
           "type": "string"
         }

@@ -17,8 +17,6 @@ export function shellTitle(place: Place, machine: string | null | undefined, ses
       return parts("Swarm");
     case "agents":
       return parts("Agents", machine);
-    case "docs":
-      return parts("Docs", machine);
     case "settings":
       return parts("Settings");
     case "panes":

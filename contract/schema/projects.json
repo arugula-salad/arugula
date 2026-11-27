@@ -1273,6 +1273,13 @@
         "id": {
           "type": "string"
         },
+        "issue": {
+          "description": "The native issue it's about (`iss_…`, Arugula #1469): an agent's\ncard's, a hosted session's work item. A board and its card draw it\non that issue's row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "machine": {
           "description": "The asker's machine: an agent's card's is the machine its agent\nasked from, never what it would act on (a close's blocks are in\n`lines`).",
           "type": [
