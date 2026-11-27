@@ -6759,11 +6759,6 @@ html[data-scheme="light"] .doc {
   margin: 0 8px;
 }
 
-/* Chat's sidebar: the machines it doesn't show, and why. */
-.chat-missing {
-  margin-top: 12px;
-}
-
 /* Chat's Activity: what needs you on every machine, above the messages. */
 .activity-head {
   margin: 12px 16px 4px;
@@ -7261,34 +7256,6 @@ html[data-scheme="light"] .doc {
   margin: 0;
   padding: 6px 12px;
   color: var(--fail);
-}
-
-/* "Sam can't see this. Invite them?" (#297): the owner's alone. */
-.thread-offer {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--line);
-}
-
-.thread-offer p {
-  margin: 0;
-}
-
-.thread-offer label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.thread-offer .thread-offer-sees {
-  color: var(--ink-dim);
-}
-
-.thread-offer .thread-error {
-  padding: 0;
 }
 
 .thread-offer-buttons {
@@ -8278,11 +8245,6 @@ button.thread-quote:hover {
   background: var(--card-raised);
 }
 
-/* M75: Activity and search results, and the switcher. */
-.chat-activity {
-  margin-top: 6px;
-}
-
 .chat-hits {
   margin: 0;
   padding: 0;
@@ -8592,37 +8554,6 @@ button.thread-quote:hover {
   font-weight: 600;
 }
 
-.chat-peek {
-  margin-bottom: 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--well);
-  overflow: hidden;
-}
-
-.chat-peek-title {
-  display: block;
-  width: 100%;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  color: var(--ink-dim);
-  font-size: var(--text-meta);
-}
-
-.chat-peek-title:hover {
-  color: var(--ink);
-}
-
-.chat-peek pre {
-  margin: 0;
-  padding: 6px 8px;
-  max-height: 22em;
-  overflow: auto;
-  font: var(--text-label)/1.35 var(--font-mono);
-  white-space: pre;
-}
-
 .chat-people {
   margin: 0;
   padding: 0;
@@ -8674,14 +8605,6 @@ button.thread-quote:hover {
   background: color-mix(in srgb, var(--accent-fill) 12%, transparent);
 }
 
-.chat-inline-link {
-  color: var(--accent);
-}
-
-.chat-inline-link:hover {
-  text-decoration: underline;
-}
-
 /* What being a member means, on the invite and the members list. */
 .conv-warning {
   margin: 0 0 10px;
@@ -8731,8 +8654,7 @@ button.thread-quote:hover {
 
 .chat-thread .thread-compose,
 .chat-thread .thread-error,
-.chat-thread .thread-note,
-.chat-thread .thread-offer {
+.chat-thread .thread-note {
   margin-left: 8px;
   margin-right: 8px;
 }
