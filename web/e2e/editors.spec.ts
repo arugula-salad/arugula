@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { chromium, expect, test, type FrameLocator, type Page } from "@playwright/test";
-import { menu, menuItem, paneEl, panes, ready, reset, run, closeContexts, openSettingsPage, closeSettingsPage } from "./helpers";
+import { menu, menuItem, paneEl, panes, ready, reset, run, closeContexts, openLook, closeLook } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { paint, sliders } from "../src/shared/kit/look";
 import { keyHeaders } from "./local-token";
@@ -181,8 +181,8 @@ test("an open editor follows palette changes and keeps a customized editor theme
   // The sidebar opened in the prior test stays open on the new page.
   await expect(frame(page, first).locator(".monaco-workbench .part.sidebar")).toBeVisible();
   const select = async (theme: string) => {
-    await (await openSettingsPage(page)).locator(`[data-theme-choice="${theme}"]`).click();
-    await closeSettingsPage(page);
+    await (await openLook(page)).locator(`[data-theme-choice="${theme}"]`).click();
+    await closeLook(page);
   };
   // Locator assertions retry across code-server's startup/navigation instead
   // of letting a transient destroyed execution context abort expect.poll.

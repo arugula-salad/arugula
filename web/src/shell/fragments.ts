@@ -79,7 +79,6 @@ export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shell/ui/docs-page.tsx", why: "`#docs`." },
   { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#agents`, `#docs`." },
   { where: "shell/ui/shell/rail.tsx", why: "The rail follows the shell's places." },
-  { where: "shell/ui/settings-page.tsx", why: "Notes the section `#settings=…` opened at, for its index to scroll to." },
 ];
 
 const ID = "[a-z]{2,3}_[0-9a-f]{4,64}";

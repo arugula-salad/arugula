@@ -257,3 +257,34 @@ test.describe("on a phone", () => {
     await page.screenshot({ path: info.outputPath("machines-phone.png"), fullPage: true });
   });
 });
+
+// Lift 7: Add a machine is Machines', a sheet from its header, with the line
+// to run on the machine; the project's old Settings › Machines lands on it.
+test("Add a machine: a sheet from the header with the command to copy, for the project's team; the old Settings address opens it", async ({ page }) => {
+  const posted: unknown[] = [];
+  await page.route("**/api/join-tokens", async (r) => {
+    posted.push(r.request().postDataJSON());
+    await r.fulfill({ json: { token: "ajt_abc", expires: Math.floor(Date.now() / 1000) + 5400 } });
+  });
+  await openApp(page, () => `/p/${P}/machines`);
+  await page.locator("[data-machines-add]").click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?add$`));
+  const sheet = page.getByRole("dialog", { name: "Add a machine to Arugula team" });
+  await expect(sheet).toBeVisible();
+  await sheet.locator("[data-join-token-make]").click();
+  await expect(sheet.locator("[data-join-token-line]")).toHaveText("arugulad join --token ajt_abc");
+  await expect(sheet.locator("[data-join-token-expires]")).toContainText("(in 1h)");
+  expect(posted).toEqual([{ team: "tm_1" }]);
+  await sheet.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+  // A refusal says why, in the sheet.
+  await page.unroute("**/api/join-tokens");
+  await page.route("**/api/join-tokens", (r) => r.fulfill({ status: 403, json: { error: "only the team's owners and editors make join tokens" } }));
+  const body = await fixturePage("./app-frame-page.tsx");
+  await page.route(/\/settings\/project\//, (r) => r.fulfill({ contentType: "text/html", body }));
+  await page.goto(`/settings/project/${P}/machines`);
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?add$`));
+  await page.getByRole("dialog", { name: "Add a machine to Arugula team" }).locator("[data-join-token-make]").click();
+  await expect(page.locator("[data-join-token-error]")).toHaveText("only the team's owners and editors make join tokens");
+});

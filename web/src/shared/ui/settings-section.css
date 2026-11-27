@@ -1,8 +1,7 @@
-/* A Settings page's sections and index (settings-section.tsx), on
-   both pages (Arugula #695): under `.platform` on `/settings`, and
-   `.settings-place` on control's page. Its switch is shared/switch.css.
-   Then Settings' list and detail (settings-list.tsx, Arugula #1104), on
-   the List pages' look. */
+/* A Settings page's sections (settings-section.tsx), on both pages
+   (Arugula #695): under `.platform` on `/settings`, and `.settings-place`
+   on control's page. Its switch is shared/switch.css. Then Settings' list
+   (settings-list.tsx, Lift 7). */
 
 /* -- The sections */
 
@@ -130,154 +129,63 @@
   }
 }
 
-/* -- The index: in the panel's left gutter, where it's wide enough for
-      one (a panel of 880px plus two gutters of ~200px), and sticky as the
-      page scrolls. Narrower, there's no gutter to put it in, and the page
-      goes without. 180px holds the longest title on one line ("Agents on
-      your machines", UI audit #168). */
-
-:is(.platform, .settings-place) .settings-index {
-  display: none;
-}
-
-@media (min-width: 1320px) {
-  :is(.platform, .settings-place) .settings-layout {
-    display: grid;
-    grid-template-columns: 180px minmax(0, 1fr);
-    column-gap: 28px;
-    margin-left: -208px;
-  }
-  :is(.platform, .settings-place) .settings-index {
-    display: block;
-    position: sticky;
-    top: 0;
-    align-self: start;
-    padding-top: 6px;
-  }
-  :is(.platform, .settings-place) .settings-index ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border-left: 1px solid var(--line);
-  }
-  :is(.platform, .settings-place) .settings-index a {
-    display: block;
-    margin-left: -1px;
-    /* At least 24 px tall, a pointer's target. */
-    padding: 5px 0 5px 12px;
-    border-left: 2px solid transparent;
-    font: 500 var(--text-xs)/1.3 var(--font-mono);
-    letter-spacing: var(--track-caps);
-    text-transform: uppercase;
-    color: var(--dim);
-    text-decoration: none;
-  }
-  :is(.platform, .settings-place) .settings-index a:is(:hover, :focus-visible) {
-    border-left-color: var(--accent);
-    color: var(--fg);
-  }
-  /* The section you're in (UI audit #166). */
-  :is(.platform, .settings-place) .settings-index a[aria-current] {
-    border-left-color: var(--accent);
-    color: var(--accent);
-  }
-}
-
 :is(.platform, .settings-place) .settings-rows {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* -- Settings' list and detail (settings-list.tsx): the List pages' split
-      (./list-page.css), filling the page's frame as Docs does. The list
-      is narrower than a Doc's (a title and a line), and the detail holds
-      the controls, scrolling on its own. */
+/* -- Settings' list (settings-list.tsx, Lift 7): one section surface a
+      scope, its header, then a kit Row a section, its controls under its
+      line. The page scrolls as one. */
 
-.platform-main:has(> .settings-host) {
+.settings-list {
+  max-width: 880px;
+  margin: var(--gap) auto;
+  padding: var(--gap);
+}
+
+.settings-head {
   display: flex;
-  flex-direction: column;
-  padding: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
 }
 
-.settings-host {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
+.settings-head h1 {
+  margin: 0;
+  font: 700 var(--text-title) var(--font-title);
 }
 
-.settings-host .list-page {
-  --list-w: clamp(300px, 32%, 400px);
-  height: 100%;
-}
-
-@container list-page (min-width: 761px) {
-  .settings-list .list-split {
-    grid-template-columns: min(var(--list-w), calc(100% - 420px)) minmax(0, 1fr);
-  }
-}
-
-/* The scopes: on one line, scrolling sideways where it's narrower. */
-.settings-list .list-head .page-head .settings-scopes {
-  max-width: 100%;
-  margin-top: var(--space-3);
-  overflow-x: auto;
-}
-
-.settings-list a.list-row {
-  color: inherit;
-  text-decoration: none;
-}
-
-/* What's set, on its own line under the title. */
-.settings-list .list-row-detail {
-  grid-column: 1 / -1;
-}
-
-/* Which machine, project or team: a label and its select, under the header. */
+/* Which project or team: a label and its select. */
 .settings-pick {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin: var(--space-3) 0 var(--space-2);
-  color: var(--dim);
-  font-size: var(--text-sm);
+  gap: 8px;
+  margin-left: auto;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 .settings-pick .field {
-  flex: 0 1 280px;
+  flex: 0 1 240px;
   min-width: 0;
 }
 
-.settings-detail-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--space-4) var(--space-6) var(--space-6);
+/* A section's line says what's set: wider than a row's meta elsewhere. */
+.settings-sections .k-row-meta {
+  max-width: 55%;
 }
 
-/* A section, alone in the detail: its heading at the top, its help under it. */
-.platform .settings-detail-body .settings-sec {
-  max-width: 880px;
-  margin-top: 0;
+.settings-sections .k-row-body {
+  padding-left: 10px;
 }
 
-.platform .settings-detail-body.sw-page .settings-sec > h2 {
-  margin: 0 0 var(--space-2);
-}
-
-/* The way back to the list shows only where the detail stands alone. */
-@container list-page (min-width: 761px) {
-  .settings-list .list-back {
-    display: none;
-  }
-}
-
-@container list-page (max-width: 760px) {
-  .settings-detail-body {
-    padding: var(--space-3) var(--space-5) var(--space-6);
-  }
+.settings-sec-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 /* A section the page can't fill (Settings › Machines, a machine it can't

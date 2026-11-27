@@ -24,7 +24,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, open, paneEl, panes, ready, reset, run, text, type, openSettingsPage, closeSettingsPage } from "./helpers";
+import { closeContexts, menuItem, open, paneEl, panes, ready, reset, run, text, type, openSettingsPage, closeSettingsPage, setting } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { FakePush } from "./phones";
@@ -139,7 +139,7 @@ test("Tips off says nothing; turned on, the chip comes; × dismisses it for good
   expect(await seenHere(page)).toEqual({ tips: false });
 
   // Settings › Tips.
-  const tips = (await openSettingsPage(page)).getByRole("switch", { name: "Tips", exact: true });
+  const tips = (await setting(page, "switch", "Tips"));
   await expect(tips).not.toBeChecked();
   await tips.click();
   await closeSettingsPage(page);

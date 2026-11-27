@@ -5,41 +5,28 @@
 // a summary (a few words on what's set: "Weeknights 10 PM – 8 AM",
 // "3 repos linked") and the detail, its children.
 //
-// Inside a scope's list (./settings-list.tsx) a section tells the list its
-// title and summary, so the list can say them, and it shows only while
-// it's the one chosen; it stays drawn while hidden, so what it reads keeps
-// its summary current. Anywhere else (the shell's `#settings`, a page that
-// borrows one) it's drawn in place, and its id is the section index's
-// anchor; the index sits beside the column on a wide screen.
+// Inside a scope's list (./settings-list.tsx, Lift 7) a section is a kit
+// Row: its title and what's set on the line, its help and controls under
+// it, open when the address names it. Closed, it stays drawn, hidden, so
+// what it reads keeps its summary current. Anywhere else (a page that
+// borrows one) it's drawn in place, under a heading.
 //
 // A section can hold sections (Arugula #1105): where a scope merges a few
-// into one row ("Runs and workspaces"), each it holds is a part of it,
-// under a smaller heading, and tells it its summary instead of the list.
-// The row says the parts' summaries in a line, where the section says
-// none of its own. A scope's sections are listed flat, under no headings
-// of their own (Arugula #1317).
+// into one row ("Agents"), each it holds is a part of it, under a smaller
+// heading, and tells it its summary. The row says the parts' summaries in
+// a line, where the section says none of its own.
 
-import { createContext, type ComponentChildren, type RefObject } from "preact";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createContext, type ComponentChildren } from "preact";
+import { useContext, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { Row } from "../kit/row";
 
-/** What a section tells the list it's in. */
-export interface ListedSection {
-  id: string;
-  title: string;
-  summary?: string;
-  /** Its element, to put the list in the page's order. */
-  el: HTMLElement;
-}
-
-/** The list a section is in: the one chosen, and where it says what it is. */
+/** The list a section is in: the one open, and the way to open another. */
 export interface SectionList {
-  /** The section shown; the rest are drawn hidden. */
-  shown: string | null;
-  /** The section the address names, before it's drawn: a section that
-   * opens with something started (a form) when it's asked for. */
+  /** The section the address names: open, the rest closed. A section
+   * that opens with something started (a form) when it's asked for reads it. */
   asked: string | null;
-  tell(s: ListedSection): void;
-  forget(id: string, el: HTMLElement): void;
+  /** Open this one, or close it where it's open. */
+  toggle(id: string): void;
 }
 
 export const SectionListContext = createContext<SectionList | null>(null);
@@ -106,23 +93,49 @@ export function Section({
   );
   const said = summary ?? partsLine(parts);
   useLayoutEffect(() => {
-    if (!el.current) return;
-    if (whole) whole.tell(id, said, el.current);
-    else list?.tell({ id, title, summary: said, el: el.current });
-  }, [list, whole, id, title, said]);
+    if (whole && el.current) whole.tell(id, said, el.current);
+  }, [whole, id, said]);
   useLayoutEffect(() => {
     const at = el.current;
-    return () => void (at && (whole ? whole.forget(id, at) : list?.forget(id, at)));
-  }, [list, whole, id]);
-  // A part shows whenever its section does, under a smaller heading.
-  const hidden = list && !whole ? list.shown !== id : false;
+    return () => void (at && whole?.forget(id, at));
+  }, [whole, id]);
+  const body = (
+    <>
+      {lede ? <p class="settings-lede">{lede}</p> : null}
+      {more ? <div class="settings-more">{more}</div> : null}
+      <WholeContext.Provider value={holds}>{children}</WholeContext.Provider>
+    </>
+  );
+  // A section of a scope's list: a row, open at its address. Its body
+  // holds the section's hooks, so they're seen only while it's open.
+  if (list && !whole)
+    return (
+      <Row
+        id={id}
+        title={
+          <>
+            {title}
+            {count !== undefined ? <span class="m-meta"> {count}</span> : null}
+          </>
+        }
+        meta={said ? [said] : undefined}
+        open={list.asked === id}
+        keep
+        onClick={() => list.toggle(id)}
+        data-settings-row={id}
+        data-settings-summary={said}
+      >
+        <div class="settings-sec-body" data-settings-section={id} data-settings-title={title} data-settings-summary={said} {...hooks}>
+          {body}
+        </div>
+      </Row>
+    );
   const Heading = whole ? "h3" : "h2";
   return (
     <section
       ref={el}
       class={whole ? "settings-part" : "settings-sec"}
       id={id}
-      hidden={hidden}
       aria-labelledby={`${id}-h`}
       {...(whole ? { "data-settings-part": id } : { "data-settings-section": id, "data-settings-title": title })}
       data-settings-summary={said}
@@ -132,86 +145,7 @@ export function Section({
         {title}
         {count !== undefined ? <span class="dim">{count}</span> : null}
       </Heading>
-      {lede ? <p class="settings-lede">{lede}</p> : null}
-      {more ? <div class="settings-more">{more}</div> : null}
-      <WholeContext.Provider value={holds}>{children}</WholeContext.Provider>
+      {body}
     </section>
-  );
-}
-
-/** The section index, beside the column on a wide screen: the sections
- * the page shows, read off it as each one loads (some show only when
- * there's something in them), the one you're in marked (UI audit #166):
- * the topmost of those on the screen. */
-export function SectionIndex({
-  body,
-  anchor = (id) => `#${id}`,
-  opened: openedAt = () => decodeURIComponent(location.hash.slice(1)),
-}: {
-  body: RefObject<HTMLDivElement | null>;
-  /** A section's address, where the hash isn't simply its id. */
-  anchor?: (id: string) => string;
-  /** The section the page was opened at. */
-  opened?: () => string | undefined;
-}) {
-  const [secs, setSecs] = useState<{ id: string; title: string }[]>([]);
-  const [here, setHere] = useState("");
-  useEffect(() => {
-    const el = body.current;
-    if (!el) return;
-    const read = () => {
-      const next = [...el.querySelectorAll<HTMLElement>(".settings-sec")].map((s) => ({ id: s.id, title: s.dataset.settingsTitle ?? s.id }));
-      setSecs((prev) => (prev.map((s) => s.id).join() === next.map((s) => s.id).join() ? prev : next));
-    };
-    read();
-    const watch = new MutationObserver(read);
-    watch.observe(el, { childList: true, subtree: true });
-    return () => watch.disconnect();
-  }, []);
-  // A link to a section (`/settings#tokens`, from a project's settings)
-  // goes to it once it has loaded, and stays on it while the sections
-  // above it come in, for the page's first two seconds.
-  const opened = useRef(Date.now());
-  useEffect(() => {
-    const id = openedAt();
-    if (!id || Date.now() - opened.current > 2000 || !secs.some((s) => s.id === id)) return;
-    document.getElementById(`${id}-h`)?.scrollIntoView({ block: "start" });
-  }, [secs]);
-  useEffect(() => {
-    const el = body.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const seen = new Set<Element>();
-    const look = new IntersectionObserver((entries) => {
-      for (const e of entries) e.isIntersecting ? seen.add(e.target) : seen.delete(e.target);
-      const top = secs.find((s) => [...seen].some((x) => x.id === s.id));
-      if (top) setHere(top.id);
-    });
-    for (const s of secs) {
-      const sec = document.getElementById(s.id);
-      if (sec) look.observe(sec);
-    }
-    return () => look.disconnect();
-  }, [secs]);
-  // To the section's heading, which takes the focus for a keyboard.
-  const go = (e: MouseEvent, id: string) => {
-    const h = document.getElementById(`${id}-h`);
-    if (!h) return;
-    e.preventDefault();
-    h.scrollIntoView({ block: "start" });
-    h.tabIndex = -1;
-    h.focus({ preventScroll: true });
-  };
-  return (
-    <nav class="settings-index" aria-label="Settings sections">
-      <ul>
-        {secs.map((s) => (
-          <li key={s.id}>
-            <a href={anchor(s.id)} aria-current={here === s.id ? "location" : undefined} onClick={(e) => go(e, s.id)}>
-              {s.title}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </nav>
   );
 }

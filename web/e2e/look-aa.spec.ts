@@ -5,13 +5,13 @@
 // asks you) never lands in the olive band; the sliders move the page; and
 // Reset brings back Arugula's dark.
 import { expect, test } from "@playwright/test";
-import { closeSettingsPage, openSettingsPage, reset } from "./helpers";
+import { closeLook, openLook, reset } from "./helpers";
 
 const PRESETS = ["arugula", "moss", "sea-glass", "stone-ink", "graphite-acid"];
 
 test("whatever the preset, theme and sliders, every word reads at 4.5:1 and needs-you stays amber", async ({ page }) => {
   await reset(page);
-  const look = (await openSettingsPage(page)).locator('[data-settings-section="appearance"]');
+  const look = await openLook(page);
   for (const preset of PRESETS)
     for (const theme of ["dark", "light"]) {
       await look.locator(`[data-theme-choice="${theme}"]`).click();
@@ -83,5 +83,5 @@ test("whatever the preset, theme and sliders, every word reads at 4.5:1 and need
   await look.locator('[data-theme-choice="light"]').click();
   await expect(look.locator('[data-look-slider="light"]')).toHaveValue("78");
   expect(await token("accent")).toBe("#3e5a05");
-  await closeSettingsPage(page);
+  await closeLook(page);
 });

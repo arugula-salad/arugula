@@ -42,8 +42,8 @@ test("control's old Settings sections land on the app's Settings, but Phones and
   const D = "da5b786733ac68a9";
   const cases = [
     ["#settings", "/settings"],
-    ["#settings=appearance", "/settings/you/appearance"],
-    ["#settings=preferences", "/settings/you/appearance"],
+    ["#settings=appearance", "/settings/you/preferences"],
+    ["#settings=preferences", "/settings/you/preferences"],
     ["#settings=account", "/settings/you/security"],
     // Help went to the command palette (Arugula #1108): Settings, at You.
     ["#settings=help", "/settings"],

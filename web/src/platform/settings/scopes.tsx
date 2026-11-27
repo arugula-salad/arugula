@@ -1,9 +1,10 @@
-// Settings' scopes (Arugula #1104), the one list of them: You,
-// Machines, Project, and Team and billing. Each says its name, whose its
-// settings are, what its picker chooses (a scope of many), and draws its
-// sections: every one of them, each a `Section` (shared/ui/settings-section)
-// with an id, a title, a summary and its controls. The page
-// (../pages/settings.tsx) lists them and shows the one the address names.
+// Settings' scopes (Arugula #1104), the one list of them: You, Project and
+// Team (Lift 7), and a machine's, which Machines opens and the scopes'
+// switch doesn't list. Each says its name, what its picker chooses (a
+// scope of many), and draws its sections: every one of them, each a
+// `Section` (shared/ui/settings-section) with an id, a title, a summary and
+// its controls. The page (../pages/settings.tsx) lists them and opens the
+// one the address names.
 //
 // A new section goes in its scope's component; a new scope, here and in
 // `SettingsRoute` (../paths.ts).
@@ -24,8 +25,6 @@ export interface SettingsScope<K extends SettingsScopeKey = SettingsScopeKey> {
   key: K;
   /** Its name, in the scopes' switch. */
   title: string;
-  /** Whose these are, under the header. */
-  whose: string;
   /** What its picker chooses, for a scope of many. */
   pick?: string;
   /** All of its sections. */
@@ -36,34 +35,30 @@ export const SCOPES: { [K in SettingsScopeKey]: SettingsScope<K> } = {
   you: {
     key: "you",
     title: "You",
-    whose: "Yours, wherever you sign in. Appearance is this device's.",
     sections: () => <YouSettings />,
   },
   machine: {
     key: "machine",
-    title: "Machines",
-    whose: "One of your machines.",
+    title: "Machine",
     pick: "Machine",
     sections: (r) => <MachineSettings machine={r.machine} section={r.section} />,
   },
   project: {
     key: "project",
     title: "Project",
-    whose: "One project. Its members see these; its owners and editors change them.",
     pick: "Project",
     sections: (r) => <ProjectSettings id={r.project} link={r.link} />,
   },
   team: {
     key: "team",
-    title: "Team and billing",
-    whose: "A team, or just you: who's in it, what it pays, and what its projects start with.",
+    title: "Team",
     pick: "Team",
     sections: (r) => <OwnerSettings owner={r.owner} />,
   },
 };
 
-/** The scopes, in the switch's order. */
-export const SCOPE_KEYS: SettingsScopeKey[] = ["you", "machine", "project", "team"];
+/** The scopes in the switch, in its order: a machine's is Machines'. */
+export const SCOPE_KEYS: SettingsScopeKey[] = ["you", "project", "team"];
 
 /** Where a scope opens from the switch: the project you're in (else your
  * first), and its owner; a machine the page picks once it knows them.
@@ -81,6 +76,16 @@ export function scopeRoute(key: SettingsScopeKey): SettingsRoute | null {
     case "team":
       return { page: "settings", scope: "team", owner: here ? ownerKey(here) : "personal" };
   }
+}
+
+/** Every scope of the switch, where it opens, and its name in a menu: the
+ * avatar's menu and Go to… list them all (Lift 7). */
+export function settingsPlaces(): { key: SettingsScopeKey; title: string; to: SettingsRoute }[] {
+  const said = { you: "Your settings", project: "Project settings", team: "Team settings", machine: "" };
+  return SCOPE_KEYS.flatMap((key) => {
+    const to = scopeRoute(key);
+    return to ? [{ key, title: said[key], to }] : [];
+  });
 }
 
 /** What a scope's picker offers: the projects that aren't archived (and

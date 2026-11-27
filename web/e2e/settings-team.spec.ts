@@ -1,14 +1,16 @@
-// Settings' Team and billing scope (Arugula #1106): the owner's sections in
-// a flat list (the team's own, then what every project starts with). Members lists the roster;
-// its owners invite people, change roles and remove them in place, on
-// control's word, and making or removing an owner is a ↗ row to control's
-// page (aru-141). Machines lists what control's directory says is the
-// owner's, one of yours opening its settings, and changes them in place the
-// same way. Chat is the team's on or off, its owners' to switch (control's
-// Teams panel doesn't have it). Labs is control's Teams panel's list of
-// flags (Arugula #1118), only with `dev`. No other ↗ rows: a read that
-// fails says so. On #971's fixture page (move-to-project-page.tsx): the
-// platform's answers are this spec's.
+// Settings' Team scope (Arugula #1106, Lift 7 #1487): the owner's sections
+// in one flat list (the team's own, then what every project starts with), a
+// kit row each with what's set, opening in place at its address; with no
+// section named, every row is closed. Members lists the roster; its owners
+// invite people, change roles and remove them in place, on control's word,
+// and making or removing an owner is a ↗ row to control's page (aru-141).
+// Machines lists what control's directory says is the owner's, one of yours
+// opening its settings, and changes them in place the same way. Chat is the
+// team's on or off, its owners' to switch (control's Teams panel doesn't
+// have it). Labs is control's Teams panel's list of flags (Arugula #1118),
+// only with `dev`. No other ↗ rows: a read that fails says so. On #971's
+// fixture page (move-to-project-page.tsx): the platform's answers are this
+// spec's.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -72,25 +74,34 @@ async function open(
 }
 
 const row = (page: Page, id: string) => page.locator(`[data-settings-row="${id}"]`);
+/** A row's line: a click opens it, or closes it where it's open. */
+const line = (page: Page, id: string) => row(page, id).locator(":scope > button[aria-expanded]");
 const section = (page: Page, id: string) => page.locator(`[data-settings-section="${id}"]`);
+/** Each row's title, in the list's order. */
+const titles = (page: Page) => page.locator("[data-settings-row] > button [data-row-title]");
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
 test("a team's owner: a flat list; the roster, saying so when the hub's teams fail, the team's machines, and its Labs flags", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
-  // Its sections in their order, under no band headings: Project defaults before Labs.
-  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/, /^Labs/]);
-  // Members, first: the roster, and why it can't be changed here: no ↗ to control's Teams.
+  // Its sections in their order, in one list: Project defaults before Labs. None open until one's asked for.
+  await expect(titles(page)).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/, /^Labs/]);
+  await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
+  await expect(section(page, "members")).toBeHidden();
+  // Members: the roster, and why it can't be changed here: no ↗ to control's Teams.
+  await line(page, "members").click();
+  await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*\/members$/);
   await expect(section(page, "members")).toBeVisible();
   await expect(section(page, "members").locator("[data-owner-member]")).toHaveText(["SamOwner", "JoEditor"]);
-  await expect(section(page, "members").locator(".control-error")).toHaveText("not here");
+  await expect(section(page, "members")).toContainText("not here");
   await expect(section(page, "members").locator("[data-settings-control]")).toHaveCount(0);
   // Machines: the team's computers, not the Cloud workspace's box, not another team's.
-  await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("2 machines · 1 online");
-  await row(page, "machines").click();
+  await expect(row(page, "machines")).toHaveAttribute("data-settings-summary", "2 machines · 1 online");
+  await line(page, "machines").click();
   await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*\/machines$/);
   const machines = section(page, "machines");
+  await expect(machines).toBeVisible();
+  await expect(section(page, "members")).toBeHidden();
   await expect(machines.locator("[data-owner-machine]")).toHaveCount(2);
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Jo's");
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Offline, seen 3h ago");
@@ -103,7 +114,7 @@ test("a team's owner: a flat list; the roster, saying so when the hub's teams fa
   // Labs: the team's flags, which its owner sets here.
   await page.goto("/settings/team/tm_1/labs");
   const labs = section(page, "labs");
-  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("1 set");
+  await expect(row(page, "labs")).toHaveAttribute("data-settings-summary", "1 set");
   await expect(labs.locator('[data-labs-flag="sandbox-providers"] select')).toHaveValue("off");
   await expect(labs.locator('[data-labs-flag="agent-delegation"]')).toHaveCount(0);
   const sent: unknown[] = [];
@@ -113,7 +124,7 @@ test("a team's owner: a flat list; the roster, saying so when the hub's teams fa
       : r.fallback(),
   );
   await labs.locator('[data-labs-flag="studio"] select').selectOption("on");
-  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("2 set");
+  await expect(row(page, "labs")).toHaveAttribute("data-settings-summary", "2 set");
   expect(sent).toEqual([{ name: "studio", on: true, team: "tm_1" }]);
 });
 
@@ -127,20 +138,21 @@ test("Labs: yours to set on Just you, a team's to read for its viewers, and none
   await expect(theirs.locator('[data-labs-flag="studio"]')).toContainText("Not set");
   // Strangers never see Labs.
   await open(page, "/settings/team/tm_1", { flags: kept(false) });
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/]);
+  await expect(titles(page)).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/]);
 });
 
 test("Labs whose flags don't load says so, with no ↗ to control's page", async ({ page }) => {
   await open(page, "/settings/team/tm_1/labs", { flags: null });
-  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("Couldn't load");
-  await expect(section(page, "labs").locator(".control-error")).toHaveText("Request failed (404)");
+  await expect(row(page, "labs")).toHaveAttribute("data-settings-summary", "Couldn't load");
+  await expect(section(page, "labs")).toBeVisible();
+  await expect(section(page, "labs")).toContainText("Request failed (404)");
   await expect(section(page, "labs").locator("[data-settings-control]")).toHaveCount(0);
 });
 
 test("Chat: a team's owner turns it on here, and a viewer reads it", async ({ page }) => {
   await open(page, "/settings/team/tm_1/team-chat");
   const chat = section(page, "team-chat");
-  await expect(row(page, "team-chat").locator(".list-row-detail")).toHaveText("Off");
+  await expect(row(page, "team-chat")).toHaveAttribute("data-settings-summary", "Off");
   const on = chat.locator('[data-team-chat-on="tm_1"]');
   await expect(on).not.toBeChecked();
   await expect(on).toBeEnabled();
@@ -150,7 +162,7 @@ test("Chat: a team's owner turns it on here, and a viewer reads it", async ({ pa
   );
   await on.click();
   await expect(on).toBeChecked();
-  await expect(row(page, "team-chat").locator(".list-row-detail")).toHaveText("On");
+  await expect(row(page, "team-chat")).toHaveAttribute("data-settings-summary", "On");
   expect(sent).toEqual([{ name: "chat", on: true, team: "tm_1" }]);
   // Bakery's viewer: the switch, read-only.
   await page.goto("/settings/team/tm_2/team-chat");
@@ -161,9 +173,10 @@ test("Chat: a team's owner turns it on here, and a viewer reads it", async ({ pa
 
 test("Just you: your machines in no team, and no roster", async ({ page }) => {
   await open(page, "/settings/team/personal");
-  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
   await expect(row(page, "members")).toHaveCount(0);
-  await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("1 machine · online");
+  await expect(row(page, "machines")).toHaveAttribute("data-settings-summary", "1 machine · online");
+  await line(page, "machines").click();
+  await expect(page).toHaveURL(/\/settings\/team\/personal\/machines$/);
   const machines = section(page, "machines");
   await expect(machines).toBeVisible();
   // attic has no grants yet, so it opens its own page, not Machines.
@@ -178,7 +191,7 @@ test("a team's viewer reads the roster without the ↗; a directory that fails s
   await expect(members).toBeVisible();
   await expect(members.locator("[data-settings-control]")).toHaveCount(0);
   await expect(members).toContainText("Its owners invite people and change roles");
-  await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("Couldn't load");
+  await expect(row(page, "machines")).toHaveAttribute("data-settings-summary", "Couldn't load");
 });
 
 /** Acme as the hub has it: Sam owns it, Jo drives, Ann watches, and Dee
@@ -322,7 +335,7 @@ test("a team's Machines in place: Settings, Take out and Remove, bringing in one
   await machines.locator("[data-bring-in-go]").click();
   await expect.poll(() => sent.length).toBe(3);
   expect(sent[2]).toMatchObject({ path: "/api/daemons/dmn_attic/team", body: { team: { team: "tm_1", founder: "acct_a", founder_root: "-" }, by: "", sig: "" } });
-  await expect(machines.locator(".control-error")).toHaveText("attic's Arugula is from before control's moves: update it first");
+  await expect(machines).toContainText("attic's Arugula is from before control's moves: update it first");
 });
 
 test("Just you's Machines in place: move one into a team you may add to, and the join command", async ({ page }) => {

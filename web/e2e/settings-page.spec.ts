@@ -1,32 +1,38 @@
 // The Settings page (Arugula #695): `#settings`, what the rail's Settings
-// opens, on a daemon's own page, which has every section. On control's
+// opens, on a daemon's own page, which has every section. It draws the
+// app's list (Lift 7): a kit Row a section, opening in place at
+// `#settings=<id>`; how it looks is Look's, not a section. On control's
 // page, which has the app's Settings, it keeps Phones and browsers alone,
 // and the rest of its old links land in the app (Arugula #1110): the last
 // test, with control made up on the suite's daemon and the app a stand-in.
 
-import { expect, test } from "@playwright/test";
-import { closeContexts, closeSettingsPage, openSettingsPage, reset, sheetTab } from "./helpers";
+import { expect, test, type Page } from "@playwright/test";
+import { closeContexts, closeSettingsPage, openSettingsPage, reset, setting, sheetTab } from "./helpers";
 
 test.afterAll(closeContexts);
 
-test("the rail's Settings is a page: every scope's rows, and back to the panes", async ({ page }) => {
+const row = (page: Page, id: string) => page.locator(`[data-settings-row="${id}"]`);
+const opened = (page: Page, id: string) => row(page, id).locator("button[aria-expanded]").first();
+
+test("the rail's Settings is a page: a row a section, each opening in place, and back to the panes", async ({ page }) => {
   await reset(page);
   const settings = await openSettingsPage(page);
   await expect(page).toHaveURL(/#settings$/);
   await expect(page).toHaveTitle(/^Settings/);
-  for (const id of ["push", "appearance", "machine"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
-  // Help is Go to…'s, not a section here (Arugula #1108).
-  await expect(settings.locator('[data-settings-section="help"]')).toHaveCount(0);
-
-  // Each row under what it reaches.
+  for (const id of ["push", "preferences", "machine"]) await expect(row(page, id)).toBeVisible();
+  // Help is Go to…'s, and how it looks is Look's: neither is a section here (Lift 7).
+  await expect(settings.locator('[data-settings-row="help"], [data-settings-row="appearance"]')).toHaveCount(0);
+  await expect(settings.locator("[data-appearance-controls]")).toHaveCount(0);
+  // Every row starts closed; a click opens it at its address, and another closes it.
+  await expect(settings.locator('[data-settings-section="machine"]')).toBeHidden();
+  await opened(page, "machine").click();
+  await expect(page).toHaveURL(/#settings=machine$/);
   const machine = settings.locator('[data-settings-section="machine"]');
   await expect(machine.getByRole("button", { name: "Developer settings…" })).toBeVisible();
   await expect(machine.getByRole("button", { name: "Remove arugula.nvim" })).toBeVisible();
-  // Appearance's controls in place (Arugula #1318), Preferences a part of it.
-  const look = settings.locator('[data-settings-section="appearance"]');
-  await expect(look.locator("[data-appearance-controls]")).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Appearance…" })).toHaveCount(0);
-  await expect(look.locator('[data-settings-part="preferences"]').getByRole("switch", { name: "Tips", exact: true })).toBeChecked();
+  await opened(page, "machine").click();
+  await expect(page).toHaveURL(/#settings$/);
+  await expect(machine).toBeHidden();
 
   // A daemon's own page has no account, so no second way in.
   await expect(page.locator("[data-account-menu]")).toHaveCount(0);
@@ -34,18 +40,12 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   await expect(settings.locator("[data-settings-in-app]")).toHaveCount(0);
 
   // A switch says what it now is, without leaving the page.
-  const tips = settings.getByRole("switch", { name: "Tips", exact: true });
+  const tips = await setting(page, "switch", "Tips");
+  await expect(opened(page, "preferences")).toHaveAttribute("aria-expanded", "true");
   await tips.click();
   await expect(tips).not.toBeChecked();
   await tips.click();
   await expect(tips).toBeChecked();
-
-  // A theme applies at once, and Reset goes back to nothing picked.
-  await look.locator('[data-theme-choice="light"]').click();
-  await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
-  await look.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(page.locator("html")).not.toHaveAttribute("data-scheme", "light");
-  await expect(page.locator("[data-appearance]")).toHaveCount(0);
 
   await closeSettingsPage(page);
   await expect(page).not.toHaveURL(/#settings/);
@@ -54,26 +54,22 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
 test("#settings=<section> opens at it, and a reload stays there", async ({ page }) => {
   await reset(page);
   await page.goto("/#settings=machine");
-  const heading = page.locator("#machine-h");
-  await expect(heading).toBeInViewport();
+  await expect(opened(page, "machine")).toHaveAttribute("aria-expanded", "true");
+  await expect(row(page, "machine")).toBeInViewport();
   await page.reload();
-  await expect(heading).toBeInViewport();
-  // The index keeps the page's own address, not a bare `#machine`.
-  await expect(page.locator(".settings-index a", { hasText: "Appearance" })).toHaveAttribute("href", "#settings=appearance");
-  // Preferences is part of Appearance now: its old link opens there.
-  await expect(page.locator(".settings-index a", { hasText: "Preferences" })).toHaveCount(0);
-  // A fresh load (a hash change alone doesn't reopen the page at a section).
-  await page.goto("/#settings=preferences");
+  await expect(opened(page, "machine")).toHaveAttribute("aria-expanded", "true");
+  // Appearance is Look's now: its old link opens Preferences.
+  await page.goto("/#settings=appearance");
   await page.reload();
-  await expect(page.locator("#appearance-h")).toBeInViewport();
+  await expect(opened(page, "preferences")).toHaveAttribute("aria-expanded", "true");
 });
 
 test("This device and All your devices are one section, Phones and browsers, and their old links land on it", async ({ page }) => {
   await reset(page);
   for (const old of ["device", "all-devices"]) {
     await page.goto(`/#settings=${old}`);
-    await expect(page.locator("#push-h")).toHaveText("Phones and browsers");
-    await expect(page.locator("#push-h")).toBeInViewport();
+    await expect(row(page, "push").locator("[data-row-title]")).toHaveText("Phones and browsers");
+    await expect(opened(page, "push")).toHaveAttribute("aria-expanded", "true");
   }
 });
 
@@ -108,7 +104,7 @@ test("Remote sessions lists who came through Arugula cloud, one row each", async
   );
   await page.goto("/#settings=remote-sessions");
   const section = page.locator('[data-settings-section="remote-sessions"]');
-  await expect(section.locator("h2")).toHaveText("Remote sessions3");
+  await expect(row(page, "remote-sessions").locator("[data-row-title]")).toHaveText("Remote sessions 3");
   const rows = section.locator("[data-remote-session]");
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(0)).toHaveAttribute("data-remote-session", "open");
@@ -117,8 +113,6 @@ test("Remote sessions lists who came through Arugula cloud, one row each", async
   await expect(rows.nth(1)).toContainText("for 12m");
   await expect(rows.nth(2)).toContainText("until the daemon stopped");
   await expect(section.locator("[data-remote-input]")).toHaveAttribute("data-remote-input", "off");
-  // The index lists it with the page's other sections.
-  await expect(page.locator(".settings-index a", { hasText: "Remote sessions" })).toHaveAttribute("href", "#settings=remote-sessions");
 });
 
 test("a daemon without the log's route shows no Remote sessions, and no error", async ({ page }) => {
@@ -126,7 +120,7 @@ test("a daemon without the log's route shows no Remote sessions, and no error", 
   await page.route("**/api/remote-sessions", (r) => r.fulfill({ status: 404, json: { error: "no such route" } }));
   await page.goto("/#settings=machine");
   await expect(page.locator('[data-settings-section="machine"]')).toBeVisible();
-  await expect(page.locator('[data-settings-section="remote-sessions"]')).toHaveCount(0);
+  await expect(row(page, "remote-sessions")).toHaveCount(0);
   await expect(page.locator("[data-settings-page] .error")).toHaveCount(0);
 });
 
@@ -154,7 +148,7 @@ test.describe("on a phone", () => {
     await sheetTab(page, "More");
     await page.locator(".sheet [data-open-settings]").click();
     const settings = page.locator("[data-settings-page]");
-    await expect(settings.locator("[data-appearance-controls]")).toBeVisible();
+    await expect(settings.locator('[data-settings-row="preferences"]')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await settings.locator("[data-open-panes]").click();
     await expect(settings).toHaveCount(0);
@@ -171,8 +165,8 @@ test("on control's page, old #settings links land on the app's Settings, but Pho
   await page.route(`${APP}/**`, (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><title>the app</title><p data-app-stand-in>the app</p>" }));
   for (const [hash, path] of [
     ["#settings", "/settings"],
-    ["#settings=appearance", "/settings/you/appearance"],
-    ["#settings=preferences", "/settings/you/appearance"],
+    ["#settings=appearance", "/settings/you/preferences"],
+    ["#settings=preferences", "/settings/you/preferences"],
     ["#settings=account", "/settings/you/security"],
     // Control's Machines… and Shared Docs… dialogs are the app's too.
     ["#devices", "/settings/team/personal/machines"],

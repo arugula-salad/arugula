@@ -12,7 +12,7 @@ import { PageGuard } from "../shared/ui/guard";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { PlaceViews, WithRail } from "./rail";
-import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
+import { homes, movedHome, names, resolve, roomElsewhere, teamProject } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
@@ -42,7 +42,6 @@ import { AllBoardsPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
-import { TeamPage } from "./pages/team";
 import { MachinesPage } from "./pages/machines";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
@@ -176,7 +175,7 @@ function body(r: Route, lost: string | null) {
     case "deploy":
       return <DeployPage id={r.deploy} />;
     case "team":
-      return <TeamPage team={r.team} tab={r.tab} />;
+      return <p class="platform-section dim">Finding it…</p>;
     case "machines":
       return <MachinesPage project={r.project} at={r.at} />;
     default:
@@ -364,6 +363,11 @@ function movedPage(r: Route): Route {
     const here = currentProject();
     const project = here && session.project(here) ? here : session.projects[0]?.id;
     if (project) return { page: "boards", project };
+  }
+  // A team's old page is its project's chat (Lift 7), once the page knows it.
+  if (r.page === "team") {
+    const project = teamProject(r.team);
+    if (project) return { page: "chat", project };
   }
   // Build's list of panes (#1083) is the Machines page (Arugula #1346).
   if (r.page === "machines" && r.at.at === "panes") return { ...r, at: { at: "machines", ...(r.at.agents ? { agents: true } : {}) } };

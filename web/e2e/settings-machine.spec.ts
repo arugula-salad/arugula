@@ -1,17 +1,19 @@
-// Settings › Machines in the app (Arugula #1107): four sections, each
-// saying what's set. Access and sharing (who reaches it, Guest SSH access,
+// A machine's settings in the app (Arugula #1107, Lift 7 #1487), at
+// `/settings/machine/...`: Machines', so no scope tab, the page's heading
+// "Machine settings". Four sections in one list, a kit row each saying
+// what's set and opening in place at its address (none open until the
+// address names one). Access and sharing (who reaches it, Guest SSH access,
 // Remote typing, read-only, who reached it through Arugula cloud) and
 // Agents (its agents' grants, one editable part per machine, and its
 // permission rules), then its name and Advanced (usage and crash reports,
-// developer settings, removing arugula.nvim). The machine's
-// own are read from it through the app's client to it. A machine the app
-// can't reach says so in its rows, and in one note over each section, its
-// parts dimmed under it (Arugula #1314). On the app
-// frame's fixture page (app-frame-page.tsx), served on the suite daemon's
-// origin, which stands for the machine `SUITE`; the platform's grants and
-// the hub's rename are this spec's. Who reached it through Arugula cloud
-// and the machine's old addresses on control's `#settings` are here too
-// (Arugula #1110).
+// developer settings, removing arugula.nvim). The machine's own are read
+// from it through the app's client to it. A machine the app can't reach
+// says so in its rows, and in one note over each section, its parts dimmed
+// under it (Arugula #1314). On the app frame's fixture page
+// (app-frame-page.tsx), served on the suite daemon's origin, which stands
+// for the machine `SUITE`; the platform's grants and the hub's rename are
+// this spec's. Who reached it through Arugula cloud and the machine's old
+// addresses on control's `#settings` are here too (Arugula #1110).
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 import { panes, reset } from "./helpers";
@@ -55,7 +57,10 @@ async function open(page: Page, path: string, renames: boolean) {
 }
 
 const row = (page: Page, id: string) => page.locator(`[data-settings-row="${id}"]`);
-const said = (page: Page, id: string) => row(page, id).locator(".list-row-detail");
+/** A row's line: a click opens it, or closes it where it's open. */
+const line = (page: Page, id: string) => row(page, id).locator(":scope > button[aria-expanded]");
+/** What a row says is set. */
+const said = (page: Page, id: string) => expect(row(page, id));
 const section = (page: Page, id: string) => page.locator(`[data-settings-section="${id}"]`);
 const part = (page: Page, id: string) => page.locator(`[data-settings-part="${id}"]`);
 
@@ -64,14 +69,21 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   // The first machine, picked.
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
   await expect(page.locator('[data-settings-pick="machine"]')).toHaveValue(SUITE);
-  // Four, in two bands.
-  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Access and sharing/, /^Agents/, /^Name/, /^Advanced/]);
+  // Machines', not a scope: its own heading, no scope tabs.
+  await expect(page.locator("h1")).toHaveText("Machine settings");
+  await expect(page.locator("[data-settings-scopes]")).toHaveCount(0);
+  // Four, in one list, none open.
+  await expect(page.locator("[data-settings-row] > button [data-row-title]")).toHaveText([/^Access and sharing/, /^Agents/, /^Name/, /^Advanced/]);
+  await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
   // What's set, read from the machine: each part's, in a line.
-  await expect(said(page, "access")).toHaveText(/^(Only you|You \+ .+) · Guest SSH (on|off)/);
-  await expect(said(page, "agents")).toHaveText(/^No grants yet · (No rules yet|\d+ rules?)$/);
-  await expect(said(page, "advanced")).toHaveText(/^(On|Off|Off on this machine|Not answered yet) · (All off|\d+ of \d+ on)$/);
-  await expect(said(page, "name")).toHaveText("studio-mini");
+  const S = "data-settings-summary";
+  await said(page, "access").toHaveAttribute(S, /^(Only you|You \+ .+) · Guest SSH (on|off)/);
+  await said(page, "agents").toHaveAttribute(S, /^No grants yet · (No rules yet|\d+ rules?)$/);
+  await said(page, "advanced").toHaveAttribute(S, /^(On|Off|Off on this machine|Not answered yet) · (All off|\d+ of \d+ on)$/);
+  await said(page, "name").toHaveAttribute(S, "studio-mini");
+  await expect(section(page, "access")).toBeHidden();
+  await line(page, "access").click();
+  await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/access$`));
   await expect(section(page, "access")).toBeVisible();
   await expect(part(page, "who").locator("[data-access-kind]")).toBeVisible();
   await expect(section(page, "access").locator("[data-settings-part]")).toHaveText([/^Who can reach it/, /^Guest SSH access/, /^Remote typing/, /^Remote sessions/]);
@@ -83,17 +95,18 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(typing.locator("input, button")).toHaveCount(0);
 
   // Guest SSH: the dialog's switch, here; its row follows.
-  const was = await said(page, "access").textContent();
+  const was = await row(page, "access").getAttribute(S);
   const ssh = part(page, "guest-ssh").locator("[data-sharing-guest-ssh]");
   const on = await ssh.isChecked();
   await ssh.click();
-  await expect(said(page, "access")).toContainText(on ? "Guest SSH off" : "Guest SSH on");
+  await said(page, "access").toHaveAttribute(S, new RegExp(on ? "Guest SSH off" : "Guest SSH on"));
   await ssh.click();
-  await expect(said(page, "access")).toHaveText(was!);
+  await said(page, "access").toHaveAttribute(S, was!);
 
   // Advanced: its reports and developer settings.
-  await row(page, "advanced").click();
+  await line(page, "advanced").click();
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/advanced$`));
+  await expect(section(page, "access")).toBeHidden();
   await expect(section(page, "advanced").locator("[data-settings-part]")).toHaveText([/^Usage and crash reports/, /^Developer settings/, /^Remove arugula.nvim/]);
   await expect(part(page, "developer").locator("[data-flag]").first()).toBeVisible();
   // Remove arugula.nvim, which was the machine menu's alone: it says what it did, in place.
@@ -101,26 +114,34 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(part(page, "nvim").locator("[data-nvim-removed]")).toHaveText(/^(No copy of arugula.nvim that Arugula installed is on this machine|Removed arugula.nvim from .+)$/);
 
   // Agents: its grants, a row per project and your DMs, then its permission rules; a switch gives, and the row says so.
-  await row(page, "agents").click();
+  await line(page, "agents").click();
+  await expect(section(page, "agents")).toBeVisible();
   await expect(section(page, "agents").locator("[data-settings-part]")).toHaveText([/^Agents' grants/, /^Permission rules/]);
   const grants = part(page, "grants");
   await expect(grants.locator("tbody tr")).toHaveCount(4);
   await grants.locator(`[data-agent-cell="${SUITE}/${P}/threads"]`).click();
-  await expect(said(page, "agents")).toHaveText(/^1 project · /);
+  await said(page, "agents").toHaveAttribute(S, /^1 project · /);
   await expect(grants.locator(`[data-agent-cell="${SUITE}/${P}/threads"]`)).toBeChecked();
 
   // Its name, on Arugula cloud.
-  await row(page, "name").click();
+  await line(page, "name").click();
   await section(page, "name").locator("[data-machine-rename-name]").fill("studio-mini-2");
   await section(page, "name").locator("[data-machine-rename]").click();
-  await expect(said(page, "name")).toHaveText("studio-mini-2");
+  await said(page, "name").toHaveAttribute(S, "studio-mini-2");
+  // The open one's line closes it, back at the machine's address.
+  await line(page, "name").click();
+  await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
+  await expect(section(page, "name")).toBeHidden();
   await expect(page.locator('[data-settings-pick="machine"] option:checked')).toHaveText("studio-mini-2");
 });
 
 test("a machine the app can't reach explains itself in place, its parts dimmed; its grants and name are Arugula cloud's", async ({ page }) => {
   // Arugula cloud that fails a rename: a bare 404.
   await open(page, `/settings/machine/${AWAY}`, false);
-  for (const id of ["access", "advanced"]) await expect(said(page, id)).toHaveText("Can't reach it from here");
+  const S = "data-settings-summary";
+  for (const id of ["access", "advanced"]) await said(page, id).toHaveAttribute(S, "Can't reach it from here");
+  await line(page, "access").click();
+  await expect(section(page, "access")).toBeVisible();
   // One note over the section: why, and what to do. No way off to the machine's page.
   const note = section(page, "access").locator("[data-machine-away]");
   await expect(note).toHaveCount(1);
@@ -131,22 +152,22 @@ test("a machine the app can't reach explains itself in place, its parts dimmed; 
   const dimmed = section(page, "access").locator("[data-machine-away-parts]");
   await expect(dimmed).toHaveAttribute("inert", "");
   await expect(dimmed.locator("[data-settings-part]")).toHaveText(["Who can reach it", "Guest SSH access", "Remote typing", "Remote sessions"]);
-  await row(page, "advanced").click();
+  await line(page, "advanced").click();
   await expect(section(page, "advanced").locator("[data-machine-away]")).toContainText("Can't reach zoo-box from here");
   await expect(section(page, "advanced").locator("[data-machine-away-parts] [data-settings-part]")).toHaveText(["Usage and crash reports", "Developer settings", "Remove arugula.nvim"]);
   // Agents: its grants work as usual; its permission rules are the machine's, dimmed.
-  await expect(said(page, "agents")).toHaveText("No grants yet");
-  await row(page, "agents").click();
+  await said(page, "agents").toHaveAttribute(S, "No grants yet");
+  await line(page, "agents").click();
   await expect(section(page, "agents").locator("[data-machine-away]")).toContainText("grants are Arugula cloud's");
   await expect(part(page, "grants").locator("tbody tr")).toHaveCount(4);
   await expect(section(page, "agents").locator("[data-machine-away-parts] [data-settings-part]")).toHaveText(["Permission rules"]);
-  await row(page, "name").click();
+  await line(page, "name").click();
   await section(page, "name").locator("[data-machine-rename-name]").fill("near-box");
   await section(page, "name").locator("[data-machine-rename]").click();
   // It says so, with no ↗ row to control's page in its place.
-  await expect(section(page, "name").locator(".control-error")).toHaveText("Request failed (404)");
+  await expect(section(page, "name")).toContainText("Request failed (404)");
   await expect(section(page, "name").locator("[data-settings-control]")).toHaveCount(0);
-  await expect(said(page, "name")).toHaveText("zoo-box");
+  await said(page, "name").toHaveAttribute(S, "zoo-box");
 });
 
 test("the old address of Agents on your machines opens the first machine's Agents", async ({ page }) => {
@@ -186,7 +207,7 @@ test("who reached the machine through Arugula cloud is a part of Access and shar
   );
   await open(page, `/settings/machine/${SUITE}/remote-sessions`, false);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/access$`));
-  await expect(said(page, "access")).toContainText("2 sessions, 1 open");
+  await said(page, "access").toHaveAttribute("data-settings-summary", /2 sessions, 1 open/);
   await expect(part(page, "remote-sessions").locator("[data-remote-session]")).toHaveCount(2);
   // Whether they may type is Remote typing's to say, beside it.
   await expect(part(page, "remote-sessions").locator("[data-remote-input]")).toHaveCount(0);
@@ -198,17 +219,17 @@ test("a machine's old Settings addresses land on Machines", async ({ page }) => 
   // the list names no machine, so Machines opens at the first.
   await open(page, `/p/${P}/machines#settings=machine`, false);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
-  await expect(section(page, "access")).toBeVisible();
+  await expect(row(page, "access")).toBeVisible();
   // Back doesn't land on the old address again.
   await page.goBack();
   await expect(page).not.toHaveURL(/#settings/);
   await page.goto(`/p/${P}/machines#settings=remote-sessions`);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/access$`));
-  // Another of control's sections: You's; account is Sign-in and security now, Preferences is Appearance's.
+  // Another of control's sections: You's; account is Sign-in and security now, Preferences its own.
   await page.goto(`/p/${P}/machines#settings=account`);
   await expect(page).toHaveURL(/\/settings\/you\/security$/);
   await page.goto(`/p/${P}/machines#settings=preferences`);
-  await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
+  await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
   // On a machine's page, the old address lands on the machine shown. (Its menu's
   // Settings… goes the same way; with one machine here, the page draws no machine menu.)
   await reset(page);

@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
-import { active, closeContexts, menuItem, paneEl, panes, ready, reset, run, openSettingsPage, closeSettingsPage } from "./helpers";
+import { active, closeContexts, menuItem, paneEl, panes, ready, reset, run, openSettingsPage, closeSettingsPage, setting } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
 import "./local-token";
@@ -111,13 +111,13 @@ const pref = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getIte
 
 /** Settings › Editor's row for `label` is checked (or not). */
 async function settingsShows(page: Page, label: "VS Code" | "nvim" | "Ask each time", checked: boolean) {
-  await expect((await openSettingsPage(page)).getByRole("radio", { name: label, exact: true })).toBeChecked({ checked });
+  await expect((await setting(page, "radio", label))).toBeChecked({ checked });
   await closeSettingsPage(page);
 }
 
 /** Settings › Editor › `label`. */
 async function choose(page: Page, label: "VS Code" | "nvim" | "Ask each time") {
-  await (await openSettingsPage(page)).getByRole("radio", { name: label, exact: true }).click();
+  await (await setting(page, "radio", label)).click();
   await closeSettingsPage(page);
 }
 
@@ -165,8 +165,8 @@ async function nvimIn(page: Page, pane: PaneId, file: string) {
 test("Settings › Editor is there with no Labs flag: VS Code until chosen, and kept", async ({ page }) => {
   await reset(page);
   expect(existsSync(join(state, "flags.json"))).toBe(false);
+  await expect(await setting(page, "radio", "VS Code")).toBeChecked();
   const settings = await openSettingsPage(page);
-  await expect(settings.getByRole("radio", { name: "VS Code", exact: true })).toBeChecked();
   await expect(settings.getByRole("radio", { name: "Ask each time", exact: true })).not.toBeChecked();
   await settings.getByRole("radio", { name: "nvim", exact: true }).click();
   expect(await pref(page)).toBe("nvim");
@@ -353,7 +353,7 @@ test("+ Pane › Editor: Edit in nvim sets the Editor preference, and unticking 
 
 test("Ask each time comes back after unticking Edit in nvim", async ({ page }) => {
   await reset(page);
-  await (await openSettingsPage(page)).getByRole("radio", { name: "Ask each time", exact: true }).click();
+  await (await setting(page, "radio", "Ask each time")).click();
   await closeSettingsPage(page);
   await page.locator("[data-add-pane]").first().click();
   const drawer = page.locator("[data-add-pane-drawer]");

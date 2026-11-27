@@ -180,8 +180,8 @@ const tick = (page: Page, list: string, key: string) => row(page, list, key).loc
 test.use({ viewport: { width: 1280, height: 900 } });
 
 test("a board, its repo and a Doc move into a new team project, and a machine's Doc after them", async ({ page }) => {
-  const seen = await open(page, `/p/${ME}/settings`, () => moved);
-  // The owner's way in: Settings, General.
+  const seen = await open(page, `/p/${ME}/settings#general`, () => moved);
+  // The owner's way in: Settings, General (its row, open at its address).
   await page.locator("[data-project-move-some]").click();
   await expect(page).toHaveURL(new RegExp(`/p/${ME}[^/]*/settings/move$`));
   await expect(page.locator("[data-move-page] h1")).toHaveText("Move to project");
@@ -260,7 +260,7 @@ test("something changed since the plan: nothing moves, and the new plan shows", 
 });
 
 test("only the project's owner sees the way in, or the page", async ({ page }) => {
-  await open(page, "/p/prj_aaaa0003/settings", () => moved);
+  await open(page, "/p/prj_aaaa0003/settings#general", () => moved);
   await expect(page.locator("[data-project-general]")).toBeVisible();
   await expect(page.locator("[data-project-move-some]")).toHaveCount(0);
   await page.goto("/p/prj_aaaa0003/settings/move");

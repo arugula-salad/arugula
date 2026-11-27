@@ -1,20 +1,24 @@
-// Settings (Arugula #1104): one page, four scopes (You, Machines,
-// Project, Team and billing), each a list of its sections with what's set,
-// and the chosen one's controls beside it. The section is the address, so a
-// link opens it; the old addresses (a project's settings, Personal's, a
-// team's Settings tab, `#section`) land in their scope. On a phone, the
-// list, then a section full width with a way back. The Project scope's 18
-// sections are 11 rows in a flat list (Arugula #1105, #1323), and an old section's
-// address lands on the row it's part of. You is four sections (Arugula
-// #1320), each old one's address landing on the one that holds it; what's
-// on control's page until the single origin (aru-141) is a ↗ row to it
-// there, and Help is the palette's. Sign-in and security is control's
-// dialog drawn in place (Arugula #1311), adding or removing a passkey a ↗
-// row; what every device is pushed about is set in place (Arugula #1310),
-// this device's push a ↗ row, and your devices' list (Arugula #1327) is
-// `/api/push/subscriptions`. A read that fails says so, with no ↗ row in
-// its place. On #971's fixture page (move-to-project-page.tsx): the
-// platform's answers are this spec's.
+// Settings (Arugula #1104, Lift 7 #1487): one page, three scopes in its
+// tabs (You, Project, Team; a machine's settings are Machines', with no tab),
+// each one list of its sections, a row each with what's set, opening in
+// place. The section is the address: a link opens its row, a click on a
+// closed row goes to its address and opens it, and on the open one goes back
+// to the scope's and closes it; with no section named, every row is closed.
+// The old addresses (a project's settings, Personal's, a team's, `#section`)
+// land in their scope. On a phone it's the same list, opening in place. The
+// Project scope's sections are six rows in a flat list (Arugula #1105,
+// #1323), with CI alerts, Runs and workspaces and Claude spend parts of
+// Agents, and an old section's address lands on the row it's part of. You is
+// four sections (Arugula #1320): Notifications, Preferences, Sign-in and
+// security, Connected apps and agents; how it looks is Look's (`s`), so
+// Appearance's address lands on Preferences. What's on control's page until
+// the single origin (aru-141) is a ↗ row to it there, and Help is the
+// palette's. Sign-in and security is control's dialog drawn in place
+// (Arugula #1311), adding or removing a passkey a ↗ row; what every device
+// is pushed about is set in place (Arugula #1310), this device's push a ↗
+// row, and your devices' list (Arugula #1327) is `/api/push/subscriptions`.
+// A read that fails says so, with no ↗ row in its place. On #971's fixture
+// page (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -56,34 +60,51 @@ async function open(page: Page, path: string, more?: () => Promise<unknown>) {
 }
 
 const row = (page: Page, id: string) => page.locator(`[data-settings-row="${id}"]`);
+/** A row's line: a click opens it, or closes it where it's open. */
+const line = (page: Page, id: string) => row(page, id).locator(":scope > button[aria-expanded]");
 const section = (page: Page, id: string) => page.locator(`[data-settings-section="${id}"]`);
+const tab = (page: Page, id: string) => page.locator(`[data-settings-scopes] [data-tab="${id}"]`);
+const rowIds = (page: Page) => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
 
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test("You: each section a row with what's set, the first beside the list, and a row opens its own at its address", async ({ page }) => {
+  test("You: each section a row with what's set, none open until the address names one, and a row's line opens it there and closes it", async ({ page }) => {
     await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => json(r, { chat: true, machines: true, projects: false })));
-    await expect(page.locator('[data-settings-scope="you"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("h1")).toHaveText("Settings");
+    await expect(tab(page, "you")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-settings-scopes] [data-tab]")).toHaveText(["You", "Project", "Team"]);
     // What's set, read from what each section's parts load, in their order.
-    await expect(row(page, "notifications").locator(".list-row-detail")).toHaveText("Pushed: Chat, Machines · Mentions only · not paused · Weeknights 10 PM – 8 AM · New York");
-    await expect(row(page, "connected").locator(".list-row-detail")).toHaveText("None · 1 token");
+    await expect(row(page, "notifications")).toHaveAttribute("data-settings-summary", "Pushed: Chat, Machines · Mentions only · not paused · Weeknights 10 PM – 8 AM · New York");
+    await expect(row(page, "connected")).toHaveAttribute("data-settings-summary", "None · 1 token");
     // Your machines' agents are each machine's, under Machines (Arugula #1107).
     await expect(row(page, "agents")).toHaveCount(0);
-    // The first is shown, the rest wait; its help is under its heading, with no More to open.
-    await expect(row(page, "notifications")).toHaveAttribute("aria-current", "true");
-    await expect(section(page, "notifications")).toBeVisible();
+    // No section in the address: every row closed.
+    await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
+    await expect(section(page, "notifications")).toBeHidden();
     await expect(section(page, "connected")).toBeHidden();
-    await expect(page.locator("details.settings-more")).toHaveCount(0);
+    // A row's line opens it at its address; its help is under the line.
+    await line(page, "notifications").click();
+    await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
+    await expect(line(page, "notifications")).toHaveAttribute("aria-expanded", "true");
+    await expect(section(page, "notifications")).toBeVisible();
     // Notifications: this device, what's pushed, how loud chat is, quiet hours (words that notify you, once chat is on).
     await expect(section(page, "notifications").locator("[data-settings-part]")).toHaveCount(4);
     expect(await section(page, "notifications").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual(["this-device", "push", "chat-notify", "quiet-hours"]);
-    await row(page, "connected").click();
+    // Another's line opens that one, and the first closes.
+    await line(page, "connected").click();
     await expect(page).toHaveURL(/\/settings\/you\/connected$/);
     await expect(section(page, "connected")).toBeVisible();
     await expect(section(page, "notifications")).toBeHidden();
-    await expect(row(page, "connected")).toHaveAttribute("aria-current", "true");
-    await expect(section(page, "connected").locator("h2")).toHaveText("Connected apps and agents");
+    await expect(line(page, "connected")).toHaveAttribute("aria-expanded", "true");
+    await expect(line(page, "notifications")).toHaveAttribute("aria-expanded", "false");
+    await expect(row(page, "connected").locator("[data-row-title]")).toHaveText("Connected apps and agents");
     expect(await section(page, "connected").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual(["linked", "tokens"]);
+    // The open one's line closes it, back at the scope's address.
+    await line(page, "connected").click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(section(page, "connected")).toBeHidden();
+    await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
     // A link opens its section, and an old one's address, by path or `#section`, lands on the one that holds it now.
     await page.goto("/settings/you/tokens");
     await expect(page).toHaveURL(/\/settings\/you\/connected$/);
@@ -91,23 +112,20 @@ test.describe("on a computer", () => {
     await page.goto("/settings#quiet-hours");
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
     await expect(section(page, "notifications").locator('[data-settings-part="quiet-hours"]')).toBeVisible();
-    // The old Agents on your machines' address opens Machines' Agents (Arugula #1107).
+    // The old Agents on your machines' address opens a machine's settings (Arugula #1107): no tab of their own.
     await page.goto("/settings#agents");
-    await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page).toHaveURL(/\/settings\/machine/);
+    await expect(page.locator("h1")).toHaveText("Machine settings");
+    await expect(page.locator("[data-settings-scopes]")).toHaveCount(0);
   });
 
   test("You: control's device and preference rows join it in one flat list, only what control's origin keeps is a ↗ row, and there's no second index or Help", async ({ page }) => {
     // A hub that fails push's prefs.
     await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => r.fulfill({ status: 404, body: "" })));
-    // One flat list: no band headings over the sections.
-    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-    const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "appearance", "security", "connected"]);
-    // Appearance in one place: its controls drawn in its own section, no dialog to open.
-    await expect(page.locator("[data-appearance-controls]")).toHaveCount(1);
-    await expect(section(page, "appearance").locator("[data-appearance-controls]")).toHaveCount(1);
+    await expect.poll(() => rowIds(page)).toEqual(["notifications", "preferences", "security", "connected"]);
+    // How it looks is Look's: no Appearance here, nor a way to its dialog.
+    await expect(page.locator("[data-appearance-controls]")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Appearance…" })).toHaveCount(0);
-    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device · Tips on · opens in VS Code$/);
     // No index of control's sections, and no Help.
     await expect(section(page, "elsewhere")).toHaveCount(0);
     await expect(page.locator("[data-settings-elsewhere]")).toHaveCount(0);
@@ -116,9 +134,9 @@ test.describe("on a computer", () => {
 
     // What's on control's page until the single origin: a ↗ row each, at
     // its dialog there. No Add a phone or browser (#1004), no Machines or
-    // Teams (Team and billing has them), and no Shared Docs (Docs has
-    // them). Machines and teams' old address lands on Sign-in and security,
-    // whose one ↗ row is adding or removing a passkey.
+    // Teams (Team has them), and no Shared Docs (Docs has them). Machines
+    // and teams' old address lands on Sign-in and security, whose one ↗ row
+    // is adding or removing a passkey.
     const origin = new URL(page.url()).origin;
     await expect(page.locator('[data-settings-control="teams"]')).toHaveCount(0);
     await page.goto("/settings/you/machines-teams");
@@ -128,11 +146,11 @@ test.describe("on a computer", () => {
     await expect(out).toHaveAttribute("href", `${origin}/#account`);
     // Notifications, when the hub fails push's prefs: it says so, and this
     // device's ↗ row to control's page is the only one.
-    await row(page, "notifications").click();
+    await line(page, "notifications").click();
     const push = section(page, "notifications").locator('[data-settings-control="push"]');
     await expect(push).toHaveCount(1);
     await expect(push).toHaveAttribute("href", `${origin}/#settings=push`);
-    await expect(page.locator('[data-settings-part="push"] .control-error')).toHaveText("Request failed (404)");
+    await expect(page.locator('[data-settings-part="push"]')).toContainText("Request failed (404)");
   });
 
   test("You: Sign-in and security draws control's dialog in place; adding or removing a passkey and linking GitHub open control's page (Arugula #1311)", async ({ page }) => {
@@ -163,8 +181,9 @@ test.describe("on a computer", () => {
     // Sign-in and machines' old address lands here.
     await expect(page).toHaveURL(/\/settings\/you\/security$/);
     const sec = section(page, "security");
-    await expect(sec.locator("h2")).toHaveText("Sign-in and security");
-    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("1 passkey · GitHub linked · 3 sign-ins");
+    await expect(line(page, "security")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "security").locator("[data-row-title]")).toHaveText("Sign-in and security");
+    await expect(row(page, "security")).toHaveAttribute("data-settings-summary", "1 passkey · GitHub linked · 3 sign-ins");
     // Passkeys: a list, with nothing to remove here; adding or removing one is on control's page, at the top.
     const origin = new URL(page.url()).origin;
     await expect(sec.locator("[data-passkey-name]")).toHaveText(["iCloud Keychain"]);
@@ -199,8 +218,8 @@ test.describe("on a computer", () => {
   test("You: a hub that fails /api/me/* says so in Sign-in and security, with no ↗ row to control's dialog in its place", async ({ page }) => {
     await open(page, "/settings/you/security", () => page.route(/\/api\/me\//, (r) => r.fulfill({ status: 404, body: "" })));
     const sec = section(page, "security");
-    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("Couldn't load");
-    await expect(sec.locator(".control-error").first()).toContainText("404");
+    await expect(row(page, "security")).toHaveAttribute("data-settings-summary", "Couldn't load");
+    await expect(sec).toContainText("404");
     await expect(sec.locator("[data-settings-control]")).toHaveText([/^Add or remove a passkey/]);
   });
 
@@ -220,15 +239,15 @@ test.describe("on a computer", () => {
     // Phones and browsers' old address lands on Notifications, which holds it now.
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
     const push = page.locator('[data-settings-part="push"]');
-    const detail = row(page, "notifications").locator(".list-row-detail");
-    await expect(detail).toHaveText(/^Pushed: Chat, Machines · /);
+    const detail = row(page, "notifications");
+    await expect(detail).toHaveAttribute("data-settings-summary", /^Pushed: Chat, Machines · /);
     const kinds = push.locator("[data-push-kind]");
     await expect(kinds).toHaveCount(3);
     await expect(push.locator('[data-push-kind="chat"]')).toBeChecked();
     await expect(push.locator('[data-push-kind="projects"]')).not.toBeChecked();
     await push.locator('[data-push-kind="projects"]').click();
     await expect(push.locator('[data-push-kind="projects"]')).toBeChecked();
-    await expect(detail).toHaveText(/^Pushed: Everything · /);
+    await expect(detail).toHaveAttribute("data-settings-summary", /^Pushed: Everything · /);
     expect(sent).toEqual([{ projects: true }]);
     // This device, first: one ↗ row to control's push settings.
     await expect(push.locator("[data-settings-control]")).toHaveCount(0);
@@ -289,7 +308,7 @@ test.describe("on a computer", () => {
     await open(page, "/settings/you/notifications");
     await expect(page.locator('[data-settings-part="this-device"] [data-settings-control="push"]')).toBeVisible();
     await expect(page.locator("[data-push-devices]")).toHaveCount(0);
-    await expect(page.locator('[data-settings-part="this-device"] .control-error')).toHaveCount(0);
+    await expect(page.locator('[data-settings-part="this-device"]')).not.toContainText("Request failed");
   });
 
   test("Status: on hosted Arugula your picture's menu links status.arugula.io in a new tab, and Settings doesn't; on a control you run there's none (Arugula #1176, #1320)", async ({ page, context }) => {
@@ -297,14 +316,15 @@ test.describe("on a computer", () => {
     await context.route(/^https:\/\/[^/]*arugula\.io\//, (r) => r.fulfill({ contentType: "text/html", body: "<title>Status</title>" }));
     const menu = async () => {
       await page.locator("[data-rail] [data-signed-in-as]").click();
-      return page.locator(".menu-item");
+      return page.getByRole("menuitem");
     };
     // A control you run yourself (this page's own hub): no Status anywhere.
     await open(page, "/settings/you/security");
     await expect(section(page, "security")).toBeVisible();
     await expect(row(page, "status-page")).toHaveCount(0);
     await expect(page.locator("[data-status-page]")).toHaveCount(0);
-    await expect(await menu()).toHaveText(["Send feedback…", "Sign out of this page"]);
+    // Each scope of Settings, then the rest (Lift 7).
+    await expect(await menu()).toHaveText(["Your settings", "Project settings", "Team settings", "Send feedback…", "Sign out of this page"]);
     await page.keyboard.press("Escape");
 
     // Hosted Arugula: control says it's the hub on every answer on the app's host.
@@ -314,59 +334,57 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You has no Status: its old address is You's, at its first section.
-    await expect(page).not.toHaveURL(/status-page/);
-    const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "appearance", "security", "connected"]);
+    // Settings › You has no Status: its old address is You's, with no row open.
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect.poll(() => rowIds(page)).toEqual(["notifications", "preferences", "security", "connected"]);
+    await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
     await expect(page.locator("[data-status-page]")).toHaveCount(0);
-    // The menu: Status first, opening a tab that can't reach back into this one.
+    // The menu: Status after Settings' scopes, opening a tab that can't reach back into this one.
     const items = await menu();
-    await expect(items).toHaveText([/^Status/, "Send feedback…", "Sign out of this page"]);
+    await expect(items).toHaveText(["Your settings", "Project settings", "Team settings", /^Status/, "Send feedback…", "Sign out of this page"]);
     const tab = context.waitForEvent("page");
-    await page.locator(".menu-item[data-status-page]").click();
+    await page.getByRole("menuitem").and(page.locator("[data-status-page]")).click();
     const status = await tab;
     await expect(status).toHaveURL("https://status.arugula.io/");
     expect(await status.evaluate(() => window.opener)).toBeNull();
     await expect(page).not.toHaveURL(/status-page/);
   });
 
-  test("You: Appearance draws its controls in place, Preferences under them, and its summary says what's set", async ({ page }) => {
-    // Preferences' old address lands on Appearance, which holds it now.
-    await open(page, "/settings/you/preferences");
-    await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
-    const look = section(page, "appearance");
-    await expect(look).toBeVisible();
-    await expect(look.locator("#appearance-h")).toHaveText("Appearance");
-    const detail = row(page, "appearance").locator(".list-row-detail");
-    // A theme applies at once, and the row says it.
-    await look.locator('[data-theme-choice="light"]').click();
-    await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
-    await expect(detail).toHaveText(/^Light on this device · /);
-    await look.getByRole("button", { name: "Reset", exact: true }).click();
-    await expect(page.locator("html")).not.toHaveAttribute("data-scheme", "light");
-    // Preferences, a part of it, below the controls.
-    const prefs = look.locator('[data-settings-part="preferences"]');
+  test("You: Preferences draws its controls in place, its summary says what's set, and Appearance's old address lands on it", async ({ page }) => {
+    // How it looks is Look's (`s`): Appearance's old address, by path or `#section`, is Preferences'.
+    await open(page, "/settings/you/appearance");
+    await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
+    await page.goto("/settings#appearance");
+    await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
+    await page.goto("/settings/you/preferences");
+    await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
+    const prefs = section(page, "preferences");
     await expect(prefs).toBeVisible();
-    await expect(detail).toHaveText(/ · Tips on · opens in VS Code$/);
+    await expect(prefs).toHaveAttribute("data-preferences", "");
+    await expect(row(page, "preferences").locator("[data-row-title]")).toHaveText("Preferences");
+    await expect(page.locator("[data-appearance-controls]")).toHaveCount(0);
+    const said = row(page, "preferences");
+    await expect(said).toHaveAttribute("data-settings-summary", "Tips on · opens in VS Code");
     const tips = prefs.getByRole("switch", { name: "Tips", exact: true });
     await expect(tips).toBeChecked();
     await tips.click();
     await expect(tips).not.toBeChecked();
     await prefs.locator('[data-pref="editor"]').selectOption("nvim");
-    await expect(detail).toHaveText(/ · Tips off · opens in nvim$/);
-    await prefs.getByRole("switch", { name: "Tips", exact: true }).click();
+    await expect(said).toHaveAttribute("data-settings-summary", "Tips off · opens in nvim");
+    await tips.click();
     await prefs.getByRole("switch", { name: "Big tips" }).click();
     await prefs.locator('[data-pref="editor"]').selectOption("ask");
-    await expect(detail).toHaveText(/ · Tips on, not big ones · asks which editor$/);
-    // Lending this device to agents, this browser's alone, between the two.
-    const lend = look.getByRole("switch", { name: "Lend this device to agents" });
+    await expect(said).toHaveAttribute("data-settings-summary", "Tips on, not big ones · asks which editor");
+    // Lending this device to agents, this browser's alone.
+    const lend = prefs.locator("[data-lend-device]");
+    await expect(lend).toHaveAccessibleName("Lend this device to agents");
     await expect(lend).not.toBeChecked();
     await lend.click();
     await expect(lend).toBeChecked();
-    await expect(detail).toHaveText(/ on this device · lent to agents · Tips on/);
+    await expect(said).toHaveAttribute("data-settings-summary", "Tips on, not big ones · asks which editor · lent to agents");
     expect(await page.evaluate(() => localStorage.getItem("arugula-hand"))).toBe("on");
     await lend.click();
-    await expect(detail).not.toContainText("lent to agents");
+    await expect(said).toHaveAttribute("data-settings-summary", "Tips on, not big ones · asks which editor");
     expect(await page.evaluate(() => localStorage.getItem("arugula-hand"))).toBe("off");
   });
 
@@ -377,17 +395,19 @@ test.describe("on a computer", () => {
     await expect(page.locator(`[data-project-settings="${SITE}"]`)).toBeVisible();
     await expect(section(page, "repos")).toBeVisible();
     await expect(page.locator("[data-link-repo]")).toHaveValue("acme/new");
-    await expect(row(page, "repos").locator(".list-row-detail")).toHaveText("acme/site");
+    await expect(row(page, "repos")).toHaveAttribute("data-settings-summary", "acme/site");
     // The same section in another project.
     await page.locator('[data-settings-pick="project"]').selectOption(ME);
     await expect(page).toHaveURL(new RegExp(`/settings/project/${ME}[^/]*/repos$`));
     await expect(section(page, "repos")).toBeVisible();
-    // Team and billing: the project's owner.
-    await page.locator('[data-settings-scope="team"]').click();
+    // Team: the project's owner.
+    await expect(tab(page, "project")).toHaveAttribute("aria-selected", "true");
+    await tab(page, "team").click();
     await expect(page).toHaveURL(/\/settings\/team\/personal$/);
     await expect(page.locator('[data-owner-settings="personal"]')).toBeVisible();
+    await expect(tab(page, "team")).toHaveAttribute("aria-selected", "true");
     // The default project is the top of Project defaults, and General's address lands there.
-    await expect(row(page, "defaults").locator(".list-row-detail")).toHaveText(/^Default project: None · /);
+    await expect(row(page, "defaults")).toHaveAttribute("data-settings-summary", /^Default project: None · /);
     await expect(row(page, "general")).toHaveCount(0);
     await page.goto("/settings/team/personal/general");
     await expect(page).toHaveURL(/\/settings\/team\/personal\/defaults$/);
@@ -395,13 +415,17 @@ test.describe("on a computer", () => {
     await page.goto("/settings/team/personal");
     await page.locator('[data-settings-pick="team"]').selectOption("tm_1");
     await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*$/);
-    await expect(row(page, "members").locator(".list-row-detail")).toHaveText("2 people · 1 owner");
+    await expect(row(page, "members")).toHaveAttribute("data-settings-summary", "2 people · 1 owner");
     // Personal's and a team's from before.
     await page.goto("/settings/personal");
     await expect(page).toHaveURL(/\/settings\/team\/personal$/);
     await page.goto("/t/tm_1/settings");
     await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*$/);
     await expect(page.locator('[data-owner-settings="tm_1"]')).toBeVisible();
+    // The Team page went: its Members lands on the team's Members here.
+    await page.goto("/t/tm_1/members");
+    await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*\/members$/);
+    await expect(section(page, "members")).toBeVisible();
   });
 });
 
@@ -419,23 +443,34 @@ test.describe("a project's settings", () => {
       ),
       page.route(/\/api\/projects\/[^/]+\/sessions\/settings$/, (r) => json(r, { model: null, models: ["opus", "sonnet"] })),
       page.route(/\/api\/projects\/[^/]+\/runs\/grant$/, (r) => json(r, { role: "owner", grant: null, past: [], stale: false, renew: false, workspaces: 0, offer: false })),
+      // One hosted workspace, so its size, finish step and agents' workspace have something to set.
+      page.route(/\/api\/projects\/[^/]+\/workspaces$/, (r) => json(r, { workspaces: [{ id: "ws_1", name: "site-box", state: "ready", spec: {}, rebuild_needed: false }] })),
     ]);
 
   test("the rows in a flat list, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
     await open(page, `/settings/project/${SITE}`, () => project(page));
-    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-    await expect(row(page, "spend")).toBeVisible();
-    // Apps from products, the tenth, shows once a product keeps one here.
-    const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));
-    expect(rows).toEqual(["general", "access", "repos", "issues", "ci-alerts", "runs", "machines", "agents", "secrets", "spend"]);
-    await expect(row(page, "repos").locator(".list-row-detail")).toHaveText("acme/site");
-    await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("The strongest (Opus) · 1 token");
-    await expect(row(page, "secrets").locator(".list-row-detail")).toHaveText("No environments · 1 secret");
-    await expect(row(page, "runs").locator(".list-row-detail")).toHaveText("No standing grant");
-    await row(page, "secrets").click();
+    await expect(row(page, "agents")).toBeVisible();
+    // Apps from products shows once a product keeps one here.
+    await expect.poll(() => rowIds(page)).toEqual(["general", "access", "repos", "issues", "agents", "secrets"]);
+    await expect(row(page, "repos")).toHaveAttribute("data-settings-summary", "acme/site");
+    await expect(row(page, "agents")).toHaveAttribute("data-settings-summary", /^The strongest \(Opus\) · .*No standing grant.* · 1 token$/);
+    await expect(row(page, "secrets")).toHaveAttribute("data-settings-summary", "No environments · 1 secret");
+    // Agents holds what were CI alerts, Runs and workspaces and Claude spend, as parts.
+    expect(await section(page, "agents").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual([
+      "agent-model",
+      "agent-workspace",
+      "run-grant",
+      "size",
+      "finish",
+      "ci-alerts",
+      "spend",
+      "agent-tokens",
+    ]);
+    await line(page, "secrets").click();
     await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/secrets$`));
     const secrets = section(page, "secrets");
-    await expect(secrets.locator("h2")).toHaveText("Secrets and environments");
+    await expect(secrets).toBeVisible();
+    await expect(row(page, "secrets").locator("[data-row-title]")).toHaveText("Secrets and environments");
     await expect(secrets.locator("[data-settings-part] > h3")).toHaveText([/^Environments/, /^Project secrets/]);
     await expect(secrets.locator("[data-project-secret]")).toHaveText(/API_KEY/);
   });
@@ -444,45 +479,22 @@ test.describe("a project's settings", () => {
     await open(page, `/settings/project/${SITE}/environments`, () => project(page));
     await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/secrets$`));
     await expect(section(page, "secrets").locator('[data-settings-part="environments"]')).toBeVisible();
-    await expect(row(page, "secrets")).toHaveAttribute("aria-current", "true");
-    // An old `#section` too, and one that's still a row of its own.
+    await expect(line(page, "secrets")).toHaveAttribute("aria-expanded", "true");
+    // An old `#section` too.
     await page.goto(`/p/${SITE}/settings#finish`);
-    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/runs$`));
-    await expect(section(page, "runs")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
+    await expect(section(page, "agents").locator('[data-settings-part="finish"]')).toBeVisible();
     await page.goto(`/settings/project/${SITE}/agent-model`);
     await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
     await expect(section(page, "agents").locator('[data-settings-part="agent-model"]')).toBeVisible();
-    await page.goto(`/settings/project/${SITE}/ci-alerts`);
-    await expect(section(page, "ci-alerts")).toBeVisible();
-  });
-
-  test("Machines makes a join token for the project's team, or the person's own, and says control's refusal (Arugula #1152)", async ({ page }) => {
-    const sent: unknown[] = [];
-    let refuse = false;
-    await open(page, `/settings/project/${SITE}/machines`, () =>
-      Promise.all([
-        project(page),
-        page.route(/\/api\/join-tokens$/, (r) => {
-          sent.push(r.request().postDataJSON());
-          return refuse ? json(r, { error: "only the team's owners and editors make join tokens" }, 403) : json(r, { token: "ajt_abc", expires: Math.floor(Date.now() / 1000) + 5400 });
-        }),
-      ]),
-    );
-    const machines = section(page, "machines");
-    await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("Join a machine to Acme");
-    await machines.locator("[data-join-token-make]").click();
-    await expect(machines.locator("[data-join-token-line]")).toHaveText("arugulad join --token ajt_abc");
-    await expect(machines.locator("[data-join-token-expires]")).toContainText("(in 1h)");
-    expect(sent).toEqual([{ team: "tm_1" }]);
-    refuse = true;
-    await machines.locator("[data-join-token-make]").click();
-    await expect(machines.locator("[data-join-token-error]")).toHaveText("only the team's owners and editors make join tokens");
-    // A personal project's is the person's own.
-    refuse = false;
-    await page.goto(`/settings/project/${ME}/machines`);
-    await section(page, "machines").locator("[data-join-token-make]").click();
-    await expect(section(page, "machines").locator("[data-join-token-line]")).toHaveText("arugulad join --token ajt_abc");
-    expect(sent.at(-1)).toEqual({});
+    // CI alerts, Runs and workspaces and Claude spend are Agents' now.
+    for (const old of ["runs", "size", "finish", "run-grant", "ci-alerts", "spend"]) {
+      await page.goto(`/settings/project/${SITE}/${old}`);
+      await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
+      await expect(section(page, "agents")).toBeVisible();
+    }
+    await expect(section(page, "agents").locator('[data-settings-part="ci-alerts"]')).toBeVisible();
+    await expect(section(page, "agents").locator('[data-settings-part="spend"]')).toBeVisible();
   });
 
   test("a setting a team default covers says it follows the team or is set here, and Reset clears its own (Arugula #1323)", async ({ page }) => {
@@ -504,11 +516,11 @@ test.describe("a project's settings", () => {
     );
     // The Overrides section went: its address lands on the first such setting's section.
     await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/issues$`));
-    await row(page, "agents").click();
-    const line = page.locator('[data-team-default="agents_model"]');
-    await expect(line).toHaveText("Set here · team default is Opus · Reset");
-    await line.locator('[data-team-default-reset="agents_model"]').click();
-    await expect(line).toHaveText("Team default · follows Acme");
+    await line(page, "agents").click();
+    const said = page.locator('[data-team-default="agents_model"]');
+    await expect(said).toHaveText("Set here · team default is Opus · Reset");
+    await said.locator('[data-team-default-reset="agents_model"]').click();
+    await expect(said).toHaveText("Team default · follows Acme");
     expect(sent).toEqual([{ key: "agents_model", value: null }]);
   });
 });
@@ -517,19 +529,28 @@ test.describe("on a phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-  test("the list alone, then a section full width with the way back", async ({ page }) => {
+  test("the same list: a row opens in place under its line, with no sideways scroll, and closes again", async ({ page }) => {
     await open(page, "/settings");
     await expect(row(page, "connected")).toBeVisible();
-    await expect(page.locator("[data-settings-detail]")).toBeHidden();
-    // Nothing is beside the list, so no row looks chosen.
-    await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
-    await row(page, "connected").click();
+    await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
+    await line(page, "connected").click();
     await expect(page).toHaveURL(/\/settings\/you\/connected$/);
     await expect(section(page, "connected")).toBeVisible();
-    await expect(row(page, "connected")).toBeHidden();
-    await page.locator("[data-settings-back]").click();
-    await expect(page).toHaveURL(/\/settings$/);
+    // In place: its line stays, the other rows too.
     await expect(row(page, "connected")).toBeVisible();
-    await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
+    await expect(line(page, "connected")).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, "notifications")).toBeVisible();
+    // Its body under its line, in the row.
+    const [headBottom, bodyTop] = await row(page, "connected").evaluate((el) => [
+      el.querySelector(":scope > button[aria-expanded]")!.getBoundingClientRect().bottom,
+      el.querySelector("[data-settings-section]")!.getBoundingClientRect().top,
+    ]);
+    expect(bodyTop).toBeGreaterThanOrEqual(headBottom - 1);
+    // Nothing wider than the phone.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    await line(page, "connected").click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(section(page, "connected")).toBeHidden();
+    await expect(page.locator('[data-settings-row] > button[aria-expanded="true"]')).toHaveCount(0);
   });
 });
