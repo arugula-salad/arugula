@@ -57,13 +57,30 @@ window.fetch = async (input, init) => {
   // and its split by project follow the server's rule: counted, and for
   // the reader (acct_a) or no one.
   // Answering an item (Arugula #1467): kept in `window.__inboxPosted`, and the item leaves the list.
+  // A to-do's answer is kept on its card's record (#1462), as control keeps it, for
+  // `GET /api/chat/rooms/{room}/asks/{seq}`, with the note it kept (`window.__todoKept`,
+  // when a spec says it kept other words). `window.__inboxRefuse` is control's refusal instead.
   const answering = /^\/api\/inbox\/(.+)$/.exec(url.pathname);
   if (answering && init?.method === "POST") {
-    const w = window as unknown as { __inbox?: InboxItem[]; __inboxPosted?: unknown[] };
+    const w = window as unknown as { __inbox?: InboxItem[]; __inboxPosted?: unknown[]; __inboxRefuse?: { status: number; error: string }; __todos?: Record<string, unknown>; __todoKept?: string };
     const id = decodeURIComponent(answering[1]!);
-    (w.__inboxPosted ??= []).push({ id, ...(JSON.parse(String(init.body)) as object) });
+    const body = JSON.parse(String(init.body)) as { choice: string; note?: string };
+    (w.__inboxPosted ??= []).push({ id, ...body });
+    if (w.__inboxRefuse) return json({ error: w.__inboxRefuse.error }, w.__inboxRefuse.status);
+    const it = (w.__inbox ?? []).find((i) => i.id === id);
+    if (it?.kind === "todo" && it.subject.room) {
+      const note = w.__todoKept ?? body.note;
+      const todo = { what: it.title, how: "", answered_at: Date.now(), ...(note ? { note } : {}) };
+      const proposal = { id, action: "todo", state: body.choice === "Done" ? "done" : "cant", answered_by_name: "Sam", why: "", todo };
+      (w.__todos ??= {})[`${it.subject.room}/${it.subject.seq}`] = { room: it.subject.room, seq: it.subject.seq, kind: "proposal", open: false, mine: true, proposal };
+    }
     w.__inbox = (w.__inbox ?? []).filter((i) => i.id !== id);
     return json({ item: id, marked: 1 });
+  }
+  const record = /^\/api\/chat\/rooms\/([^/]+)\/asks\/(\d+)$/.exec(url.pathname);
+  if (record) {
+    const r = (window as unknown as { __todos?: Record<string, unknown> }).__todos?.[`${decodeURIComponent(record[1]!)}/${record[2]}`];
+    return r ? json(r) : json({ error: "not found" }, 404);
   }
   if (url.pathname === "/api/inbox") {
     const project = url.searchParams.get("project");
