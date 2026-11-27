@@ -18,7 +18,7 @@ import { Count } from "../shared/ui/state-chip";
 import { AccountButton, chatPath, sectionOf } from "./bar";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
-import { useInboxByProject, useInboxCount } from "./inbox-count";
+import { useInboxCounts } from "./inbox";
 import { leftAt } from "./goto-source";
 import { owners } from "./owners";
 import { placeOf } from "./places-kept";
@@ -58,7 +58,8 @@ function usePlaces() {
   const r = useRoute();
   const phone = usePhone();
   const { Machines } = usePlatformApi();
-  const inbox = useInboxCount();
+  // The only count across projects: the server's, as it is (Lift 6d, #1486).
+  const inbox = useInboxCounts();
   const shown = barProject(r);
   const p = session.project(shown);
   // As the bar does: an id that's none of the reader's lights no place.
@@ -102,7 +103,7 @@ function usePlaces() {
     { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: talk, views: [] },
   ];
   const foot: PlaceLink[] = [
-    { key: "inbox", label: "Inbox", tip: inbox.title || "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.n, mention: inbox.waiting > 0 } },
+    { key: "inbox", label: "Inbox", tip: "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.all, mention: false } },
     // Settings at the project you're in (Arugula #2594), else yours; account settings are also the avatar's menu.
     { key: "settings", label: "Settings", tip: shown ? "Settings: this project's" : "Settings", icon: <SettingsIcon />, to: shown && project ? pathOf({ page: "settings", scope: "project", project: project.id }, names) : "/settings", here: section === "settings" },
   ];
@@ -126,7 +127,7 @@ const railPlace = (p: PlaceLink): RailPlace => ({
 /** Your projects as the rail's marks (v6): each with what's for you there
  * and where you left it. */
 function useMarks(shown: string | undefined): ProjectMark[] {
-  const counts = useInboxByProject();
+  const counts = useInboxCounts();
   return owners(session.projects).flatMap((o) =>
     o.projects.map((p) => {
       const kept = placeOf(p.id);

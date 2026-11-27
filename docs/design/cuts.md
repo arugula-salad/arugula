@@ -69,3 +69,8 @@ if people miss it. Newest at the bottom.
 - **Settings › Project › CI alerts, Runs and workspaces, Claude spend** as rows of their own: parts of one Agents row (Lift 7, Arugula #1487).
 - **The Team page** (`/t/:team/chat`, `/members`, its tabs): its members are Settings › Team, its chat the team's project's chat (Lift 7, Arugula #1487).
 - **The avatar menu's phone-only Your account…:** the menu has each of Settings' scopes on every screen (Lift 7, Arugula #1487).
+- **The Inbox's old list** (its swarm-coloured cards, "N need you · N items" stats, the Decide / Names you / Chat headings): every project's items under their project, each a kit NeedRow answered in place (Lift 6d, Arugula #1486).
+- **The Inbox's All projects toggle** (`[data-all-projects-toggle]` on `/inbox`): the Inbox is always every project's; `/inbox?all=1` still opens it (Lift 6d, Arugula #1486).
+- **Deploys waiting for you as cards on the Inbox:** a deploy's row opens its page, where it's approved (Lift 6d, Arugula #1486).
+- **The Inbox badge's @ for a waiting deploy and its "N deploys wait" tip:** the badge is the server's count, as it is (Lift 6d, Arugula #1486).
+- **The agent panel beside the Inbox** (shot 7's peek of the asker): the Overview has it; the Inbox's row opens with ↵ (Lift 6d, Arugula #1486).
