@@ -16,7 +16,7 @@ import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
-import { docsRoute } from "./docs-route";
+import { landOldDocs } from "./docs-route";
 import { SettingsPage } from "./settings-page";
 import { openSettings, settingsRoute } from "./settings-route";
 import { settingsPath } from "../../shared/machine-paths";
@@ -128,12 +128,13 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
     [client, ws],
   );
   // An old `#overview` link lands on the Machines page at this machine
-  // (Arugula #1349), once the page knows which machine it shows.
+  // (Arugula #1349), once the page knows which machine it shows; an old
+  // `#docs`, on the app's Docs (Lift 6b).
   useSubscribe((fn) => directory.subscribe(fn));
   const known = !!directory.current || !!client.state;
   useEffect(() => {
     if (!known) return;
-    const land = () => landOldOverview(client, (s) => showSession(client, s));
+    const land = () => (landOldOverview(client, (s) => showSession(client, s)), landOldDocs());
     land();
     window.addEventListener("hashchange", land);
     return () => window.removeEventListener("hashchange", land);
@@ -228,7 +229,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
             </div>
             {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
-            {state && <DocsPageLayer client={client} inWorkspace />}
             {/* M111: between the header and the footer, over the panes. */}
             <AttentionDrawer client={client} />
           </div>
@@ -261,7 +261,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
       {state && <AgentsPageLayer client={client} />}
-      {state && <DocsPageLayer client={client} />}
       <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -452,28 +451,6 @@ function movedTo(client: Client, section?: string): string | "wait" | null {
   return settingsPath(section, machine) ?? (platformHere() ? "/settings/you/notifications" : null);
 }
 
-/** The Docs page (#1494): a chunk of its own, fetched while its route is
- * up. Not Labs' since native #204. */
-function DocsPageLayer({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
-  const [, setTick] = useState(0);
-  const [page, setPage] = useState<typeof import("./docs-page") | null>(null);
-  useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
-    window.addEventListener("hashchange", fn);
-    return () => window.removeEventListener("hashchange", fn);
-  }, []);
-  const on = docsRoute();
-  useEffect(() => {
-    if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
-  }, [on]);
-  if (!on || !page) return null;
-  return (
-    <PlaceGuard client={client} at="docs" inWorkspace={inWorkspace}>
-      <page.DocsPage client={client} inWorkspace={inWorkspace} />
-    </PlaceGuard>
-  );
-}
-
 /** A page over the panes in its guard (Arugula #615): one that throws while
  * drawing says so where it would have been, under the bar (the way out on a
  * phone), and the panes, the rail and the other pages go on working. In the
@@ -495,7 +472,7 @@ function PlaceGuard({ client, at, inWorkspace, children }: { client: Client; at:
 }
 
 /** The places' names, for the footer. */
-const PLACE_NAME: Record<Place, string> = { panes: "Machines", swarm: "Swarm", agents: "Agents", docs: "Docs", settings: "Settings" };
+const PLACE_NAME: Record<Place, string> = { panes: "Machines", swarm: "Swarm", agents: "Agents", settings: "Settings" };
 
 /** The frame's footer: the place, its keys, the agents running on this
  * machine (not while the link is down: they may not be, M113; a stopped

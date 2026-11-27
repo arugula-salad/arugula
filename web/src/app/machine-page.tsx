@@ -11,7 +11,6 @@ import "../shell/interaction-chrome.css";
 import "../shell/block-chrome.css";
 import "../shell/phone-sheet.css";
 import "../shell/phone-machines.css";
-import "../shell/docs-page.css";
 import "../shell/settings-page.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { MachineAt } from "../shared/machine-paths";

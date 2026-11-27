@@ -184,6 +184,8 @@ const markOf = (i: InboxItem): State | undefined => (ALERTS.has(i.kind) ? "faili
  * back stack, so `esc` comes back), else its page on GitHub. What only
  * names you is seen once opened. */
 export function openItem(i: InboxItem) {
+  // A teammate's card has no address (Arugula #1469): nothing opens.
+  if (!i.subject.url) return;
   if (!decides(i) && !i.seen_at) void markItem(i.id, { seen: true }).catch(() => {});
   if (i.subject.url.startsWith("/")) go(i.subject.url);
   else window.open(i.subject.url, "_blank", "noopener,noreferrer");
@@ -329,7 +331,7 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
         extra={
           extra
             ? extra(i, !!a)
-            : !a || i.subject.type === "pane"
+            : (!a || i.subject.type === "pane") && i.subject.url
               ? (
                 <Button keys="↵" onClick={() => openItem(i)}>
                   Open

@@ -299,14 +299,12 @@ test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) 
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
-test("Docs are no flag: docs is retired, and the rail offers them with every flag off", async ({ page }) => {
+test("Docs are no flag: docs is retired, and a machine's Docs answer with every flag off", async ({ page }) => {
   // Doc blocks, the doc tool and the Docs page left Labs (native #204); the
   // old name is refused as any retired flag is.
   const r = await setFlag("docs", true);
   expect(r.ok).toBe(false);
   expect(await r.text()).toContain("isn't a flag any more");
-  await open(page);
-  await expect(page.locator("[data-machine-docs]")).toBeVisible();
   expect((await ask("GET", "/api/docs", undefined)).status).toBe(200);
 });
 

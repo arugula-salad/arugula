@@ -15197,6 +15197,17 @@
               "null"
             ]
           },
+          "with_lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithLead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "While `open` waits on its lead, not its person (Arugula #1469)."
+          },
           "work": {
             "anyOf": [
               {
@@ -16222,6 +16233,25 @@
         },
         "required": [
           "project"
+        ],
+        "type": "object"
+      },
+      "WithLead": {
+        "description": "An agent's ask that its lead answers first (Arugula #1393, #1469): the\nagent that started the session, live, has until `until` (ms) before the\nask reaches its person. Never a question's words.",
+        "properties": {
+          "name": {
+            "description": "The lead, as its machine names it: \"<session> on <machine>\".",
+            "type": "string"
+          },
+          "until": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "until"
         ],
         "type": "object"
       },

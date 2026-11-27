@@ -27,8 +27,6 @@ import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { DeployPage } from "./pages/deploy";
-import { NewDeployPage } from "./pages/new-deploy";
-import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed } from "./pages/project-settings";
@@ -39,7 +37,7 @@ import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { AllBoardsPage, BoardsPage } from "./pages/boards";
-import { DocPage, DocsPage } from "./pages/docs";
+import { DocPage, DocsPage, docsHome } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
 import { MachinesPage } from "./pages/machines";
@@ -157,10 +155,6 @@ function body(r: Route, lost: string | null) {
       return <HostedWorkspaces project={r.project} />;
     case "move":
       return <MovePage project={r.project} />;
-    case "deploys":
-      return <DeploysPage project={r.project} />;
-    case "new-deploy":
-      return <NewDeployPage project={r.project} env={r.env} />;
     case "installed":
       return <Installed project={r.project} repo={r.repo} />;
     case "workspace":
@@ -353,7 +347,7 @@ function useTitle(r: Route) {
 
 /** Where a page that moved is now: the Sessions page folded into Boards
  * (Arugula #1082), Build's panes into Machines (#1346), every project's
- * Boards into a project's (Lift 5a). Here, not in an effect of its own, which raced this one:
+ * Boards and Docs into a project's (Lift 5a, 6b). Here, not in an effect of its own, which raced this one:
  * the slug's rewrite ran after it and put the old address back (Arugula
  * #1155). */
 function movedPage(r: Route): Route {
@@ -363,6 +357,11 @@ function movedPage(r: Route): Route {
     const here = currentProject();
     const project = here && session.project(here) ? here : session.projects[0]?.id;
     if (project) return { page: "boards", project };
+  }
+  // Every project's Docs (`/docs`, `?all=1`) is one project's (Lift 6b); `?shared=1` stays, at Shared by you.
+  if (r.page === "docs" && !r.project && !r.shared) {
+    const home = docsHome();
+    if (home) return { page: "docs", project: home.id };
   }
   // A team's old page is its project's chat (Lift 7), once the page knows it.
   if (r.page === "team") {

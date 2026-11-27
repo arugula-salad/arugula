@@ -131,11 +131,11 @@ test("each route parses", () => {
   assert.deepEqual(parse("/installed", `?state=${encodeURIComponent(`${P}:acme/app`)}&installation_id=9&setup_action=install`), { page: "installed", project: P, repo: "acme/app" });
   assert.deepEqual(parse("/installed", "?state=https%3A%2F%2Fevil.example%2F"), { page: "installed" }, "only a project and a repo");
   assert.deepEqual(parse("/installed"), { page: "installed" });
-  const env = `env_${"0a".repeat(16)}`;
-  assert.deepEqual(parse(`/p/${P}/deploys`), { page: "deploys", project: P });
-  assert.deepEqual(parse(`/p/${P}/deploys/new`), { page: "new-deploy", project: P });
-  assert.deepEqual(parse(`/p/${P}/deploys/new`, `?env=${env}`), { page: "new-deploy", project: P, env });
-  assert.deepEqual(parse(`/p/${P}/deploys/new`, "?env=production"), { page: "new-deploy", project: P }, "an id only");
+  // Deploys and Deploy… went (Lift 7): their addresses are the project's environments.
+  const envs = { page: "settings", scope: "project", project: P, section: "secrets" };
+  assert.deepEqual(parse(`/p/${P}/deploys`), envs);
+  assert.deepEqual(parse(`/p/${P}/deploys/new`), envs);
+  assert.deepEqual(parse(`/p/${P}/deploys/new`, `?env=env_${"0a".repeat(16)}`), envs);
 });
 
 test("the Overview names an open card by its board and row, both or neither", () => {
@@ -184,8 +184,6 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "settings", scope: "project", project: P, section: "secrets" },
     { page: "move", project: P },
     { page: "installed", project: P, repo: "acme/app" },
-    { page: "deploys", project: P },
-    { page: "new-deploy", project: P, env: `env_${"0a".repeat(16)}` },
   ];
   assert.equal(pathOf(routes[1], names), `/p/${P}-arugula-team`);
   assert.equal(pathOf(routes[2], names), `/p/${P}-arugula-team/chat/ch_0123456789abcdef-general?msg=4`);

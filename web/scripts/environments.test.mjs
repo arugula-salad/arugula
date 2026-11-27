@@ -1,12 +1,10 @@
-// A project's environments and "Deploy…" on the platform page (M252): what
-// the page sends to make an environment (the driver's settings, the
-// secrets it may hold) and to plan a deploy (a full commit of a repo).
-// Secrets' values are never part of either. Run with `node
+// A project's environments on the platform page (M252): what the page
+// sends to make an environment (the driver's settings, the secrets it may
+// hold), and each one's history. Secrets' values are never part of it. Run with `node
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, repoFor, rowNote, secretNote, shortRef } from "../src/platform/deploys-text.ts";
-import { REPO } from "../src/platform/paths.ts";
+import { environmentBody, historyPath, holdable, lastMoved, secretNote, shortRef } from "../src/platform/deploys-text.ts";
 
 // As `GET /api/projects/{project}/drivers` answers (crates/platform's
 // deploys/catalog.rs).
@@ -55,17 +53,6 @@ test("an environment's body: its name, its driver's settings given, the secrets 
   assert.equal(secretNote(fly.secrets[0]), "");
 });
 
-test("a plan's body: a full commit of a repo, to an environment", () => {
-  const sha = "0123456789ABCDEF0123456789abcdef01234567";
-  assert.deepEqual(planBody("env_1", ` ${sha} `, " acme/app ", true, REPO), {
-    body: { environment: "env_1", source: { kind: "commit", ref: sha.toLowerCase(), where: "acme/app" }, roll_back: true },
-  });
-  assert.match(planBody("env_1", "deadbeef", "acme/app", false, REPO).error, /40 hex/);
-  assert.match(planBody("env_1", sha, "acme", false, REPO).error, /OWNER\/NAME/);
-  assert.equal(planBody("", sha, "acme/app", false, REPO).error, "Pick an environment.");
-  assert.ok(COMMIT.test("a".repeat(40)) && !COMMIT.test("a".repeat(39)) && !COMMIT.test("g".repeat(40)));
-});
-
 test("an environment's history: its page of the project's deploys, and when each last moved", () => {
   assert.equal(historyPath("prj 1"), "/api/projects/prj%201/deploys");
   assert.equal(historyPath("prj_1", "env_1", 5), "/api/projects/prj_1/deploys?environment=env_1&limit=5");
@@ -80,21 +67,3 @@ test("an environment's history: its page of the project's deploys, and when each
   assert.equal(shortRef(`sha256:c09af${"0".repeat(59)}`), "c09af0000000");
 });
 
-test("Deploy… offers the environment's repo: its last deploy's, else the one named as it is, else the first (UI audit #147)", () => {
-  const linked = ["arugula-salad/arugula", "arugula-salad/beds-smoke"];
-  assert.equal(repoFor("beds-smoke", linked, null), "arugula-salad/beds-smoke");
-  assert.equal(repoFor("Beds-Smoke", linked), "arugula-salad/beds-smoke");
-  assert.equal(repoFor("beds-smoke", linked, "acme/other"), "acme/other");
-  assert.equal(repoFor("production", linked, null), "arugula-salad/arugula");
-  assert.equal(repoFor(undefined, linked), "arugula-salad/arugula");
-  assert.equal(repoFor("production", [], null), "");
-});
-
-// #333: a history row's note beside the ref; a release's version is always
-// expected, and nothing read is nothing said.
-test("a history row's note is the expected version and the subject", () => {
-  const row = (driver, subject, expected_version) => ({ environment: { name: "release", driver }, subject, expected_version });
-  assert.equal(rowNote(row("arugula-release", "Docs: the Arugula look", "0.63.10")), "0.63.10 (expected) · Docs: the Arugula look");
-  assert.equal(rowNote(row("chant-fly", "Fix", "9.9.9")), "Fix");
-  assert.equal(rowNote(row("chant-fly", null, null)), "");
-});

@@ -1,8 +1,7 @@
 // Empty states that do the next step (Discovery 5), in the shell: the
 // attention drawer, empty (from Go to…), says what lands there and offers Set up while Claude
 // Code's settings lack Arugula's hooks (the daemon's answer is stubbed both
-// ways, so nothing touches this box's ~/.claude); the Docs page with no
-// Docs offers Start an agent, which opens its dialog; and the activity
+// ways, so nothing touches this box's ~/.claude); and the activity
 // drawer says what it keeps the first time it's open, and not again. The
 // platform's empty states are in discovery-empty-platform.spec.ts.
 
@@ -47,17 +46,6 @@ test("the attention drawer offers no Set up where the hooks are in", async ({ pa
   // Long enough for the daemon's answer to have come.
   await page.waitForTimeout(500);
   await expect(page.locator("[data-attention-setup]")).toHaveCount(0);
-});
-
-test("the Docs page with no Docs offers Start an agent, which opens its dialog", async ({ page }) => {
-  await page.route(/\/api\/docs$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: [] }) : r.fallback()));
-  await reset(page);
-  await page.locator("[data-machine-docs]").click();
-  const empty = page.locator("[data-docs-page] [data-docs-empty]");
-  await expect(empty).toContainText("Ask any agent for a Doc");
-  await empty.locator("[data-docs-start-agent]").click();
-  await expect(page.locator("[data-docs-page]")).toHaveCount(0);
-  await expect(page.locator(".agent-dialog")).toBeVisible();
 });
 
 test("the activity drawer says what it keeps the first time it's open, and not again", async ({ page }) => {
