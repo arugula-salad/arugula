@@ -637,38 +637,6 @@ button.list-count:hover {
   display: flex;
 }
 
-/* A Doc's outline (#1135): its headings, the one being read marked, and ◧
-   on a section that holds a figure. */
-.doc-outline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.doc-outline li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding-left: 8px;
-  border-left: 2px solid transparent;
-}
-
-.doc-outline li[data-doc-outline-at] {
-  border-left-color: var(--accent);
-}
-
-.doc-outline li[data-doc-outline-at] .doc-outline-go {
-  color: var(--fg);
-  font-weight: 600;
-}
-
-.doc-outline-fig {
-  flex: none;
-  color: var(--dim);
-  font-size: var(--text-xs);
-}
-
 /* A row's ⋯ is a mouse target, not a button (a row is one option): the same
    24px square as the icon buttons, dim until it's pointed at. */
 .row-more {
