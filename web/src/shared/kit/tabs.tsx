@@ -73,7 +73,8 @@ export function Tabs({
     else if (e.key === "F2" && tabs[i]!.rename) (e.preventDefault(), tabs[i]!.rename!());
   };
   return (
-    <div ref={barRef} class="k-tabs" role="tablist" aria-label={label} data-kit="tabs" {...bar}>
+    <div class="k-tabs" data-kit="tabs">
+      <div ref={barRef} class="k-tabs-list" role="tablist" aria-label={label} {...bar}>
       {tabs.map((t, i) => {
         const on = t.id === current;
         const cls = ["k-tab", t.peek && "is-peek", on && "is-current"].filter(Boolean).join(" ");
@@ -103,17 +104,28 @@ export function Tabs({
               {t.count ? <span class="m-meta">{t.count}</span> : null}
               {t.dot && <span class="k-pane-dot" aria-label="New" data-tab-dot />}
               {t.extra}
+              {/* A tab list holds only tabs: its × is part of its tab, for the pointer (Delete closes it from the keys). */}
+              {t.closes && onClose ? (
+                <span
+                  class="k-tab-x"
+                  aria-hidden="true"
+                  title={`Close ${t.title}`}
+                  data-tab-x={t.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(t.id);
+                  }}
+                >
+                  <CloseIcon size="xs" />
+                </span>
+              ) : null}
             </button>
           ),
-          t.after ? <span key={`${t.id}-after`} class="k-tab-after">{t.after}</span> : null,
-          t.closes && onClose ? (
-            <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} data-tab-x={t.id} onClick={() => onClose(t.id)}>
-              <CloseIcon size="xs" />
-            </button>
-          ) : null,
         ];
       })}
       {marker !== undefined && marker !== null && marker >= tabs.length ? <span class="k-tab-marker" aria-hidden="true" /> : null}
+      </div>
+      {tabs.map((t) => (t.after ? <span key={`${t.id}-after`} class="k-tab-after">{t.after}</span> : null))}
     </div>
   );
 }

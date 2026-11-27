@@ -756,11 +756,14 @@ a.k-row-line {
     height: 70vh;
   }
 }
-.k-tabs {
+.k-tabs,
+.k-tabs-list {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   min-width: 0;
+}
+.k-tabs {
   padding: 0 6px;
   border-bottom: 1px solid var(--line);
 }
@@ -812,6 +815,7 @@ a.k-row-line {
   margin-bottom: 6px;
 }
 .k-tab-x {
+  display: inline-flex;
   color: var(--ink-faint);
 }
 .k-tab-x:hover {

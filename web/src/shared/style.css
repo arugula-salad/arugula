@@ -9588,8 +9588,11 @@ button.thread-quote:hover {
 
 .ws-tabs .k-tabs {
   flex: 1;
-  overflow-x: auto;
   border-bottom: 0;
+}
+
+.ws-tabs .k-tabs-list {
+  overflow-x: auto;
   scrollbar-width: none;
 }
 
