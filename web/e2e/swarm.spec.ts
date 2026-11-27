@@ -116,10 +116,20 @@ test("an agent on an issue wears its chip in the swarm, which clusters by board 
   expect(sized["No board"]).toBeGreaterThan(10);
   // Hovering it peeks, with the chip (the board's title in its tooltip).
   const key = await page.evaluate(([h, i]) => window.__arugula.fleet.panes.find((p) => p.host === h && p.id === i)!.key, ["build-01", b] as const);
-  await page.waitForTimeout(1500);
-  const pos = (await page.evaluate((k) => (window.__arugula.swarm as { screenOf(k: string): { x: number; y: number } }).screenOf(k), key))!;
-  await page.mouse.move(pos.x, pos.y);
-  await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveText("#13", { timeout: 10_000 });
+  // Its fake agent finishes its turn, and a finished pane flies to its card on the rail, where the
+  // swarm doesn't peek it: dismiss the card, so it's back in Launch.
+  const card = page.locator(`[data-need][data-panes~="build-01:${b}"]`);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.locator("[data-dismiss-card]").click();
+  await expect(card).toBeHidden();
+  // Hover where it is now (it may still be settling), until it peeks.
+  const peek = page.locator(".swarm-peek [data-swarm-work]");
+  await expect(async () => {
+    const pos = (await page.evaluate((k) => (window.__arugula.swarm as { screenOf(k: string): { x: number; y: number } }).screenOf(k), key))!;
+    await page.mouse.move(pos.x + 1, pos.y + 1);
+    await page.mouse.move(pos.x, pos.y);
+    await expect(peek).toHaveText("#13", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
   await expect(page.locator(".swarm-peek [data-swarm-work]")).toHaveAttribute("title", "#13 on Launch");
   expect(await chip("workstation", d)).toBe("#15");
   await page.screenshot({ path: testInfo.outputPath("swarm-by-board.png") });
