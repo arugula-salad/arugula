@@ -11,7 +11,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   Codex in `crates/vt/src/detect.rs` follow the shape of herdr's agent
   manifests (`src/detect/manifests/`) and adapt some of their patterns.
   The Apache License 2.0 text is below.
-- **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
+- **The web client** bundles npm packages: xterm.js, preact and fzstd (below).
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
   The iPhone and iPad app (`native/ios`) carries the same three fonts, Google Fonts' builds of them under the same license, fetched by its `build.sh`.
 - **Lucide** (the web client's icons for chevrons, check, close, expand, external link, command, copy, pencil, star, reload, back, trash and arrows: paths copied into `web/src/shared/ui/icons.tsx`, not a dependency): ISC, Copyright (c) 2026 Lucide Icons and Contributors. <https://lucide.dev>
@@ -8505,32 +8505,6 @@ MIT
 
 ```
 Copyright (C) 2018 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-```
-
-### three 0.180.0 (MIT)
-
-```
-The MIT License
-
-Copyright © 2010-2025 three.js authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
