@@ -29,3 +29,4 @@ if people miss it. Newest at the bottom.
 - **"no proof" on a Done tile, and a tile's fill by lane:** a proven one says "proven"; tiles are one card colour, with an amber edge when one waits on you (Lift 5a, Arugula #1481).
 - **The Issues page, and its stats line:** the project's issues are All issues, a row of Boards (`/p/:project/issues` selects it), with Open/Closed, search, Label, Assignee and Export as before (Lift 5a, Arugula #1481).
 - **Not on a board when it's empty:** its row shows only while some open issue is on no board (Lift 5a, Arugula #1481).
+- **An issue's label and assignee Edit buttons:** the labels and the people are the buttons (click to edit), in the card's properties (Lift 5a, Arugula #1481).
