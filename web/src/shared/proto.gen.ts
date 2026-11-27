@@ -1654,7 +1654,12 @@ github?: ChatToGithub,
  * `sending` for one whose daemon hasn't answered. Empty for a post that
  * mentions none.
  */
-mention_status?: Array<ChatMentionStatus>, };
+mention_status?: Array<ChatMentionStatus>, 
+/**
+ * The advice when an agent's top-level post mentioned nobody, pushed
+ * nobody and went to a room no session leads; `None` otherwise.
+ */
+nobody?: string, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team
