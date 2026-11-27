@@ -1613,6 +1613,8 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let mut summary = format!("{}. {}", chosen_line(c, &chosen).await, lines.join("\n"));
             if session.is_none() {
                 summary = format!("{summary}\n{NO_SESSION_NAME}");
+            } else {
+                summary = format!("{summary}\n{}", super::watches::lead_watch(c, &view.board.id, false).await);
             }
             answer(summary, &view, a.verbose)
         }
@@ -1644,7 +1646,12 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             }
             let body = given(lead_request(session, c.own_pane(), a.release))?;
             let v = boards_call(c, Method::POST, &agent_board_lead(&a.board), Some(body)).await?;
-            board_done(if a.release { "Let go of a board's lead" } else { "Took the lead of a board" }, v, a.verbose)
+            let view = view_of(v)?;
+            let said = view.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
+            let what = if a.release { "Let go of a board's lead" } else { "Took the lead of a board" };
+            let watch = super::watches::lead_watch(c, &view.board.id, a.release).await;
+            let s = format!("{what}, now, as your person's agent on this machine. {}{said}\n{watch}", progress(&view));
+            answer(s.trim_end().to_owned(), &view, a.verbose)
         }
         "add" => add(c, args(a)?).await,
         "attach" => attach(c, args(a)?).await,

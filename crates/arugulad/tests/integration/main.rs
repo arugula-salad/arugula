@@ -24,6 +24,8 @@ mod attach;
 mod attention;
 mod block_channels;
 mod blocks;
+#[cfg(unix)]
+mod board_lead_watch;
 #[cfg(all(unix, feature = "labs"))]
 mod board_state;
 mod chat_blocks;

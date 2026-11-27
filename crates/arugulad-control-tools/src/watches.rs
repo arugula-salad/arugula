@@ -432,6 +432,15 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
         let made = local_watches::make(c.app(), ask).await?;
         return made_said(made, "This machine made no watch, and said nothing of why");
     }
+    let (made, every) = make_cloud(c, a).await?;
+    match every {
+        Some(ms) => standing_said(made, ms),
+        None => made_said(made, "Arugula cloud made no watch, and said nothing of why"),
+    }
+}
+
+/// `create`'s cloud watch: what control made, and a standing one's gap.
+async fn make_cloud(c: &Call<'_>, a: CreateArgs) -> Result<(WatchMade, Option<u64>), String> {
     let mut body = create_body(a)?;
     // A board's id is its thread's room: control's watches take the room's.
     for t in &mut body.targets {
@@ -456,10 +465,77 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
     let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(new_fields)?;
     let made: WatchMade =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
-    match every {
-        Some(ms) => standing_said(made, ms),
-        None => made_said(made, "Arugula cloud made no watch, and said nothing of why"),
+    Ok((made, every))
+}
+
+/// What a board's lead is woken by (Arugula #1530): work the board waits on,
+/// held by another board, moved.
+const LEAD_EVENT: &str = "board.wait.changed";
+
+/// The standing watch a session gets on becoming a board's lead, or loses on
+/// letting go: made as `watch create` makes one, as that session. One live
+/// already (its words name the event and the board) isn't made again.
+/// Returns a clause for the answer; never fails the call that led the board.
+pub(crate) async fn lead_watch(c: &Call<'_>, board: &str, release: bool) -> String {
+    let Ok((session, _)) = session(c).await else {
+        return if release {
+            String::new()
+        } else {
+            "No watch for work this board waits on: this session has no hooks (`arugula hooks install`) to wake it by."
+                .into()
+        };
+    };
+    let live = match live_lead_watches(c, &session, board).await {
+        Ok(ids) => ids,
+        Err(e) => return format!("Couldn't tell whether this session watches what this board waits on: {e}"),
+    };
+    if release {
+        if live.is_empty() {
+            return String::new();
+        }
+        for id in &live {
+            let body = WatchCancel { session: session.clone(), id: Some(id.clone()), all: false };
+            let sent = match serde_json::to_value(&body) {
+                Ok(b) => c.app().control.cloud(Method::POST, AGENT_WATCHES_CANCEL, Some(&b)).await.map_err(said),
+                Err(e) => Err(e.to_string()),
+            };
+            if let Err(e) = sent {
+                return format!("Couldn't cancel this session's watch {id} on what this board waits on: {e}");
+            }
+        }
+        return "Cancelled this session's watch on work this board waits on.".into();
     }
+    if !live.is_empty() {
+        return "You'll hear when work this board waits on moves (a watch is live already).".into();
+    }
+    let matches = serde_json::Map::from_iter([("board".to_owned(), Value::String(board.to_owned()))]);
+    let a = CreateArgs {
+        event: Some(LEAD_EVENT.into()),
+        matches: Some(matches),
+        note: Some("work this board waits on moved".into()),
+        expires: Some("7d".into()),
+        standing: true,
+        ..Default::default()
+    };
+    match make_cloud(c, a).await {
+        Ok((made, _)) if made.state == WatchState::Live => "You'll hear when work this board waits on moves.".into(),
+        Ok(_) => "No watch for work this board waits on was made.".into(),
+        Err(e) => format!("No watch for work this board waits on was made: {e}"),
+    }
+}
+
+/// This session's live cloud watches that name [`LEAD_EVENT`] and `board`.
+async fn live_lead_watches(c: &Call<'_>, session: &str, board: &str) -> Result<Vec<String>, String> {
+    let path = format!("{AGENT_WATCHES}?session={session}");
+    let v = c.app().control.cloud(Method::GET, &path, None).await.map_err(said)?;
+    let l: WatchList =
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
+    Ok(l.watches
+        .into_iter()
+        .filter(|w| w.state == WatchState::Live)
+        .filter(|w| w.targets.iter().any(|t| t.contains(LEAD_EVENT) && t.contains(board)))
+        .map(|w| w.id)
+        .collect())
 }
 
 /// How much longer than its call a wait's watch lives: it's cancelled when
