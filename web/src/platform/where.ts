@@ -29,6 +29,10 @@ export const where = {
     card = { row, label };
     listeners.forEach((fn) => fn());
   },
+  /** A board's page has read (or renamed) its board: the crumb says its title (`boards.title`). */
+  boardRead() {
+    listeners.forEach((fn) => fn());
+  },
   /** The open card's words, once the Overview has said them. */
   cardLabel: (row: string): string | undefined => (card?.row === row ? card.label : undefined),
 };

@@ -166,13 +166,6 @@ export function holdsRow(a: Pick<BoardAttachment, "role" | "block" | "released">
   return a.role === "work" && !a.released && !!a.block && a.block.state !== "closed";
 }
 
-/** Who holds a row's issue (Arugula #765): the chip's words, and its title, which says which machine. Not said while the holder's own agent block is attached and open: that block's chip is the claim. */
-export function heldChip(r: Pick<BoardRow, "held" | "attachments">): { text: string; title: string } | null {
-  const h = r.held;
-  if (!h || r.attachments.some(holdsRow)) return null;
-  return { text: `held by ${h.session}`, title: `Held by the session ${h.session} on ${h.machine_name || h.machine}: another session's agent start on this issue is refused unless it takes over` };
-}
-
 /** What a row says of a blocker the reader may not read. */
 export const UNSEEN_BLOCKER = "blocked by something you can't see";
 
@@ -196,11 +189,6 @@ export function relationLine(x: Pick<BoardRowRelation, "kind" | "direction" | "o
   const lead = (x.direction === "out" ? k?.out : k?.in) ?? x.kind;
   const other = x.other ? `#${x.other.number} ${x.other.title}`.trim() : "something you can't see";
   return `${lead} ${other}`;
-}
-
-/** The fold's summary: `earlier agents (2)`. */
-export function earlierLine(n: number): string {
-  return `earlier agent${n === 1 ? "" : "s"} (${n})`;
 }
 
 /** What a machine reported of an agent block, as a tag. */
@@ -514,12 +502,6 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing accent (working), Review info (in review), Done ok; amber (warn) is only what needs you. A stalled row is danger (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
-export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
-  if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
-  return r.lane === "next" ? "muted" : r.lane === "doing" ? "accent" : r.lane === "review" ? "info" : "ok";
-}
-
 /** A live item's state chip tone, as the lists' chips take it: open in review (info), merged ok, checks running the accent (working), failed danger, closed muted. */
 export function liveTone(s: BoardLiveState): Tone {
   if (s === "checks_running" || s === "running") return "accent";
@@ -545,6 +527,94 @@ export function prsOf(r: Pick<BoardRow, "pointer" | "live" | "attachments">): { 
   for (const a of r.attachments) if (a.role === "work") add(a.pointer, a.live);
   return out;
 }
+
+/** One open PR on the board, for the fold above its lanes (Lift 5a): its id, the row it's on, its live state and label. */
+export interface OpenPr {
+  id: string;
+  row: BoardRow;
+  live: BoardLive;
+  label: string;
+}
+
+/** The board's open PRs, each once, in the board's order: a row's own PR, then those attached to it as work. */
+export function openPrs(v: Pick<BoardView, "zones">): OpenPr[] {
+  const out: OpenPr[] = [];
+  const add = (row: BoardRow, p: BoardPointer, live?: BoardLive | null) => {
+    if (p.kind === "forge_item" && live && isOpenPr(live) && !out.some((o) => o.id === p.id)) out.push({ id: p.id, row, live, label: pointerLabel(p, live) });
+  };
+  for (const r of v.zones.flatMap((z) => z.rows)) {
+    add(r, r.pointer, r.live);
+    for (const a of r.attachments) if (a.role === "work") add(r, a.pointer, a.live);
+  }
+  return out;
+}
+
+/** What an open PR's fold row says of it: its queue (`queued 12m`), else its state's word. */
+export function prWord(l: BoardLive, now: number = Date.now()): string {
+  return queueChip(l, now)?.word ?? liveWord(l);
+}
+
+/** The alert strip's words for a branch's open red issue: `main has been red for 3 hours`. */
+export function redLine(a: { branch: string; opened_at: number }, now: number = Date.now()): string {
+  const m = Math.max(1, Math.floor((now - a.opened_at) / 60_000));
+  const [v, unit] = m < 60 ? [m, "minute"] : m < 2880 ? [Math.floor(m / 60), "hour"] : [Math.floor(m / 1440), "day"];
+  return `${a.branch} has been red for ${v} ${unit}${v === 1 ? "" : "s"}`;
+}
+
+/** The title block's meta: `140/191 · 2 ask you · #2868 queued`; the parts with nothing to say are left out. */
+export function deskLine(p: Pick<BoardProgress, "done" | "total">, mine: number, prs: OpenPr[], now: number = Date.now()): string[] {
+  const queued = prs.find((o) => o.live.queued);
+  return [p.total ? `${p.done}/${p.total}` : "", mine ? `${mine} ask${mine === 1 ? "s" : ""} you` : "", queued ? `${queued.label} ${prWord(queued.live, now)}` : ""].filter(Boolean);
+}
+
+/** The progress line's words: `73% · 140 of 191 done · 105 proven · 2 in review`. */
+export function progressWords(p: Pick<BoardProgress, "done" | "total" | "proven" | "review">): string {
+  if (!p.total) return "No work yet";
+  return [`${Math.round((p.done / p.total) * 100)}%`, `${p.done} of ${p.total} done`, p.proven ? `${p.proven} proven` : "", p.review ? `${p.review} in review` : ""].filter(Boolean).join(" · ");
+}
+
+/** A tile's mark and its state word (Lift 5a): who it waits on before what it is. `needs`: it waits on the reader (its edge is amber, never a fill); `sessionNeeds`, a session on its card waits on input. */
+export interface TileState {
+  mark: "working" | "asks" | "waits" | "stuck" | "failing" | "done" | "idle";
+  word?: string;
+  needs?: boolean;
+}
+
+export function tileState(r: Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">, now: number = Date.now(), sessionNeeds = false): TileState {
+  const a = r.ask && !r.ask.raised ? r.ask : null;
+  if (a?.mine) return { mark: "asks", word: "asks you", needs: true };
+  if (sessionNeeds || r.attachments.some((x) => holdsRow(x) && x.block?.state === "needs_input")) return { mark: "asks", word: "needs you", needs: true };
+  if (a) return { mark: "waits", word: `asks ${a.who_name || "someone"}` };
+  const failing = (l: BoardLive | null | undefined) => l?.state === "checks_failed" || l?.state === "run_failed" || (!!l?.left_queue && isOpenPr(l));
+  if (failing(r.live) || r.attachments.some((x) => x.role === "work" && failing(x.live))) return { mark: "failing", word: "failing" };
+  const m = marksOf(r, now);
+  if (m.stalled) return { mark: "stuck", word: m.stalled.words };
+  if (m.cancelled) return { mark: "done", word: "cancelled" };
+  if (m.blocked.length) return { mark: "waits", word: m.blocked[0]!.words };
+  if (m.after) return { mark: "waits", word: m.after.words };
+  if (m.notFinished) return { mark: r.lane === "done" ? "done" : "waits", word: "not finished" };
+  return { mark: r.lane === "next" ? "idle" : r.lane === "doing" ? "working" : r.lane === "review" ? "waits" : "done" };
+}
+
+/** A tile's meta line, each part dim: its open PR and where it is (`PR #2868 · queued 2m`), else a done item's end (`merged · proven`); then who works on it (`fix-crumb · working`); a row with neither in Next or Doing says `no agent yet`. */
+export function tileMeta(r: Pick<BoardRow, "lane" | "pointer" | "live" | "attachments" | "proof" | "marks">, who: { name: string; word: string } | undefined, now: number = Date.now()): string[] {
+  const out: string[] = [];
+  const pr = openPrs({ zones: [{ rows: [r as BoardRow] } as BoardZone] })[0];
+  if (pr && pr.id !== (r.pointer.kind === "forge_item" ? r.pointer.id : "")) out.push(`PR ${pr.label} · ${prWord(pr.live, now)}`);
+  else if (pr) out.push(prWord(pr.live, now));
+  else if (r.lane === "done" && r.live) out.push([liveWord(r.live), proofMark(r)?.proven ? "proven" : ""].filter(Boolean).join(" · "));
+  if (who) out.push(`${who.name} · ${who.word}`);
+  if (!out.length && (r.lane === "next" || r.lane === "doing") && r.pointer.kind !== "none") out.push("no agent yet");
+  return out;
+}
+
+/** A lane's rows with those that wait on the reader first, the rest in the board's order. */
+export function needsFirst<R extends Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">>(rows: R[]): R[] {
+  return [...rows.filter((r) => tileState(r).needs), ...rows.filter((r) => !tileState(r).needs)];
+}
+
+/** How many of Done's rows show before "N more". */
+export const DONE_SHOWN = 2;
 
 /** A check's words: its conclusion once it has one, else its status. */
 export function checkWord(c: { status: string; conclusion: string | null }): string {

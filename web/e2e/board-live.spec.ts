@@ -4,9 +4,9 @@
 // and Give it back (today's driver), says while you drive, answers the
 // pane's question at its top as Swarm does, opens the pane on its machine,
 // says when a card has no session yet, and on a phone fills the screen with
-// the key bar while you drive. The board's header says who leads it and on
-// what machine, with Talk (its thread) and, for your own lead's pane, Open
-// (Arugula iss_89b78ece43ac3d6271f78d797cdbdc61). On the app's fixture page
+// the key bar while you drive. The board's title block says who leads it and
+// on what machine, and its panel on the right third has, for your own lead's
+// pane, Terminal (Arugula iss_89b78ece43ac3d6271f78d797cdbdc61, Lift 5a). On the app's fixture page
 // (app-frame-page.tsx), where the machine `m_suite` is the suite's daemon;
 // the board is made up, its agent block a real terminal of the daemon.
 import { fileURLToPath } from "node:url";
@@ -157,56 +157,36 @@ test.describe("on a computer", () => {
 test.describe("its lead", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  /** The board's thread, as chat answers it: the fixture page answers chat itself, so it's made up in the page. */
-  const threadRoom = (page: Page) =>
-    page.evaluate(
-      ({ P, B }) => {
-        const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
-        const before = window.fetch;
-        window.fetch = async (input, init) => {
-          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
-          if (url.pathname === "/api/chat/targets") return new Response(JSON.stringify(room), { headers: { "Content-Type": "application/json" } });
-          return before(input, init);
-        };
-      },
-      { P, B },
-    );
-
-  test("your own lead whose pane is here says who and where, talks in the board's thread and opens its pane", async ({ page }, info) => {
+  test("your own lead whose pane is here: its name and machine in the title block, its panel on the right, Terminal opens its pane", async ({ page }, info) => {
     const pane = await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "Product Improvements", pane, at: 1 }));
-    const lead = page.locator(".board-head [data-board-lead]");
-    await expect(lead).toContainText("Led by Product Improvements on suite-box");
-    await expect(lead.locator("[data-board-lead-talk]")).toHaveText("Talk");
-    await expect(lead.locator("[data-board-lead-open]")).toHaveText("Open");
+    await expect(page.locator("[data-board-lead-facts]")).toContainText("Product Improvements");
+    await expect(page.locator("[data-board-lead-facts]")).toContainText("suite-box");
+    const lead = page.locator(".board-desk-side [data-board-lead]");
+    await expect(lead).toContainText("lead · Product Improvements · suite-box");
+    await expect(lead.locator("[data-board-lead-open]")).toHaveText("Terminal");
     await page.screenshot({ path: info.outputPath("board-lead.png") });
-    // Open: its pane, on its machine's page, as the Overview's Open in Panes.
+    // Terminal: its pane, on its machine's page, as the Overview's Open in Panes, in the project of the pane's session (the page moves there once it knows, #1161).
     await lead.locator("[data-board-lead-open]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${pane}`));
-    // Talk: the board's thread, which its lead reads.
-    await page.goBack();
-    await threadRoom(page);
-    await lead.locator("[data-board-lead-talk]").click();
-    await expect(page).toHaveURL(/room_launch/);
+    await expect(page).toHaveURL(new RegExp(`/p/prj_[^/]+/machines.*pane=${pane}`));
   });
 
-  test("a lead whose pane isn't here, or a teammate's, has the line and Talk, not Open", async ({ page }) => {
+  test("a lead whose pane isn't here, or a teammate's, has its panel, not Terminal", async ({ page }) => {
     // Its pane is gone from your machine.
     await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "lead", pane: pane + 1000, at: 1 }));
-    const lead = page.locator(".board-head [data-board-lead]");
-    await expect(lead).toContainText("Led by lead on suite-box");
-    await expect(lead.locator("[data-board-lead-talk]")).toBeVisible();
+    const lead = page.locator(".board-desk-side [data-board-lead]");
+    await expect(lead).toContainText("lead · lead · suite-box");
     await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
     // A teammate's machine, which this page doesn't reach.
     await openBoard(page, () => ({ machine: "m_team", machine_name: "jos-box", session: "Jo's lead", pane: 99_999, at: 1 }));
-    await expect(lead).toContainText("Led by Jo's lead on jos-box");
-    await expect(lead.locator("[data-board-lead-talk]")).toBeVisible();
+    await expect(lead).toContainText("lead · Jo's lead · jos-box");
     await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
   });
 
   test("a board no one leads says nothing of it", async ({ page }) => {
     await openBoard(page);
-    await expect(page.locator(".board-head [data-board-heading]")).toHaveText("Launch");
-    await expect(page.locator("[data-board-lead]")).toHaveCount(0);
+    await expect(page.locator("[data-board-heading]")).toHaveText("Launch");
+    await expect(page.locator("[data-board-lead-facts]")).toHaveCount(0);
+    await expect(page.locator(".board-desk-side [data-board-lead]")).toContainText("No lead yet");
   });
 });
 
@@ -255,7 +235,7 @@ test.describe("its grant (Arugula #1416)", () => {
   test("the board's grant is a line under its lead, and Revoke takes it off", async ({ page }, info) => {
     const lead = (pane: number) => ({ machine: "m_suite", machine_name: "suite-box", session: "Lead · Launch", pane, at: 1 });
     const pane = await openBoard(page, lead, GRANT);
-    const line = page.locator(".board-head [data-board-grant]");
+    const line = page.locator("[data-board-head] [data-board-grant]");
     await expect(line.locator("[data-board-grant-line]")).toHaveText("Grant: lead on geek · agents on geek, jake-mini · up to 3 · until the board closes");
     await page.screenshot({ path: info.outputPath("board-grant.png") });
     const revoked: string[] = [];
@@ -265,18 +245,18 @@ test.describe("its grant (Arugula #1416)", () => {
     });
     await line.locator("[data-board-grant-revoke]").click();
     await expect.poll(() => revoked).toEqual(["DELETE"]);
-    await expect(page.locator(".board-head [data-board-grant]")).toHaveCount(0);
+    await expect(page.locator("[data-board-head] [data-board-grant]")).toHaveCount(0);
   });
 
   test("a teammate's grant has no Revoke; a board with no lead and no grant offers Run this board, whose card goes in Needs you", async ({ page }, info) => {
     await openBoard(page, (pane) => ({ machine: "m_team", machine_name: "jos-box", session: "Jo's lead", pane, at: 1 }), { ...GRANT, person: "acct_jo", person_name: "Jo", mine: false, lapses_at: Date.UTC(2026, 11, 3, 12) });
-    const line = page.locator(".board-head [data-board-grant]");
+    const line = page.locator("[data-board-head] [data-board-grant]");
     await expect(line.locator("[data-board-grant-line]")).toContainText("Grant (Jo's): lead on geek");
     await expect(line.locator("[data-board-grant-line]")).toContainText("· up to 3 · until Dec 3");
     await expect(line.locator("[data-board-grant-revoke]")).toHaveCount(0);
 
     await openBoard(page);
-    const run = page.locator(".board-head [data-board-run]");
+    const run = page.locator("[data-board-head] [data-board-run]");
     await expect(run).toHaveText("Run this board");
     await page.screenshot({ path: info.outputPath("board-run.png") });
     const asked: string[] = [];

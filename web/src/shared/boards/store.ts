@@ -31,8 +31,6 @@ export interface ForgeChecks {
 }
 
 export const STALE_REV = "stale_rev";
-/** A reorder that read the group's rows before someone else moved them. */
-export const STALE_ORDER = "stale_order";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
@@ -105,7 +103,11 @@ export const boards = {
   unrelate: (project: string, relation: string) => call<unknown>("DELETE", `/api/projects/${enc(project)}/relations/${enc(relation)}`),
   detach: (id: string, attachment: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/attachments/${enc(attachment)}`),
   /** Rename the board, or change its goal (empty clears it). */
-  edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
+  async edit(id: string, e: { title?: string; goal?: string }): Promise<BoardView> {
+    const v = await call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e);
+    titles.set(id, v.board.title);
+    return v;
+  },
   /** Close the board as an epic, with what a person can now do. */
   close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
   reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),
@@ -117,9 +119,6 @@ export const boards = {
   /** Move a row to a group (`zone`, null: none), or a group among groups (`before`, null: last). */
   move: (id: string, entry: string, rev: number, m: { zone?: string | null; before?: string | null }) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { rev, before: null, ...m }),
-  /** A row goes before `before` (last in its group for null) in the group whose rows `seen` lists, in the order they were read; refused `stale_order` if they have moved. */
-  reorder: (id: string, entry: string, before: string | null, seen: string[]) =>
-    call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { before, seen }),
   /** Mark a row's issue (a native issue or a Plane item) Not finished with what is left, so a merged PR doesn't close it (#841; owners and editors). */
   hold: (id: string, row: string, reason: string) => call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/hold`, { reason }),
   /** Take the mark off: the issue closes now if a PR that names it has merged. */

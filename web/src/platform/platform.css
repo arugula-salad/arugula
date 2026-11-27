@@ -1149,29 +1149,10 @@ html[data-native-tabs] .platform {
   margin: 0 0 var(--space-3);
 }
 
-/* A board (Arugula #1129): the board and its controls' column scroll on
-   their own (../shared/boards/boards.css); under ~900px they're one column
-   again, and the middle scrolls. */
-.boards-middle.boards-board {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden;
-}
-
-@container list-preview (max-width: 900px) {
-  .boards-middle.boards-board {
-    display: block;
-    overflow: auto;
-  }
-}
-
-/* Over a board on every project's Boards (Arugula #1131): its project's Boards, and its issues on no board. */
-.boards-middle-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-4);
-  margin: 0 0 var(--space-3);
+/* A board's own page (Lift 5a): the desk fills it. */
+.boards-board {
+  height: 100%;
+  min-height: 0;
 }
 
 /* A board's row: its title, `13/18` and the lanes' bar on one line. */

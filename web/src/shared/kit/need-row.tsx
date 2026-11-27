@@ -3,7 +3,8 @@
 // It takes the wire's item as it is (kind, from, for, subject, lines,
 // answer, escalated; a to-do's how) and answers in place: a question's
 // options, a permission's Allow/Deny, a folder's trust, an approval's
-// Start/Not now, or a to-do's Done/Can't with a note. Answered, it is a dim
+// Start/Not now, a to-do's Done/Can't with a note, or (a question with no
+// options) a typed answer, sent as an option with no id. Answered, it is a dim
 // receipt. It holds at a third of a wide screen or a phone (360–480px):
 // put rows in a `NeedList`, and the meta wraps under the title.
 //
@@ -138,7 +139,17 @@ export function NeedRow({
         </Well>
       ) : null}
       {todo ? <TextField label="Note" hint="no secrets" value={note} onInput={setNote} onEnter={() => onAnswer?.(options[0]!, note)} /> : null}
-      {mine ? (
+      {mine && !todo && !options.length ? (
+        <>
+          <TextField label="Your answer" value={note} onInput={setNote} onEnter={() => note.trim() && onAnswer?.({ id: "", label: note.trim() })} />
+          <div class="k-row-actions">
+            <Button kind="primary" disabled={!note.trim()} onClick={() => onAnswer?.({ id: "", label: note.trim() })}>
+              Send
+            </Button>
+          </div>
+        </>
+      ) : null}
+      {mine && options.length ? (
         <div class="k-row-actions">
           {options.map((o, i) => (
             <Button key={o.id} kind={i === 0 ? "primary" : "plain"} keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]} onClick={() => onAnswer?.(o, todo ? note : undefined)}>
