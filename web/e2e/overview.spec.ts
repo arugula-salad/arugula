@@ -1353,12 +1353,14 @@ test.describe("on a computer", () => {
     const loose = page.locator("[data-ov-loose] [data-ov-panes]");
     await expect(loose).toHaveAttribute("data-ov-panes", /:/);
     led = { machine: "m_suite", machine_name: (await loose.getAttribute("data-ov-panes"))!.split(":")[0], session: "scratch", at: 1 };
+    // Its key now: once it leads Launch it isn't on Not on a card any more (#1508).
+    const scratch = (await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-session"))!.split("|")[1];
     await page.reload();
     await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
     const pill = (l: string) => page.locator(`[data-ov-level-pill="${l}"]`);
     const front = page.locator("[data-ov-tabs] .ov-tab-on");
     // The lead's tab is its session's peek, by its key past the card's.
-    const lead = `peek:${(await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-session"))!.split("|")[1]}`;
+    const lead = `peek:${scratch}`;
     await expect(pill("project")).toHaveAttribute("aria-current", "true");
     await expect(page.locator("[data-ov-zoom-bar] .ov-zoom-hint")).toHaveCount(0);
 

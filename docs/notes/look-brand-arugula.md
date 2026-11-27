@@ -1,7 +1,7 @@
 ---
 section: Changed
 title: Arugula has its own look
-line: The app is a near-black with a green accent in dark, and a near-white paper with an olive green in light, in Helvetica Neue and SF Mono. Amber now means something needs you; green means working. Settings › Appearance has five presets.
+line: Arugula's own look: green on near-black, or olive on near-white, in Helvetica Neue and SF Mono. Amber means something needs you; green means working. Appearance has five presets.
 try: {"route": "/settings"}
 ---
 Pick a preset next to the theme: Arugula (the default), Moss, Sea glass, Stone & ink or Graphite & acid. Each sets the accent and the tint, and where the warmth and depth sliders start; the sliders tune it from there. Amber means something needs or asks you and red means failing, whatever the preset.
