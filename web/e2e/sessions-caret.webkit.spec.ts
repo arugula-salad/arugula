@@ -69,10 +69,10 @@ test("the caret is the panes' only, and Machines brings the sidebar back", async
   await expect(caret).toBeVisible();
   await expect(sidebar).toBeVisible();
 
-  // Closed before the swarm, closed after it, with the caret to open it.
+  // Closed before another place, closed after it, with the caret to open it.
   await caret.click();
   await expect(sidebar).toHaveCount(0);
-  await page.locator("[data-machine-places] [data-machine-swarm]").click();
+  await page.locator("[data-rail] [data-open-settings]").click();
   await expect(page.locator("[data-open-sessions]")).toHaveCount(0);
   await page.locator("[data-rail] [data-open-machines]").click();
   await expect(sidebar).toHaveCount(0);

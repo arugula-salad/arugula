@@ -43,7 +43,7 @@ test.describe("on a computer", () => {
     // By the rail's buttons: the app's own moves, no page load. Overview
     // and Machines show their place's views.
     for (const [key, url, views] of [
-      ["overview", `/p/${P}[^/]*$`, ["overview", "swarm"]],
+      ["overview", `/p/${P}[^/]*$`, []],
       ["docs", "/docs$", []],
       ["machines", "/machines$", ["machines", "runs"]],
       ["boards", "/boards$", []],
@@ -65,9 +65,10 @@ test.describe("on a computer", () => {
     await expect(lit).toHaveCount(1);
     await expect.poll(() => hooks(page, "[data-place-views] > *", "view")).toEqual(["machines", "runs"]);
     await expect(page.locator("[data-view-runs]")).toHaveAttribute("aria-current", "page");
-    // The Swarm is the Overview's: its route lights the Overview.
+    // Swarm's old address lands on Machines (Lift 6a).
     await page.goto(`/p/${P}/machines/swarm`);
-    await expect(page.locator("[data-rail] [data-open-overview]")).toHaveAttribute("aria-current", "page");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(lit).toHaveCount(1);
   });
 });
@@ -86,8 +87,6 @@ test.describe("on an iPhone", () => {
     for (const path of ["", "/boards", "/docs", "/chat", "/machines", "/runs"]) {
       await page.goto(`/p/${P}${path}`, { waitUntil: "domcontentloaded" });
       await expect(page.locator("[data-platform-bar]")).toBeVisible();
-      // No Swarm on a phone's Overview.
-      if (!path) await expect(page.locator("[data-view-swarm]")).toHaveCount(0);
       expect(await sideways(), path || "/").toBeLessThanOrEqual(0);
     }
     await bell.click();
