@@ -1478,7 +1478,7 @@ async fn pane(app: &App, l: &Ledger, d: &DeployWork) -> Result<(u32, Option<u64>
     let _ = app.mux.api(|r| Api::OwnTab(pane, Some(tab_name(&l.run, &l.op_hash, &shown)), r)).await;
     app.mux.send(crate::mux::Cmd::Api(Api::StartedBy(
         pane,
-        StartedBy { by: format!("run {} (operation sha256:{})", l.run, l.op_hash), block: None, from: None },
+        StartedBy { by: format!("run {} (operation sha256:{})", l.run, l.op_hash), ..Default::default() },
     )));
     let epoch = app.mux.api(|r| Api::Pane(pane, r)).await.flatten().map(|h| h.epoch);
     Ok((pane, epoch, fifo, tokio::fs::File::from_std(out)))

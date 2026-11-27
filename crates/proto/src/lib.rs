@@ -1437,7 +1437,7 @@ pub struct DiffInfo {
 }
 
 /// Who started a pane or block through MCP (M16).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StartedBy {
     /// `mcp:<client>`, as the pane and history show it.
@@ -1454,6 +1454,19 @@ pub struct StartedBy {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub from: Option<PaneId>,
+    /// The opening pane's session name, as it was then (Arugula #1507): who
+    /// to ask about it. A name is no authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    /// The board (`brd_…`) the call named, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub board: Option<String>,
+    /// The issue the call named, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub issue: Option<String>,
 }
 
 /// A pane's driver (M13).
@@ -1574,6 +1587,33 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `started_by` saved before the opener's session, board and issue
+    /// (Arugula #1507) still loads, and one without them saves as it was.
+    #[test]
+    fn started_by_from_before_the_opener_fields_loads() {
+        let old = serde_json::json!({ "by": "mcp:claude-code", "block": 4, "from": 2 });
+        let by: StartedBy = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!((by.block, by.session, by.board, by.issue), (Some(4), None, None, None));
+        assert_eq!(
+            serde_json::to_value(StartedBy {
+                by: "mcp:claude-code".into(),
+                block: Some(4),
+                from: Some(2),
+                ..Default::default()
+            })
+            .unwrap(),
+            old
+        );
+        let new = StartedBy {
+            by: "mcp:x".into(),
+            session: Some("chief".into()),
+            board: Some("brd_1".into()),
+            issue: Some("#5".into()),
+            ..Default::default()
+        };
+        assert_eq!(serde_json::from_value::<StartedBy>(serde_json::to_value(&new).unwrap()).unwrap(), new);
+    }
 
     #[test]
     fn frame_round_trip() {

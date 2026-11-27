@@ -655,6 +655,7 @@ mod tests {
             current: None,
             last: None,
             started_by: None,
+            opened_by: None,
             worktree: None,
             project: None,
             card: None,
