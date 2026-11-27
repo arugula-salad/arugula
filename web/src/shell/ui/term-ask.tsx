@@ -11,8 +11,8 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { openMenu } from "../../shared/ui/menu";
-import type { Client } from "../client";
-import type { DiffInfo, PaneId } from "../../shared/proto";
+import { paneIds, type Client } from "../client";
+import type { DiffInfo, PaneId, TabView } from "../../shared/proto";
 import { DiffCard } from "./diff-card";
 import { openEditor } from "../blocks/editor";
 import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-editor";
@@ -90,7 +90,25 @@ function useFootLift(on: boolean) {
   return { ref, style: lift ? { bottom: `${lift + 8}px` } : undefined };
 }
 
-export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: Ask }) {
+/** A plain `claude`'s question (Claude Code's hooks in a terminal): on a
+ * computer it sits over the tab's panes, under its head line (Lift 6a), not
+ * over its terminal. */
+export const asksAbove = (info: { type?: string; ask?: Ask | null } | undefined, phone: boolean): boolean => !phone && info?.type === "terminal" && info.ask?.source === "hook";
+
+/** The tab's plain `claude` questions, over its panes (Lift 6a, v6's Machines). */
+export function TabAsks({ client, tab, phone }: { client: Client; tab: TabView; phone: boolean }) {
+  const ids = paneIds(tab).filter((id) => asksAbove(client.info(id), phone));
+  if (!ids.length) return null;
+  return (
+    <div class="tab-asks" data-tab-asks>
+      {ids.map((id) => (
+        <TermAsk key={id} client={client} id={id} ask={client.info(id)!.ask!} above />
+      ))}
+    </div>
+  );
+}
+
+export function TermAsk({ client, id, ask, above }: { client: Client; id: PaneId; ask: Ask; /** Over the tab's panes, not over its own: nothing to hide it from. */ above?: boolean }) {
   const [hidden, setHidden] = useState(false);
   const foot = useFootLift(ask.source === "forge");
   const call = (method: string, args: unknown) => void client.api(`/api/blocks/${id}/call/${method}`, args, `couldn't ${method}`);
@@ -115,13 +133,15 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
     );
   }
   return (
-    <div class="pane-ask" ref={foot.ref} style={foot.style} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+    <div class="pane-ask" ref={foot.ref} style={foot.style} data-pane-ask={id} onPointerDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
       <div class="pane-ask-bar">
         <span>{what}</span>
         <Watching client={client} id={id} />
-        <button class="link" title={terminal ? "Look at the terminal; the question stays open" : "Look at the page; the question stays open"} onClick={() => setHidden(true)}>
-          Hide
-        </button>
+        {!above && (
+          <button class="link" title={terminal ? "Look at the terminal; the question stays open" : "Look at the page; the question stays open"} onClick={() => setHidden(true)}>
+            Hide
+          </button>
+        )}
       </div>
       {ask.kind === "permission" ? (
         <PermissionCard client={client} id={id} ask={ask} can={can} />

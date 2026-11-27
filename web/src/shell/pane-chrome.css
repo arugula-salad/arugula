@@ -28,17 +28,6 @@
   color: var(--ink);
 }
 
-.grid.pane-chrome .pane-header-n {
-  background: none;
-  color: var(--ink-dim);
-  font-size: var(--text-label);
-  padding: 0;
-}
-
-.grid.pane-chrome .pane-header.active .pane-header-n {
-  color: var(--accent);
-}
-
 .grid.pane-chrome .pane-header-button .icon {
   width: 14px;
   height: 14px;
@@ -90,10 +79,6 @@ html .app:not(.phone) .grid.pane-chrome .pane::after {
 .grid.pane-chrome .pane-header.live { gap: var(--space-2); }
 /* Two sizes in the header: 13px for the title, 11px for everything about
    it (UI audit #171). */
-.grid.pane-chrome .pane-header-n {
-  font: var(--text-label) var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
 .grid.pane-chrome .pane-header-branch { font-size: var(--text-label); }
 .grid.pane-chrome .pane-header-type {
   display: inline-flex;

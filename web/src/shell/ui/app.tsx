@@ -61,6 +61,7 @@ import { PaneToolbar } from "./shell/pane-toolbar";
 import { ActivityDrawer } from "./shell/activity";
 import { AttentionDrawer } from "./shell/attention-drawer";
 import { TabArea } from "./panes/tab-area";
+import { TabAsks } from "./term-ask";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
 import { currentPlace, landOldOverview } from "./places";
@@ -225,6 +226,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
               <NewMachineNote />
               <AgentsNudge client={client} />
               {tab && <PaneToolbar client={client} tab={tab} />}
+              {tab && <TabAsks client={client} tab={tab} phone={phone} />}
               {main}
               {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
             </div>

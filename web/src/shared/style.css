@@ -2857,6 +2857,16 @@ button.agent-image {
   box-shadow: var(--shadow-raised);
 }
 
+/* Over the tab's panes (Lift 6a): a plain claude's question under the tab's head line. */
+.tab-asks {
+  padding: 6px 8px 0;
+}
+.tab-asks .pane-ask {
+  position: static;
+  max-height: 40vh;
+  box-shadow: none;
+}
+
 .pane-ask .ask {
   margin: 0;
 }
@@ -10197,23 +10207,6 @@ html[data-workspace="new"] .thread-panel {
 
 .pane-header.live.active:hover {
   color: var(--ink);
-}
-
-.pane-header-n {
-  flex: none;
-  min-width: 13px;
-  padding: 0 3px;
-  box-sizing: border-box;
-  border-radius: var(--tag-radius);
-  background: var(--card-raised);
-  color: var(--ink-dim);
-  font: 600 var(--text-label)/13px var(--font-mono);
-  text-align: center;
-}
-
-.pane-header.active .pane-header-n {
-  background: var(--accent-fill);
-  color: var(--on-accent);
 }
 
 .pane-header-type {

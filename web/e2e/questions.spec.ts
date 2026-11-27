@@ -129,17 +129,18 @@ test.describe("desktop", () => {
     await expect(block.locator(".agent-note").last()).toHaveText("The question was withdrawn");
   });
 
-  test("Claude Code in a terminal asks beside it; or in the terminal", async ({ page }) => {
+  test("Claude Code in a terminal asks over the tab's panes, not over its terminal (Lift 6a); or in the terminal", async ({ page }) => {
     await reset(page);
     const [term] = await panes(page);
     const pane = paneEl(page, term);
     await send(page, term, hook("ONE"));
-    const card = pane.locator(".pane-ask").getByRole("dialog", { name: "Which colour do you prefer?" });
+    const above = page.locator(`[data-tab-asks] [data-pane-ask="${term}"]`);
+    const card = above.getByRole("dialog", { name: "Which colour do you prefer?" });
     await expect(card).toBeVisible();
+    await expect(pane.locator(".pane-ask")).toHaveCount(0);
     await expect.poll(() => page.evaluate((t) => window.__arugula.client.info(t)?.attention, term)).toBe("needs_input");
-    // Tucked away to see the terminal, and back.
-    await pane.locator(".pane-ask").getByRole("button", { name: "Hide" }).click();
-    await pane.getByRole("button", { name: "Claude Code asks…" }).click();
+    // It covers nothing, so it has no Hide.
+    await expect(above.getByRole("button", { name: "Hide" })).toHaveCount(0);
     await card.locator('[data-question="0"]').getByRole("radio", { name: /^Blue/ }).click();
     await card.locator('[data-question="1"]').getByRole("checkbox", { name: /Pear/ }).check();
     await card.locator('[data-question="2"]').getByRole("radio", { name: /^Cat/ }).click();
@@ -152,8 +153,8 @@ test.describe("desktop", () => {
 
     // "Answer in terminal": the hook prints nothing.
     await send(page, term, hook("TWO"));
-    await pane.getByRole("button", { name: "Answer in terminal" }).click();
-    await expect(pane.locator(".pane-ask")).toBeHidden();
+    await page.locator("[data-tab-asks]").getByRole("button", { name: "Answer in terminal" }).click();
+    await expect(page.locator("[data-tab-asks]")).toHaveCount(0);
     await expect.poll(() => text(page, term)).toContain("TWO[0]");
   });
 });
