@@ -191,7 +191,8 @@ export function Prototype({ html: own, alt }: { html: string; alt: string }) {
     if (full && !open) el.showPopover();
     if (!full && open) el.hidePopover();
     if (!full) return;
-    const key = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    // Taken: not a step back too (shared/kit/frame/stack.ts).
+    const key = (e: KeyboardEvent) => e.key === "Escape" && (e.preventDefault(), setFull(false));
     const msg = (e: MessageEvent) => escapeFrom(e, frame.current?.contentWindow) && setFull(false);
     addEventListener("keydown", key);
     addEventListener("message", msg);

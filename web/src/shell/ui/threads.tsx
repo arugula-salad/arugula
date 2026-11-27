@@ -145,7 +145,8 @@ export function RoomDrawer({ phone, client }: { phone: boolean; client?: Client 
   }, []);
   useEffect(() => {
     if (!drawer) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRoomDrawer();
+    // Taken: not a step back too (shared/kit/frame/stack.ts).
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.preventDefault(), closeRoomDrawer());
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
   }, [!!drawer]);

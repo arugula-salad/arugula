@@ -371,6 +371,8 @@ export function SwarmView({
   useLayoutEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || escapeTaken(e) || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
+      // It's this page's: the back stack (shared/kit/frame/stack.ts) leaves it be.
+      e.preventDefault();
       if (following) setFollowing(null);
       // Wall mode first (#446): Escape leaves it, not the swarm.
       else if (wall.on) wall.exit();
