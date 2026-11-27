@@ -83,7 +83,7 @@ test("after a restart: tabs, splits, cwd and scrollback are back; policies apply
   await expect.poll(() => tabsInSession(page)).toHaveLength(2);
   const t2 = (await tabsInSession(page))[1];
   await page.locator(`[data-tab-id="${t2}"]`).dblclick();
-  await page.locator("input.rename").fill("two");
+  await page.locator("[data-tab-bar] input").fill("two");
   await page.keyboard.press("Enter");
   await expect(page.locator(`[data-tab-id="${t2}"]`)).toContainText("two");
   await page.waitForTimeout(400); // the layout save is debounced
