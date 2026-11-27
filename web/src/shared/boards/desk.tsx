@@ -6,10 +6,10 @@
 // board's Needs you as NeedRows (its asks, and the agents' asks and to-dos
 // on its issues from the project's Inbox, Arugula #1469; a teammate's
 // folded under one neutral row each),
-// then the lead's panel: the board's thread, which its lead reads.
-//
-// The lead's panel is a seam: Lift 4's Panel (#1480) takes it over, with
-// the chief of staff's and a worker's tabs and `j`/`k`'s peek.
+// then the agent panel (#1520, #1522's shape): ✦ the chief of staff, and
+// the board's one tab, which flips between its lead (Lead 🔒, the private
+// conversation) and its channel (# the board, its thread). A page without
+// the agent panel (no machines) keeps the board's thread alone.
 
 import { createContext, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -22,7 +22,7 @@ import { RoomBody } from "../chat/room";
 import { useSubscribe } from "../ui/hooks";
 import { Avatar } from "../kit/avatar";
 import { NeedList, NeedRow, type Need, type NeedOption } from "../kit/need-row";
-import { Panel } from "../kit/panel";
+import { CHIEF_KEY, Panel, panelKey, usePanel, type PanelTarget } from "../kit/panel";
 import { Row } from "../kit/row";
 import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
@@ -276,7 +276,59 @@ export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view:
   );
 }
 
-/** The lead's panel (a seam for Lift 4's Panel): who leads and where, then the board's thread, which its lead reads, with the box to write to it. */
+/** The board's right third under Needs you (#1520): the agent panel, with ✦ and the board's tab (Lead 🔒 ⇄ # channel), and `peek` (a card's worker, `j`/`k`) as a visitor; the board's thread alone where the page has no agent panel. */
+export function BoardSide({ view, id, phone, above, peek, onPeekClose }: { view: BoardView; id: string; phone: boolean; above: ComponentChildren; peek?: PanelTarget | null; onPeekClose?: () => void }) {
+  const AgentPanel = usePanel();
+  const b = view.board;
+  const lead = b.lead;
+  const [side, setSide] = useState<"lead" | "channel">(lead ? "lead" : "channel");
+  // The other boards this lead leads: one session, so the same conversation on each.
+  const [also, setAlso] = useState<string[]>([]);
+  useEffect(() => {
+    if (!lead) return;
+    let live = true;
+    boards.list(b.project).then(
+      (l) => live && setAlso(l.boards.filter((o) => o.id !== b.id && !o.closed_at && o.lead?.session === lead.session && o.lead.machine === lead.machine).map((o) => o.title)),
+      () => {},
+    );
+    return () => void (live = false);
+  }, [b.project, lead?.session, lead?.machine]);
+  const leadT: PanelTarget | null = lead ? { kind: "agent", role: "lead", machine: lead.machine, session: lead.session, pane: lead.pane, board: b.id, title: b.title, label: "Lead 🔒", note: also.length ? `Also leads: ${also.join(", ")}` : undefined } : null;
+  const channelT: PanelTarget = { kind: "thread", room: b.id, title: `# ${b.title}` };
+  const board = side === "lead" && leadT ? leadT : channelT;
+  const boardKey = panelKey(board);
+  /** The tab in front: the board's (its key), a peeked worker's, or the chief of staff (undefined). */
+  const [front, setFront] = useState<string | undefined>(boardKey);
+  const flip = () => {
+    const next = side === "lead" ? "channel" : "lead";
+    setSide(next);
+    setFront(panelKey(next === "lead" && leadT ? leadT : channelT));
+  };
+  // A worker peeked comes to the front; let go, the board's tab is.
+  const peekKey = peek ? panelKey(peek) : undefined;
+  useEffect(() => setFront(peekKey ?? boardKey), [peekKey]);
+  if (!AgentPanel) return (
+    <>
+      {above}
+      <LeadPanel view={view} id={id} phone={phone} />
+    </>
+  );
+  const shown = front === undefined || front === boardKey || front === peekKey ? front : boardKey;
+  return (
+    <AgentPanel
+      project={b.project}
+      above={above}
+      targets={[board, ...(peek ? [peek] : [])]}
+      current={shown}
+      chiefIcon
+      toggle={leadT ? { key: boardKey, label: side === "lead" ? "channel" : "lead", title: side === "lead" ? `The board's channel, # ${b.title}` : "The lead, privately", run: flip } : undefined}
+      onPick={(k) => (k === CHIEF_KEY ? setFront(undefined) : k === boardKey && shown === boardKey && leadT ? flip() : setFront(k))}
+      onClose={peek ? (k) => k === peekKey && onPeekClose?.() : undefined}
+    />
+  );
+}
+
+/** The lead's panel where the page has no agent panel: who leads and where, then the board's thread, which its lead reads, with the box to write to it. */
 export function LeadPanel({ view, id, phone }: { view: BoardView; id: string; phone: boolean }) {
   const api = usePlatformApi();
   useSubscribe((fn) => chat.subscribe(fn));

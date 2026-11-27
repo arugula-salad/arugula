@@ -50,7 +50,7 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
+import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
 import { boardPlace, ChangedLine, forYou, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
@@ -226,7 +226,7 @@ export function BoardPanel({
           { id: "board.prev", label: "The row before", keys: both("key:k"), run: () => tile(-1) },
           { id: "board.find", label: "Filter the rows", keys: both("key:f", "key:/"), run: openFind },
           { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab(HOME), setAdding(true)) },
-          { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea")?.focus() },
+          { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea, .board-desk-side [data-kit=panel] textarea")?.focus() },
         ]
       : [],
     [desk, shown, !!view, tabs.map((t) => t.id).join(), id, max],
@@ -704,8 +704,7 @@ export function BoardPanel({
           </section>
           {prefsOpen && prefs.prefs && <LayoutSheet prefs={prefs.prefs} flip={prefs.flip} close={() => setPrefsOpen(false)} />}
           <div class="board-desk-side">
-            <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />
-            <LeadPanel view={view} id={id} phone={phone} />
+            <BoardSide view={view} id={id} phone={phone} above={<BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />} />
           </div>
         </div>
       </RowItems.Provider>
