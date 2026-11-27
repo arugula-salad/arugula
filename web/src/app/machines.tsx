@@ -18,6 +18,7 @@ type Place = ComponentType<{ project: string; at: MachineAt }>;
 type Page = typeof import("./machine-page");
 type OverviewPage = typeof import("./overview");
 type PanelPage = typeof import("./panel");
+type RunningPage = typeof import("./running");
 
 /** The machine page's chunk, once asked for. */
 let loading: Promise<Page> | null = null;
@@ -28,6 +29,8 @@ let loadingInbox: Promise<typeof import("./inbox")> | null = null;
 const loadInbox = () => (loadingInbox ??= import("./inbox"));
 let loadingPanel: Promise<PanelPage> | null = null;
 const loadPanel = () => (loadingPanel ??= import("./panel"));
+let loadingRunning: Promise<RunningPage> | null = null;
+const loadRunning = () => (loadingRunning ??= import("./running"));
 
 /** `PlatformApi.Machines` over `session`: the hub's machines, reached with
  * machine tokens. `session` null is a daemon's own page (its machines
@@ -168,6 +171,26 @@ export function appOverview(session: () => AppSession | null): ComponentType<{ p
         </p>
       );
     return <page.OverviewPlace project={project} board={board} card={card} zoom={zoom} session={s} />;
+  };
+}
+
+/** `PlatformApi.Running` over `session` (Lift 6a, #1483): the drawer
+ * (./running), in a chunk of its own, loaded with the page. Nothing while
+ * the hub can't reach machines from this host. */
+export function appRunning(session: () => AppSession | null): ComponentType<{ project: string | null; place: string | null }> {
+  return function Running(props) {
+    const s = session();
+    useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
+    const [page, setPage] = useState<RunningPage | null>(null);
+    const reachable = !s || s.reachable !== false;
+    useEffect(() => {
+      if (!reachable) return;
+      let live = true;
+      void loadRunning().then((p) => live && setPage(() => p));
+      return () => void (live = false);
+    }, [reachable]);
+    if (!reachable || !page) return null;
+    return <page.RunningPlace {...props} session={s} />;
   };
 }
 

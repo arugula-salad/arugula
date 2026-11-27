@@ -186,6 +186,8 @@ export interface PlatformApi {
    * `usePanel`). Where the page reaches machines itself (the app); a page
    * without it has no panel. */
   AgentPanel?: ComponentType<AgentPanelProps>;
+  /** Running (Lift 6a, §3.9): the top bar's "N running" and its drawer, over the page's machines; `place` (`board:brd_…`) to pin to. Where the page reaches machines itself (the app). */
+  Running?: ComponentType<{ project: string | null; place: string | null }>;
   /** Settings › Machines' sections (Arugula #1107): Access and sharing,
    * Agents and Advanced, whose parts are mostly the machine's own, read
    * from it through the page's own client to it, each saying so when the

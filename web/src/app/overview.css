@@ -220,3 +220,11 @@
 .ov .side-sheet-backdrop {
   top: var(--ov-bar-bottom, 0px);
 }
+
+/* Running (./running.tsx, Lift 6a): a pane's last lines under the list. */
+.running-peek {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
