@@ -72,6 +72,13 @@
   white-space: nowrap;
 }
 
+/* The Layout sheet (`,`, ../layout-prefs.tsx): its sentences, one switch each. */
+.layout-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .board-pane-note {
   display: flex;
   flex-direction: column;

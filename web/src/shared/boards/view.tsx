@@ -53,6 +53,7 @@ import { AddRowSheet } from "./add-row";
 import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
 import { boardPlace, ChangedLine, forYou, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
+import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
 import { Panes, type PaneItem } from "../kit/panes/panes";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
@@ -192,6 +193,9 @@ export function BoardPanel({
   const [looked, setLooked] = useState<ReadonlySet<string>>(new Set());
   const arranged = usePlaceLayout(desk && shown ? boardPlace(id) : null, (why) => toast(`Couldn't change the layout: ${why}`));
   const layout = arranged.layout;
+  /** The sentences the lead follows (§3.10, `,`); none where the platform keeps none. */
+  const prefs = useLayoutPrefs((why) => toast(`Couldn't keep it: ${why}`));
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const tabNow = layout.tabs.find((t) => t.id === tab) ?? layout.tabs[0]!;
   useEffect(() => {
     if (tabNow.id !== tab) setTabNow(HOME);
@@ -599,7 +603,7 @@ export function BoardPanel({
           <DeskHead
             view={view}
             write={write}
-            more={[...deskMore, ...layoutItems(layout, reset, (pane) => void arranged.change({ op: "reopen", pane }))]}
+            more={[...deskMore, ...(prefs.prefs ? [{ label: "Layout…", run: () => setPrefsOpen(true), attrs: { "data-board-layout-prefs": "" } }] : []), ...layoutItems(layout, reset, (pane) => void arranged.change({ op: "reopen", pane }))]}
             prs={prs}
             actions={
               <>
@@ -698,6 +702,7 @@ export function BoardPanel({
               </div>
             )}
           </section>
+          {prefsOpen && prefs.prefs && <LayoutSheet prefs={prefs.prefs} flip={prefs.flip} close={() => setPrefsOpen(false)} />}
           <div class="board-desk-side">
             <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />
             <LeadPanel view={view} id={id} phone={phone} />
