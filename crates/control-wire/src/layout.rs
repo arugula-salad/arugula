@@ -55,6 +55,36 @@ pub fn agent_layout(place: &str) -> String {
     format!("/api/daemon/layouts/{place}")
 }
 
+/// `GET`: the reader's layout prefs ([`LayoutPrefs`]; none kept answers
+/// each off). `PUT` [`LayoutPrefs`]: keep them, answered what's kept. A
+/// key not in [`PREFS`] is refused (400).
+pub const LAYOUT_PREFS: &str = "/api/layout-prefs";
+/// `GET`: the machine's owner's [`LayoutPrefs`], for their agents.
+pub const AGENT_LAYOUT_PREFS: &str = "/api/daemon/layout-prefs";
+
+/// The Layout sheet's sentences (Arugula #1531; plan §3.10): each a key a
+/// person turns on or off, and the words they and their agents read. The
+/// agents follow them when they show something on a place; the server
+/// doesn't.
+pub const PREFS: &[(&str, &str)] = &[("docs_as_tabs", "Docs open as tabs"), ("previews_as_tabs", "Previews as tabs")];
+
+/// A person's layout prefs: each of [`PREFS`]' keys on or off; a key left
+/// out is off.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LayoutPrefs {
+    #[serde(default)]
+    pub prefs: BTreeMap<String, bool>,
+}
+
+impl LayoutPrefs {
+    /// The words of the prefs that are on, in [`PREFS`]' order.
+    pub fn on(&self) -> Vec<&'static str> {
+        PREFS.iter().filter(|(k, _)| self.prefs.get(*k) == Some(&true)).map(|(_, w)| *w).collect()
+    }
+}
+
 /// The place's own tab, always first.
 pub const HOME_TAB: &str = "home";
 /// The most untouched agent panes a tab holds.
@@ -335,6 +365,10 @@ pub struct LayoutChanged {
     /// pane past [`AGENT_PANES`].
     #[serde(default)]
     pub closed: Vec<Pane>,
+    /// The person's layout prefs (Arugula #1531), for the agent to follow:
+    /// [`LayoutPrefs::on`]. Empty from a server before it.
+    #[serde(default)]
+    pub prefs: LayoutPrefs,
 }
 
 #[cfg(test)]
@@ -349,6 +383,21 @@ mod tests {
         for bad in ["board:prj_x", "board:brd_", "overview:brd_x", "desk:brd_x", "brd_x", "board:brd_a/b"] {
             assert_eq!(Place::parse(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn prefs_say_their_words_in_order() {
+        let p: LayoutPrefs = serde_json::from_value(serde_json::json!({
+            "prefs": { "previews_as_tabs": true, "docs_as_tabs": true, "gone": true },
+        }))
+        .unwrap();
+        assert_eq!(p.on(), ["Docs open as tabs", "Previews as tabs"]);
+        assert_eq!(LayoutPrefs::default().on(), Vec::<&str>::new());
+        let old: LayoutChanged = serde_json::from_value(serde_json::json!({
+            "layout": { "place": "board:brd_1", "rev": 1, "tabs": [] },
+        }))
+        .unwrap();
+        assert_eq!(old.prefs, LayoutPrefs::default(), "a server before prefs");
     }
 
     #[test]

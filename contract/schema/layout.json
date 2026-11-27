@@ -252,6 +252,13 @@
             "null"
           ]
         },
+        "prefs": {
+          "$ref": "#/$defs/LayoutPrefs",
+          "default": {
+            "prefs": {}
+          },
+          "description": "The person's layout prefs (Arugula #1531), for the agent to follow:\n[`LayoutPrefs::on`]. Empty from a server before it."
+        },
         "tab": {
           "default": null,
           "type": [
@@ -263,6 +270,19 @@
       "required": [
         "layout"
       ],
+      "type": "object"
+    },
+    "LayoutPrefs": {
+      "description": "A person's layout prefs: each of [`PREFS`]' keys on or off; a key left\nout is off.",
+      "properties": {
+        "prefs": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
       "type": "object"
     },
     "NewPane": {

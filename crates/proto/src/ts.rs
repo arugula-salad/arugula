@@ -185,6 +185,8 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::layout::PlaceLayout>();
     c.visit::<arugula_control_wire::layout::LayoutChange>();
     c.visit::<arugula_control_wire::layout::LayoutChanged>();
+    // Their layout prefs (Arugula #1531).
+    c.visit::<arugula_control_wire::layout::LayoutPrefs>();
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
     // Making a project, and renaming, archiving and moving one (Arugula #892).

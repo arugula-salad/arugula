@@ -139,9 +139,13 @@ pub(crate) async fn show_place(c: &Call<'_>, a: ShowPlaceArgs) -> Out {
     for p in &got.closed {
         text.push_str(&format!("; closed {} (your oldest) to make room", p.title));
     }
+    let prefs = got.prefs.on();
+    if !prefs.is_empty() {
+        text.push_str(&format!(". Their layout says: {}; follow it", prefs.join("; ")));
+    }
     done(
         text,
-        json!({ "place": place, "pane": got.pane, "tab": got.tab, "closed": got.closed.iter().map(|p| &p.title).collect::<Vec<_>>() }),
+        json!({ "place": place, "pane": got.pane, "tab": got.tab, "closed": got.closed.iter().map(|p| &p.title).collect::<Vec<_>>(), "prefs": prefs }),
     )
 }
 

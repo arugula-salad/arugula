@@ -4261,7 +4261,12 @@ pane: string | null, tab: string | null,
  * Panes the change closed to make room: the oldest untouched agent
  * pane past [`AGENT_PANES`].
  */
-closed: Array<LayoutPane>, };
+closed: Array<LayoutPane>, 
+/**
+ * The person's layout prefs (Arugula #1531), for the agent to follow:
+ * [`LayoutPrefs::on`]. Empty from a server before it.
+ */
+prefs: LayoutPrefs, };
 
 /**
  * Who changed the home tab last, and when (ms).
@@ -4327,6 +4332,12 @@ offline: boolean, };
  * What a pane shows.
  */
 export type LayoutPaneKind = "doc" | "pr" | "preview" | "run" | "terminal" | "card" | "prompt" | "other";
+
+/**
+ * A person's layout prefs: each of [`PREFS`]' keys on or off; a key left
+ * out is off.
+ */
+export type LayoutPrefs = { prefs: { [key in string]: boolean }, };
 
 /**
  * One tab of a place.
