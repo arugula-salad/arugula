@@ -27,7 +27,7 @@ import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
 import { openGettingStarted } from "./welcome";
-import { openPalette } from "./palette";
+import { openGoTo } from "../../shared/kit/frame/goto";
 import { GateWhy } from "./gate-why";
 import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
@@ -387,8 +387,8 @@ function PhoneSheet({ client, close }: { client: Client; close: () => void }) {
                   <button data-open-swarm onClick={act(openSwarm)}>
                     Swarm
                   </button>
-                  <button data-open-palette onClick={act(() => openPalette(client, true))}>
-                    Commands
+                  <button data-open-palette onClick={act(() => openGoTo())}>
+                    Go to…
                   </button>
                   {owner && client.has("studio") && (
                     <button data-studio-apps onClick={act(() => pickApp(client, { session: where }, true))}>

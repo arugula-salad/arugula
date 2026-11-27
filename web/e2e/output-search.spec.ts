@@ -1,4 +1,4 @@
-// Native #245: Search output from the command palette. A string printed in
+// Native #245: Search output from Go to…. A string printed in
 // another session is found, and picking it shows that pane, scrolled to the
 // line (it's selected).
 
@@ -28,10 +28,9 @@ test("a line printed in another session is found, and picking it shows it there"
   await page.evaluate((s) => window.__arugula.client.selectSession(s), home);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.session)).toBe(home);
 
-  const mod = process.platform === "darwin" ? "Meta" : "Control";
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await page.keyboard.press(`${mod}+Shift+KeyP`);
-  await palette.getByRole("combobox", { name: "Command" }).fill("Search output");
+  const palette = page.getByRole("dialog", { name: "Go to…" });
+  await page.keyboard.press("Control+Shift+KeyK");
+  await palette.getByRole("combobox", { name: "Go to" }).fill("Search output");
   await palette.locator('[data-command="Search/output"]').click();
 
   const search = palette.getByRole("combobox", { name: "Search output" });
@@ -40,7 +39,7 @@ test("a line printed in another session is found, and picking it shows it there"
   const hit = palette.locator(`[data-command^="Output/"][data-command*="/${there}/"]`, { hasText: "needle-42-out" });
   await expect(hit).toHaveCount(1, { timeout: 10_000 });
   // It says which machines it asked.
-  await expect(palette.locator("[data-output-asked]")).toContainText("Searched");
+  await expect(palette.locator("[data-goto-note]")).toContainText("Searched");
   await expect(palette.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
   const at = await palette.getByRole("option").evaluateAll((els) => els.findIndex((e) => e.textContent?.includes("needle-42-out")));
   for (let i = 0; i < at; i++) await search.press("ArrowDown");

@@ -22,25 +22,7 @@
 .add-pane-preview-cell.active { border-color: var(--accent); }
 .add-pane-preview-cell.new { border: 1px dashed var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent-fill) 8%, var(--bg)); }
 .add-pane-dest { margin: 0; border: 0; padding: 0; line-height: 1.6; color: var(--subtle); }
-.picker.palette { width: min(760px, calc(100vw - 32px)); max-height: min(680px, 80dvh); }
-.palette-search { display: flex; align-items: center; padding: 6px 20px; gap: 12px; border-bottom: 1px solid var(--line); color: var(--accent); }
-/* Sans, as the rows under it (UI audit #176); 16px on a phone (style.css), where less zooms the page. */
-.palette-search .picker-filter { flex: 1; min-width: 0; padding: 16px 0; border: 0; margin: 0; background: transparent; font-family: inherit; font-size: var(--text-lg); box-shadow: none; height: auto; }
-.palette.phone .palette-search .picker-filter { font-size: var(--t-field); }
-.palette-on { margin-left: 6px; vertical-align: 1px; }
-.palette-results-heading { display: flex; justify-content: space-between; gap: 12px; padding: 14px 20px 8px; color: var(--dim); font-size: var(--text-xs); }
-.palette .picker-list { padding: 4px 10px 12px; }
-.palette-row { min-height: 58px; padding: 10px; gap: 12px; box-sizing: border-box; border: 1px solid transparent; border-radius: var(--field-radius); }
-.palette-row.selected { border-color: color-mix(in srgb, var(--accent-fill) 50%, var(--line)); background: color-mix(in srgb, var(--accent-fill) 10%, var(--surface)); }
-.palette-command-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; background: var(--bg); border: 1px solid var(--line); border-radius: var(--field-radius); color: var(--subtle); }
-.palette-row.selected .palette-command-icon { color: var(--accent); }
-.palette-command-text { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
-.palette-row .picker-label { font-size: var(--text-md); font-weight: 500; }
-.palette-detail { grid-row: 2; font-size: var(--text-xs); max-width: none; color: var(--subtle); }
-.palette-group { grid-column: 2; grid-row: 1; width: auto; max-width: none; text-align: right; font-size: var(--text-xs); color: var(--dim); }
-.palette-recent { font-size: var(--text-xs); }
-.palette-help { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--dim); font-size: var(--text-xs); }
-.palette-help kbd { display: inline-block; min-width: 14px; padding: 2px 4px; border: 1px solid var(--line); border-radius: var(--tag-radius); text-align: center; color: var(--subtle); font: inherit; }
+
 /* The display heading, as the swarm's rail and the app set theirs; the
    detail's heading under it is the lighter one (UI audit #172). */
 .ws-att-list { padding: 10px 12px; }
@@ -53,18 +35,4 @@
 .ws-att-facts { padding: 12px; border: 1px solid var(--line); border-radius: var(--field-radius); background: var(--bg); }
 .ws-att-facts > div { padding: 6px 0; }
 .ws-att-facts dd { line-height: 1.5; }
-@media (max-width: 600px) {
-  .picker.palette.phone { width: 100%; max-height: 100%; border-radius: 0; }
-  .palette-group { display: none; }
-  .palette-command-text { display: flex; flex-direction: column; }
-  .palette-help { flex-wrap: wrap; }
-}
-/* The heading and keyboard legend stay visible while results scroll. */
-.picker.palette { height: auto; }
-.palette-search, .palette-results-heading, .palette-help { flex: none; }
-.palette .picker-list { flex: 0 1 auto; min-height: 0; max-height: 460px; overflow-y: auto; }
 
-/* Phone mode may also be explicitly selected on a wider viewport. */
-.picker.palette.phone { width: 100%; height: var(--app-height); max-height: 100%; border-radius: 0; }
-
-.picker.palette.phone .picker-list { flex: 1; max-height: none; }

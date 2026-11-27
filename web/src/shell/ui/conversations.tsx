@@ -94,7 +94,7 @@ export function pickConversation(client: Client, where: ConversationsWhere, phon
   changed();
 }
 
-/** Your work from the palette or the machine menu: beside the active pane,
+/** Your work from Go to… or the machine menu: beside the active pane,
  * in its folder first. */
 export function openYourWork(client: Client) {
   const pane = client.active();

@@ -93,7 +93,7 @@ test("the backdrop is one colour: 40% black under a dialog and a sheet", async (
   await expect(page.locator("[data-side-sheet-backdrop]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.4)");
 });
 
-// The palette, the pickers and the room switcher: a Modal without its card.
+// The pickers and the room switcher: a Modal without its card.
 // It takes the focus into its search field, Escape closes it alone, and the
 // focus goes back to what opened it, on a desktop (top-anchored, a box) and
 // at 390px (the whole screen).
@@ -101,17 +101,17 @@ for (const [width, height] of [
   [1000, 800],
   [390, 844],
 ] as const) {
-  test(`palette at ${width}px: opens in its field, Escape closes it alone, focus comes back`, async ({ page }) => {
+  test(`a picker at ${width}px: opens in its field, Escape closes it alone, focus comes back`, async ({ page }) => {
     await open(page, width, height);
     const opener = page.locator('[data-open="palette"]');
     await opener.focus();
     await opener.press("Enter");
-    const palette = page.locator(".picker.palette");
+    const palette = page.getByRole("dialog", { name: "Directory picker" });
     await expect(palette).toBeVisible();
-    // One dialog, the Modal's: the palette adds no role of its own.
+    // One dialog, the Modal's: the picker adds no role of its own.
     await expect(page.locator('[role="dialog"], [aria-modal]')).toHaveCount(1);
     await expect(palette).toHaveAttribute("role", "dialog");
-    await expect(palette).toHaveAccessibleName("Command palette");
+    await expect(palette).toHaveAccessibleName("Directory picker");
     await expect(page.locator("[data-palette-input]")).toBeFocused();
     const box = (await palette.boundingBox())!;
     if (width > 600) {
@@ -126,7 +126,7 @@ for (const [width, height] of [
     // The focus stays in it.
     for (let i = 0; i < 4; i++) {
       await page.keyboard.press("Tab");
-      expect(await inside(page, ".picker.palette")).toBe(true);
+      expect(await inside(page, ".picker")).toBe(true);
     }
     await page.keyboard.press("Escape");
     await expect(palette).toHaveCount(0);

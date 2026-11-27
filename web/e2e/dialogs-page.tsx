@@ -61,17 +61,15 @@ function Page() {
         </ConfirmRemove>
       )}
       {open === "palette" && (
-        // The palette's and the pickers' shape (shell/ui/palette.tsx): a Modal
-        // without its card, a search field over a list.
-        <Modal bare close={close} label="Command palette" class={matchMedia("(max-width: 600px)").matches ? "picker palette phone" : "picker palette"}>
-          <div class="palette-search">
-            <input class="picker-filter" role="combobox" aria-expanded="true" aria-label="Command" aria-controls="fixture-results" placeholder="Type a command" data-palette-input data-autofocus />
-          </div>
-          <ul id="fixture-results" class="picker-list" role="listbox" aria-label="Commands">
-            <li class="picker-row palette-row selected" role="option" aria-selected="true">
+        // The pickers' shape (shell/ui/picker.tsx): a Modal without its card,
+        // a search field over a list.
+        <Modal bare close={close} label="Directory picker" class={matchMedia("(max-width: 600px)").matches ? "picker phone" : "picker"}>
+          <input class="picker-filter" role="combobox" aria-expanded="true" aria-label="Directory" aria-controls="fixture-results" placeholder="Type a directory" data-palette-input data-autofocus />
+          <ul id="fixture-results" class="picker-list" role="listbox" aria-label="Directories">
+            <li class="picker-row selected" role="option" aria-selected="true">
               <span class="picker-label">New tab</span>
             </li>
-            <li class="picker-row palette-row" role="option">
+            <li class="picker-row" role="option">
               <span class="picker-label">Split pane</span>
             </li>
           </ul>

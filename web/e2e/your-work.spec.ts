@@ -139,7 +139,7 @@ test("with history, the first screen is it: by repo, newest first, three a repo;
   await expect.poll(() => panes(page)).toHaveLength(1);
 
   // With a pane open, it's one click away: the palette's Your work.
-  await page.keyboard.press("Control+Shift+KeyP");
+  await page.keyboard.press("Control+Shift+KeyK");
   await page.locator('[data-command="Places/your-work"]').click();
   const dialog = page.getByRole("dialog", { name: "Your work" });
   // The folder of the pane it's opened from first.

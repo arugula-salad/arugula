@@ -76,10 +76,10 @@ test("the palette and the session crumb open Machines at this machine, and at th
   await openApp(page, `/p/${P}/machines?pane=${last.pane}`);
   await expect(page.locator(`[data-pane="${last.pane}"]`)).toBeVisible({ timeout: 20_000 });
 
-  // The palette: Go to <machine> on Machines.
-  await page.locator(".ws-head [data-open-palette]").click();
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("combobox", { name: "Command" }).fill("on Machines");
+  // Go to…: <machine> on Machines.
+  await page.locator("[data-open-palette]").click();
+  const palette = page.getByRole("dialog", { name: "Go to…" });
+  await palette.getByRole("combobox", { name: "Go to" }).fill("on Machines");
   const go = palette.locator('[data-command="Places/machines"]');
   await expect(go).toHaveCount(1);
   await expect(go).toContainText("on Machines");

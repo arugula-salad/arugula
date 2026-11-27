@@ -15,7 +15,7 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   await expect(page).toHaveURL(/#settings$/);
   await expect(page).toHaveTitle(/^Settings/);
   for (const id of ["push", "appearance", "machine"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
-  // Help is the command palette's, not a section here (Arugula #1108).
+  // Help is Go to…'s, not a section here (Arugula #1108).
   await expect(settings.locator('[data-settings-section="help"]')).toHaveCount(0);
 
   // Each row under what it reaches.
@@ -77,11 +77,11 @@ test("This device and All your devices are one section, Phones and browsers, and
   }
 });
 
-test("Help is in the command palette, not in Settings", async ({ page }) => {
+test("Help is in Go to…, not in Settings", async ({ page }) => {
   await reset(page);
-  await page.locator(".ws-head [data-open-palette]").click();
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  const filter = palette.getByRole("combobox", { name: "Command" });
+  await page.locator("[data-open-palette]").click();
+  const palette = page.getByRole("dialog", { name: "Go to…" });
+  const filter = palette.getByRole("combobox", { name: "Go to" });
   for (const label of ["Getting started", "What's new", "nvim in Arugula"]) {
     await filter.fill(label);
     await expect(palette.locator(`[data-command="Help/${label}"]`)).toBeVisible();
@@ -130,14 +130,18 @@ test("a daemon without the log's route shows no Remote sessions, and no error", 
   await expect(page.locator("[data-settings-page] .error")).toHaveCount(0);
 });
 
-test("the command palette still finds every setting, and goes to the page", async ({ page }) => {
+// Go to… goes to the page; each setting is the page's, not a command
+// (Lift 3 trimmed them, #1479).
+test("Go to… goes to Settings", async ({ page }) => {
   await reset(page);
-  await page.locator(".ws-head [data-open-palette]").click();
-  const input = page.locator(".palette-search input");
+  await page.locator("[data-open-palette]").click();
+  const input = page.getByRole("combobox", { name: "Go to" });
+  await input.fill("Settings");
+  await expect(page.locator('[data-command="Places/settings"]')).toBeVisible();
   await input.fill("Developer settings");
-  await expect(page.getByRole("option", { name: /Developer settings/ }).first()).toBeVisible();
-  await input.fill("Go to Settings");
-  await page.keyboard.press("Enter");
+  await expect(page.locator('[data-command="Settings/Developer settings…"]')).toHaveCount(0);
+  await input.fill("Settings");
+  await page.locator('[data-command="Places/settings"]').click();
   await expect(page.locator("[data-settings-page]")).toBeVisible();
 });
 

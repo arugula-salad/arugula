@@ -3,7 +3,7 @@
 // (buttons that each do one thing here, each marked done once used). It
 // doesn't open by itself (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b):
 // a first visit opens on the person's own work, and each step is offered at
-// its moment instead (the hints, ../hints). It's in the command palette's
+// its moment instead (the hints, ../hints). It's in Go to…'s
 // Help, Settings (the rail) and the phone's sheet.
 //
 // The phone over Tailscale left it for Settings (This machine's Tailscale…,
@@ -43,7 +43,7 @@ import { keyHint } from "../../shared/keys";
 import { openPanel } from "./control-panel";
 import { shareSession } from "./people";
 import { openSwarm } from "../swarm/route";
-import { openPalette } from "./palette";
+import { openGoTo } from "../../shared/kit/frame/goto";
 import { openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { AgentCanCard } from "./agent-can";
@@ -208,7 +208,7 @@ export function GettingStartedLayer() {
   // Where it went: it doesn't just vanish.
   return closedOnce ? (
     <div class="start-toast" role="status" data-start-toast>
-      Getting started is in the command palette, under Help, any time.
+      Getting started is in Go to…, any time.
     </div>
   ) : null;
 }
@@ -373,7 +373,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
         <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
           <ChevronIcon dir="left" /> Back
         </button>
-        <span class="start-hint">Always in the command palette: Getting started</span>
+        <span class="start-hint">Always in Go to…: Getting started</span>
         {last ? (
           <button class="primary" onClick={close}>
             Done
@@ -432,7 +432,7 @@ function Welcome({ name, client, setup, manual, refresh }: { name: string; clien
           <div>
             <h3>Jump anywhere</h3>
             <p>
-              <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>P</kbd> finds a pane, a tab or a command.
+              <kbd>{keyHint("goto") ?? "Ctrl+K"}</kbd> finds a pane, a tab or a command.
             </p>
           </div>
         </li>
@@ -1062,8 +1062,8 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
     {
       id: "search",
       label: "Open command search",
-      what: `Every command, session, tab and pane: ${keyHint("palette") ?? "Ctrl+Shift+P"}`,
-      run: () => client && openPalette(client),
+      what: `Every command, session, tab and pane: ${keyHint("goto") ?? "Ctrl+K"}`,
+      run: () => openGoTo(),
     },
   ];
   const rows: [StepId, string, string][] = [
@@ -1112,7 +1112,7 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
         </ul>
       )}
       <p class="start-lede">
-        Anything you skipped is a click away: this is <b>Getting started</b> in the command palette, under Help (and the ☰ sheet on a phone), any time.
+        Anything you skipped is a click away: this is <b>Getting started</b> in Go to… (and the ☰ sheet on a phone), any time.
       </p>
     </section>
   );

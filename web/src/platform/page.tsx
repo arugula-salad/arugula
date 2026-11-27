@@ -50,16 +50,30 @@ import { titleOf } from "./titles";
 import { lastProject, notePlace, placeOf } from "./places-kept";
 import { seenReady, subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
+import { KeysSheetLayer } from "../shared/kit/frame/keys-sheet";
+import { addGoSource, GoToLayer } from "../shared/kit/frame/goto";
+import { platformGoTo } from "./goto-source";
+import { NewProjectLayer } from "./new-project";
 
 export function PlatformPage() {
+  // Go to…: your projects, their places, boards and Docs.
+  useEffect(() => addGoSource(platformGoTo), []);
   // The design reference needs no one signed in and no project, so nothing of
   // the session is loaded for it (#693).
-  return useRoute().page === "design" ? (
-    <PageGuard at="design">
-      <DesignPage />
-    </PageGuard>
-  ) : (
-    <Routed />
+  return (
+    <>
+      {useRoute().page === "design" ? (
+        <PageGuard at="design">
+          <DesignPage />
+        </PageGuard>
+      ) : (
+        <Routed />
+      )}
+      {/* `?`: every key the page has; ⌘K: a place, anywhere, or a command. */}
+      <KeysSheetLayer />
+      <GoToLayer />
+      <NewProjectLayer />
+    </>
   );
 }
 

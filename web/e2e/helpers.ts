@@ -300,14 +300,23 @@ export async function settingsRow(page: Page, name: string) {
   await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
 }
 
-/** Run one of the command palette's commands by its key (`Help/What's new`):
- * Help is the palette's, not a section of Settings (Arugula #1108). */
+/** The directory picker for the active pane, as its key did before Lift 3
+ * (#1479): Go to…'s Go to directory…. */
+export async function goToDirectory(page: Page) {
+  await page.keyboard.press("Control+Shift+KeyK");
+  const goTo = page.getByRole("dialog", { name: "Go to…" });
+  await goTo.getByRole("combobox", { name: "Go to" }).fill("go to directory");
+  await goTo.locator('[data-command="Pane/Go to directory…"]').click();
+}
+
+/** Run one of Go to…'s commands by its key (`Help/What's new`): Help is
+ * there, not a section of Settings (Arugula #1108). */
 export async function paletteCommand(page: Page, key: string) {
-  await page.locator(".ws-head [data-open-palette]").click();
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("combobox", { name: "Command" }).fill(key.slice(key.indexOf("/") + 1));
-  await palette.locator(`[data-command="${key}"]`).click();
-  await expect(palette).toBeHidden();
+  await page.locator("[data-open-palette]").first().click();
+  const goTo = page.getByRole("dialog", { name: "Go to…" });
+  await goTo.getByRole("combobox", { name: "Go to" }).fill(key.slice(key.indexOf("/") + 1));
+  await goTo.locator(`[data-command="${key}"]`).click();
+  await expect(goTo).toBeHidden();
 }
 
 /** Back to the panes from the Settings page. */

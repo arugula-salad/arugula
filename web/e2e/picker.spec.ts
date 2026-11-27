@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { menuItem, paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
+import { goToDirectory, menuItem, paneEl, ready, text, type as typeIn, sheetTab } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import type { PaneId } from "../src/shared/proto";
 import { labs } from "./labs";
@@ -143,10 +143,10 @@ test("desktop: browse from the pane's directory, new pane there, cd there", asyn
   await expect.poll(() => cwd(page, made)).toBe(join(root, "alpha/beta"));
   expect(await page.evaluate(() => window.__arugula.client.tabView()!.layout.panes.length)).toBe(2);
 
-  // Ctrl+Shift+G on the first pane: cd its shell (a path with a space).
+  // Go to directory… on the first pane: cd its shell (a path with a space).
   await page.evaluate((p) => window.__arugula.client.setActive(p), pane);
-  await paneEl(page, pane).click({ position: { x: 40, y: 40 } });
-  await page.keyboard.press("Control+Shift+G");
+  await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
+  await (await menuItem(page, "Go to directory…")).click();
   await expect(page.locator(".picker")).toBeVisible();
   await expect.poll(() => pickerPath(page)).toBe(root);
   await row(page, join(root, "with space")).click();
@@ -155,7 +155,7 @@ test("desktop: browse from the pane's directory, new pane there, cd there", asyn
   await expect.poll(() => cwd(page, pane)).toBe(join(root, "with space"));
 
   // Recent directories come first next time.
-  await page.keyboard.press("Control+Shift+G");
+  await goToDirectory(page);
   await expect(page.locator(".picker-row.recent").first()).toBeVisible();
   await expect(page.locator(`.picker-row.recent[data-path="${join(root, "alpha/beta")}"]`)).toBeVisible();
   await page.keyboard.press("Escape");
@@ -163,7 +163,7 @@ test("desktop: browse from the pane's directory, new pane there, cd there", asyn
   // Busy: cd is refused, with why, and nothing is typed.
   await type(page, pane, "sleep 30\n");
   await expect.poll(() => page.evaluate((p) => window.__arugula.client.info(p)?.current !== null, pane)).toBe(true);
-  await page.keyboard.press("Control+Shift+G");
+  await goToDirectory(page);
   await expect.poll(() => pickerPath(page)).toBe(join(root, "with space"));
   // Backspace in an empty filter goes up.
   await page.keyboard.press("Backspace");
@@ -201,7 +201,7 @@ test("desktop: the picker on another host (M4a) shows that host's directories", 
   // matters is that the other daemon answers and makes the pane.
   await type(page, pane, `cd ${join(root, "gamma")}\n`);
   await expect.poll(() => cwd(page, pane)).toBe(join(root, "gamma"));
-  await page.keyboard.press("Control+Shift+G");
+  await goToDirectory(page);
   await expect(page.locator(".picker-where")).toContainText("other");
   await expect.poll(() => pickerPath(page)).toBe(join(root, "gamma"));
   await page.locator(".picker-row", { hasText: ".." }).first().click();

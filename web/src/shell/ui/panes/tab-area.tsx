@@ -221,5 +221,5 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   );
 }
 
-/** The keys are in a dialog: the palette, a prompt, a picker. */
+/** The keys are in a dialog: Go to…, a prompt, a picker. */
 const inDialog = () => !!document.activeElement?.closest('[role="dialog"], [role="alertdialog"]');

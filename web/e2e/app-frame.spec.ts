@@ -1,5 +1,5 @@
 // The app's frame (Arugula #989): the project-rooted rail (the project
-// tile and its switcher, then a button per place: Overview, Boards, Docs,
+// tile (Go to…'s projects), then a button per place: Overview, Boards, Docs,
 // Machines, Chat, #1345), the path and the place's views in the bar, the
 // machines inside the frame (a real pane of the suite's daemon, the
 // Machines page (#1346), Swarm under the bar beside the rail, #1348), the shell's keys only on a
@@ -223,32 +223,27 @@ test.describe("on a computer", () => {
     await expect(page.locator(".menu", { hasText: "Your presence" })).toHaveCount(0);
   });
 
-  test("the project tile opens the switcher: Everything, each team's projects, then yours, with what wants you", async ({ page }, info) => {
+  test("the project tile opens Go to…'s projects, each with what wants you there", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
     await page.screenshot({ path: info.outputPath("match-desktop-closed.png") });
     await page.locator(".ws-rail [data-project-switcher]").click();
-    const sw = page.locator("[data-switcher]");
+    const sw = page.getByRole("dialog", { name: "Switch project" });
     await expect(sw).toBeVisible();
-    await expect(sw.locator(".switcher-head")).toHaveText([/^Everything/, /^Arugula team/, /^Just you/]);
-    // All projects counts everything that wants you; Arugula its own.
-    await expect(sw.locator("[data-switcher-all] .switcher-count")).toHaveText("4");
-    await expect(sw.locator(`[data-switcher-project="${P}"] .switcher-count`)).toHaveText("3");
-    await expect(sw.locator('[data-switcher-project="prj_aaaa0003"] .switcher-count')).toHaveCount(0);
-    // Each with its tile; Personal's is "Me"; the current one is lit.
-    await expect(sw.locator(`[data-switcher-project="${P}"] .switcher-tile`)).toHaveText("A");
-    await expect(sw.locator('[data-switcher-project="prj_aaaa0001"] .switcher-tile')).toHaveText("Me");
-    await expect(sw.locator(`[data-switcher-project="${P}"]`)).toHaveAttribute("aria-current", "page");
-    await expect(sw.locator("[data-switcher-new]")).toHaveText(/New project/);
+    await expect(sw.locator("[data-goto=projects]")).toBeVisible();
+    // Each project where you left it; Arugula with what's for you there.
+    await expect(sw.locator(`[data-command="project/${P}"]`)).toContainText("3 for you");
+    await expect(sw.locator('[data-command="project/prj_aaaa0003"]')).not.toContainText("for you");
+    await expect(sw.locator('[data-command="project/new"]')).toHaveText(/New project/);
+    // Only projects: no places or boards.
+    await expect(sw.locator('[data-command^="place/"], [data-command^="board/"]')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("match-desktop-open.png") });
-    // A team's own pages aren't the menu's: the rail's Chat and Settings reach them.
-    await expect(sw.locator("[data-switcher-link]")).toHaveCount(0);
     // A row opens its project.
-    await sw.locator('[data-switcher-project="prj_aaaa0003"]').click();
+    await sw.locator('[data-command="project/prj_aaaa0003"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0003[^/]*$/);
     // Your own project is named Default, and its address still says personal (Arugula #1165).
     await page.locator(".ws-rail [data-project-switcher]").click();
-    await sw.locator('[data-switcher-project="prj_aaaa0001"]').click();
+    await sw.locator('[data-command="project/prj_aaaa0001"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0001-personal$/);
   });
 
@@ -351,23 +346,29 @@ test.describe("on a computer", () => {
 test.describe("the shell's keys", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("are the machine page's only: on Boards, Commands no longer opens", async ({ page }) => {
+  test("Go to… opens on every page; the panes' keys are the machine page's only", async ({ page }) => {
     await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     await expect(page.locator("[data-platform-machines] .app.ws")).toBeVisible();
-    const palette = page.locator(".palette-search");
-    // On the machine's page, Commands opens as it does on the shell's page.
-    await page.keyboard.press("Control+Shift+KeyP");
-    await expect(palette).toBeVisible();
+    const goTo = page.locator("[data-goto]");
+    // On the machine's page: its panes, as on the shell's page.
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(goTo).toBeVisible();
+    await expect(goTo.locator('[data-command^="Go/pane "]').first()).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(palette).toHaveCount(0);
+    await expect(goTo).toHaveCount(0);
     // On to the Overview, by the rail: the same page, no reload.
     await rail(page, "overview").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     await expect(page.locator(".platform-main")).toBeVisible();
-    // The chord reaches the page as any key would: nothing takes it.
+    // Go to… still: the project's places, no panes.
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(goTo).toBeVisible();
+    await expect(goTo.locator(`[data-command="place/${P}/boards"]`)).toBeVisible();
+    await expect(goTo.locator('[data-command^="Go/pane "]')).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    // A pane's key reaches the page as any key would: nothing takes it.
     await page.evaluate(() => addEventListener("keydown", (e) => ((window as unknown as { prevented: boolean }).prevented = e.defaultPrevented)));
-    await page.keyboard.press("Control+Shift+KeyP");
-    await expect(palette).toHaveCount(0);
+    await page.keyboard.press("Control+Shift+Digit1");
     expect(await page.evaluate(() => (window as unknown as { prevented: boolean }).prevented)).toBe(false);
   });
 });
@@ -377,7 +378,7 @@ test.describe("where you were", () => {
   // answer `/` before the route that serves the app there.
   test.use({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
 
-  test("opening the app goes back to your place in your last project; the switcher opens a project there", async ({ page }) => {
+  test("opening the app goes back to your place in your last project; Go to… opens a project there", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     // The app's own `/`, too, from here on.
     const body = await fixturePage("./app-frame-page.tsx");
@@ -389,7 +390,12 @@ test.describe("where you were", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
     await lit(page, "docs");
     await page.locator(".ws-rail [data-project-switcher]").click();
-    await expect(page.locator(`[data-switcher-project="${P}"]`)).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/docs$`));
+    await expect(page.locator(`[data-command="project/${P}"]`)).toContainText("Docs");
+    await page.locator('[data-command="project/prj_aaaa0003"]').click();
+    await expect(page).toHaveURL(/\/p\/prj_aaaa0003[^/]*$/);
+    await page.locator(".ws-rail [data-project-switcher]").click();
+    await page.locator(`[data-command="project/${P}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
   });
 
   test("Machines marks the pane you had open last; it opens again, and a reload stays on it", async ({ page }) => {
@@ -438,12 +444,12 @@ test.describe("on a phone", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator(".menu-item")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("frame-phone-boards.png") });
-    // The project's name opens the same switcher.
+    // The project's name opens the same list.
     await page.locator("[data-platform-bar] [data-project-switcher]").click();
-    await expect(page.locator("[data-switcher] .switcher-head")).toHaveText([/^Everything/, /^Arugula team/, /^Just you/]);
+    await expect(page.locator(`[data-goto=projects] [data-command="project/${P}"]`)).toBeVisible();
     await page.screenshot({ path: info.outputPath("match-phone-open.png") });
     await page.keyboard.press("Escape");
-    await expect(page.locator("[data-switcher]")).toHaveCount(0);
+    await expect(page.locator("[data-goto]")).toHaveCount(0);
     // Each tab is its place. No Swarm on a phone's Overview, and no Deploys for v1 (Arugula #1078).
     await tabs.locator("[data-tab-overview]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));

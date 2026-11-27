@@ -7,8 +7,8 @@
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useRef, useState } from "preact/hooks";
-import { openMenu, pressedShut, useMenuFrom, type MenuItem } from "../shared/ui/menu";
+import { useRef } from "preact/hooks";
+import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { currentProject } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
@@ -21,8 +21,7 @@ import { AccountPicture } from "../shared/chat/avatar";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
 import { Caret, ChevronIcon } from "../shared/ui/icons";
-import { ownerKey, ownerNamed } from "./owners";
-import { Switcher } from "./switcher";
+import { openGoTo } from "../shared/kit/frame/goto";
 import { boards } from "../shared/boards/store";
 import { PhoneInbox } from "./rail";
 
@@ -81,7 +80,7 @@ export function chatPath(project: string | undefined): string {
 }
 
 /** The words for a place, in the path. */
-const SECTION_LABEL: Record<Section, string> = {
+export const SECTION_LABEL: Record<Section, string> = {
   home: "Overview",
   boards: "Boards",
   docs: "Docs",
@@ -238,7 +237,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const p = session.project(project);
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
-      {rail ? <Path r={r} project={project} /> : <PhoneTop r={r} project={project} name={project ? (p?.name ?? "…") : "All projects"} />}
+      {rail ? <Path r={r} project={project} /> : <PhoneTop name={project ? (p?.name ?? "…") : "All projects"} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {!rail && <PhoneInbox />}
@@ -249,27 +248,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   );
 }
 
-/** A phone's bar: the project's name, which opens the switcher. */
-function PhoneTop({ r, project, name }: { r: Route; project: string | undefined; name: string }) {
-  const [picking, setPicking] = useState(false);
-  const switcher = useRef<HTMLButtonElement>(null);
-  const team = r.page === "team" ? ownerNamed(session.projects, r.team) : undefined;
-  const p = session.project(project);
+/** A phone's bar: the project's name, which opens Go to…'s projects. */
+function PhoneTop({ name }: { name: string }) {
   return (
-    <>
-      <button
-        ref={switcher}
-        class="scope-label platform-project"
-        data-project-switcher
-        title="Your projects"
-        aria-label={`Project: ${name}`}
-        aria-haspopup="dialog"
-        aria-expanded={picking}
-        onClick={() => pressedShut(switcher.current) || setPicking(!picking)}
-      >
-        <span class="platform-project-name">{name}</span> <Caret />
-      </button>
-      {picking && <Switcher from={switcher} project={project} owner={team?.key ?? (p ? ownerKey(p) : undefined)} close={() => setPicking(false)} />}
-    </>
+    <button class="scope-label platform-project" data-project-switcher title="Your projects" aria-label={`Project: ${name}`} aria-haspopup="dialog" onClick={() => openGoTo("projects")}>
+      <span class="platform-project-name">{name}</span> <Caret />
+    </button>
   );
 }

@@ -1,5 +1,5 @@
 // The machine view is the shown project's (Arugula #1164, #1347): two
-// projects' sessions on one machine, and the sidebar, the palette's jumps
+// projects' sessions on one machine, and the sidebar, Go to…'s jumps
 // and the phone's sheet hold the shown project's only, as the owner and as
 // a teammate. The daemon's own page still shows every one. On the app's
 // fixture page (app-frame-page.tsx) over the suite's daemon.
@@ -73,7 +73,7 @@ const listed = (page: Page) => sidebar(page).locator(".ws-session[data-session-i
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("the sidebar and the palette's jumps hold the shown project's sessions only, as owner and teammate (Arugula #1347)", async ({ page }, info) => {
+  test("the sidebar and Go to…'s jumps hold the shown project's sessions only, as owner and teammate (Arugula #1347)", async ({ page }, info) => {
     const { alpha, beta, site } = await twoProjects(page);
     // The daemon's own page shows no project: every session.
     await expect.poll(() => listed(page)).toEqual([alpha.id, beta.id, site.id].sort());
@@ -84,10 +84,9 @@ test.describe("on a computer", () => {
     await expect.poll(() => listed(page)).toEqual([alpha.id, beta.id].sort());
     await page.screenshot({ path: info.outputPath("sidebar-owner.png") });
 
-    // The palette's jumps: no site either.
-    await page.locator(".ws-head [data-open-palette]").click();
-    const palette = page.getByRole("dialog", { name: "Command palette" });
-    await palette.getByRole("combobox", { name: "Command" }).fill("Go to");
+    // Go to…'s jumps: no site either.
+    await page.locator("[data-open-palette]").click();
+    const palette = page.getByRole("dialog", { name: "Go to…" });
     await expect(palette.locator(`[data-command="Go/pane ${beta.pane}"]`)).toHaveCount(1);
     await expect(palette.locator(`[data-command="Go/session ${site.id}"]`)).toHaveCount(0);
     await expect(palette.locator(`[data-command="Go/pane ${site.pane}"]`)).toHaveCount(0);

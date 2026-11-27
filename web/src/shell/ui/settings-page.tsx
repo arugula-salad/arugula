@@ -1,5 +1,5 @@
 // The Settings page on a daemon's own page and control's (Arugula #695):
-// `#settings`. Its rows are the ones the menus and the palette use
+// `#settings`. Its rows are the ones the menus and Go to… use
 // (./commands), drawn as a page: a toggle is a switch, a hint is said out
 // loud. Where the app's Settings is, this page keeps only Phones and
 // browsers, which a device turns on with its own keys, and its other

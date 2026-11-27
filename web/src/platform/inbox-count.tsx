@@ -118,6 +118,14 @@ chat.subscribe(() => {
   void load();
 });
 
+/** The Inbox's counts as last read, for what isn't drawn (Go to…'s
+ * projects); `subscribeInbox` says when they change. */
+export const inboxCounts = (): { all: number; by: Map<string, number> } => ({ all: read?.count ?? 0, by: new Map(Object.entries(read?.by_project ?? {})) });
+export function subscribeInbox(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+
 /** The Inbox's count for all projects and by project (Arugula #989's
  * switcher), kept current while it's drawn; empty until it's read. */
 export function useInboxByProject(): { all: number; by: Map<string, number> } {

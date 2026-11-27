@@ -1,4 +1,4 @@
-// #110: Getting started, from the command palette's Help, Settings and the
+// #110: Getting started, from Go to…'s Help, Settings and the
 // phone's sheet. It doesn't open by itself, not even on a first visit
 // (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b), and
 // Tailscale left it for Settings (a dialog of its own). Its last step,
@@ -29,7 +29,7 @@ test("a first visit opens on the work, with no Getting started; the palette open
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("[data-whats-new], [data-telemetry-card], [data-agents-nudge]")).toHaveCount(0);
 
-  // In the command palette's Help, four steps: no Phone.
+  // In Go to…'s Help, four steps: no Phone.
   await paletteCommand(page, "Help/Getting started");
   await expect(panel).toBeVisible();
   const progress = panel.locator("[data-start-progress]");
@@ -50,7 +50,7 @@ test("a first visit opens on the work, with no Getting started; the palette open
   await panel.getByRole("button", { name: "Done" }).click();
   await expect(panel).toBeHidden();
   // Closing says where it went.
-  await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in the command palette, under Help, any time.");
+  await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in Go to…, any time.");
 
   // Not by itself on the next visit either.
   await page.reload();
@@ -229,7 +229,7 @@ test("Things to try: each button does its thing, and is marked done once used, f
   // Command search.
   await item("search").getByRole("button").click();
   await expect(panel).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Command palette" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Go to…" })).toBeVisible();
   await page.keyboard.press("Escape");
 
   // Open a pull request asks which.

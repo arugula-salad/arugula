@@ -147,7 +147,7 @@ export function ContextHeader({
           with a bar of their own (AppBar). */}
       {(panes || at === "docs") && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
       <div class="bar-fill" data-tauri-drag-region />
-      <CommandsButton client={client} search />
+      <CommandsButton search />
       <UpdateChip client={client} />
       {/* M111: what waits on you, on every machine. */}
       <AttentionBell client={client} />
