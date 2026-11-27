@@ -1239,9 +1239,9 @@ export function RoomCompose({
         />
       )}
       {options.length > 0 && (
-        <div class={tagRoom ? "mention-pop" : "mention-pop plain"} data-tag-list={tagRoom ?? undefined}>
-
-        <ul class="mention-pick" role="listbox" aria-label="People to mention">
+        // In an agents' room, the box holds the delivery rule under the list.
+        <div class={tagRoom ? "mention-pick" : "mention-pop"} data-tag-list={tagRoom ?? undefined}>
+        <ul class={tagRoom ? "mention-tags" : "mention-pick"} role="listbox" aria-label="People to mention">
           {options.map((p, i) => (
             <li
               key={p.who || p.token}

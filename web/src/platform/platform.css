@@ -241,12 +241,7 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
 }
 
-/* Who a post in an agents' room reached (Arugula #1522); its tags are
-   mention pills. */
 .chat-reached {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin: 2px 0 0;
   color: var(--ink-dim);
   font-size: var(--text-meta);
@@ -336,9 +331,6 @@ html[data-native-tabs] .platform {
   margin: 14px 0 2px;
   font: 500 var(--text-label) var(--font-meta);
   letter-spacing: var(--track-section);
-}
-.chat-side .chat-section button {
-  padding: 3px 8px;
 }
 
 /* The stream's head: the room's name as a title, its topic beside it. */
