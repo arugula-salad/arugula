@@ -21,6 +21,7 @@ import { askNeed, NeedRow } from "../../shared/kit/need-row";
 import { needAge } from "../../shared/needs-you";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
 import { PresenceAvatar } from "./people";
+import { getFleet } from "./hosts";
 import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
 
 export { answeredLine, clock } from "./answer-card";
@@ -36,6 +37,14 @@ export function editDiff(client: Client, id: PaneId, diff: DiffInfo) {
 export function mayAnswer(client: Client, id: PaneId): boolean {
   const tab = client.tabOfPane(id);
   return client.role(tab ? (client.sessionOfTab(tab.id) ?? null) : null) !== "viewer";
+}
+
+/** Who answers what a watcher can't (v6 2.4: a row names who it asks): its
+ * machine's owner by name (`owner`, where the page's directory says it,
+ * else the fleet's), or "its owner". */
+export function askedOf(client: Client, owner?: string): string {
+  const fleet = getFleet();
+  return owner ?? fleet?.list.find((h) => fleet.clientOf(h.name) === client || h.name === client.hostName)?.owner ?? "its owner";
 }
 
 /** Teammates looking at a pane, other than this client's person. */
@@ -121,7 +130,7 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
           key={ask.id}
           need={{
             ...askNeed(ask, needAge(ask.at_ms)),
-            for: "its owner",
+            for: askedOf(client),
             lines: [
               invite
                 ? "Only the session's owner sends or declines an invite."

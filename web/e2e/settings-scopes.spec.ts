@@ -340,10 +340,10 @@ test.describe("on a computer", () => {
     const detail = row(page, "appearance").locator(".list-row-detail");
     // A theme applies at once, and the row says it.
     await look.locator('[data-theme-choice="light"]').click();
-    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
     await expect(detail).toHaveText(/^Light on this device · /);
     await look.getByRole("button", { name: "Reset", exact: true }).click();
-    await expect(page.locator("html")).not.toHaveAttribute("data-palette", "latte");
+    await expect(page.locator("html")).not.toHaveAttribute("data-scheme", "light");
     // Preferences, a part of it, below the controls.
     const prefs = look.locator('[data-settings-part="preferences"]');
     await expect(prefs).toBeVisible();

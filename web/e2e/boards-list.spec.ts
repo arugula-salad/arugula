@@ -130,7 +130,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-board-new-dialog]")).toHaveCount(0);
   });
 
-  test("Not on a board is the first row; its issues fill the middle, and one dragged onto a board's row goes on it", async ({ page }) => {
+  test("Not on a board is the first row; its issues fill the middle, and one dragged onto a board's row goes on it", async ({ page }, info) => {
     const added: string[] = [];
     await openApp(page, `/p/${P}/boards`, added);
     const loose = page.locator("[data-list-rows] [data-boards-loose]");
@@ -148,6 +148,13 @@ test.describe("on a computer", () => {
     // Order and the labels, with their counts, on the right.
     await expect(pane.locator(".list-preview-aside [data-triage-order]")).toBeVisible();
     await expect(pane.locator('.list-preview-aside [data-triage-label="ui"]')).toContainText("2");
+    // Kit rows (Arugula #1521): a click beside the title selects one.
+    await expect(pane.locator('[data-triage-row="#41"] [data-kit=row] [data-row-title]')).not.toBeEmpty();
+    await pane.locator('[data-triage-row="#41"]').getByText("#41", { exact: true }).click();
+    await expect(pane.locator('[data-triage-row="#41"]')).toHaveAttribute("data-selected", "true");
+    await expect(page.locator("[data-triage-selected]")).toHaveText("1 selected");
+    await page.screenshot({ path: info.outputPath("not-on-a-board-1440.png") });
+    await page.locator("[data-triage-selbar]").getByRole("button", { name: "Clear" }).click();
     await pane.locator('[data-triage-row="#41"]').dragTo(item(page, "brd_0a01"));
     await expect.poll(() => added).toEqual(["brd_0a01"]);
     // A board's row goes back to the board, and Back to Not on a board.
@@ -158,14 +165,16 @@ test.describe("on a computer", () => {
     await expect(loose).toHaveAttribute("aria-selected", "true");
   });
 
-  test("All issues is a row; the project's issues fill the middle, and the Issues page's address selects it (Lift 5a)", async ({ page }) => {
+  test("All issues is a row; the project's issues fill the middle, and the Issues page's address selects it (Lift 5a)", async ({ page }, info) => {
     await openApp(page, `/p/${P}/boards`);
     const all = page.locator("[data-list-rows] [data-boards-all]");
     await expect(all.locator("[data-boards-all-n]")).toHaveText("3");
     await all.click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues$`));
     await expect(all).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator("[data-list-preview] [data-issues-list] [data-issue-row]")).toHaveCount(3);
+    // Kit rows (Arugula #1521): #N, the title's link, its labels and age.
+    await expect(page.locator("[data-list-preview] [data-issues-list] [data-issue-row][data-kit=row]")).toHaveCount(3);
+    await page.screenshot({ path: info.outputPath("all-issues-1440.png") });
     await expect(page.locator('[data-path="issues"]')).toHaveText("All issues");
     await page.goto(`/p/${P}/issues?state=closed`);
     await expect(page.locator("[data-list-rows] [data-boards-all]")).toHaveAttribute("aria-selected", "true");

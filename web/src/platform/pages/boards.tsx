@@ -32,7 +32,6 @@ import { roleIn } from "../settings/environments";
 import { IssueList, mayWrite, useIssueHome } from "./issues";
 import type { IssueFilter } from "../../shared/issues/text";
 import { Missing } from "./project";
-import { currentProject } from "../current-project";
 import { where } from "../where";
 import { NotOnBoard, dropWhere, useTriage } from "./triage";
 
@@ -102,19 +101,16 @@ function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
 /** `/boards` and `/boards/:board`, every project's boards on one list
  * until Lift 5a (Go to… finds a board now): kept as addresses (aru-082).
  * `/boards` goes to the current project's Boards (else your first
- * project's); a board's goes to its page, once one of your projects says
- * it's there, and says so when none does. */
+ * project's) as the address is put right (`movedPage`, ../page); a
+ * board's goes to its page, once one of your projects says it's there,
+ * and says so when none does. */
 export function AllBoardsPage({ board }: { board?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const [lost, setLost] = useState(false);
   const ids = session.projects.map((p) => p.id);
   const key = ids.join(",");
   useEffect(() => {
-    if (!ids.length) return;
-    if (!board) {
-      const here = currentProject();
-      return void go(pathOf({ page: "boards", project: here && ids.includes(here) ? here : ids[0]! }, names), true);
-    }
+    if (!ids.length || !board) return;
     let live = true;
     setLost(false);
     void Promise.all(ids.map((p) => readBoards(p).then((l) => (l.some((b) => b.id === board) ? p : null), () => null))).then((homes) => {

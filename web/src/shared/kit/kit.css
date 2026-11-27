@@ -124,6 +124,14 @@ div.k-row-line {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A title that's a link reads as the row's words; hovered, it says it's a link. */
+.k-row .k-row-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.k-row .k-row-title a:is(:hover, :focus-visible) {
+  text-decoration: underline;
+}
 .k-row-meta {
   flex: none;
   max-width: 30%;

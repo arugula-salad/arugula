@@ -177,7 +177,7 @@ test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds a
   for (const hook of ["[data-board-add-existing]", "[data-board-doc-add]", "[data-board-add-group]", "[data-board-workers]", "[data-copy-link]"]) await expect(page.locator(`[role=menu] ${hook}`)).toBeVisible();
 });
 
-test("every project's old Boards addresses still land: /boards on a project's Boards, /boards/:board on its page", async ({ page }) => {
+test("every project's old Boards addresses still land, untouched: /boards (and ?all=1) on a project's Boards, /boards/:board on its page", async ({ page }) => {
   await openDesk(page, [], `/boards/${B}?all=1`);
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards/${B}`));
   await expect(page.locator(`[data-board-desk="${B}"]`)).toBeVisible();
@@ -186,6 +186,11 @@ test("every project's old Boards addresses still land: /boards on a project's Bo
   await page.goto("/boards");
   await expect(page).toHaveURL(/\/p\/prj_[^/]+\/boards$/);
   await expect(page.locator("[data-boards-page]")).toBeVisible();
+  // Every project's, as it was (Arugula #881): the same, with nothing touched (#1525).
+  await page.goto("/boards?all=1");
+  await expect(page).toHaveURL(/\/p\/prj_[^/]+\/boards$/);
+  await expect(page.locator("[data-boards-page]")).toBeVisible();
+  await expect(page.getByText("Loading boards")).toHaveCount(0);
 });
 
 test("lanes read Next · Doing · Review · Done; a tile says its state and who it waits on, with no fill; Done folds to N more", async ({ page }, info) => {

@@ -14,7 +14,7 @@ import { type LanguageSupport } from "@codemirror/language";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
-import { legible, onAppearance, palette, type Palette } from "../../shared/appearance";
+import { onAppearance, palette, type Palette } from "../../shared/appearance";
 
 /** A position the editor sent: line from 1, column from 0. */
 export type Pos = [number, number];
@@ -71,7 +71,7 @@ function paint(p: Palette): Extension {
 }
 
 function paintNew(p: Palette): Extension {
-  const u = legible(p);
+  const u = p.ui;
   const sel = p.term.selectionBackground ?? alpha(u.muted, "80");
   const look = EditorView.theme(
     {

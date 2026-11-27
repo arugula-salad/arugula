@@ -10,13 +10,13 @@
 import { Card } from "../../shared/ui/card";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { IssueHome, NativeIssue } from "../../shared/proto";
-import { MsgAvatar } from "../../shared/chat/avatar";
+import { Avatar } from "../../shared/kit/avatar";
+import { Row } from "../../shared/kit/row";
 import { BlockError, EmptyLine, EmptyState, LOADING_DELAY_MS, useAfter } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
-import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../../shared/ui/settings-section";
 import { AddRowSheet } from "../../shared/boards/add-row";
 import { issues, type IssueFilter } from "../../shared/issues/store";
@@ -27,7 +27,6 @@ import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
-import { issueTone } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
@@ -65,14 +64,11 @@ export function useIssuesOn(id: string): { p: PlatformProject } | { show: preact
 export function ListLoading({ rows = 3 }: { rows?: number }) {
   if (!useAfter(LOADING_DELAY_MS)) return null;
   return (
-    <ul class="issues-list card-list issues-loading" aria-busy="true" aria-label="Loading" data-list-loading>
+    <ul class="issues-list" aria-busy="true" aria-label="Loading" data-list-loading>
       {Array.from({ length: rows }, (_, i) => (
-        <Card as="li" key={i} class="issue-row" tone={null} aria-hidden="true">
-          <div class="issue-row-main">
-            <span class="loading-bar" style={{ width: `${[46, 62, 38][i % 3]}%` }} />
-            <span class="loading-bar short" />
-          </div>
-        </Card>
+        <li key={i} aria-hidden="true">
+          <Row title={<span class="loading-bar" style={{ width: `${[46, 62, 38][i % 3]}%` }} />} meta={[<span class="loading-bar short" />]} />
+        </li>
       ))}
     </ul>
   );
@@ -217,9 +213,11 @@ export function IssueList({ p, filter, adding: addAtFirst = false }: { p: Platfo
             why="An issue is a bug, a follow-up or a ticket for later. Agents open them too."
           />
         ))}
-      <ul class="issues-list card-list" data-issues-list>
+      <ul class="issues-list" data-issues-list>
         {list?.map((i) => (
-          <IssueRow key={i.id} p={p} i={i} nameOf={nameOf} label={(l) => to({ ...filter, label: l })} />
+          <li key={i.id}>
+            <IssueRow p={p} i={i} nameOf={nameOf} label={(l) => to({ ...filter, label: l })} />
+          </li>
         ))}
       </ul>
       {more && (
@@ -317,40 +315,32 @@ function NewIssueButton({ p, home, small, open: sheet }: { p: PlatformProject; h
   );
 }
 
+/** An issue as a kit Row: its mark (open ○, closed ✓), #N, its title (the link) and unread, its labels, who it's on, and when and by whom (why it closed). */
 function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue; nameOf: (a: string) => string | undefined; label: (l: string) => void }) {
   const to = pathOf({ page: "issue", project: p.id, issue: i.id }, names);
+  const closed = i.state === "closed";
   return (
-    // A card in the swarm's language (../swarm.css), as a run's is: its bar
-    // is the issue's state (open ok, closed muted: done, not failed).
-    <Card as="li" class="issue-row" tone={issueTone(i.state)} data-issue-row={i.number} data-issue-row-state={i.state}>
-      <div class="issue-row-main">
-        <a href={to} class="issue-row-title" onClick={(e) => follow(e, to)}>
-          {i.title}
-        </a>
-        <ThreadUnread target={i.id} />
-        {i.labels.map((l) => (
-          <LabelChip key={l} label={l} onClick={() => label(l)} />
-        ))}
-        <span class="issue-row-meta dim" title={i.state === "closed" ? undefined : "Open"}>
-          {/* The row's line says why it closed, so its chip needn't (UI audit #163). */}
-          {i.state === "closed" && (
-            <>
-              <StateChip tone={issueTone(i.state)}>Closed</StateChip> ·{" "}
-            </>
-          )}
-          #{i.number}{i.state === "closed" ? " " : " · "}
-          {/* The full time on hover (UI audit #182). */}
-          <span title={when(i.state === "closed" && i.closed_at ? i.closed_at : i.created_at)}>{rowLine(i, nameOf)}</span>
-        </span>
-      </div>
-      {i.assignees.length > 0 && (
-        <span class="issue-row-who" title={`Assigned to ${i.assignees.map((a) => nameOf(a) ?? "someone who left").join(", ")}`}>
-          {i.assignees.slice(0, 3).map((a) => (
-            <MsgAvatar key={a} who={a} name={nameOf(a) ?? "?"} />
-          ))}
-        </span>
-      )}
-    </Card>
+    <Row
+      kind={closed ? "done" : "plain"}
+      mark={closed ? "done" : "idle"}
+      label={`#${i.number}`}
+      title={
+        <>
+          <a href={to} onClick={(e) => follow(e, to)}>
+            {i.title}
+          </a>
+          <ThreadUnread target={i.id} />
+        </>
+      }
+      meta={[
+        ...i.labels.map((l) => <LabelChip key={l} label={l} onClick={() => label(l)} />),
+        ...(i.assignees.length ? [<span title={`Assigned to ${i.assignees.map((a) => nameOf(a) ?? "someone who left").join(", ")}`}>{i.assignees.slice(0, 3).map((a) => <Avatar key={a} name={nameOf(a) ?? "?"} />)}</span>] : []),
+        // The full time on hover (UI audit #182).
+        <span title={when(closed && i.closed_at ? i.closed_at : i.created_at)}>{rowLine(i, nameOf)}</span>,
+      ]}
+      data-issue-row={i.number}
+      data-issue-row-state={i.state}
+    />
   );
 }
 

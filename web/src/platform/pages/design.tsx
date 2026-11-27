@@ -10,7 +10,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { apply as applyAppearance, palette, PALETTES } from "../../shared/appearance";
+import { apply as applyAppearance, palette } from "../../shared/appearance";
 import { Avatar } from "../../shared/kit/avatar";
 import { Button } from "../../shared/kit/button";
 import { Composer } from "../../shared/kit/composer";
@@ -192,14 +192,13 @@ function SheetDemo() {
 
 // ---- Look: this page only
 
-type Theme = "slate" | "latte";
+type Theme = "dark" | "light";
 
-function paint(id: Theme, s: Sliders) {
-  const p = PALETTES.find((x) => x.id === id)!;
+function paint(theme: Theme, s: Sliders) {
   const root = document.documentElement;
-  for (const [k, v] of Object.entries(paintLook(p.ui, !p.light, s))) root.style.setProperty(`--${k}`, v);
-  root.style.colorScheme = p.light ? "light" : "dark";
-  root.dataset.scheme = p.light ? "light" : "dark";
+  for (const [k, v] of Object.entries(paintLook(theme === "dark", s))) root.style.setProperty(`--${k}`, v);
+  root.style.colorScheme = theme;
+  root.dataset.scheme = theme;
 }
 
 const SLIDER_WORDS: [keyof Sliders, string, string][] = [
@@ -212,7 +211,7 @@ function LookSheet({ theme, sliders, set, close }: { theme: Theme; sliders: Slid
   return (
     <Sheet title="Look" onClose={close}>
       <div class="design-look" data-design-look>
-        <Choice label="Theme" value={theme} onChange={(t) => set(t, startAt(t === "slate"))} options={[{ id: "slate", label: "Slate" }, { id: "latte", label: "Latte" }]} />
+        <Choice label="Theme" value={theme} onChange={(t) => set(t, startAt(t === "dark"))} options={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} />
         {SLIDER_WORDS.map(([k, lo, hi]) => (
           <label key={k} class="design-slider">
             <span class="m-meta">
@@ -221,7 +220,7 @@ function LookSheet({ theme, sliders, set, close }: { theme: Theme; sliders: Slid
             <input type="range" min={0} max={1} step={0.05} value={sliders[k]} onInput={(e) => set(theme, { ...sliders, [k]: +e.currentTarget.value })} />
           </label>
         ))}
-        <Button onClick={() => set(theme, startAt(theme === "slate"))}>Reset</Button>
+        <Button onClick={() => set(theme, startAt(theme === "dark"))}>Reset</Button>
       </div>
     </Sheet>
   );
@@ -246,9 +245,9 @@ const SECTIONS = [
 ] as const;
 
 export function DesignPage() {
-  const own = palette().id;
-  const [theme, setTheme] = useState<Theme>(own === "latte" ? "latte" : "slate");
-  const [sliders, setSliders] = useState(() => startAt(own !== "latte"));
+  const own: Theme = palette().light ? "light" : "dark";
+  const [theme, setTheme] = useState<Theme>(own);
+  const [sliders, setSliders] = useState(() => startAt(own === "dark"));
   const [look, setLook] = useState(false);
   const set = (t: Theme, s: Sliders) => {
     paint(t, s);
