@@ -220,6 +220,7 @@ Docs never get a resolver of their own.
 | **Row** | One piece of work on a board | Platform `board_entries` | `row_` |
 | **Group** | A named section of a board | Platform `board_entries` | `zon_` |
 | **Lane** | Next, Doing, Review or Done, worked out from the work, with a person's override | Derived on read | The word |
+| **Place layout** | One person's tabs and panes on a place (a board, a project's Overview), as they and their agents arranged it beside the place's own panes (Arugula #1496) | Platform `place_layouts` | The place, `board:brd_…` or `overview:prj_…`; its tabs `tab_`, its panes `pan_` |
 
 Membership and roles alone decide who reads and writes a project's native
 issues and Docs: a personal project's account, and a team's roster, where

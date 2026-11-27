@@ -89,6 +89,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "ladder" => [
             ladder::Rung, ladder::StartTicketAsk, ladder::StartTicket, ladder::StartClaims, ladder::StartedBy, ladder::LadderStart, ladder::LadderStarted, ladder::LadderStop, ladder::LadderStopped,
         ],
+        "layout" => [
+            layout::PaneKind, layout::Intent, layout::By, layout::Pane, layout::Tab, layout::Changed, layout::PlaceLayout, layout::NewPane, layout::LayoutChange, layout::LayoutChanged,
+        ],
         "lib" => [
             ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, ControlNative, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,
         ],

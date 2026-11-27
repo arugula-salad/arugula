@@ -71,6 +71,8 @@ pub const OWNERS: &[Entry] = &[
     ("list", Some("agent_sessions")),
     ("show", Some("chat")),
     ("show", Some("board")),
+    // The owner's layout of a place on the platform (Arugula #1496).
+    ("show", Some("place")),
     ("doc", Some("list")),
     ("doc", Some("open")),
     // Gives the owner's Doc to a team (Arugula #863).

@@ -978,6 +978,29 @@
           "type": "object"
         },
         {
+          "description": "The reader's layout of `place` changed (Arugula #1496; another of\ntheir pages, or an agent of theirs): read it again\n([`crate::layout::LAYOUT`]) unless the page has `rev` already. Sent\nto that account only.",
+          "properties": {
+            "place": {
+              "type": "string"
+            },
+            "rev": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "layout",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "place",
+            "rev"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "type": {
               "const": "resync",

@@ -29,6 +29,7 @@ mod deploys;
 mod forge_ops;
 mod issues;
 mod links;
+mod places;
 mod plane_home;
 mod repos;
 mod runs;
@@ -127,6 +128,7 @@ pub fn register() {
     for (after, kind, run) in kinds {
         registry::kind(registry::ToolKind { tool: "list", after: Some(after), kind, run });
     }
+    registry::kind(registry::ToolKind { tool: "show", after: Some("board"), kind: &places::SHOW, run: run_show_place });
     registry::control_tools(Box::new(Reach));
 }
 
@@ -276,6 +278,7 @@ no_args!(run_list_cloud_workspaces, cloud::list_cloud_workspaces);
 one!(run_list_cloud_agents, cloud::list_cloud_agents);
 one!(run_list_linked_repos, repos::list_linked_repos);
 no_args!(run_list_threads, threads::list_threads);
+one!(run_show_place, places::show_place);
 
 // ---------------------------------------------------------------- the tools
 

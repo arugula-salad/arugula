@@ -80,6 +80,7 @@ pub mod hosted;
 pub mod issues;
 pub mod join;
 pub mod ladder;
+pub mod layout;
 pub mod machine;
 pub mod machine_token;
 pub mod maintenance;

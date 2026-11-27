@@ -181,6 +181,10 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::events::EventsPage>();
     c.visit::<arugula_control_wire::overview_seen::OverviewSeen>();
     c.visit::<arugula_control_wire::overview_seen::OverviewSeenPut>();
+    // A person's layout of a place, and its changes (Arugula #1496).
+    c.visit::<arugula_control_wire::layout::PlaceLayout>();
+    c.visit::<arugula_control_wire::layout::LayoutChange>();
+    c.visit::<arugula_control_wire::layout::LayoutChanged>();
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
     // Making a project, and renaming, archiving and moving one (Arugula #892).

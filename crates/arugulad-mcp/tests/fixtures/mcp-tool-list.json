@@ -5268,7 +5268,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while open elsewhere) or fork (a new session with its history). send_input to the block goes on. A Codex one: a pane running codex resume.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review, red checks) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: labels, assignees, linked PRs and timeline, read with their own tea or gh login; one assigned to or mentioning them is attention on the phone and the swarm. From the block they can start an agent on it in its own worktree. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while open elsewhere) or fork (a new session with its history). send_input to the block goes on. A Codex one: a pane running codex resume.\n- chat {beside?, pinned?, room?}: Team chat as a block: the user's channels, DMs, threads and Activity, as the chat page has them; pinned to a room (room, pinned), that room alone. It reads as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and post with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block: its lanes and rows (issues, PRs, runs, agent blocks), live, as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and write it with board_read and board_write.\n- place {pane, place, ref, title, in_place_of?, intent?, machine?, state?}: A pane on a board or the Overview in the app (place), not a block here; intent beside or for_you.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -5357,6 +5357,22 @@
             "description": "conversation: The conversation's id, or the start of it (list kind conversations).",
             "type": "string"
           },
+          "in_place_of": {
+            "default": null,
+            "description": "place: For a while, in place of one of the place's own panes (its name, such as boards); closing yours puts it back.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "intent": {
+            "default": null,
+            "description": "place: beside (default): next to the place's own panes, for what you're talking about now. for_you: a tab of its own for what waits on them (a review, a PR to approve, a prompt), with a Needs you row pointing at it. Neither takes their focus. You only move what you opened and they haven't touched; a fourth pane of yours in a tab closes your oldest. Shown again, a pane updates.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "issue": {
             "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula cloud: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
@@ -5372,6 +5388,7 @@
               "conversation",
               "chat",
               "board",
+              "place",
               "app",
               "workspace"
             ],
@@ -5387,6 +5404,18 @@
               "null"
             ]
           },
+          "machine": {
+            "default": null,
+            "description": "place: The machine its source is on, for terminal, preview and prompt. Default: this one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pane": {
+            "description": "place: What the pane shows: doc, pr, preview, run, terminal, card, or prompt (a blocked agent's permission or question, answered there).",
+            "type": "string"
+          },
           "path": {
             "default": null,
             "description": "port: The page's path (default /). file: The file. Relative paths are from the pane's directory, or home.",
@@ -5399,6 +5428,10 @@
             "default": false,
             "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
             "type": "boolean"
+          },
+          "place": {
+            "description": "place: board brd_... or overview (overview prj_... for another project).",
+            "type": "string"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -5426,6 +5459,10 @@
               "string",
               "null"
             ]
+          },
+          "ref": {
+            "description": "place: What it is, by pane: a Doc's id, OWNER/REPO#N, a URL or port, run_..., %N, iss_..., or the waiting pane's %N.",
+            "type": "string"
           },
           "repo": {
             "default": null,
@@ -5459,6 +5496,14 @@
               "null"
             ]
           },
+          "state": {
+            "default": null,
+            "description": "place: Its state now, one line (\"running · 3m\", \"waits for Allow\"): shown while its machine is offline.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "then": {
             "anyOf": [
               {
@@ -5469,6 +5514,10 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "description": "place: Its title, one line.",
+            "type": "string"
           }
         },
         "required": [
@@ -5487,7 +5536,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while open elsewhere) or fork (a new session with its history). send_input to the block goes on. A Codex one: a pane running codex resume.\n- chat {beside?, pinned?, room?}: Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?, hold?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review, red checks) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: labels, assignees, linked PRs and timeline, read with their own tea or gh login; one assigned to or mentioning them is attention on the phone and the swarm. From the block they can start an agent on it in its own worktree. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while open elsewhere) or fork (a new session with its history). send_input to the block goes on. A Codex one: a pane running codex resume.\n- chat {beside?, pinned?, room?}: Team chat as a block: the user's channels, DMs, threads and Activity, as the chat page has them; pinned to a room (room, pinned), that room alone. It reads as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and post with read_thread and post_thread.\n- board {board, beside?}: A project's board as a block: its lanes and rows (issues, PRs, runs, agent blocks), live, as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and write it with board_read and board_write.\n- place {pane, place, ref, title, in_place_of?, intent?, machine?, state?}: A pane on a board or the Overview in the app (place), not a block here; intent beside or for_you.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -5552,6 +5601,22 @@
             "description": "conversation: The conversation's id, or the start of it (list kind conversations).",
             "type": "string"
           },
+          "in_place_of": {
+            "default": null,
+            "description": "place: For a while, in place of one of the place's own panes (its name, such as boards); closing yours puts it back.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "intent": {
+            "default": null,
+            "description": "place: beside (default): next to the place's own panes, for what you're talking about now. for_you: a tab of its own for what waits on them (a review, a PR to approve, a prompt), with a Needs you row pointing at it. Neither takes their focus. You only move what you opened and they haven't touched; a fourth pane of yours in a tab closes your oldest. Shown again, a pane updates.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "issue": {
             "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula cloud: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
@@ -5566,7 +5631,8 @@
               "issue",
               "conversation",
               "chat",
-              "board"
+              "board",
+              "place"
             ],
             "type": "string"
           },
@@ -5580,6 +5646,18 @@
               "null"
             ]
           },
+          "machine": {
+            "default": null,
+            "description": "place: The machine its source is on, for terminal, preview and prompt. Default: this one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pane": {
+            "description": "place: What the pane shows: doc, pr, preview, run, terminal, card, or prompt (a blocked agent's permission or question, answered there).",
+            "type": "string"
+          },
           "path": {
             "default": null,
             "description": "port: The page's path (default /). file: The file. Relative paths are from the pane's directory, or home.",
@@ -5592,6 +5670,10 @@
             "default": false,
             "description": "chat: With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).",
             "type": "boolean"
+          },
+          "place": {
+            "description": "place: board brd_... or overview (overview prj_... for another project).",
+            "type": "string"
           },
           "port": {
             "description": "port: The port, on the machine the pane runs on.",
@@ -5611,6 +5693,10 @@
               "string",
               "null"
             ]
+          },
+          "ref": {
+            "description": "place: What it is, by pane: a Doc's id, OWNER/REPO#N, a URL or port, run_..., %N, iss_..., or the waiting pane's %N.",
+            "type": "string"
           },
           "repo": {
             "default": null,
@@ -5644,6 +5730,14 @@
               "null"
             ]
           },
+          "state": {
+            "default": null,
+            "description": "place: Its state now, one line (\"running · 3m\", \"waits for Allow\"): shown while its machine is offline.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "then": {
             "anyOf": [
               {
@@ -5654,6 +5748,10 @@
               }
             ],
             "description": "conversation: Then continue it, or fork it (for one open somewhere else) and go on in the fork."
+          },
+          "title": {
+            "description": "place: Its title, one line.",
+            "type": "string"
           }
         },
         "required": [
