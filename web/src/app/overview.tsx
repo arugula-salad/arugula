@@ -36,7 +36,7 @@ import type { Fleet } from "../shell/fleet";
 import { kindOf } from "../shell/swarm/model";
 import { boardSays, overviewOf, type OvBoard, type OvSession, type Standing } from "../shell/swarm/overview";
 import { OverviewNeeds } from "./overview-needs";
-import { paneOfItem, paneTarget } from "./needs";
+import { askerOf, paneOfItem, paneTarget } from "./needs";
 import { AgentPanel, CHIEF, ovPane } from "./panel";
 import { useProjectInbox } from "../platform/inbox";
 import { names } from "../platform/links";
@@ -353,10 +353,13 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     go(pathOf({ page: "project", project }, names), true);
   }, [zoomed?.key]);
 
-  // Moving through Needs you peeks the asker: its pane's session, or the chief of staff for the staff room's.
+  // Moving through Needs you peeks the asker: its pane's session (a to-do's
+  // block, ended too, #1468), or the chief of staff for the staff room's.
   const peek = (i: InboxItem) => {
-    const pane = paneOfItem(fleet, i);
+    const asker = askerOf(fleet, i);
+    const pane = paneOfItem(fleet, i) ?? asker.pane;
     if (pane) tabs.open(paneTarget(fleet, pane, roleOf(pane.key), sessions.find((x) => x.panes.some((y) => y.key === pane.key))?.name));
+    else if (asker.target) tabs.open(asker.target);
     else if ((i.subject.room && i.subject.room === staffRoom?.id) || i.from.name?.startsWith("Chief of staff")) tabs.pick(CHIEF);
   };
 
