@@ -26,6 +26,9 @@
 # opens it from Needs you and writes the address Approve opens to
 # HANDOFF/approve; something else approves it with the account's passkey and
 # writes HANDOFF/approved.
+# ARUGULA_TODO is a stand-in agent's to-do in ARUGULA_STAFF_PROJECT (its prp_
+# id, Arugula #1470): the test opens it under Needs you there and marks it
+# Done with ARUGULA_TODO_NOTE.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -35,9 +38,11 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/arugula-native-core-ta
 rm -rf "$handoff"; mkdir -p "$handoff"
 ./build.sh sim >/dev/null
 pick=$(xcrun simctl list -j runtimes available | ARUGULA_SIM_FAMILY="${ARUGULA_SIM_FAMILY:-iPhone}" python3 -c '
-import json, os, sys
+import json, os, re, sys
 family = os.environ["ARUGULA_SIM_FAMILY"]
-ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS"]
+# A general runtime, not one made for a single new device (iOS-27-2-iPhone19-4),
+# whose screen the test is not made for.
+ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS" and re.fullmatch(r".*\.iOS-\d+-\d+", r["identifier"])]
 kinds = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == family]
 if not kinds:
     sys.exit(f"no {family} simulator in the newest iOS runtime")
@@ -86,6 +91,7 @@ TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TE
   TEST_RUNNER_ARUGULA_STAFF_PROJECT="${ARUGULA_STAFF_PROJECT:-}" TEST_RUNNER_ARUGULA_STAFF_BOARD="${ARUGULA_STAFF_BOARD:-}" \
   TEST_RUNNER_ARUGULA_STAFF_LEAD="${ARUGULA_STAFF_LEAD:-}" TEST_RUNNER_ARUGULA_DEPLOY="${ARUGULA_DEPLOY:-}" \
   TEST_RUNNER_ARUGULA_GRANT_BOARD="${ARUGULA_GRANT_BOARD:-}" TEST_RUNNER_ARUGULA_RUN_BOARD="${ARUGULA_RUN_BOARD:-}" \
+  TEST_RUNNER_ARUGULA_TODO="${ARUGULA_TODO:-}" TEST_RUNNER_ARUGULA_TODO_NOTE="${ARUGULA_TODO_NOTE:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \

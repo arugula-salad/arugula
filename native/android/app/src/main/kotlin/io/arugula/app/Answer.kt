@@ -106,7 +106,7 @@ fun NeedAnswer(need: Need, api: Api, model: HomeModel, done: (String) -> Unit) {
                 }
             }
             // Approved with a passkey on the platform's page, where the row opens.
-            is Need.Target.Deploy -> {}
+            is Need.Target.Deploy, is Need.Target.Todo -> {}
             is Need.Target.Session -> {
                 val v = model.opened[t.s.session]
                 when {

@@ -128,7 +128,9 @@ runner loads.
   board the claim made on the Overview with its row's question under Needs you, opens
   the board's thread, posts there and opens its lanes; peeks at a stand-in
   agent, allows its permission prompt and answers its question and the
-  board's from the Overview (the claim checks the agent went on); tells the board and
+  board's from the Overview (the claim checks the agent went on); opens a
+  stand-in agent's to-do under Needs you and marks it Done with a note (the
+  claim checks the agent woke with it, Arugula #1470); tells the board and
   starts a New idea (testnet has no hosted sessions, so it runs on
   box-systemd, which the claim checks), then reads projects,
   posts in chat and runs a command in a relayed terminal. A deploy the claim

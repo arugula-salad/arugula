@@ -34,7 +34,8 @@ import org.junit.runner.RunWith
  * and `ask` (a board in the personal project, and its row's question to the
  * person signing in). `team` names a team's project with `grant_board`, a
  * board with a grant the person gave, and `run_board`, one with no lead and
- * no grant (Arugula #1456). Something else allows the sign-in: the app writes its
+ * no grant (Arugula #1456). `todo` is a stand-in agent's to-do in `team`
+ * (its prp_ id, Arugula #1470), marked Done under Needs you with `todo_note`. Something else allows the sign-in: the app writes its
  * ticket to `files/handoff/ticket`, and the test waits for the address the
  * Allow was sent to in `files/handoff/callback` and types it in. Screenshots
  * go to `files/handoff` as PNGs.
@@ -198,6 +199,21 @@ class AppFlowTest {
         wait("home-list")
     }
 
+    /** A stand-in agent's to-do under Needs you (Arugula #1470): it opens in its row, its how is copied, and it's marked Done with [note]. */
+    private fun todo(id: String, note: String) {
+        val row = "need-todo:$id"
+        until("the to-do under Needs you", 60_000) { rule.onAllNodes(hasTestTag(row)).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNode(hasTestTag("home-list")).performScrollToNode(hasTestTag(row))
+        tap(row)
+        wait("todo-how")
+        rule.onNode(hasTestTag("todo-copy")).performClick()
+        rule.onNode(hasTestTag("todo-note")).performTextInput(note)
+        shot("2-todo")
+        rule.onNode(hasTestTag("todo-Done")).performClick()
+        until("the to-do's row cleared", 30_000) { rule.onAllNodes(hasTestTag(row)).fetchSemanticsNodes().isEmpty() }
+        shot("2-todo-done")
+    }
+
     /**
      * In the team's project (Arugula #1456): a board's grant, under who leads
      * it on its thread's heading, with Revoke, which takes it away; and Run
@@ -234,6 +250,8 @@ class AppFlowTest {
             tap("back")
             wait("home-list")
         }
+        // A stand-in's to-do, in this project's staff room (Arugula #1470).
+        args.getString("todo")?.takeIf { it.isNotEmpty() }?.let { todo -> todo(todo, args.getString("todo_note") ?: "done from the phone") }
         start?.let { name ->
             tap("project-switcher")
             until("$name in the switcher", 10_000) { rule.onAllNodes(hasText(name)).fetchSemanticsNodes().isNotEmpty() }
