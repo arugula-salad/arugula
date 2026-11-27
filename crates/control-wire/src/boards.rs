@@ -1684,6 +1684,16 @@ pub struct AnsweredAsk {
     pub asked_by: String,
     pub answered_by: String,
     pub answered_at: u64,
+    /// An agent's card on the row's issue (Arugula #1469): `todo` (its
+    /// `question` is what it asked to be done, its `answer` Done or
+    /// Can't) or `approval` (Approve or Deny). None: a board ask.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub kind: Option<String>,
+    /// A to-do's note, as its record keeps it, for its person alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub note: Option<String>,
 }
 
 /// What an edge between two work items says (Arugula #403). Only `blocks`
@@ -3704,6 +3714,8 @@ Done: People can sign up.
             asked_by: "an agent on m1".into(),
             answered_by: "sam".into(),
             answered_at: 1,
+            kind: None,
+            note: None,
         }];
         let text = render(&view(lanes(vec![(Lane::Review, vec![r])])));
         assert!(text.contains("      answered: Ship it? → Yes\n"), "{text}");
