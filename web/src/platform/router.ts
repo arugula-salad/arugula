@@ -82,6 +82,10 @@ let pops = 0;
 /** The count of Back and Forward moves so far, to tell whether one came
  * between a render and its effect. */
 export const popCount = () => pops;
+// And how many steps to a new place (go, not a replace): Escape's from the
+// Swarm to the Overview can come between a render and its effect too.
+let pushes = 0;
+export const pushCount = () => pushes;
 
 addEventListener("popstate", () => {
   // Back, with changes not saved and kept: the address goes back to them.
@@ -129,6 +133,7 @@ export function go(path: string, replace = false, state: unknown = null) {
   if (replace) history.replaceState(state, "", path);
   else {
     before = current();
+    pushes++;
     history.pushState(state, "", path);
   }
   changed();

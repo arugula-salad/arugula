@@ -16,7 +16,7 @@ import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { current, go, onRoute, pathOf, popCount, useRoute, type Route } from "./router";
+import { current, go, onRoute, pathOf, popCount, pushCount, useRoute, type Route } from "./router";
 import { installStack } from "../shared/kit/frame/stack";
 import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
@@ -379,10 +379,9 @@ function useSlug(r: Route) {
   // the paint, and a Back (or Escape's step to the Overview) before then
   // would have it replace the entry gone to with this page's (Arugula #1074).
   const pops = popCount();
-  const seen = location.pathname + location.search;
+  const pushes = pushCount();
   useEffect(() => {
-    const now = location.pathname + location.search;
     // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
-    if (want && want !== now && now === seen && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
+    if (want && want !== location.pathname + location.search && popCount() === pops && pushCount() === pushes && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }
