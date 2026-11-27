@@ -443,6 +443,7 @@ test.describe("a project's settings", () => {
       ),
       page.route(/\/api\/projects\/[^/]+\/sessions\/settings$/, (r) => json(r, { model: null, models: ["opus", "sonnet"] })),
       page.route(/\/api\/projects\/[^/]+\/runs\/grant$/, (r) => json(r, { role: "owner", grant: null, past: [], stale: false, renew: false, workspaces: 0, offer: false })),
+      page.route(/\/api\/projects\/[^/]+\/run-specs$/, (r) => json(r, { project: SITE, specs: [{ id: "rsp_0001", project: SITE, name: "nightly", workspace: "ws_1", kind: "command", argv: ["npm", "test"], schedules: [], rules: [] }] })),
       // One hosted workspace, so its size, finish step and agents' workspace have something to set.
       page.route(/\/api\/projects\/[^/]+\/workspaces$/, (r) => json(r, { workspaces: [{ id: "ws_1", name: "site-box", state: "ready", spec: {}, rebuild_needed: false }] })),
     ]);
@@ -451,15 +452,17 @@ test.describe("a project's settings", () => {
     await open(page, `/settings/project/${SITE}`, () => project(page));
     await expect(row(page, "agents")).toBeVisible();
     // Apps from products shows once a product keeps one here.
-    await expect.poll(() => rowIds(page)).toEqual(["general", "access", "repos", "issues", "agents", "secrets"]);
+    await expect.poll(() => rowIds(page)).toEqual(["general", "access", "repos", "issues", "agents", "runs", "secrets"]);
     await expect(row(page, "repos")).toHaveAttribute("data-settings-summary", "acme/site");
-    await expect(row(page, "agents")).toHaveAttribute("data-settings-summary", /^The strongest \(Opus\) · .*No standing grant.* · 1 token$/);
+    await expect(row(page, "agents")).toHaveAttribute("data-settings-summary", /^The strongest \(Opus\) · .* · 1 token$/);
+    // Runs is a row of its own (Lift 6a, #1483): its specs, with what the Runs list had, and its standing grant.
+    await expect(row(page, "runs")).toHaveAttribute("data-settings-summary", /^1 spec · .*No standing grant/);
+    expect(await section(page, "runs").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual(["run-specs", "run-grant"]);
     await expect(row(page, "secrets")).toHaveAttribute("data-settings-summary", "No environments · 1 secret");
-    // Agents holds what were CI alerts, Runs and workspaces and Claude spend, as parts.
+    // Agents holds what were CI alerts, workspaces and Claude spend, as parts.
     expect(await section(page, "agents").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual([
       "agent-model",
       "agent-workspace",
-      "run-grant",
       "size",
       "finish",
       "ci-alerts",
@@ -487,14 +490,17 @@ test.describe("a project's settings", () => {
     await page.goto(`/settings/project/${SITE}/agent-model`);
     await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
     await expect(section(page, "agents").locator('[data-settings-part="agent-model"]')).toBeVisible();
-    // CI alerts, Runs and workspaces and Claude spend are Agents' now.
-    for (const old of ["runs", "size", "finish", "run-grant", "ci-alerts", "spend"]) {
+    // CI alerts, workspaces and Claude spend are Agents' now; the standing grant, Runs'.
+    for (const old of ["size", "finish", "ci-alerts", "spend"]) {
       await page.goto(`/settings/project/${SITE}/${old}`);
       await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
       await expect(section(page, "agents")).toBeVisible();
     }
     await expect(section(page, "agents").locator('[data-settings-part="ci-alerts"]')).toBeVisible();
     await expect(section(page, "agents").locator('[data-settings-part="spend"]')).toBeVisible();
+    await page.goto(`/settings/project/${SITE}/run-grant`);
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/runs$`));
+    await expect(section(page, "runs").locator('[data-settings-part="run-specs"] [data-run-spec="nightly"]')).toBeVisible();
   });
 
   test("a setting a team default covers says it follows the team or is set here, and Reset clears its own (Arugula #1323)", async ({ page }) => {

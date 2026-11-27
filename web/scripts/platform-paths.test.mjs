@@ -115,8 +115,9 @@ test("each route parses", () => {
   // A section that's part of another now (Arugula #1105) lands on that one, by path or `#section`.
   assert.deepEqual(parse(`/settings/project/${P}/environments`), { page: "settings", scope: "project", project: P, section: "secrets" });
   assert.deepEqual(parse(`/settings/project/${P}/finish`), { page: "settings", scope: "project", project: P, section: "agents" });
-  // CI alerts, Runs and spend are parts of Agents (Lift 7); Machines is Machines' Add a machine.
-  for (const old of ["runs", "run-grant", "ci-alerts", "spend"]) assert.deepEqual(parse(`/settings/project/${P}/${old}`), { page: "settings", scope: "project", project: P, section: "agents" }, old);
+  // CI alerts and spend are parts of Agents (Lift 7); Runs is a row again, with its grant (Lift 6a); Machines is Machines' Add a machine.
+  for (const old of ["ci-alerts", "spend"]) assert.deepEqual(parse(`/settings/project/${P}/${old}`), { page: "settings", scope: "project", project: P, section: "agents" }, old);
+  for (const old of ["runs", "run-grant"]) assert.deepEqual(parse(`/settings/project/${P}/${old}`), { page: "settings", scope: "project", project: P, section: "runs" }, old);
   assert.deepEqual(parse(`/settings/project/${P}-x/machines`), { page: "machines", project: P, at: { at: "machines", add: true } });
   assert.equal(pathOf({ page: "machines", project: P, at: { at: "machines", add: true } }), `/p/${P}/machines?add`);
   assert.deepEqual(parse(`/p/${P}/machines`, "?add"), { page: "machines", project: P, at: { at: "machines", add: true } });

@@ -35,7 +35,7 @@ import { SplitNote } from "./move/split-note";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
-import { RunPage, RunsPage } from "./pages/runs";
+import { RunPage } from "./pages/runs";
 import { AllBoardsPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage, docsHome } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
@@ -142,7 +142,8 @@ function body(r: Route, lost: string | null) {
     case "doc":
       return <DocPage project={r.project} doc={r.doc} />;
     case "runs":
-      return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
+      // The Runs list went in Lift 6a (Arugula #1483): `movedPage` takes it to Running, or a spec's to Settings.
+      return null;
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} thread={r.thread} />;
     case "sessions":
@@ -363,6 +364,8 @@ function movedPage(r: Route): Route {
   }
   // Build's list of panes (#1083) is the Machines page (Arugula #1346).
   if (r.page === "machines" && r.at.at === "panes") return { ...r, at: { at: "machines" } };
+  // The Runs list is Running, over Machines; a spec's, its project's Settings' Runs (Lift 6a, Arugula #1483). A run keeps its page.
+  if (r.page === "runs") return r.spec ? { page: "settings", scope: "project", project: r.project, section: "runs" } : { page: "machines", project: r.project, at: { at: "machines", running: true } };
   return r;
 }
 

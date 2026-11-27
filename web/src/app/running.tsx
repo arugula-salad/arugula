@@ -18,7 +18,7 @@ import { Well } from "../shared/kit/well";
 import { platformFetch } from "../shared/maintenance";
 import { agentRunning } from "../shared/needs-you";
 import { placeLayouts } from "../shared/place-layout";
-import { usePlatformApi } from "../shared/platform-api";
+import { usePlatformApi, type RunningProps } from "../shared/platform-api";
 import { cleanTitle } from "../shared/titles";
 import { lastLines } from "../shared/transcript";
 import { useSubscribe } from "../shared/ui/hooks";
@@ -48,10 +48,11 @@ const stateOf = (p: FleetPane): State => (p.info.attention === "needs_input" ? "
 
 type Picked = { kind: "pane"; key: string } | { kind: "run"; id: string } | null;
 
-/** The drawer's opener and the drawer: `project` for its CI runs and alerts, `place` (`board:brd_…`) to pin to. */
-export function RunningPlace({ project, place, session }: { project: string | null; place: string | null; session: AppSession | null }) {
+/** The drawer's opener and the drawer (`RunningProps`). */
+export function RunningPlace({ project, place, opened, closed, session }: RunningProps & { session: AppSession | null }) {
   const [fleet, setFleet] = useState<Fleet | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!opened);
+  useEffect(() => void (opened && setOpen(true)), [opened]);
   useEffect(() => {
     let on = true;
     void boot(session).then((b) => on && setFleet(b.machines.fleet));
@@ -65,7 +66,7 @@ export function RunningPlace({ project, place, session }: { project: string | nu
       <button type="button" class="k-top-act" data-open-running={panes.length} title="Every live process across your machines" onClick={() => setOpen(true)}>
         <StateMark state={working ? "working" : "idle"} word={`${panes.length} running`} />
       </button>
-      {open && fleet && <Drawer fleet={fleet} panes={panes} project={project} place={place} close={() => setOpen(false)} />}
+      {open && fleet && <Drawer fleet={fleet} panes={panes} project={project} place={place} close={() => (setOpen(false), closed?.())} />}
     </>
   );
 }

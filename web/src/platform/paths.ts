@@ -457,10 +457,9 @@ const MOVED: Record<"you" | "project" | "machine" | "team", Record<string, strin
   project: {
     plane: "repos",
     boards: "issues",
-    runs: "agents",
     size: "agents",
     finish: "agents",
-    "run-grant": "agents",
+    "run-grant": "runs",
     "ci-alerts": "agents",
     spend: "agents",
     "agent-model": "agents",
