@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 import { chromium, expect, test, type FrameLocator, type Page } from "@playwright/test";
 import { menu, menuItem, paneEl, panes, ready, reset, run, closeContexts, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
+import { paint, sliders } from "../src/shared/kit/look";
 import { keyHeaders } from "./local-token";
 import { ANY, blockPort, daemonPort } from "./ports";
 import { iphone, launchWebkit, pixel7 } from "./phones";
@@ -188,9 +189,9 @@ test("an open editor follows palette changes and keeps a customized editor theme
   const background = (color: string) => expect(frame(page, first).locator(".monaco-workbench"))
     .toHaveCSS("--vscode-editor-background", new RegExp(`^\\s*${color}\\s*$`, "i"), { timeout: 15_000 });
   await select("light");
-  await background("#eff1f5");
+  await background(paint(false, sliders(false)).well);
   await select("dark");
-  await background("#0c1118");
+  await background(paint(true, sliders(true)).well);
 
   // This is VS Code's workspace settings file, the same place its settings
   // editor writes. A user's chosen theme and colors must survive a palette change.
@@ -203,12 +204,12 @@ test("an open editor follows palette changes and keeps a customized editor theme
     custom.settings["workbench.colorCustomizations"] = { "editor.background": "#123456" };
     writeFileSync(workspace, JSON.stringify(custom));
     await background("#123456");
-    await select("latte");
+    await select("light");
     await background("#123456");
     expect(JSON.parse(readFileSync(workspace, "utf8")).settings["workbench.colorTheme"]).toBe("Default Dark Modern");
   } finally {
     writeFileSync(workspace, original);
-    await select("slate");
+    await select("dark");
   }
 });
 

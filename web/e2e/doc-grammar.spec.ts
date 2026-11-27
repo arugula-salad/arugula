@@ -10,7 +10,8 @@
 
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { houseColours, legible, PALETTES } from "../src/shared/appearance";
+import { houseColours } from "../src/shared/appearance";
+import { paint, sliders } from "../src/shared/kit/look";
 import { cssVar, HUES, hex, NAMES, resolve, usesNames } from "../src/shared/docs/colours";
 import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
 import { assetName, checkEmbeds, checkPrototype, checkSvg, fences, prototypeInfo, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
@@ -262,16 +263,16 @@ function tokens(selector: string): Record<string, string> {
 test("the named colours are the house pair's Doc tokens, in both schemes", () => {
   expect(NAMES).toHaveLength(16);
   expect(HUES).toEqual(["leaf", "pepper", "sky", "plum", "sun", "stone"]);
-  // appearance.ts sets the tokens (houseColours: Slate in dark, Latte in
-  // light, whatever palette is picked); colours.json holds the same for the
+  // appearance.ts sets the tokens (houseColours: Arugula at its own
+  // sliders, whatever look is picked); colours.json holds the same for the
   // daemon, which bakes literal hex into a drawing.
   for (const scheme of ["dark", "light"] as const) {
     const house = houseColours(scheme);
     for (const name of NAMES) expect(hex(name, scheme), `${name} ${scheme}`).toBe(house[cssVar(name).slice("--doc-".length)]);
   }
-  // The pair is the palettes', as legible() paints them.
-  expect(houseColours("dark").paper).toBe(legible(PALETTES.find((p) => p.id === "slate")!).bg);
-  expect(houseColours("light").paper).toBe(legible(PALETTES.find((p) => p.id === "latte")!).bg);
+  // The pair is the look's paper, as kit/look.ts paints Arugula.
+  expect(houseColours("dark").paper).toBe(paint(true, sliders(true)).paper);
+  expect(houseColours("light").paper).toBe(paint(false, sliders(false)).paper);
   // style.css defines no colour of a Doc's: a chart's default series are
   // the first four hues.
   expect(tokens(".doc")).toMatchObject(Object.fromEntries(["--c1", "--c2", "--c3", "--c4"].map((c, i) => [c, `var(--doc-${HUES[i]})`])));
