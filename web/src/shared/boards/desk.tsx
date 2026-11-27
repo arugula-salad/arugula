@@ -210,7 +210,8 @@ export function BoardNeeds({ view, answer, inbox, platform }: { view: BoardView;
         since: i.since,
         need,
         answer: need.answer ? (o, note) => void inbox!.answer(i, o.id, note) : undefined,
-        open: need.answer ? undefined : i.subject.url.startsWith("/") ? platform(i.subject.url) : i.subject.url,
+        // A teammate's card has no address: only its person opens it (Arugula #1469).
+        open: need.answer || !i.subject.url ? undefined : i.subject.url.startsWith("/") ? platform(i.subject.url) : i.subject.url,
         data: { "data-board-item": i.id, "data-board-ask-row": r.id },
       });
     }

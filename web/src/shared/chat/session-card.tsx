@@ -196,8 +196,10 @@ function SessionWorkChip({ card }: { card: SessionCard }) {
   return c.path ? <ObjectChip href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</ObjectChip> : <ObjectChip title="The issue it was started on" data-session-work>{c.label}</ObjectChip>;
 }
 
-export function stateOf(state: string, quiet: boolean): { label: string; tone: Tone } {
+export function stateOf(state: string, quiet: boolean, withLead = false): { label: string; tone: Tone } {
   if (state === "unresponsive" || (quiet && (state === "working" || state === "needs_input"))) return { label: "stopped responding", tone: "danger" };
+  // Its ask goes to the agent that started it first (Arugula #1393, #1469): not yours yet.
+  if (state === "needs_input" && withLead) return { label: "waits on its lead", tone: "muted" };
   switch (state) {
     case "queued":
       return { label: "queued", tone: "warn" };
@@ -390,9 +392,16 @@ export function SessionAskForm({ c, may, busy, act }: { c: SessionCard; may: boo
       </p>
     );
   }
+  // While its lead has it, say so above the ask: it reaches you if the lead doesn't answer.
+  const lead = c.with_lead ? (
+    <p class="session-card-line dim" data-session-with-lead>
+      Its lead, {c.with_lead.name}, answers first: it comes to you at {new Date(c.with_lead.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if it doesn't.
+    </p>
+  ) : null;
   if (!may) {
     return (
       <div class="session-card-ask" data-session-ask>
+        {lead}
         <p class="session-card-line">
           It asks: <b>{asking.ask.message}</b>
         </p>
@@ -404,6 +413,7 @@ export function SessionAskForm({ c, may, busy, act }: { c: SessionCard; may: boo
   if (o.ask !== "permission" && o.options.length > 0) {
     return (
       <div class="session-card-ask" data-session-ask>
+        {lead}
         <ChoiceForm
           question={o.question ?? "It waits for an answer"}
           choices={o.options}
@@ -416,6 +426,7 @@ export function SessionAskForm({ c, may, busy, act }: { c: SessionCard; may: boo
   }
   return (
     <div class="session-card-ask" data-session-ask>
+      {lead}
       <NeedRow key={asking.ask.id} need={askNeed(asking.ask, needAge(asking.ask.at_ms))} open ask={asking.ask} actions={{ answer: (content) => act(asking.act(content)), decline: () => act(asking.act(null)) }} />
     </div>
   );
@@ -675,7 +686,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   }
   const quiet = isQuiet(c, now);
   const parked = c.state === "done" && c.parked;
-  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? (parked ? { label: "parked", tone: "ok" as Tone } : stateOf(c.state, quiet));
+  const { label, tone } = mergedOf(c) ?? triedAs(c.state, c.reason) ?? (parked ? { label: "parked", tone: "ok" as Tone } : stateOf(c.state, quiet, !!c.with_lead));
   const short = c.session.replace(/^ses_/, "").slice(0, 8);
   const ended = c.state === "done" || c.state === "failed" || c.state === "stopped";
   const took = elapsed((c.ended_at ?? now) - c.created_at);

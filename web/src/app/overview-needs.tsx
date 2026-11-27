@@ -181,7 +181,8 @@ function needOf(i: InboxItem, me: string | null | undefined, fleet: Fleet, a: An
 }
 
 /** Opens what an item is about, where it lives: a path here, else its page on GitHub. */
-export const openItem = (i: InboxItem) => (i.subject.url.startsWith("/") ? go(i.subject.url) : window.open(i.subject.url, "_blank", "noopener,noreferrer"));
+// A teammate's card has no address (Arugula #1469): nothing opens.
+export const openItem = (i: InboxItem) => (!i.subject.url ? undefined : i.subject.url.startsWith("/") ? go(i.subject.url) : window.open(i.subject.url, "_blank", "noopener,noreferrer"));
 
 export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxItem[]; me: string | null | undefined; fleet: Fleet; toast: (text: string) => void; peek: (i: InboxItem) => void }) {
   // Answered rows stay where they were, as receipts, while the page is up.
@@ -305,7 +306,7 @@ export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxI
         }}
         onAnswer={a ? (o, note) => void answer(i, a, o, note) : undefined}
         extra={
-          !a || i.subject.type === "pane" ? (
+          (!a || i.subject.type === "pane") && i.subject.url ? (
             <Button keys="↵" onClick={() => openItem(i)}>
               Open
             </Button>

@@ -177,7 +177,7 @@ function OpenAsk({ c, project }: { c: Card; project: string }) {
                 open
                 onAnswer={need.answer ? (o, note) => void answerOne(i.id, o.id, note) : undefined}
                 extra={
-                  need.answer ? undefined : (
+                  need.answer || !i.subject.url ? undefined : (
                     <a class="k-button is-plain" href={i.subject.url} onClick={(e) => i.subject.url.startsWith("/") && follow(e, i.subject.url)}>
                       Open
                     </a>
