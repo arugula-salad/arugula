@@ -411,6 +411,12 @@ test("@ offers the machines a mention reaches, each with its sessions under it",
   assert.deepEqual(tokens("pad"), [], "without the grant it isn't offered");
 });
 
+test("a machine's cos is offered as its owner's Chief of staff (Arugula #1515)", () => {
+  const agents = [{ machine: "m1", machine_name: "dust", mentionable: true, sessions: ["cos", "Product Improvements"] }];
+  const shown = machineMentions(agents, "dust/").map((m) => [m.token, m.name]);
+  assert.deepEqual(shown, [["dust", "dust"], ["dust/cos", "Chief of staff"], ["dust/product-improvements", "Product Improvements"]]);
+});
+
 test("a machine's word is control's (#500): the hostname as before, a renamed one by its new name", () => {
   assert.equal(machineHandle("Aarons-Mac-mini.local"), "aarons-mac-mini.local");
   assert.equal(machineHandle("My Mini"), "my-mini");

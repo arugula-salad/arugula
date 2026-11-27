@@ -144,6 +144,12 @@ export function machineHandle(name: string): string {
  * digits, `_`, `-` and `.`, not ending in `-` or `.`. */
 const MENTIONABLE_WORD = /^[\p{L}\p{N}_.-]*[\p{L}\p{N}_]$/u;
 
+/** How `@` shows a session control offers: `cos`, the handle that follows
+ * its owner's chief of staff (Arugula #1515), by what it is. */
+function shownSession(name: string): string {
+  return name === "cos" ? "Chief of staff" : name;
+}
+
 /** The machines a mention reaches in a room (control says: `mentionable`),
  * each followed by its recent sessions, for `@`. `typed` is what follows the
  * `@`: `geek` filters machines by name, `geek/ux` the sessions of the machine
@@ -157,7 +163,7 @@ export function machineMentions(agents: ChatRoomAgent[], typed: string): Machine
     const token = machineHandle(a.machine_name);
     if (!a.mentionable || !token || !MENTIONABLE_WORD.test(token) || seen.has(token)) continue;
     seen.add(token);
-    const mine = a.sessions.map((s) => ({ name: s, slug: sessionSlug(s) })).filter((s, i, all) => s.slug && all.findIndex((t) => t.slug === s.slug) === i);
+    const mine = a.sessions.map((s) => ({ name: shownSession(s), slug: sessionSlug(s) })).filter((s, i, all) => s.slug && all.findIndex((t) => t.slug === s.slug) === i);
     if (slash >= 0) {
       if (token !== q.slice(0, slash)) continue;
       const tail = q.slice(slash + 1);
