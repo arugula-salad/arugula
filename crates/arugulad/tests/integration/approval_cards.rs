@@ -270,6 +270,8 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     // An agent block on the issue, in a worktree of the clone on its branch.
     let p = pane(&d, block).expect("the new block");
     assert_eq!(p["session_name"], "issue-12", "a tab of its own: {p}");
+    // Arugula #1518: in the card's project, though its clone is in none.
+    assert_eq!(p["session_project"]["id"], "prj_1", "the card's project: {p}");
     let b = d.get(&format!("/api/blocks/{block}"));
     let config = &b["state"];
     assert_eq!((&config["agent"], &config["title"]), (&json!("claude"), &json!("#12 Fix the login")), "{b}");
@@ -321,6 +323,17 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     let a = f.answer("approve-3").unwrap();
     assert_eq!(a["answer"], "failed", "{a}");
     assert!(pane(&d, shell).is_some());
+
+    // Arugula #1518: a card in another project than the owner's default
+    // (prj_1, here) puts its tab in its own.
+    f.send(json!({ "t": "op", "id": "approve-5", "op": { "op": "agents.approved", "ask": "prp_4",
+        "project": "prj_2", "action": "start", "session": "Chief of staff", "pane": chief,
+        "issue": { "id": "iss_14", "number": 14, "title": "Elsewhere" } } }));
+    d.wait_for("its answer", || f.answer("approve-5").is_some());
+    let a = f.answer("approve-5").unwrap();
+    assert_eq!(a["answer"], "approved", "{a}");
+    let p = pane(&d, a["block"].as_u64().unwrap()).expect("the new block");
+    assert_eq!(p["session_project"]["id"], "prj_2", "the card's project, not the default: {p}");
 
     // The chief of staff is gone (moved, Arugula #1340): its card's start
     // fails, and nothing opens in some other directory.
