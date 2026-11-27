@@ -23,7 +23,7 @@ import { session } from "../session";
 export function ChatPage({ project, route, children }: { project: string; route: ChatRoute; children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
-  const scope: ChatScope | undefined = p ? { team: p.team?.id ?? null, name: p.name } : undefined;
+  const scope: ChatScope | undefined = p ? { team: p.team?.id ?? null, name: p.name, project: p.id } : undefined;
   return (
     <div class="platform platform-chat" data-platform-chat>
       {/* On a phone, the places' bar is under the rooms, not a room's composer. */}

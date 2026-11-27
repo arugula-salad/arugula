@@ -383,8 +383,13 @@ function useSlug(r: Route) {
   // would have it replace the entry gone to with this page's (Arugula #1074).
   const pops = popCount();
   const pushes = pushCount();
+  // Nor, in Chat, after a step from one room to another in place (`j`): the
+  // room it was drawn for is gone, so its fix would undo the step.
+  const drawn = location.pathname + location.search;
+  const chatting = r.page === "chat" || r.page === "dm";
   useEffect(() => {
+    const now = location.pathname + location.search;
     // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
-    if (want && want !== location.pathname + location.search && popCount() === pops && pushCount() === pushes && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
+    if (want && want !== now && (!chatting || now === drawn) && popCount() === pops && pushCount() === pushes && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }

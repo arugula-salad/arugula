@@ -12,6 +12,7 @@
 // reader may reach that machine); one that doesn't is inert, and the quote
 // is all they see.
 
+import { isAgentRoom, isAgentsRoom, isBoardChannel } from "./agent-rooms";
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
@@ -110,8 +111,10 @@ function titled(room: string, now: string): string {
 }
 
 /** A room's mark: # a channel, @ a DM, ↳ a pane, ▤ a session, ◇ an
- * object's thread (M196), ⌂ an archive. */
+ * object's thread (M196), ⌂ an archive; # #agents and a board's channel
+ * (Arugula #1522), which are channels to the people in them. */
 export function roomSigil(r: ChatRoom): string {
+  if (isAgentRoom(r)) return "#";
   if (r.kind === "object") return "◇";
   return r.kind === "channel" ? "#" : r.kind === "dm" ? "@" : r.kind === "pane" ? "↳" : r.kind === "session" ? "▤" : "⌂";
 }
@@ -224,6 +227,8 @@ function emptyNote(r: ChatRoom): EmptyNote {
     case "session":
       return { title: "Talk about this session here.", why: "Write @name to notify someone." };
     case "object":
+      if (isAgentsRoom(r)) return { title: "This is the start of #agents.", why: "Work across boards: deploys, merge order, holds. Every lead reads it." };
+      if (isBoardChannel(r)) return { title: `This is the start of #${r.name}.`, why: "The board's lead, its workers and its people talk here." };
       return { title: "Talk about this here.", why: "Its project's members read it. Write @name to notify one of them." };
     default:
       return { title: "Nothing kept here." };
@@ -272,6 +277,7 @@ export function RoomBody({
   empty,
   chip,
   embedded,
+  still,
   target,
 }: {
   room: ChatRoom;
@@ -296,6 +302,9 @@ export function RoomBody({
    * to write in doesn't take focus, so the page opens at its top (UI audit
    * #144). */
   embedded?: boolean;
+  /** Its box to write in doesn't take focus: it was opened by a key that
+   * moves through rooms (`j`, `k`), which the next press should reach. */
+  still?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   // "Reply in thread" opens the thread where this room is shown (#106).
@@ -505,7 +514,7 @@ export function RoomBody({
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (
-        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded} target={target} />
+        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded || still} target={target} />
       ) : (
         <p class="thread-note" data-room-readonly>
           {readOnly(current)}
@@ -1341,7 +1350,7 @@ export function RoomCompose({
       {thread && (
         <label class="thread-also" data-thread-also>
           <input type="checkbox" checked={also} onChange={(e) => setAlso((e.currentTarget as HTMLInputElement).checked)} />
-          Also send to {room.kind === "channel" ? `#${room.name}` : room.kind === "dm" ? "the conversation" : "the room"}
+          Also send to {room.kind === "channel" || isAgentRoom(room) ? `#${room.name}` : room.kind === "dm" ? "the conversation" : "the room"}
         </label>
       )}
     </form>

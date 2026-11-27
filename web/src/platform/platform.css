@@ -235,6 +235,51 @@ html[data-native-tabs] .platform {
   overflow: hidden;
 }
 
+/* A thread in a room's own column (#agents, a board's channel): as the
+   room's stream, its back link in the head. */
+.platform-chat .chat:not(.phone) .chat-thread.chat-thread-panel .chat-go {
+  color: var(--ink-dim);
+}
+
+/* Beside #agents or a board's channel: who's in it and who a post reaches. */
+.chat-about-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chat-about-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-about-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-about-who .m-meta,
+.chat-about-reach dd {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.chat-about-reach {
+  margin: 0;
+}
+.chat-about-reach > div {
+  display: grid;
+  grid-template-columns: 11em 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.chat-about-reach dd {
+  margin: 0;
+}
+
 /* The rooms are kit rows on the section, in the side's own padding. */
 .chat-side .chat-list {
   padding: 8px 6px 16px;
@@ -258,6 +303,16 @@ html[data-native-tabs] .platform {
 .chat-list .k-row[data-quiet] .k-row-title,
 .chat-list .k-row[data-muted] .k-row-title {
   color: var(--ink-dim);
+}
+/* A board's lead, as a DM's presence: a dot at the row's end. */
+.chat-list .chat-lead-dot {
+  position: static;
+  display: inline-block;
+  width: 8px;
+  border-color: var(--ink-dim);
+}
+.chat-list .chat-lead-dot.presence-active {
+  border-color: var(--done);
 }
 .chat-list .k-row[data-dragging] {
   opacity: 0.5;

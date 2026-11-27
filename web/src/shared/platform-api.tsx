@@ -63,6 +63,9 @@ export interface ChatNav {
   roomLink(room: string, seq: number, thread?: number): string;
   /** A room's address, for its row's `href` (UI audit #185). */
   roomHref(room: string): string;
+  /** A board's page, for its channel's "Open the board" (Arugula #1522); a
+   * host with no board pages omits it. */
+  boardHref?(project: string, board: string): string;
   /** Where the reader gives their machines' agents access to rooms (a
    * room's agents chip links here); a host with no such page omits it. */
   openGrants?(): void;
