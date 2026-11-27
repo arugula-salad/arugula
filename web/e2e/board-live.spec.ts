@@ -149,6 +149,8 @@ test.describe("on a computer", () => {
 
   test("watching, the session's question says who answers it, with no answers of yours", async ({ page }) => {
     const pane = await openDrawer(page, "r_live");
+    // Its live pane is up (its client is held) before it's told the role.
+    await expect(page.locator('[data-board-drawer="r_live"] [data-board-drawer-live] [data-live-hand-off]')).toBeVisible();
     // As the daemon tells a guest who only watches the session.
     await page.evaluate((p) => {
       const c = (window as unknown as { __live: { client(m: string): { state: { roles?: unknown }; sessionOfPane(p: number): number | null; emit(): void } } }).__live.client("m_suite");
