@@ -5,7 +5,7 @@
 // seconds; the owner approves on the desktop, an editor on a phone from the
 // sheet's gates-first list (chant's ledger names each), a viewer sees the
 // gate with no Approve; the next `chant run` walks through. *Expire* (#310)
-// turns a gate down from the swarm's card and the phone: the attention
+// turns a gate down from the phone (and Needs you, overview-needs.spec): the attention
 // clears and the next `chant run` stops there again. On a phone, *Run op*
 // on a member starts a gated op in a pane, *Approve* clears it, and *Run
 // op* again walks through (#309). The pane menu and the picker offer "Open

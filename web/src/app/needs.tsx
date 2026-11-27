@@ -2,8 +2,9 @@
 // Lift 6d, #1486): what the Overview's Needs you (this project's slice) and
 // the Inbox (every project's) share. A row expands in place and answers
 // there: an approval or a to-do through the Inbox (`POST /api/inbox/{id}`,
-// its `choice` and a to-do's note), a pane's permission or one-question ask
-// through its machine, as Swarm's cards answer it. One that can't be
+// its `choice` and a to-do's note), a pane's permission, one-question ask
+// or gate (Approve, and Expire for a chant gate, #1546; a decision point's
+// choices) through its machine. One that can't be
 // answered here (a form, a deploy, a board's own ask, a mention) has Open.
 // Answered, a row stays as a dim receipt until you leave the page, so the
 // list doesn't jump; a to-do's says its note as control kept it, read from
@@ -26,7 +27,8 @@ import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
 import { clock, todoReceipt } from "../shared/chat/ask-card";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { act, kindOf, readableCommand, whatItDoes } from "../shell/fleet-model";
+import { act, kindOf, readableCommand, reasonOf, whatItDoes } from "../shell/fleet-model";
+import { pointOf } from "../shell/ui/point-choices";
 import type { PanelTarget } from "../shared/kit/panel-key";
 import { permissionTarget } from "../shell/ui/answer-card";
 import { answerItem, forTeammate, markItem, memberName } from "../platform/inbox";
@@ -124,6 +126,24 @@ function paneAnswer(fleet: Fleet, p: FleetPane, ask: Ask): Answering | null {
   return { options: q.options.map((o) => ({ id: o.label, label: o.label })), send: (o) => run("answer", { content: { question_0: o.id } }) };
 }
 
+/** A pane waiting at a gate, answered on its machine, as the phone's sheet
+ * does (#1546): Approve, and Expire where its machine offers it; a decision
+ * point (#621), its choices. */
+function gateAnswer(fleet: Fleet, p: FleetPane): Answering | null {
+  const r = reasonOf(p);
+  if (r?.kind !== "gate" || !r.gate) return null;
+  const run = async (action: "allow" | "expire" | "answer", extra = {}) => {
+    const err = await act(fleet, [p], action, extra);
+    if (err) throw new Error(err);
+  };
+  const point = pointOf(r.gate);
+  if (point) return { options: point.choices.map((c) => ({ id: c.value, label: c.label })), send: (o) => run("answer", { content: { answer: o.id } }) };
+  return {
+    options: [{ id: "allow", label: "Approve" }, ...(r.actions.includes("expire") ? [{ id: "expire", label: "Expire" }] : [])],
+    send: (o) => run(o.id as "allow" | "expire"),
+  };
+}
+
 /** An answered to-do's receipt from its record: its card's ask (`GET
  * /api/chat/rooms/{room}/asks/{seq}`, the item's subject), which keeps
  * its note (#1462). None when it can't be read; the receipt then says the
@@ -162,7 +182,8 @@ function answering(fleet: Fleet | null, i: InboxItem): Answering | null {
     return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o, note) => answerItem(i.id, o.id, i.kind === "todo" ? note : undefined) };
   const p = paneOfItem(fleet, i);
   const ask = p?.info.ask as Ask | null | undefined;
-  return p && fleet && ask ? paneAnswer(fleet, p, ask) : null;
+  if (!p || !fleet) return null;
+  return ask ? paneAnswer(fleet, p, ask) : gateAnswer(fleet, p);
 }
 
 /** Where a row says it is: its card (`#1443`), the chief of staff, a room, or not on a card. */
