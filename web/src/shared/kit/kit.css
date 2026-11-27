@@ -789,6 +789,11 @@ div.k-row-line {
 .k-tab.is-peek .k-tab-title {
   font-style: italic;
 }
+.k-tab-after {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
 .k-tab-x {
   color: var(--ink-faint);
 }
