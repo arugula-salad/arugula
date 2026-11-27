@@ -149,7 +149,7 @@ export function AgentPanelPlace(props: AgentPanelProps & { session: AppSession |
 }
 
 /** The panel over `fleet`: the chief of staff, then `targets`. */
-export function AgentPanel({ project, above, targets, current, onPick, onClose, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
+export function AgentPanel({ project, above, targets, current, onPick, onClose, folded, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
@@ -208,6 +208,7 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
       over={over}
       flush={shown.flush}
       foot={shown.foot}
+      folded={folded}
     >
       <PlatformApiContext.Provider value={here}>{shown.body}</PlatformApiContext.Provider>
     </Panel>
