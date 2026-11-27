@@ -1,9 +1,8 @@
 import { TerminalView } from "../terminal-view";
 
-export interface Cell {
-  width: number;
-  height: number;
-}
+import type { Cell } from "../../shared/kit/panes/geometry";
+
+export type { Cell };
 
 /** Measure one terminal cell by rendering a small terminal off screen.
  * The daemon lays tabs out in cells, so this turns its layout into pixels

@@ -9,9 +9,10 @@
 // drawer shows a pane.
 
 import "./live.css";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ActRequest, ActResponse } from "../shared/proto";
 import { askNeed, NeedRow } from "../shared/kit/need-row";
+import { useSlot } from "../shared/kit/panes/slot";
 import { needAge } from "../shared/needs-you";
 import { usePhone } from "../shared/ui/hooks";
 import { StateChip } from "../shared/ui/state-chip";
@@ -22,28 +23,18 @@ import { pickCard } from "../shell/ui/pane-card";
 import { usePlatformApi } from "../shared/platform-api";
 import { useLive, type Reach } from "./machine-client";
 
-/** The pane, in a fixed slot under the drawer's state card. */
-export function LivePane({ machine, pane, reach }: { machine: string; pane: string; reach: Reach }) {
+/** A machine's pane as the app reaches it: its client, and its view once
+ * the machine has the pane. */
+function usePane(machine: string, pane: string, reach: Reach) {
   const c = useLive(machine, reach);
   const client = c === "unreachable" ? null : c;
   const id = Number(pane);
-  const ref = useRef<HTMLDivElement>(null);
-  const phone = usePhone();
   const info = client?.connected ? client.info(id) : undefined;
-  const view = info ? client!.viewOf(id) : undefined;
-  useLayoutEffect(() => {
-    const slot = ref.current;
-    if (!view || !slot) return;
-    slot.appendChild(view.host);
-    view.setVisible(true);
-    return () => {
-      if (view.host.parentElement !== slot) return;
-      view.host.remove();
-      view.setVisible(false);
-    };
-  }, [view]);
-  // The key bar sends to the client's active pane: this one.
-  useEffect(() => void (info && client!.setActive(id)), [client, !!info]);
+  return { c, client, id, info, view: info ? client!.viewOf(id) : undefined };
+}
+
+/** Why there's no pane to draw yet, or null when there is. */
+function notDrawn({ c, client, info }: ReturnType<typeof usePane>) {
   if (c === "unreachable")
     return (
       <p class="dim" data-live-unreachable>
@@ -62,6 +53,20 @@ export function LivePane({ machine, pane, reach }: { machine: string; pane: stri
         Its pane isn't on its machine now.
       </p>
     );
+  return null;
+}
+
+/** The pane, in a fixed slot under the drawer's state card. */
+export function LivePane({ machine, pane, reach }: { machine: string; pane: string; reach: Reach }) {
+  const p = usePane(machine, pane, reach);
+  const { client, id, info, view } = p;
+  const ref = useRef<HTMLDivElement>(null);
+  const phone = usePhone();
+  useSlot(view, ref);
+  // The key bar sends to the client's active pane: this one.
+  useEffect(() => void (info && client!.setActive(id)), [client, !!info]);
+  const none = notDrawn(p);
+  if (none || !client || !info) return none;
   const driving = info.driver?.who === client.me();
   const other = client.drivenBy(id);
   // On a teammate's computer you watch: its owner hands it off there.
@@ -115,23 +120,10 @@ export function LivePane({ machine, pane, reach }: { machine: string; pane: stri
  * `watch` holds your keys back (a teammate's session); so does a pane
  * whose session you only view. */
 export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pane: string; reach: Reach; watch?: boolean }) {
-  const c = useLive(machine, reach);
-  const client = c === "unreachable" ? null : c;
-  const id = Number(pane);
+  const p = usePane(machine, pane, reach);
+  const { client, id, info, view } = p;
   const ref = useRef<HTMLDivElement>(null);
-  const info = client?.connected ? client.info(id) : undefined;
-  const view = info ? client!.viewOf(id) : undefined;
-  useLayoutEffect(() => {
-    const slot = ref.current;
-    if (!view || !slot) return;
-    slot.appendChild(view.host);
-    view.setVisible(true);
-    return () => {
-      if (view.host.parentElement !== slot) return;
-      view.host.remove();
-      view.setVisible(false);
-    };
-  }, [view]);
+  useSlot(view, ref);
   // Its stream comes though its tab isn't the one the client shows.
   useEffect(() => (info ? client!.drawAlone(id) : undefined), [client, !!info, id]);
   const readOnly = !!watch || (!!info && !mayAnswer(client!, id));
@@ -147,25 +139,7 @@ export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pan
     for (const k of kinds) slot.addEventListener(k, stop, true);
     return () => kinds.forEach((k) => slot.removeEventListener(k, stop, true));
   }, [readOnly, !!view]);
-  if (c === "unreachable")
-    return (
-      <p class="dim" data-live-unreachable>
-        Its machine can't be reached from here.
-      </p>
-    );
-  if (!client?.connected)
-    return (
-      <p class="dim" data-live-reaching>
-        Reaching its machine…
-      </p>
-    );
-  if (!info)
-    return (
-      <p class="dim" data-live-gone>
-        Its pane isn't on its machine now.
-      </p>
-    );
-  return <div ref={ref} class="work-slot" data-live-slot={pane} data-live-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
+  return notDrawn(p) ?? <div ref={ref} class="work-slot" data-live-slot={pane} data-live-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
 }
 
 /** What the pane asks, at the drawer's top, with its choices. */

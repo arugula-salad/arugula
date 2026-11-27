@@ -8,7 +8,7 @@ import { startDrag } from "../drag";
 import { keyHint } from "../../../shared/keys";
 import { openFresh } from "../open-fresh";
 import { drop } from "../panes/drop";
-import { len } from "../panes/geometry";
+import { len } from "../../../shared/kit/panes/geometry";
 import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/ui/icons";
 import { PaneHint } from "../hints";

@@ -7,7 +7,7 @@ import type { Cell } from "../cells";
 import { drag } from "../drag";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { dropAllowed } from "./drop";
-import { len, px } from "./geometry";
+import { len, px } from "../../../shared/kit/panes/geometry";
 
 export function DropOverlay({ client, tab, cell }: { client: Client; tab: TabView; cell: Cell }) {
   useSubscribe(drag.subscribe);
