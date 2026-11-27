@@ -1,5 +1,5 @@
 ---
-section: New
+section: Added
 title: "@cos names your chief of staff"
 line: Type @cos to reach your chief of staff in a project's chat, or @machine/cos for that machine owner's. It follows a Restart.
 headline: no
