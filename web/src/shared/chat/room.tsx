@@ -272,10 +272,14 @@ export function RoomBody({
   empty,
   chip,
   embedded,
+  target,
 }: {
   room: ChatRoom;
   phone: boolean;
   quote?: PaneQuote;
+  /** In the agent panel: its composer is the kit's (a glow, a round send)
+   * with this line under it saying where it goes ("staff room · dust"). */
+  target?: string;
   /** Scroll to this message and flash it (a link's `&msg=`). */
   focus?: number;
   /** What the composer calls the room: "Message #general". */
@@ -497,7 +501,7 @@ export function RoomBody({
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (
-        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded} />
+        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} still={embedded} target={target} />
       ) : (
         <p class="thread-note" data-room-readonly>
           {readOnly(current)}
@@ -933,6 +937,7 @@ export function RoomCompose({
   thread,
   threadAgents,
   still,
+  target,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -949,6 +954,8 @@ export function RoomCompose({
   threadAgents?: ChatThreadAgent[];
   /** Doesn't take focus when it opens (`RoomBody`'s `embedded`). */
   still?: boolean;
+  /** The kit Composer's look, with this line under it (`RoomBody`'s `target`). */
+  target?: string;
 }) {
   const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
   const handle = thread ? threadComposeRef : composeRef;
@@ -1131,6 +1138,21 @@ export function RoomCompose({
     }
   };
 
+  const kit = target !== undefined;
+  const cannot = sending || files.busy || (!text.trim() && !quote && !files.items.length);
+  const tools = (
+    <>
+      {canQuote && (
+        <button type="button" class="compose-tool bar-btn sq" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
+          <QuotePaneIcon />
+        </button>
+      )}
+      <AttachButton add={files.add} />
+      <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
+        <ReactIcon size="md" />
+      </button>
+    </>
+  );
   return (
     <form
       class={`thread-compose${dropping ? " dropping" : ""}`}
@@ -1221,7 +1243,7 @@ export function RoomCompose({
         </ul>
       )}
       {threadAgents && <ToRow agents={threadAgents} chosen={chosen} setChosen={setChosen} text={text} room={agents} />}
-      <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
+      <div class={kit ? "k-composer" : canQuote ? "compose-box with-tools" : "compose-box"} data-kit={kit ? "composer" : undefined}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>
             <span class="thread-quote-from">
@@ -1236,6 +1258,7 @@ export function RoomCompose({
         <AttachChips items={files.items} remove={files.remove} />
         <textarea
           ref={input}
+          class={kit ? "k-composer-field" : undefined}
           rows={1}
           value={text}
           aria-label={thread ? "Reply in thread" : `Message ${name}`}
@@ -1294,16 +1317,22 @@ export function RoomCompose({
             }
           }}
         />
-        {canQuote && (<button type="button" class="compose-tool bar-btn sq" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
-          <QuotePaneIcon />
-        </button>)}
-        <AttachButton add={files.add} />
-        <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
-          <ReactIcon size="md" />
-        </button>
-        <button class="compose-send primary" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
-          <SendIcon />
-        </button>
+        {kit ? (
+          <div class="k-composer-foot">
+            {tools}
+            <span class="k-composer-to m-meta">{target}</span>
+            <button class="k-composer-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={cannot}>
+              <ArrowIcon dir="up" />
+            </button>
+          </div>
+        ) : (
+          <>
+            {tools}
+            <button class="compose-send primary" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={cannot}>
+              <SendIcon />
+            </button>
+          </>
+        )}
       </div>
       {thread && (
         <label class="thread-also" data-thread-also>

@@ -16,7 +16,9 @@ import type { DiffInfo, PaneId } from "../../shared/proto";
 import { DiffCard } from "./diff-card";
 import { openEditor } from "../blocks/editor";
 import { clientTarget, diffLine, openInEditor, wholePath } from "../open-in-editor";
-import { AskCard, type Answered, type Ask } from "../../shared/ask";
+import type { Answered, Ask } from "../../shared/ask";
+import { askNeed, NeedRow } from "../../shared/kit/need-row";
+import { needAge } from "../../shared/needs-you";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE } from "./answer-card";
 import { PresenceAvatar } from "./people";
 import { Caret, CloseIcon, IconButton } from "../../shared/ui/icons";
@@ -115,21 +117,29 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
       {ask.kind === "permission" ? (
         <PermissionCard client={client} id={id} ask={ask} can={can} />
       ) : !can ? (
-        <div class="ask" data-ask={ask.id}>
-          <p class="ask-message">{ask.questions?.[0]?.question ?? ask.message}</p>
-          <p class="ask-viewer">
-            {invite
-              ? "Only the session's owner sends or declines an invite."
-              : doc
-                ? "Only the owner can share this Doc."
-                : ask.source === "a2a"
-                  ? "Only this machine's owner allows a task."
-                  : VIEWER_NOTE}
-          </p>
-        </div>
-      ) : (
-        <AskCard
+        <NeedRow
           key={ask.id}
+          need={{
+            ...askNeed(ask, needAge(ask.at_ms)),
+            for: "its owner",
+            lines: [
+              invite
+                ? "Only the session's owner sends or declines an invite."
+                : doc
+                  ? "Only the owner can share this Doc."
+                  : ask.source === "a2a"
+                    ? "Only this machine's owner allows a task."
+                    : VIEWER_NOTE,
+            ],
+          }}
+          open
+          data-ask={ask.id}
+        />
+      ) : (
+        <NeedRow
+          key={ask.id}
+          need={askNeed(ask, needAge(ask.at_ms))}
+          open
           ask={ask}
           actions={{
             answer: (content) => call("answer", { id: ask.id, content }),

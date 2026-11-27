@@ -83,6 +83,9 @@
   text-align: left;
   cursor: pointer;
 }
+div.k-row-line {
+  cursor: default;
+}
 .k-row:hover {
   background: var(--hover);
 }
@@ -180,6 +183,91 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   container: k-need / inline-size;
+}
+/* An agent's question in a need row: its questions, their options (one
+   picked as a pressed button, several as checkboxes), Other, a preview. */
+.k-ask {
+  display: grid;
+  gap: 10px;
+}
+.k-ask p {
+  margin: 0;
+}
+.k-ask-q {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.k-ask-q > legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0;
+}
+.k-ask-hint {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.k-ask-options[role="group"] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.k-ask-option {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.k-ask-option:hover {
+  border-color: var(--focus);
+}
+.k-ask-option[aria-checked="true"],
+.k-ask-option:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.k-ask-option.is-check,
+.k-ask-options[role="group"] > .k-ask-option {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+/* A thumb's reach: a row's answers and a question's options on a touch screen. */
+@media (pointer: coarse) {
+  .k-row-body .k-button,
+  .k-ask-option {
+    min-height: 40px;
+  }
+}
+.k-ask-label {
+  font-weight: 600;
+}
+.k-ask-desc {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-field-box.is-long {
+  height: auto;
+  padding: 6px 10px;
 }
 
 /* ---- 4. Well: inset, flat, mono, its label set into the frame; brighter
@@ -342,29 +430,309 @@
   font-family: var(--font-mono);
 }
 
-/* ---- 9. Panel: the agent panel on the right; 11. Tabs. */
+/* ---- 9. Panel: the agent panel on the right; 11. Tabs. A column: what a
+   place puts over it, then the panel, which takes the rest. The floor puts
+   the panel over the whole page; collapsed, the column is a thin strip. */
 
-.k-panel {
+.k-panel-col {
   display: flex;
   flex-direction: column;
+  gap: var(--gap);
   width: var(--panel-w);
   max-width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.k-panel-col.is-shut {
+  width: 36px;
+}
+.k-panel-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--section);
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.k-panel-strip:hover {
+  color: var(--ink);
+}
+.k-panel {
+  position: relative;
+  display: flex;
+  /* The rest of the column, whatever its content: what's over it keeps its size. */
+  flex: 1 1 0;
+  flex-direction: column;
   min-height: 0;
   overflow: hidden;
   padding: 0;
+}
+.k-panel:focus-visible,
+.k-panel:focus {
+  outline: 0;
+  border-color: var(--focus);
+}
+/* The floor: only the body (a transcript, a room or a terminal) over the
+   page; the tabs, head and composer stay in the column under it. */
+.k-panel-col.is-floor .k-panel-body {
+  position: fixed;
+  z-index: 40;
+  inset: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--section);
+  box-shadow: var(--highlight), var(--shadow-raised);
+}
+.k-panel-unfloor {
+  position: fixed;
+  z-index: 41;
+  top: 20px;
+  right: 20px;
+}
+.k-panel-tabs {
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line);
+}
+.k-panel-tabs > .k-tabs {
+  flex: 1;
+  overflow-x: auto;
+  border-bottom: 0;
+}
+.k-panel-tool {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 6px 5px 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.k-panel-tool:hover,
+.k-panel-tool[aria-pressed="true"] {
+  color: var(--ink);
 }
 .k-panel-head {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 10px 12px 8px 14px;
+  padding: 10px 8px 8px 14px;
   border-bottom: 1px solid var(--line);
 }
+.k-panel-head > .k-panel-tool {
+  margin: 0;
+}
+.k-panel-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.k-panel-who > b {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-panel-meta {
+  display: flex;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+.k-panel-meta > * + *::before {
+  content: "· ";
+  color: var(--ink-faint);
+}
+.k-panel-meta > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k-panel-views {
+  display: flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.k-panel-views > button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+}
+.k-panel-views > [aria-pressed="true"] {
+  background: var(--card-raised);
+  color: var(--ink);
+}
+.k-panel-back {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.k-panel-back > button[data-panel-back] {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+}
+.k-panel-back > button[data-panel-back]:hover {
+  color: var(--ink);
+}
+.k-panel-back > .k-panel-tool {
+  margin: 0;
+}
 .k-panel-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 8px 14px;
+}
+.k-panel-body:not(.is-flush) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.k-panel-body p,
+.k-panel-lede p {
+  margin: 0;
+}
+.k-panel-body h3 {
+  margin: 0;
+  font-size: var(--text-title);
+}
+.k-panel-body [role="alert"],
+.k-panel-lede [role="alert"] {
+  color: var(--fail);
+}
+.k-panel-lede {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.k-panel-lede .k-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* A room holds its own scroller and composer. */
+.k-panel-body.is-flush {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.k-panel-body.is-flush > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Over the body, which keeps its place under it. */
+.k-panel-over {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--section);
+}
+.k-panel-over > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* A thread drawn beside a room elsewhere fills the panel here. */
+.k-panel-col .k-panel .k-panel-over > * {
+  position: static;
+  width: auto;
+  border: 0;
+  box-shadow: none;
+}
+.k-panel-body > .k-well {
+  height: 100%;
+  padding: 4px;
+}
+.k-panel-foot {
+  padding: 8px 10px 10px;
+}
+.k-panel-note {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: calc(var(--radius) + 4px);
+  color: var(--ink-dim);
+}
+/* A transcript's last line: read-only, and why. */
+.k-panel-note.is-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-meta);
+}
+.k-panel-note.is-end::before,
+.k-panel-note.is-end::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+/* A transcript: prose in sans, ids and code in mono, a tool call one line that opens. */
+.k-panel-tool-call {
+  margin: 4px 0;
+  color: var(--ink-dim);
+  font: var(--text-meta) / 1.5 var(--font-mono);
+}
+.k-panel-tool-call > summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.k-panel-tool-call > summary:hover {
+  color: var(--ink);
+}
+.k-panel-tool-call > pre {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-radius: var(--radius-control);
+  background: var(--well);
+  color: var(--well-ink);
+  font: inherit;
+  white-space: pre-wrap;
+}
+@media (max-width: 1000px) {
+  .k-panel-col {
+    width: auto;
+    height: 70vh;
+  }
 }
 .k-tabs {
   display: flex;
@@ -403,6 +771,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.k-tab.is-peek .k-tab-title {
+  font-style: italic;
+}
 .k-tab-x {
   color: var(--ink-faint);
 }
@@ -423,7 +794,8 @@
   border-color: transparent;
   background: linear-gradient(var(--card), var(--card)) padding-box, var(--glow), var(--focus) border-box;
 }
-.k-composer textarea {
+/* Two classes: chat's composer, drawn as this one in the panel, styles its textarea too. */
+.k-composer .k-composer-field {
   width: 100%;
   min-height: 0;
   padding: 2px 0 8px;
@@ -442,6 +814,9 @@
   color: var(--ink-dim);
   font-size: var(--text-meta);
 }
+.k-composer-to {
+  margin-left: auto;
+}
 .k-composer-send {
   display: grid;
   place-items: center;
@@ -454,6 +829,13 @@
   color: var(--on-accent);
   font-weight: 700;
   cursor: pointer;
+}
+.k-composer-to + .k-composer-send {
+  margin-left: 0;
+}
+.k-composer-send:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ---- 12. Sheet: the one overlay, over a backdrop. */

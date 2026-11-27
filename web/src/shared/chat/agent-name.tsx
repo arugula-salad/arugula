@@ -5,18 +5,18 @@
 // it is.
 
 import type { ChatAgent, ChatMessage } from "../proto";
+import { agentName } from "../agent-name";
 import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { authorLabel, machineHandle, sessionSlug } from "./agents";
 
 /** `machine/tab`, or the machine alone for a post that names no tab (an
- * older daemon, a machine-level post). With `projectName`, a chief of
- * staff's tab reads by its project's name (Arugula #1457). */
+ * older daemon, a machine-level post), as ../agent-name.ts names it. With
+ * `projectName`, a chief of staff's tab reads by its project's name
+ * (Arugula #1457). */
 export function agentHandle(a: ChatAgent, projectName?: (id: string) => string | undefined): string {
-  const machine = machineHandle(a.machine_name) || "a machine that left";
-  const tab = a.session ? sessionSlug(sessionLabel(a.session, projectName)) : "";
-  return tab ? `${machine}/${tab}` : machine;
+  return agentName({ machine: machineHandle(a.machine_name), session: a.session ? sessionSlug(sessionLabel(a.session, projectName)) : "" }, { handle: true });
 }
 
 /** Whose agent it is, for the name's tooltip. */

@@ -27,3 +27,14 @@
     height: 55vh;
   }
 }
+
+/* The agent panel's terminal (live-pane.tsx's WorkSlot): the pane fills its well. */
+.work-slot {
+  position: relative;
+  height: 100%;
+  overflow: auto;
+}
+.work-slot .term-host,
+.work-slot .xterm {
+  height: 100%;
+}

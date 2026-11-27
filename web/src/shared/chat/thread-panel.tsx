@@ -24,7 +24,26 @@ import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
  * 200px, and 300 leaves about 100px for the room's name beside them. */
 const THREAD_FOLD = 300;
 
-export function ThreadPanel({ store, room, parent, phone, focus, close }: { store: ChatStore; room: ChatRoom; parent: number; phone: boolean; focus?: number; close: () => void }) {
+/** `inPanel`: drawn in the agent panel (Lift 4, #1480), whose head says
+ * where you are and whose one Back (and Esc) closes it, with Follow in its
+ * ⋯ (`followThread`): no head of its own. */
+export function ThreadPanel({
+  store,
+  room,
+  parent,
+  phone,
+  focus,
+  close,
+  inPanel,
+}: {
+  store: ChatStore;
+  room: ChatRoom;
+  parent: number;
+  phone: boolean;
+  focus?: number;
+  close: () => void;
+  inPanel?: boolean;
+}) {
   useSubscribe((fn) => store.subscribe(fn));
   const api = usePlatformApi();
   const tokens = useRoomTokens(room.id);
@@ -102,7 +121,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const label = room.kind === "channel" ? `#${room.name}` : roomLabel(room, api);
   const newest = last ?? first?.seq;
   const agents = useThreadAgents(room.id, parent, newest);
-  const follow = () => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message));
+  const follow = () => followThread(store, room.id, parent).catch((e: Error) => setError(e.message));
   const toNewest = () => anchor.toBottom();
   return (
     <aside
@@ -116,7 +135,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         close();
       }}
     >
-      <Bar
+      {!inPanel && <Bar
         class="chat-head"
         lead={
           phone ? (
@@ -156,7 +175,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
             </IconButton>
           ) : undefined
         }
-      />
+      />}
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <WatchesOn compact path={`/api/chat/rooms/${encodeURIComponent(room.id)}/threads/${parent}/watches`} />
       <div class="thread-list thread-replies" ref={list} onScroll={() => anchor.onScroll()}>
@@ -215,8 +234,19 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         )}
       </div>
       {room.writable && first ? (
-        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
+        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} target={inPanel ? `thread · ${label}` : undefined} />
       ) : null}
     </aside>
   );
+}
+
+/** Whether I follow a thread, as its first message says (undefined: not loaded, or no thread yet). */
+export function followingThread(store: ChatStore, room: string, parent: number): boolean | undefined {
+  const t = store.threads.get(room, parent)?.parent?.thread;
+  return t ? !!t.following : undefined;
+}
+
+/** Follow a thread, or stop. */
+export function followThread(store: ChatStore, room: string, parent: number): Promise<unknown> {
+  return store.threads.follow(room, parent, !followingThread(store, room, parent));
 }

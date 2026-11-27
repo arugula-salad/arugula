@@ -52,7 +52,9 @@
 import { Card } from "../ui/card";
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
-import { AskCard, type Ask } from "../ask";
+import type { Ask } from "../ask";
+import { askNeed, NeedRow } from "../kit/need-row";
+import { needAge } from "../needs-you";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
@@ -414,7 +416,7 @@ export function SessionAskForm({ c, may, busy, act }: { c: SessionCard; may: boo
   }
   return (
     <div class="session-card-ask" data-session-ask>
-      <AskCard key={asking.ask.id} ask={asking.ask} actions={{ answer: (content) => act(asking.act(content)), decline: () => act(asking.act(null)) }} />
+      <NeedRow key={asking.ask.id} need={askNeed(asking.ask, needAge(asking.ask.at_ms))} open ask={asking.ask} actions={{ answer: (content) => act(asking.act(content)), decline: () => act(asking.act(null)) }} />
     </div>
   );
 }

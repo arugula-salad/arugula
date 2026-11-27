@@ -19,10 +19,12 @@ import "../src/shared/buttons.css";
 import { startPageKey } from "../src/shell/local-key";
 import { PlatformApiContext } from "../src/shared/platform-api";
 import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
+import { apply as applyAppearance } from "../src/shared/appearance";
+import { AppearanceLayer } from "../src/shared/ui/appearance";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { go } from "../src/platform/router";
-import { appMachines, appOverview, appOwnPane } from "../src/app/machines";
+import { appAgentPanel, appMachines, appOverview, appOwnPane } from "../src/app/machines";
 import { appLive } from "../src/app/live";
 import { appMachineSettings } from "../src/app/settings";
 import { chat } from "../src/shared/chat-store";
@@ -130,17 +132,21 @@ const SUITE = "5e771e0000000001";
 // And what a pin names it by (session-pins.spec.ts stubs the pins).
 setHomeMachine(SUITE);
 
+// The reader's Look, and its keys (`s`, `t`, `d`), as the app's (app/main.tsx).
+applyAppearance();
+
 // In the frame, as app.html's root is (shared/frame.css).
 const root = document.getElementById("root")!;
 root.classList.add("frame");
 render(
   // A board card's session (board-live.spec.ts, overview.spec.ts): the machine `m_suite` is the suite's daemon, this page's origin.
   <PlatformApiContext.Provider
-    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
+    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), AgentPanel: appAgentPanel(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
   >
     <PlatformPage />
     <MenuLayer />
     <PromptLayer />
+    <AppearanceLayer />
   </PlatformApiContext.Provider>,
   root,
 );

@@ -19,7 +19,7 @@ import { Choice, TextField, Toggle } from "../../shared/kit/field";
 import { Kbd } from "../../shared/kit/kbd";
 import { paint as paintLook, sliders as startAt, type Sliders } from "../../shared/kit/look";
 import { NeedList, NeedRow, type Need, type Receipt } from "../../shared/kit/need-row";
-import { Panel } from "../../shared/kit/panel";
+import { Panel, PanelNote } from "../../shared/kit/panel";
 import { Row } from "../../shared/kit/row";
 import { Sheet } from "../../shared/kit/sheet";
 import { MARKS, StateMark, type State } from "../../shared/kit/state-mark";
@@ -121,6 +121,37 @@ function TabsDemo() {
   const [tabs, setTabs] = useState(TABS);
   const [at, setAt] = useState("chief");
   return <Tabs label="Agents" tabs={tabs} current={at} onPick={setAt} onClose={(id) => (setTabs(tabs.filter((t) => t.id !== id)), at === id && setAt("chief"))} />;
+}
+
+function PanelDemo() {
+  const [at, setAt] = useState("chief");
+  const [view, setView] = useState<"transcript" | "terminal">("transcript");
+  const tabs: TabItem[] = [
+    { id: "chief", title: "Chief of staff" },
+    { id: "1431", title: "#1431 staging checkout", closes: true, peek: true },
+  ];
+  return (
+    <Panel
+      label="Agent panel"
+      tabs={tabs}
+      current={at}
+      onPick={setAt}
+      onClose={() => setAt("chief")}
+      head={at === "chief" ? { name: "Chief of staff", state: "working", rung: "chief of staff", machine: "dust" } : { name: "#1431 staging checkout", state: "idle", word: "ended 3h ago", rung: "worker", machine: "ws-2" }}
+      view={view}
+      onView={setView}
+      floors={false}
+      foot={at === "chief" ? <Composer placeholder="Ask your chief of staff" target="staff room · dust" onSend={noop} /> : <PanelNote>Done continues this conversation with your note.</PanelNote>}
+    >
+      {view === "terminal" ? (
+        <Well label="dust">
+          <pre>$ npm test{"\n"}212 passed</pre>
+        </Well>
+      ) : (
+        <p>Two boards moved since this morning; #1443 asks you about the crumb.</p>
+      )}
+    </Panel>
+  );
 }
 
 function FieldsDemo() {
@@ -325,20 +356,7 @@ export function DesignPage() {
           </div>
         </Section>
         <Section id="panel" title={S("panel")} use="The agent panel on the right: tabs, who it is, the transcript, the composer.">
-          <Panel
-            label="Chief of staff"
-            tabs={<TabsDemo />}
-            head={
-              <>
-                <Avatar name="claude@dust" agent />
-                <b>Chief of staff</b>
-                <StateMark state="working" />
-              </>
-            }
-            composer={<Composer placeholder="Ask the chief of staff" target="to claude@dust" onSend={noop} />}
-          >
-            <p>Two boards moved since this morning; #1443 asks you about the crumb.</p>
-          </Panel>
+          <PanelDemo />
         </Section>
         <Section id="composer" title={S("composer")} use="Where you write to an agent or a room. It glows while you're in it; ↵ sends.">
           <Composer placeholder="Message #design" target="to the room" onSend={noop} />

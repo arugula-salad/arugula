@@ -2906,149 +2906,9 @@ button.agent-image {
   gap: 10px;
 }
 
-.ask-message {
-  font-weight: 600;
-}
-
-.ask fieldset {
-  margin: 0;
-  padding: 0;
-  border: none;
-  min-width: 0;
-}
-
-.ask legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-  padding: 0;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-.ask-hint {
-  color: var(--dim);
-  font-weight: normal;
-  font-size: var(--text-sm);
-}
-
-.ask-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-/* Big enough to hit with a thumb. Its border says --divider, not --line:
-   a question can show in the swarm's rail, where --line is the swarm's
-   own dark set's (UI audit #198), and --divider is the palette's there
-   too. */
-.ask-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid var(--divider);
-  border-radius: var(--card-radius);
-  background: var(--raised);
-  text-align: left;
-  cursor: pointer;
-}
-
-.ask-options.multi .ask-option {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 8px;
-}
-
-.ask-options.multi .ask-option .ask-desc {
-  flex-basis: 100%;
-  padding-left: 24px;
-}
-
-.ask-option.on {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent-fill) 30%, var(--raised));
-}
-
-.ask-label {
-  font-weight: 600;
-}
-
 .ask-desc {
   color: var(--dim);
   font-size: var(--text-sm);
-}
-
-.ask-preview {
-  margin: 6px 0 0;
-  padding: 6px 8px;
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  font: var(--text-sm)/1.3 var(--font-mono);
-  white-space: pre;
-  overflow-x: auto;
-}
-
-.ask-other,
-.ask-field input[type="text"],
-.ask-field input[type="number"],
-.ask-field textarea {
-  width: 100%;
-  margin-top: 6px;
-}
-
-.ask-field textarea {
-  resize: vertical;
-  font: var(--text-md)/1.4 var(--font-mono);
-}
-
-.ask-field {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ask-check {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.ask-field-title {
-  font-weight: 600;
-}
-
-.ask-required {
-  color: var(--danger);
-}
-
-.ask-url {
-  padding: 6px 8px;
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  font: var(--text-sm) var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.ask-waiting {
-  color: var(--dim);
-}
-
-.ask-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.ask-buttons :is(.primary, .secondary) {
-  min-height: 40px;
-  padding: 8px 16px;
 }
 
 /* A terminal's question (Claude Code's hook), over the bottom of its pane. */
@@ -4486,136 +4346,6 @@ button.agent-image {
 .swarm-waiting b {
   color: var(--s-wait);
 }
-.swarm-card {
-  --c: var(--s-ask);
-  position: relative;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
-  background: color-mix(in srgb, var(--c) 7%, var(--surface));
-  border-radius: var(--card-radius);
-  padding: 10px 12px 10px 14px;
-  flex: 0 0 auto;
-  animation: swarm-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
-}
-@keyframes swarm-card-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-}
-.swarm-card::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--c);
-}
-.swarm-card.focus {
-  box-shadow: 0 0 24px color-mix(in srgb, var(--c) 50%, transparent);
-}
-.swarm-card .ch {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.swarm-card .ch b,
-.swarm-card .ch .ct {
-  font: 700 var(--text-xl)/1.05 var(--font-title);
-  text-transform: uppercase;
-  color: var(--c);
-}
-/* The title finds the card's pane in the swarm: a button, drawn as the
-   heading it is (UI audit #172). */
-.swarm-card .ch .ct {
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-}
-.swarm-card .ch .ct:hover {
-  text-decoration: underline;
-}
-.swarm-card .ch .n {
-  margin-left: auto;
-  font: 700 var(--text-sm)/1 var(--font-mono);
-  color: var(--void);
-  background: var(--c);
-  border-radius: var(--chip-radius);
-  padding: 3px var(--space-2);
-}
-.swarm-card .cm {
-  font: 500 var(--text-xs)/1.3 var(--font-mono);
-  color: var(--mute);
-  margin: 3px 0 6px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.swarm-card .cq {
-  font: 500 var(--text-md)/1.35 var(--font-sans);
-  margin-bottom: 6px;
-  word-break: break-word;
-  /* Two lines at most: the tooltip has the rest. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-}
-.swarm-card .cm .whose {
-  color: var(--ink);
-  font-weight: 600;
-}
-.swarm-card code {
-  font: 500 var(--text-sm)/1 var(--font-mono);
-  background: color-mix(in srgb, var(--ink) 6%, transparent);
-  padding: 1px 4px;
-  border-radius: var(--tag-radius);
-}
-.swarm-card .ca {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.swarm-card .ca-nav {
-  margin-top: 6px;
-}
-/* The set's buttons (buttons.css), small; the main one in the card's
-   tone, the swarm's language. */
-.swarm-card .primary {
-  --btn-fill: var(--c);
-}
-.swarm-card :is(.primary, .secondary) {
-  min-height: 24px;
-  padding: 3px 10px;
-  font-size: var(--text-sm);
-}
-.swarm-card .ask {
-  margin: 0;
-  background: none;
-  padding: 0;
-}
-.swarm-card .ask-watching {
-  margin-left: auto;
-}
-.swarm-card .agent-perm-cmd {
-  margin: 0 0 8px;
-  max-height: 60px;
-  overflow: auto;
-}
-.swarm-card-err {
-  margin-top: 6px;
-  font: 500 var(--text-xs)/1.3 var(--font-mono);
-  color: var(--s-fail);
-}
-.swarm-close {
-  margin-left: auto;
-  background: none;
-  border: 0;
-  color: var(--mute);
-}
 .swarm-peek {
   position: absolute;
   z-index: 7;
@@ -4685,30 +4415,19 @@ button.agent-image {
     padding: 10px 16px 6px;
   }
   .swarm-cards {
-    flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
     padding: 2px 16px 10px;
   }
-  .swarm-card {
-    width: 260px;
+  /* A strip of rows along the bottom, each 260px, scrolling on its own. */
+  .swarm-needs {
+    grid-template-columns: none;
+    grid-auto-columns: 260px;
+    grid-auto-flow: column;
+  }
+  .swarm-needs > [data-kit="row"] {
     max-height: 150px;
     overflow-y: auto;
-  }
-  /* The lower row stays one row: its buttons share the card's width. */
-  .swarm-card .ca-nav {
-    flex-wrap: nowrap;
-  }
-  .swarm-card .ca-nav button {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: var(--space-1) 6px;
-  }
-  /* One line, so a card's buttons fit its 150px without scrolling. */
-  .swarm-card .cq {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .swarm-waiting {
     display: none;
@@ -4727,11 +4446,6 @@ button.agent-image {
 @media (max-width: 760px) and (pointer: coarse) {
   .swarm-tools button {
     min-height: 32px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .swarm-card {
-    animation: none;
   }
 }
 
@@ -5502,10 +5216,6 @@ label.edit-in-nvim {
 
 .gate-why-decision:not(.dim) {
   color: var(--fg);
-}
-
-.swarm-card .gate-why {
-  margin: -2px 0 8px;
 }
 
 .sheet-wants {
@@ -7303,8 +7013,7 @@ html[data-scheme="light"] .doc {
 }
 
 /* Cleared while the pointer was over the list: held in place, faded. */
-.activity-need.gone,
-.swarm-card.gone {
+.activity-need.gone {
   opacity: 0.35;
   transition: opacity 0.2s;
 }
@@ -10834,7 +10543,7 @@ button.thread-quote:hover {
 
 /* The set's own size here, as on a failure's row, so the card's buttons
    and Go to pane share one row (UI audit #194). */
-.ws-att-answer :is(.agent-perm-buttons, .ask-buttons) :is(.primary, .secondary) {
+.ws-att-answer .agent-perm-buttons :is(.primary, .secondary) {
   min-height: 32px;
   padding: 6px 14px;
 }

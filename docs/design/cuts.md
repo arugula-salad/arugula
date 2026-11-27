@@ -43,3 +43,16 @@ if people miss it. Newest at the bottom.
 - **The proposals' cards in Needs you:** an approval is a Needs-you row, answered there; its card stays in the staff room (Lift 4, Arugula #1480).
 - **Answering a form, or several questions, from Needs you:** Open takes you to the pane, which answers it (Lift 4, Arugula #1480).
 - **`web/screenshots/dive.mjs`:** the README's dive.gif toured the zoom, which is gone (Lift 4, Arugula #1480).
+- **The talk panel's who-line** ("Talking to … : a message goes straight to this agent"): the panel's head says who, where and how it stands, and the composer's line says where a message goes (Lift 4, Arugula #1480).
+- **An agent's rung line, who started it and its parent's last word** (#1441's head): the head says its rung (lead, worker, chief of staff) and machine; the threads it's told things in are a tab of their own (Lift 4, Arugula #1480).
+- **An issue agent's tab with its issue's thread over its peek** (#1441): the issue's thread is a tab of its own in the panel (Lift 4, Arugula #1480).
+- **Open in Panes ↗ and Board thread on a peek:** the Terminal (`v`) shows the pane live in the panel and the floor (`f`) makes it full screen; Machines still opens it (Lift 4, Arugula #1480).
+- **A peek's card link** (`#12` in its head): the card's board shows it, and Needs you's ↵ opens it (Lift 4, Arugula #1480).
+- **The talk panel's saved tabs from before** (`arugula.ov-talk:*` in session storage): the panel keeps its own (`arugula.ov-panel:*`); a browser tab open over the upgrade starts with the chief of staff (Lift 4, Arugula #1480).
+- **The panel's Needs-you column when collapsed** (`\`): the right column folds to a strip, Needs you with it; `\` or the strip brings both back (Lift 4, Arugula #1480).
+- **A thread's own head in the agent panel** (its "Thread" line, its ×, its Follow button): the panel's head says where you are, its one Back (and Esc) closes the thread, and Follow is in the ⋯ beside Back (Lift 4, Arugula #1480).
+- **The panel's tabs and head on the floor** (`f`): only the transcript, room or terminal goes over the page, with a ⤢ to leave (Lift 4, Arugula #1480).
+- **Chat's own composer look in the panel's rooms** (its letterbox field and square send): the kit Composer's glow, round send and target line, with chat's mentions, files and drafts (Lift 4, Arugula #1480).
+- **A Claude Code terminal's raw lines in the panel's transcript:** its tool calls fold to a line each; its banner, prompt box, spinners and timings are left out (the Terminal, `v`, still shows them) (Lift 4, Arugula #1480).
+- **`AskCard`, `QuestionCard` and `FormCard`** (`shared/ask.tsx`) and their CSS: an agent's question, form or sign-in link is the kit's NeedRow, with the same answers (Lift 4, Arugula #1480).
+- **Swarm's rail cards** (their kind colours, pop-in, uppercase titles and tinted frames): the rail is a list of NeedRows, as Needs you's (Lift 4, Arugula #1480).

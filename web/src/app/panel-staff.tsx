@@ -1,4 +1,5 @@
-// The Chief of staff tab before there is one (Arugula #1341): what the
+// The agent panel's chief of staff tab (./panel.tsx) before there is one
+// (Arugula #1341), and over its room when it needs starting again: what the
 // chief of staff does, and Start, with a pick of the reader's machines that
 // can run it: their own, online here and on a daemon that says it starts
 // one (`features.chief_of_staff`), and the project's Cloud workspaces as one
@@ -24,7 +25,8 @@
 import { useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { platformFetch } from "../shared/maintenance";
-import { EmptyState } from "../shared/ui/block-states";
+import { Button } from "../shared/kit/button";
+import { Surface } from "../shared/kit/surface";
 import { useSubscribe } from "../shared/ui/hooks";
 import type { Fleet } from "../shell/fleet";
 import { directory } from "../shell/hosts";
@@ -115,7 +117,7 @@ function StaffGo({ s, go }: { s: StaffStarting; go: string }) {
   const { can, on, step } = s;
   const busy = step.at === "starting";
   return (
-    <div class="ov-staff-start-go">
+    <p>
       {can.length > 1 ? (
         <label>
           <span class="dim">Run it on</span>{" "}
@@ -132,11 +134,11 @@ function StaffGo({ s, go }: { s: StaffStarting; go: string }) {
         <span class="dim" data-ov-staff-machine-one>
           On {label(can[0])}
         </span>
-      )}
-      <button type="button" class="primary" disabled={!on || busy || step.at === "grant"} data-ov-staff-go onClick={() => on && void s.start(on)}>
+      )}{" "}
+      <Button kind="primary" disabled={!on || busy || step.at === "grant"} data-ov-staff-go onClick={() => on && void s.start(on)}>
         {busy ? "Starting…" : go}
-      </button>
-    </div>
+      </Button>
+    </p>
   );
 }
 
@@ -150,11 +152,31 @@ function StaffCannot({ s }: { s: StaffStarting }) {
         </p>
       )}
       {s.cannot.length > 0 && (
-        <p class="dim ov-staff-cannot" data-ov-staff-cannot>
+        <p class="dim" data-ov-staff-cannot>
           Not listed: {s.cannot.map((c) => `${shortHost(c.name)} (${c.why})`).join(", ")}.
         </p>
       )}
     </>
+  );
+}
+
+/** A question on a card: its words and two buttons. */
+function Ask({ label, title, why, yes, no, ...data }: { label: string; title: string; why: string; yes: [string, () => void, string]; no: [string, () => void, string] } & { [d: `data-${string}`]: unknown }) {
+  return (
+    <Surface kind="card" role="group" aria-label={label} {...data}>
+      <p>
+        <b>{title}</b>
+      </p>
+      <p class="dim">{why}</p>
+      <p>
+        <Button kind="primary" {...{ [yes[2]]: "" }} onClick={yes[1]}>
+          {yes[0]}
+        </Button>{" "}
+        <Button {...{ [no[2]]: "" }} onClick={no[1]}>
+          {no[0]}
+        </Button>
+      </p>
+    </Surface>
   );
 }
 
@@ -164,39 +186,27 @@ function StaffAfter({ s }: { s: StaffStarting }) {
   return (
     <>
       {step.at === "grant" && (
-        <div class="ov-staff-grant" role="group" aria-label="Allow it" data-ov-staff-grant={step.spot.name}>
-          <p>
-            <b>Let {shortHost(step.spot.name)}'s agents read and post in your DMs?</b>
-          </p>
-          <p class="dim">Your chief of staff talks with you in a room only you and your agents read, one of your DMs. You can take it back in Settings.</p>
-          <div class="ov-staff-grant-acts">
-            <button type="button" class="primary" data-ov-staff-allow onClick={() => void s.allow(step.spot, step.powers)}>
-              Allow and start
-            </button>
-            <button type="button" class="secondary" data-ov-staff-not-now onClick={() => s.setStep({ at: "idle" })}>
-              Not now
-            </button>
-          </div>
-        </div>
+        <Ask
+          label="Allow it"
+          data-ov-staff-grant={step.spot.name}
+          title={`Let ${shortHost(step.spot.name)}'s agents read and post in your DMs?`}
+          why="Your chief of staff talks with you in a room only you and your agents read, one of your DMs. You can take it back in Settings."
+          yes={["Allow and start", () => void s.allow(step.spot, step.powers), "data-ov-staff-allow"]}
+          no={["Not now", () => s.setStep({ at: "idle" }), "data-ov-staff-not-now"]}
+        />
       )}
       {step.at === "confirm" && (
-        <div class="ov-staff-grant" role="group" aria-label="Restart it" data-ov-staff-confirm={step.spot.name}>
-          <p>
-            <b>Restart your chief of staff?</b>
-          </p>
-          <p class="dim">Its turn stops; the new one carries on from its notes on {shortHost(step.spot.name)}.</p>
-          <div class="ov-staff-grant-acts">
-            <button type="button" class="primary" data-ov-staff-restart-go onClick={() => void s.start(step.spot)}>
-              Restart
-            </button>
-            <button type="button" class="secondary" data-ov-staff-restart-cancel onClick={() => s.setStep({ at: "idle" })}>
-              Cancel
-            </button>
-          </div>
-        </div>
+        <Ask
+          label="Restart it"
+          data-ov-staff-confirm={step.spot.name}
+          title="Restart your chief of staff?"
+          why={`Its turn stops; the new one carries on from its notes on ${shortHost(step.spot.name)}.`}
+          yes={["Restart", () => void s.start(step.spot), "data-ov-staff-restart-go"]}
+          no={["Cancel", () => s.setStep({ at: "idle" }), "data-ov-staff-restart-cancel"]}
+        />
       )}
       {step.at === "failed" && (
-        <p class="ov-staff-failed" role="alert" data-ov-staff-failed>
+        <p role="alert" data-ov-staff-failed>
           {step.why}
         </p>
       )}
@@ -208,14 +218,13 @@ function StaffAfter({ s }: { s: StaffStarting }) {
 export function StaffStart({ project, fleet, hostedIn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined }) {
   const s = useStaffStart(project, fleet, hostedIn);
   return (
-    <div class="ov-staff-start" data-ov-staff-start>
-      <EmptyState
-        title="Start your chief of staff"
-        why="An agent that keeps up with this project for you: it reads the boards and threads, tells you what moved and what needs you, and answers here when you write to it. It runs on one of your machines and wakes when something happens."
-        action={s.can.length > 0 && <StaffGo s={s} go="Start" />}
-      >
-        <StaffCannot s={s} />
-      </EmptyState>
+    <div data-ov-staff-start>
+      <h3>Start your chief of staff</h3>
+      <p class="dim">
+        An agent that keeps up with this project for you: it reads the boards and threads, tells you what moved and what needs you, and answers here when you write to it. It runs on one of your machines and wakes when something happens.
+      </p>
+      {s.can.length > 0 && <StaffGo s={s} go="Start" />}
+      <StaffCannot s={s} />
       <StaffAfter s={s} />
     </div>
   );
@@ -231,7 +240,7 @@ export function StaffStart({ project, fleet, hostedIn }: { project: string; flee
 export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; asleepOn?: string }) {
   const s = useStaffStart(project, fleet, hostedIn, asleepOn);
   return (
-    <div class="ov-staff-move" data-ov-staff-move={asleepOn ?? ""} data-ov-staff-lead={asleepOn ? "asleep" : "none"}>
+    <Surface kind="card" data-ov-staff-move={asleepOn ?? ""} data-ov-staff-lead={asleepOn ? "asleep" : "none"}>
       {asleepOn ? (
         <p class="dim">Nothing hears what you write here while it's asleep. Run it on another machine and it moves there; the one on {shortHost(asleepOn)} stands down.</p>
       ) : (
@@ -240,23 +249,23 @@ export function StaffMove({ project, fleet, hostedIn, asleepOn }: { project: str
       {s.can.length > 0 && <StaffGo s={s} go={asleepOn ? "Run it on another machine" : "Start"} />}
       <StaffCannot s={s} />
       <StaffAfter s={s} />
-    </div>
+    </Surface>
   );
 }
 
-/** Over the staff room while its chief of staff runs on `runsOn` (Arugula
- * #1500): Restart, to pick up a new recipe. Only if that machine can start
- * one; the start is Start's, grant check and all, and a failed one says
- * why (the tab then offers Start, as with no lead). */
+/** In the chief of staff's head while it runs on `runsOn` (Arugula #1500):
+ * Restart, to pick up a new recipe. Only if that machine can start one; the
+ * start is Start's, grant check and all, and a failed one says why (the
+ * tab then offers Start, as with no lead). Its confirm opens over the room. */
 export function StaffRestart({ project, fleet, hostedIn, runsOn }: { project: string; fleet: Fleet; hostedIn: (id: string | undefined) => string | undefined; runsOn: string }) {
   const s = useStaffStart(project, fleet, hostedIn, undefined, runsOn);
   if (!s.on) return null;
   const busy = s.step.at === "starting";
   return (
-    <div class="ov-staff-restart" data-ov-staff-restart={runsOn}>
-      <button type="button" class="secondary" disabled={busy || s.step.at !== "idle" && s.step.at !== "failed"} data-ov-staff-restart-open onClick={() => s.setStep({ at: "confirm", spot: s.on! })}>
+    <div data-ov-staff-restart={runsOn}>
+      <Button disabled={busy || (s.step.at !== "idle" && s.step.at !== "failed")} data-ov-staff-restart-open onClick={() => s.setStep({ at: "confirm", spot: s.on! })}>
         {busy ? "Restarting…" : "Restart"}
-      </button>
+      </Button>
       <StaffAfter s={s} />
     </div>
   );

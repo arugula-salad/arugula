@@ -184,7 +184,7 @@ export function swarmWallTests() {
       const f = window.__arugula.fleet;
       for (const p of f.panes) if (p.info.reason) await f.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch(() => {});
     });
-    const cards = page.locator(".swarm-card[data-bundle]");
+    const cards = page.locator("[data-need][data-bundle]");
     await expect(cards).toHaveCount(0, { timeout: 10_000 });
     const kinds = () => cards.evaluateAll((cs) => cs.map((c) => c.getAttribute("data-kind")));
     const order = () => cards.evaluateAll((cs) => cs.map((c) => c.getAttribute("data-panes")));

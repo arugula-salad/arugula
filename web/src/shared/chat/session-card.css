@@ -142,10 +142,6 @@ a.session-card-id:hover {
   color: var(--danger);
 }
 
-/* The question card inside it keeps its own look, without its outer gap. */
-.session-card-ask .ask {
-  margin: 4px 0;
-}
 
 .session-card-buttons {
   align-items: center;

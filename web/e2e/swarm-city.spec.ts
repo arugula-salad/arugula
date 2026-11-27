@@ -53,7 +53,7 @@ async function clearRail(page: Page) {
       await f.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch(() => {});
     }
   });
-  await expect(page.locator(".swarm-card[data-bundle]")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator("[data-need][data-bundle]")).toHaveCount(0, { timeout: 10_000 });
 }
 
 /** The camera looks at (near) a pane's lot. */
@@ -113,11 +113,11 @@ test("a building peeks and opens its tab; Show and a notification fly to it; a b
 
   // Trouble on the workstation: three failed tests, one card, three beams.
   const failed = await fake.trouble("workstation", 3);
-  const card = page.locator(`.swarm-card[data-panes~="workstation:${failed[0]}"]`);
+  const card = page.locator(`[data-need][data-panes~="workstation:${failed[0]}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => city(page, (c) => c.beamKeys.length)).toBe(3);
   // A card's Show flies to its pane.
-  await card.locator(".ct").click();
+  await card.locator("[data-row-title]").click();
   await expect.poll(() => lookingAt(page, `workstation:${failed[0]}`), { timeout: 5_000 }).toBeLessThan(0.5);
   await page.locator("[data-fit]").click();
   await clearRail(page);
@@ -139,7 +139,7 @@ test("a building peeks and opens its tab; Show and a notification fly to it; a b
   // A notification's deep link opens the city at the pane's card, and flies to it.
   const [pane] = await fake.trouble("workstation", 1);
   await page.goto(`/#swarm=${pane}`);
-  await expect(page.locator(`.swarm-card.focus[data-panes~="workstation:${pane}"]`)).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(`[data-need][data-selected][data-panes~="workstation:${pane}"]`)).toBeVisible({ timeout: 20_000 });
   await expect.poll(() => isCity(page), { timeout: 10_000 }).toBe(true);
   await expect.poll(() => lookingAt(page, `workstation:${pane}`), { timeout: 8_000 }).toBeLessThan(0.5);
   await clearRail(page);

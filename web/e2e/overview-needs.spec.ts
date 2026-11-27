@@ -178,8 +178,8 @@ test.describe("on a computer", () => {
     // The agent's block on #12 asks (as the Inbox says).
     await say(page, [{ ...paneItem(host, agent), title: "Which colour?" }]);
     await row(page, `${host}.${agent}:1`).locator("button[aria-expanded]").first().click();
-    await expect(page.locator('[data-ov-panel] [data-ov-tab^="peek:"] [role="tab"]')).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator("[data-ov-panel] [data-ov-peek]")).toBeVisible();
+    await expect(page.locator('[data-kit=panel] [data-tab^="agent:"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-kit=panel] [data-panel-transcript]")).toBeVisible();
   });
 });
 

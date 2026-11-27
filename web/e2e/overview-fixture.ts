@@ -4,7 +4,7 @@
 // by an agent block of the daemon's) and Later (one card in Next, so it's
 // quiet), the hub's sessions by card, what the Inbox lists (`say`), made-up
 // panes that ask (`asking`), and the chief of staff's room (`proposing`,
-// `staffRoomOn`). The platform's boards and the hub's sessions are made up
+// `staffRoomOn`), the first tab of the agent panel (panel.spec.ts). The platform's boards and the hub's sessions are made up
 // here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -242,7 +242,7 @@ export async function staffRoomOn(page: Page, lead: unknown): Promise<{ host: st
     },
     { P, first: lead },
   );
-  return { host, head: page.locator('[data-ov-panel] [data-ov-who="staff"] [data-agent-head]') };
+  return { host, head: page.locator("[data-kit=panel] [data-panel-head]") };
 }
 
 /** `move`'s start with laptop picked (#1453, #1472): the grant card asks
@@ -271,7 +271,8 @@ export async function startsOnLaptop(page: Page, move: Locator, head: Locator, s
   expect(await page.evaluate(() => (window as unknown as { __asked: string[] }).__asked)).toEqual(["laptop"]);
   expect(given.length).toBeGreaterThan(0);
   expect(new Set(given.map((g) => (g as { daemon: string }).daemon))).toEqual(new Set(["m_laptop"]));
-  await expect(head).toHaveText("Chief of staff · idle on laptop");
+  await expect(head).toHaveAttribute("data-panel-state", "idle");
+  await expect(head).toContainText("laptop");
   await expect(page.locator("[data-ov-staff-move]")).toHaveCount(0);
 }
 
