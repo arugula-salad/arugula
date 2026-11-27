@@ -756,11 +756,14 @@ a.k-row-line {
     height: 70vh;
   }
 }
-.k-tabs {
+.k-tabs,
+.k-tabs-list {
   display: flex;
   align-items: flex-end;
   gap: 2px;
   min-width: 0;
+}
+.k-tabs {
   padding: 0 6px;
   border-bottom: 1px solid var(--line);
 }
@@ -796,12 +799,23 @@ a.k-row-line {
 .k-tab.is-peek .k-tab-title {
   font-style: italic;
 }
+.k-tab-marker {
+  align-self: stretch;
+  width: 2px;
+  margin: 6px 0;
+  background: var(--accent);
+}
+.k-tab-rename {
+  width: 14ch;
+  font: inherit;
+}
 .k-tab-after {
   display: flex;
   align-items: center;
   margin-bottom: 6px;
 }
 .k-tab-x {
+  display: inline-flex;
   color: var(--ink-faint);
 }
 .k-tab-x:hover {

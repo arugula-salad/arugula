@@ -1,10 +1,13 @@
-// The tab's pane toolbar (M110, #1025), above the panes and outside their
-// cells: the pane count and switcher, the layout presets, Focus and
-// + Pane. Every button is a daemon intent (`arrange`, `focus`), so the
+// The tab's head line (M110, #1025; Lift 6a, v6's Machines): what the tab
+// is (its state, name, machine and kind), then above the panes and outside
+// their cells the pane count and switcher, the layouts (Tamed, Grid,
+// Columns), Focus and + Pane. Every button is a daemon intent (`arrange`, `focus`), so the
 // layout it makes is everyone's, and a refusal says why here.
 
 import { useEffect, useState } from "preact/hooks";
-import { paneIds, type Client } from "../../client";
+import { paneIds, tabLabel, type Client } from "../../client";
+import { directory } from "../../hosts";
+import { Mark, type State } from "../../../shared/kit/state-mark";
 import type { Preset, TabView } from "../../../shared/proto";
 import { keyHint } from "../../../shared/keys";
 import { openMenu, type MenuItem } from "../../../shared/ui/menu";
@@ -55,6 +58,11 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
 
   return (
     <div class="pane-toolbar" data-pane-toolbar role="toolbar" aria-label="Panes">
+      <span class="pt-head" data-tab-head={tab.id}>
+        <Mark state={headMark(client, ids)} />
+        <b class="pt-title">{tabLabel(client, tab)}</b>
+        <span class="m-meta">{[directory.current, paneType(client.info(client.active(tab.id) ?? ids[0]!))].filter(Boolean).join(" · ")}</span>
+      </span>
       <button class="pt-count bar-btn" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
         <strong>{count}</strong> {count === 1 ? "pane" : "panes"}
         <span class="pt-caret" aria-hidden="true">
@@ -119,6 +127,13 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   );
 }
 
+/** The tab's state: a pane asks you, one works, or it's quiet. */
+function headMark(client: Client, ids: number[]): State {
+  const infos = ids.map((id) => client.info(id));
+  if (infos.some((i) => i?.attention === "needs_input")) return "asks";
+  return infos.some((i) => i?.attention === "working") ? "working" : "idle";
+}
+
 function hint(p: Preset): string {
   switch (p) {
     case "columns":
@@ -126,7 +141,7 @@ function hint(p: Preset): string {
     case "grid":
       return "Grid: rows of equal panes";
     case "main_stack":
-      return "Main + stack: the active pane large, the rest stacked beside it";
+      return "Tamed: the active pane large, the rest stacked beside it";
   }
 }
 

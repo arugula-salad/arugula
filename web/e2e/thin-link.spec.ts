@@ -16,7 +16,7 @@ const say = (page: Page, pane: number, s: string) =>
   page.evaluate(([p, s]) => window.__arugula.client.input(p as number, new TextEncoder().encode(s as string)), [pane, s] as const);
 const offset = (page: Page, pane: number) => page.evaluate((p) => window.__arugula.offset(p), pane);
 const attention = (page: Page, pane: number) => page.evaluate((p) => window.__arugula.client.info(p)?.attention, pane);
-const tabEl = (page: Page, tab: number) => page.locator(`.tab[data-tab-id="${tab}"]`);
+const tabEl = (page: Page, tab: number) => page.locator(`[data-tab-id="${tab}"]`);
 
 test("a hidden tab's panes stop streaming on a thin link, come back when shown, and still raise attention", async ({ page }) => {
   await reset(page);

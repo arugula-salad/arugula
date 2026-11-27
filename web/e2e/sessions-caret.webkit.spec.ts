@@ -28,7 +28,7 @@ test("the caret shows and hides the sessions sidebar, and stays when it's closed
   await expect(caret).toHaveAttribute("aria-expanded", "true");
   await expect(caret).toHaveAttribute("aria-label", "Hide sessions sidebar");
   await expect(caret.locator("svg")).toHaveCount(1);
-  const tab = page.locator(".ws-tabs .tab").first();
+  const tab = page.locator(".ws-tabs [data-tab-id]").first();
   const [c, t, sb] = await Promise.all([caret.boundingBox(), tab.boundingBox(), sidebar.boundingBox()]);
   expect(c!.x + c!.width).toBeLessThanOrEqual(t!.x);
   expect(Math.abs(c!.y + c!.height / 2 - (t!.y + t!.height / 2))).toBeLessThan(8);

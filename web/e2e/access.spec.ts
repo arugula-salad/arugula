@@ -128,7 +128,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   await friend.setViewportSize({ width: 1440, height: 900 });
   await expect(friend.locator("[data-rail]")).toBeVisible();
   // Sessions, sharing and closing are the owner's: not offered.
-  await expect(friend.locator("[data-new-session], .ws-share, .tab-close")).toHaveCount(0);
+  await expect(friend.locator("[data-new-session], .ws-share, [data-tab-x]")).toHaveCount(0);
   // Tabs and the layout are an editor's: off, with the reason.
   await expect(friend.locator(".ws-tabs .new-tab")).toBeDisabled();
   await expect(friend.locator(".ws-tabs .new-tab")).toHaveAttribute("title", "Viewers can't open tabs in this session");

@@ -41,7 +41,7 @@ test("a browser block opens beside a terminal, frames its page, and closes", asy
   await expect(frame.locator("#h")).toHaveText("hello from /one");
   // The tab is named after the page once that block is active.
   await page.evaluate((b) => window.__arugula.client.setActive(b), block);
-  await expect(page.locator(".tab.selected .tab-label")).toHaveText("Page /one");
+  await expect(page.locator("[data-tab-bar] [role=tab][aria-selected=true]")).toHaveAttribute("title", "Page /one");
 
   // A site that refuses framing gets a card instead.
   const input = paneEl(page, block).locator(".browser-url input");

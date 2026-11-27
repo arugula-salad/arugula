@@ -84,7 +84,7 @@ export async function desktop(page: Page, chord = "Control+Shift+KeyK") {
   const prompt = page.getByRole("dialog", { name: "Rename tab" });
   await prompt.getByRole("textbox").fill("goto-tab");
   await prompt.getByRole("textbox").press("Enter");
-  await expect(page.locator(".tab.selected .tab-label")).toHaveText("goto-tab");
+  await expect(page.locator("[data-tab-bar] [role=tab][aria-selected=true]")).toHaveAttribute("title", "goto-tab");
 
   // Recent picks come first, newest first, with nothing typed.
   await page.keyboard.press(chord);

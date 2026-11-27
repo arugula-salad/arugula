@@ -347,7 +347,7 @@ test.describe("states", () => {
     }
     const ids = await tabsInSession(page);
     await page.evaluate((t) => window.__arugula.client.selectTab(t), ids[19]);
-    const strip = page.locator(".ws-tabs .tabbar");
+    const strip = page.locator("[data-tab-bar]");
     const box = (await strip.boundingBox())!;
     await expect(strip).toHaveAttribute("data-overflow", /start|both/);
     await expect

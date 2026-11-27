@@ -119,7 +119,7 @@ test("a dev server beside a terminal: its own origin, hot reload, no way into Ar
   await expect.poll(() => attention(page, block)).toBe("idle");
   // Named after the page.
   await page.evaluate((b) => window.__arugula.client.setActive(b), block);
-  await expect(page.locator(".tab.selected .tab-label")).toHaveText("Dev app");
+  await expect(page.locator("[data-tab-bar] [role=tab][aria-selected=true]")).toHaveAttribute("title", "Dev app");
 
   // Its own origin: not the app's, and the frame is sandboxed to it.
   const frame = await frameOf(page);
