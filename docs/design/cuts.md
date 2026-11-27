@@ -74,3 +74,4 @@ if people miss it. Newest at the bottom.
 - **Deploys waiting for you as cards on the Inbox:** a deploy's row opens its page, where it's approved (Lift 6d, Arugula #1486).
 - **The Inbox badge's @ for a waiting deploy and its "N deploys wait" tip:** the badge is the server's count, as it is (Lift 6d, Arugula #1486).
 - **The agent panel beside the Inbox** (shot 7's peek of the asker): the Overview has it; the Inbox's row opens with ↵ (Lift 6d, Arugula #1486).
+- **The bell on a machine's page** (`[data-open-attention]`, its count of what needs you on every machine): the rail's Inbox badge is the one count; the attention drawer still opens from Go to… and the sidebar until Lift 6a (Lift 6d, Arugula #1486).

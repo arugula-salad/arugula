@@ -92,7 +92,8 @@ test.describe("on a computer", () => {
     // Docs is under the workspace's own header, not a bar of its own (Arugula #796).
     await expect(page.locator(".app-bar")).toHaveCount(0);
     await expect(page.locator("[data-top] [data-machine-docs]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("[data-top] [data-open-attention]")).toBeVisible();
+    // No bell: the rail's Inbox is the one count (Lift 6d, Arugula #1486).
+    await expect(page.locator("[data-open-attention]")).toHaveCount(0);
     await page.locator("[data-top] [data-machine-panes]").click();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
     // The bar's stack says which session this is, with the sidebar open or not.

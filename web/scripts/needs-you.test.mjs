@@ -7,7 +7,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentRunning, byNeedsYou, needAge, finished, needsYou, needsYouRank, needYouText, placeOf, sortNeedsYou } from "../src/shared/needs-you.ts";
+import { agentRunning, byNeedsYou, needAge, finished, needsYou, needsYouRank, placeOf, sortNeedsYou } from "../src/shared/needs-you.ts";
 
 const reason = (kind, since_ms = 1) => ({ kind, since_ms, headline: "", actions: [] });
 const pane = (attention, kind, over = {}) => ({ type: "terminal", attention, reason: kind ? reason(kind) : null, ...over });
@@ -38,11 +38,6 @@ test("a stopped agent isn't running", () => {
   // Claude Code in a terminal is an agent while it runs there.
   assert.equal(agentRunning({ type: "terminal", kind: "agent", running: true }), true);
   assert.equal(agentRunning({ type: "terminal", kind: "build", running: true }), false);
-});
-
-test("the count reads as one label", () => {
-  assert.equal(needYouText(1), "1 needs you");
-  assert.equal(needYouText(3), "3 need you");
 });
 
 // #451: the panes of a wall's rail, by when each started wanting you.

@@ -13,7 +13,6 @@ import type { Step } from "../../../shared/kit/crumb";
 import { TopBar } from "../../../shared/kit/frame/top";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
-import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
 import { setSidebarOpen, useSidebar } from "./prefs";
 import { usePlace } from "./rail";
@@ -131,8 +130,6 @@ export function ContextHeader({
   const tools = (
     <>
       <UpdateChip client={client} />
-      {/* M111: what waits on you, on every machine. */}
-      <AttentionBell client={client} />
       <PeopleBar client={client} />
     </>
   );

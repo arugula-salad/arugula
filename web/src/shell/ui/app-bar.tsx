@@ -9,7 +9,6 @@ import type { Client } from "../client";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { HostButton } from "./hosts";
 import { MachinePlaces, Places, type Place } from "./places";
-import { AttentionBell } from "./shell/attention-drawer";
 import { ConnectionChip } from "./shell/context-header";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
@@ -92,8 +91,6 @@ export function AppBar({
     const tools = (
       <>
         <UpdateChip client={client} />
-        {/* What waits on you, on every machine, in every bar (Arugula #637). */}
-        <AttentionBell client={client} />
         {end}
       </>
     );
@@ -119,8 +116,6 @@ export function AppBar({
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton />}
       <UpdateChip client={client} />
-      {/* What waits on you, on every machine, in every bar (Arugula #637). */}
-      {rail && <AttentionBell client={client} />}
       {end}
       {/* With the rail, you're its foot (Lift 3). */}
       {!rail && <AccountButton client={client} />}

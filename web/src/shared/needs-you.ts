@@ -1,6 +1,7 @@
-// What "needs you" means, in one place (UI audit #154): the header's bell,
-// the footer, the Sessions sidebar's groups and the Swarm's count all read
-// this, so they agree. A pane needs you when it asks (a question, a
+// What "needs you" means for a pane, in one place (UI audit #154): the
+// Sessions sidebar's groups, Machines' marks, the Swarm and the attention
+// drawer read this, so they agree. Nothing counts with it across projects:
+// that's the Inbox's, the server's (Lift 6d, #1486). A pane needs you when it asks (a question, a
 // permission, input) or when it failed (a command, a PR's checks, a
 // program that ended badly). A plain finish is done, not needs-you: the
 // Swarm keeps its card a while, counted as finished. Every list of them
@@ -77,9 +78,6 @@ export const isAgent = (p: Pick<PaneInfo, "type" | "kind">) => p.type === "agent
 
 /** An agent that runs now: a stopped one (its program ended) doesn't. */
 export const agentRunning = (p: Pick<PaneInfo, "type" | "kind" | "running">) => isAgent(p) && p.running;
-
-/** "1 needs you", "3 need you". */
-export const needYouText = (n: number) => `${n} ${n === 1 ? "needs" : "need"} you`;
 
 /** How long a thing has waited, short ("7m", "2h", "3d"); "" when its time
  * is missing or can't be one (0, or before 2001: seconds, not ms), so a row

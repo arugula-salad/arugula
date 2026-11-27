@@ -7,7 +7,7 @@
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { build } from "vite";
-import { closeContexts, open as openApp, reset } from "./helpers";
+import { closeContexts, open as openApp, openAttentionDrawer, reset } from "./helpers";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = fileURLToPath(new URL("./dialogs-page.tsx", import.meta.url));
@@ -199,18 +199,16 @@ for (const [width, height] of [
 
 // The attention drawer is a side sheet (shell/ui/shell/attention-drawer.tsx):
 // Escape and a click on the backdrop each close it alone. On a desktop that is
-// the real drawer, opened by the bell. A phone (700px and under) mounts no
+// the real drawer, opened from Go to…. A phone (700px and under) mounts no
 // drawer, so the bottom-sheet width is the fixture's sheet with the drawer's
 // own class, list and foot.
 test.afterAll(closeContexts);
 
-test("the attention drawer, on a desktop: Escape and the backdrop close it, and the focus returns to the bell", async ({ page }) => {
+test("the attention drawer, on a desktop: Escape and the backdrop close it", async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 800 });
   await reset(page);
-  const bell = page.locator("[data-open-attention]");
   const drawer = page.locator("[data-attention-drawer]");
-  await bell.focus();
-  await bell.press("Enter");
+  await openAttentionDrawer(page);
   await expect(drawer).toBeVisible();
   await expect(drawer).toHaveAttribute("role", "dialog");
   await expect(drawer).toHaveClass(/side-sheet/);
@@ -234,13 +232,11 @@ test("the attention drawer, on a desktop: Escape and the backdrop close it, and 
 
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
-  await expect(bell).toBeFocused();
 
-  await bell.click();
+  await openAttentionDrawer(page);
   await expect(drawer).toBeVisible();
   await page.mouse.click(10, 400);
   await expect(drawer).toHaveCount(0);
-  await expect(bell).toBeFocused();
 });
 
 for (const [width, height] of [

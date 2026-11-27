@@ -1,5 +1,5 @@
 // Empty states that do the next step (Discovery 5), in the shell: the
-// bell's empty drawer says what lands there and offers Set up while Claude
+// attention drawer, empty (from Go to…), says what lands there and offers Set up while Claude
 // Code's settings lack Arugula's hooks (the daemon's answer is stubbed both
 // ways, so nothing touches this box's ~/.claude); the Docs page with no
 // Docs offers Start an agent, which opens its dialog; and the activity
@@ -7,7 +7,7 @@
 // platform's empty states are in discovery-empty-platform.spec.ts.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, reset } from "./helpers";
+import { closeContexts, openAttentionDrawer, reset } from "./helpers";
 
 test.afterAll(closeContexts);
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -26,10 +26,10 @@ async function hooksMissing(page: Page): Promise<string[]> {
   return posted;
 }
 
-test("the bell, with nothing waiting, says what lands there and sets up Claude Code's hooks", async ({ page }) => {
+test("the attention drawer, with nothing waiting, says what lands there and sets up Claude Code's hooks", async ({ page }) => {
   const posted = await hooksMissing(page);
   await reset(page);
-  await page.locator("[data-open-attention]").click();
+  await openAttentionDrawer(page);
   const empty = page.locator("[data-attention-drawer] [data-attention-empty]");
   await expect(empty).toContainText("Nothing needs you on any machine.");
   await expect(empty).toContainText("Claude in a terminal? Its questions land here");
@@ -39,10 +39,10 @@ test("the bell, with nothing waiting, says what lands there and sets up Claude C
   expect(posted).toEqual(["POST"]);
 });
 
-test("the bell offers no Set up where the hooks are in", async ({ page }) => {
+test("the attention drawer offers no Set up where the hooks are in", async ({ page }) => {
   await page.route(/\/api\/setup\?part=agents$/, (r) => r.fulfill({ json: { claude: { installed: true, tools: true, hooks: true }, adapters: [] } }));
   await reset(page);
-  await page.locator("[data-open-attention]").click();
+  await openAttentionDrawer(page);
   await expect(page.locator("[data-attention-empty]")).toBeVisible();
   // Long enough for the daemon's answer to have come.
   await page.waitForTimeout(500);
