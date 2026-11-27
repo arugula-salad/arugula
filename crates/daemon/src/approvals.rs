@@ -36,7 +36,7 @@ use std::sync::Arc;
 use arugula_control_wire::forge::{AskApproved, CheckoutsAsk, OpAnswer};
 use arugula_proto::{BlockType, PaneId, api::OpenRequest};
 use serde_json::json;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{board_attach::NotKept, mux::Api, server::App};
 
@@ -141,6 +141,12 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);
     }
+    // A tab of the issue's that has a project already stays where it is.
+    let placed = app
+        .mux
+        .api(Api::Sessions)
+        .await
+        .is_some_and(|all| all.iter().any(|s| s.name == session && s.project.is_some()));
     let req = OpenRequest {
         kind: BlockType::Agent,
         config,
@@ -160,6 +166,9 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
             });
         }
     };
+    if !placed {
+        put_in_project(app, &session, &a.project).await;
+    }
     let on = match crate::board_attach::keep(app, home, &item, block, false, Some(session)).await {
         Ok(boards) if boards.is_empty() => "on no board's row".to_owned(),
         Ok(boards) => {
@@ -179,6 +188,31 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     let at = worktree.as_ref().map(|w| format!(" in {} ({})", w.path, w.branch)).unwrap_or_default();
     let said = format!("started agent block %{block} on #{} on {}{at}, {on}", issue.number, app.hosts.name());
     Ok((said, Some(block)))
+}
+
+/// Arugula #1518: the tab a start opened is in the card's project, as set by
+/// hand, not where its clone or its owner's default would put it. A failure
+/// is logged: the agent is started either way.
+async fn put_in_project(app: &Arc<App>, session: &str, project: &str) {
+    let Some(id) =
+        app.mux.api(Api::Sessions).await.and_then(|all| all.iter().find(|s| s.name == session).map(|s| s.id))
+    else {
+        warn!(session, project, "the start's tab isn't there to put in its project");
+        return;
+    };
+    let known = crate::mcp::issues::project_now(&app.control, project).await;
+    let known = known.unwrap_or_else(|| arugula_core::ProjectRef {
+        id: project.to_owned(),
+        name: project.to_owned(),
+        team: None,
+    });
+    match app.mux.api(|r| Api::SetSessionProject(id, known.clone(), r)).await {
+        Some(Ok(())) => {
+            app.mux.api(|r| Api::ProjectKnown(known, r)).await;
+        }
+        Some(Err(why)) => warn!(session, project, "the start's tab isn't in its project: {why}"),
+        None => warn!(session, project, "the daemon is stopping"),
+    }
 }
 
 /// What a board's lead is told when its card gave no prompt.
