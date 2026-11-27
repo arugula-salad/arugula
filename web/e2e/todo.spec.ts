@@ -5,7 +5,9 @@
 // note, and the row stays as a dim receipt that reads the note from the
 // to-do's record (#1462), not from what was typed. Control's refusal is
 // said in its own words, and the row can be answered again. The panel's
-// card for it, in the staff room, is the same receipt. When the asker's
+// card for it, in the staff room, answers as the row does (its what, why,
+// how to copy, the note checked for secrets, Done or Can't through the
+// Inbox, never Approve or Deny), and answered, is the same receipt. When the asker's
 // session has ended, the panel is its transcript read only, and in place
 // of the composer, the note and Done, which continues that conversation:
 // answered there, its foot is the receipt.
@@ -57,7 +59,8 @@ const panel = (page: Page) => page.locator("[data-kit=panel]");
 
 /** The reader's staff room, with the to-do's card in it (`TODO.subject`'s
  * room and seq), as control has it: open, then (answered in the Inbox) the
- * record the Inbox's answer kept, and the room told its message changed. */
+ * record the Inbox's answer kept, and the stream told its message and the
+ * Inbox changed. */
 async function staffTodo(page: Page) {
   await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
   await page.evaluate(
@@ -67,7 +70,7 @@ async function staffTodo(page: Page) {
       const w = window as unknown as { __todos?: Record<string, unknown> };
       const kept = () => w.__todos?.[`${id}/${seq}`];
       const msg = { seq, at: Date.now() - 60_000, author: "", name: "", text: TODO.title, quote: null, pane: null, edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false, via: `ask:${TODO.id}` };
-      const open = { room: id, seq, parent: null, kind: "proposal", asker: "acct_a", asker_name: "Sam", question: "", choices: ["Done", "Can't"], open: true, mine: true, session: null, proposal: { id: TODO.id, action: "todo", by_session: "", issue: null, repo: null, prompt: null, sessions: [], why: "the printer stopped", state: "open", answered_by_name: null, outcome: null, started: null, todo: { what: TODO.title, how: "" } } };
+      const open = { room: id, seq, parent: null, kind: "proposal", asker: "acct_a", asker_name: "Sam", question: "", choices: ["Done", "Can't"], open: true, mine: true, session: null, proposal: { id: TODO.id, action: "todo", by_session: "", issue: null, repo: null, prompt: null, sessions: [], why: "The printer stopped, and only you can reach it.", state: "open", answered_by_name: null, outcome: null, started: null, todo: { what: TODO.title, how: TODO.lines[1] } } };
       const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
       const before = window.fetch;
       window.fetch = async (input, init) => {
@@ -76,7 +79,12 @@ async function staffTodo(page: Page) {
         if (url.pathname === `/api/chat/rooms/${id}/asks/${seq}`) return json(kept() ?? open);
         if (url.pathname === `/api/inbox/${TODO.id}` && init?.method === "POST") {
           const r = await before(input, init);
-          if (r.ok) (c as unknown as { heard(ev: unknown): void }).heard({ type: "changed", room: id, seq });
+          // As control does: its card's message changed, and the Inbox did.
+          if (r.ok) {
+            const h = c as unknown as { heard(ev: unknown): void };
+            h.heard({ type: "changed", room: id, seq });
+            h.heard({ type: "inbox", count: 0, by_project: {}, changed: [TODO.id] });
+          }
           return r;
         }
         return before(input, init);
@@ -182,6 +190,48 @@ for (const [name, viewport] of [
       await expect(card).toHaveText(/^Done by you .* · swapped to PETG \(kept\)$/);
       await card.scrollIntoViewIfNeeded();
       await page.screenshot({ path: info.outputPath("todo-card-receipt.png") });
+    });
+
+    test("an open to-do's card in the panel answers as its row does, and becomes its receipt", async ({ page }, info) => {
+      await overview(page);
+      await staffTodo(page);
+      await say(page, [TODO]);
+      const card = panel(page).locator(`[data-ov-staff="${TODO.subject.room}"] [data-proposal="${TODO.id}"]`);
+      await expect(card).toHaveAttribute("data-ask-state", "open");
+      await expect(card.locator("[data-ask-label]")).toHaveText("waits on you");
+      await expect(card.locator("[data-proposal-todo]")).toHaveText(TODO.title);
+      await expect(card.locator("[data-proposal-why]")).toHaveText("Why: The printer stopped, and only you can reach it.");
+      await expect(card.locator("[data-kit=well] pre")).toHaveText("1. Open the lid\n2. Swap the spool\n3. Press resume");
+      await expect(card.getByRole("button", { name: /^Copy/ })).toBeVisible();
+      // A to-do's answers, never a proposal's.
+      await expect(card.getByRole("button", { name: /Approve|Deny/ })).toHaveCount(0);
+      await expect(card).toContainText("no secrets");
+      // The card fits the panel.
+      expect(await card.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+
+      // Checked as it's typed, as the row's note is.
+      const note = card.getByRole("textbox", { name: /Note/ });
+      await note.fill(`it's ${"ghp_" + "a1B2".repeat(9)}`);
+      await expect(card.locator(".k-field-warn")).toHaveText("That looks like a GitHub token: leave it out");
+      await expect(card.getByRole("button", { name: "Done" })).toBeDisabled();
+      await expect(card.getByRole("button", { name: "Can't" })).toBeDisabled();
+      await note.press("Enter");
+      expect(await posted(page)).toEqual([]);
+      await note.fill("swapped to PETG");
+      await expect(card.locator(".k-field-warn")).toHaveCount(0);
+      await card.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath("todo-card-open.png") });
+
+      // Done answers it through the Inbox with the note; the card is then its receipt, from the record.
+      await page.evaluate(() => void ((window as unknown as { __todoKept: string }).__todoKept = "swapped to PETG (kept)"));
+      await card.getByRole("button", { name: "Done" }).click();
+      await expect.poll(() => posted(page)).toEqual([{ id: TODO.id, choice: "Done", note: "swapped to PETG" }]);
+      await expect(card).toHaveAttribute("data-ask-state", "answered");
+      await expect(card).toHaveText(/^Done by you .* · swapped to PETG \(kept\)$/);
+      // And it leaves To do.
+      await expect(row(page, TODO.id)).toHaveCount(0);
+      await card.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: info.outputPath("todo-card-answered.png") });
     });
 
     test("an ended session's to-do: the panel is its transcript read only, and Done with a note continues it", async ({ page }, info) => {
