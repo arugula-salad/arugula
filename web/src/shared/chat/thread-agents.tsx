@@ -28,6 +28,14 @@ const STATE: Record<ChatThreadAgentState, string> = {
   unknown: "Unknown",
 };
 
+/** Its state as the strip says it: a hosted session's ask that its own lead
+ * answers first waits on that agent, not on you (Arugula #1393, #1469), and
+ * is neutral. */
+export function stateOf(a: ChatThreadAgent): { cls: string; word: string } {
+  if (a.state === "needs_you" && a.with_lead) return { cls: "waits_on_lead", word: "Waits on its lead" };
+  return { cls: a.state, word: STATE[a.state] };
+}
+
 /** What an agent goes by: a machine told with no session yet has no name. */
 export function agentName(a: ChatThreadAgent): string {
   return a.name || `an agent on ${a.machine_name}`;
@@ -43,11 +51,13 @@ export function readLine(a: ChatThreadAgent, newest: number | undefined): string
 
 /** The folded line on a phone. */
 export function summary(agents: ChatThreadAgent[]): string {
-  const count = (s: ChatThreadAgentState) => agents.filter((a) => a.state === s).length;
+  const count = (s: ChatThreadAgentState) => agents.filter((a) => a.state === s && !(s === "needs_you" && a.with_lead)).length;
+  const lead = agents.filter((a) => a.state === "needs_you" && a.with_lead).length;
   const waiting = agents.reduce((n, a) => n + a.waiting, 0);
   const parts = [`${agents.length} agent${agents.length === 1 ? "" : "s"}`];
   if (count("working")) parts.push(`${count("working")} working`);
   if (count("needs_you")) parts.push(`${count("needs_you")} needs you`);
+  if (lead) parts.push(`${lead} with ${lead === 1 ? "its lead" : "their leads"}`);
   if (waiting) parts.push(`${waiting} waiting`);
   return parts.join(" · ");
 }
@@ -163,8 +173,8 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
     const line = readLine(a, newest);
     return (
       <section class="thread-agents thread-agents-one" aria-label="The agent in this thread" data-thread-agents="one">
-        <button class={`thread-agent ${a.state}`} aria-expanded={!!shown} data-thread-agent={key(a)} onClick={() => toggle(a)}>
-          <span class="thread-agent-state">{STATE[a.state]}</span>
+        <button class={`thread-agent ${stateOf(a).cls}`} aria-expanded={!!shown} data-thread-agent={key(a)} onClick={() => toggle(a)}>
+          <span class="thread-agent-state">{stateOf(a).word}</span>
           <span class="thread-agent-name">{agentName(a)}</span>
           <Now a={a} />
           {line && <span class={a.waiting ? "thread-agent-read waits" : "thread-agent-read"}>{line}</span>}
@@ -186,11 +196,11 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
           {agents.map((a) => {
             const line = readLine(a, newest);
             return (
-              <button key={key(a)} class={`thread-agent ${a.state}`} aria-expanded={shown === a} data-thread-agent={key(a)} onClick={() => toggle(a)}>
+              <button key={key(a)} class={`thread-agent ${stateOf(a).cls}`} aria-expanded={shown === a} data-thread-agent={key(a)} onClick={() => toggle(a)}>
                 <div class="thread-agent-top">
                   <span class="thread-agent-name">{agentName(a)}</span>
                   {a.lead && <span class="thread-agent-lead">LEAD</span>}
-                  <span class="thread-agent-state">{STATE[a.state]}</span>
+                  <span class="thread-agent-state">{stateOf(a).word}</span>
                 </div>
                 <Now a={a} />
                 {line && <div class={a.waiting ? "thread-agent-read waits" : "thread-agent-read"}>{line}</div>}

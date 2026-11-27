@@ -113,6 +113,20 @@ test.describe("on a computer", () => {
     await expect(r).toContainText(/Start by you/);
   });
 
+  test("a deploy waiting for your approval is a Needs-you row, and Open goes to its page, where the passkey approves it (Lift 7)", async ({ page }) => {
+    await overview(page);
+    const dep = `dep_${"0a".repeat(16)}`;
+    const d = item(dep, "deploy_approval", "Deploy acme/app@0123abc to production", { from: { name: "Sam" }, subject: { type: "deploy", id: dep, url: `/deploys/${dep}`, project: P } });
+    await say(page, [d]);
+    const r = row(page, dep);
+    await expect(r).toHaveAttribute("data-need", "approval");
+    await r.locator("button[aria-expanded]").first().click();
+    // No Approve in the row: a deploy takes the owner's passkey, on its page.
+    await expect(r.getByRole("button", { name: /^Approve/ })).toHaveCount(0);
+    await r.getByRole("button", { name: /^Open/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/deploys/${dep}$`));
+  });
+
   test("To do follows the asks: its why, its how in a well to copy, a note with no secrets, and Done (D) sends the note", async ({ page }) => {
     await overview(page);
     await say(page, [APPROVAL, TODO]);

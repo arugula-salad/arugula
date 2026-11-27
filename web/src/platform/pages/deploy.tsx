@@ -503,13 +503,14 @@ export function DeployPage({ id }: { id: string }) {
   useEffect(() => void (d && where.deployIn(d.id, d.project.id)), [d]);
   if (error) return <section class="platform-section"><p class="control-error">{error}</p></section>;
   if (!d) return <p class="platform-section dim">Loading…</p>;
-  const deploys = pathOf({ page: "deploys", project: d.project.id }, names);
+  // Back to its environments, with each one's history (Lift 7: Deploys went).
+  const deploys = pathOf({ page: "settings", scope: "project", project: d.project.id, section: "secrets" }, names);
   return (
     <section class="platform-section sw-page deploy-page" data-deploy-page={d.id}>
       <PageHeader
         title={shownTitle(d)}
         named
-        back={{ href: deploys, label: "Deploys", onClick: (e) => follow(e, deploys) }}
+        back={{ href: deploys, label: "Environments", onClick: (e) => follow(e, deploys) }}
         state={<DeployState state={d.state} />}
       />
       <DeployCard d={d} headless onDecided={setD} />

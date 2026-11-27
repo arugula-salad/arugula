@@ -84,35 +84,6 @@ export function environmentBody(
   return { body: { name: n, driver: d.name, secret_names, settings } };
 }
 
-/** A full commit id: 40 hex. */
-export const COMMIT = /^[0-9a-f]{40}$/;
-
-/** `POST /api/projects/{project}/deploys`' body from the form, or why
- * not. */
-export function planBody(
-  environment: string,
-  commit: string,
-  repo: string,
-  rollBack: boolean,
-  repoOk: RegExp,
-): { body: { environment: string; source: { kind: "commit"; ref: string; where: string }; roll_back: boolean } } | { error: string } {
-  if (!environment) return { error: "Pick an environment." };
-  const c = commit.trim().toLowerCase();
-  if (!COMMIT.test(c)) return { error: "The commit's full id: 40 hex characters (git rev-parse HEAD)." };
-  const r = repo.trim();
-  if (!repoOk.test(r)) return { error: "The repo on GitHub: OWNER/NAME." };
-  return { body: { environment, source: { kind: "commit", ref: c, where: r }, roll_back: rollBack } };
-}
-
-/** The repo "Deploy…" offers for `env` (UI audit #147): the one its last
- * deploy came from, else the linked repo named as the environment is
- * (`beds-smoke` for `arugula-salad/beds-smoke`), else the first linked. */
-export function repoFor(env: string | undefined, linked: string[], lastFrom?: string | null): string {
-  if (lastFrom) return lastFrom;
-  const named = env ? linked.find((r) => r.split("/")[1]?.toLowerCase() === env.toLowerCase()) : undefined;
-  return named ?? linked[0] ?? "";
-}
-
 /** A deploy as a project's history lists it (`GET
  * /api/projects/{project}/deploys`): its own page has the rest. */
 export interface DeploySummary {
@@ -157,14 +128,6 @@ export function historyPath(project: string, environment?: string, limit?: numbe
 
 /** When a deploy last moved: it ended, it was decided, or it was planned. */
 export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | "created_at">) => d.finished_at ?? d.decided_at ?? d.created_at;
-
-/** What a history row says beside the ref (#333): a release's version,
- * always as expected (an applied one too: the real tag isn't read), then
- * the commit's subject. Empty when the platform read neither. */
-export function rowNote(d: Pick<DeploySummary, "environment" | "subject" | "expected_version">): string {
-  const v = d.expected_version && d.environment.driver === "arugula-release" ? `${d.expected_version} (expected)` : "";
-  return [v, d.subject].filter(Boolean).join(" · ");
-}
 
 /** A commit's or an artifact's reference, short (../shared/deploys, which
  * control's deploy prompt shares). */

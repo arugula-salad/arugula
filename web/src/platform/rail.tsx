@@ -95,8 +95,8 @@ function usePlaces() {
         ...(session.hosted ? [{ key: "workspaces", label: "Workspaces", tip: "Workspaces: this project's cloud workspaces", to: at("workspaces"), here: section === "workspaces" }] : []),
       ];
   const places: (PlaceLink & { key: PlaceKey; views: PlaceLink[] })[] = [
-    // Deploys is hidden for v1 (Arugula #1078) but its page still opens from a link: it's the Overview's.
-    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home" || section === "deploys" || swarm, views: overviewViews },
+    // A deploy's page opens from a link (its Needs-you row, a push): it's the Overview's.
+    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home" || swarm, views: overviewViews },
     { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards", count: issues, views: [] },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs", views: [] },
     { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: (!!m && !swarm) || section === "workspaces" || section === "runs", views: machineViews },

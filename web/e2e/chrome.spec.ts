@@ -82,19 +82,17 @@ test.describe("on a computer", () => {
     }
   });
 
-  test("the bar is the machine, then its places, on the panes and its Docs (Arugula #637)", async ({ page }) => {
+  test("the bar is the machine, then its places, on the panes (Arugula #637); an old #docs opens Go to… where the machine's Docs are", async ({ page }) => {
     await newWorkspace(page);
     const places = page.locator("[data-machine-places]");
     await expect(page.locator(".ws-wordmark")).toHaveCount(0);
     await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
-    await places.locator("[data-machine-docs]").click();
-    await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
-    // Docs is under the workspace's own header, not a bar of its own (Arugula #796).
-    await expect(page.locator(".app-bar")).toHaveCount(0);
-    await expect(page.locator("[data-top] [data-machine-docs]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("[data-top] [data-open-attention]")).toBeVisible();
-    await page.locator("[data-top] [data-machine-panes]").click();
+    // The shell's Docs page went with Lift 6b (Arugula #1484): no Docs in a lone machine's bar.
+    await expect(places.locator("[data-machine-docs]")).toHaveCount(0);
+    await page.evaluate(() => (location.hash = "docs"));
+    await expect(page.locator("[data-goto]")).toBeVisible();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    await page.keyboard.press("Escape");
     // The bar's stack says which session this is, with the sidebar open or not.
     await expect(page.locator("[data-top] .ws-crumb-name")).toBeVisible();
     await page.locator("[data-open-sessions]").click();
@@ -118,27 +116,6 @@ test.describe("on a computer", () => {
     expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(64);
   });
 
-  test("on macOS the Docs page sits under the header and the native controls strip, as the panes do (Arugula #796)", async ({ page }) => {
-    await newWorkspace(page);
-    await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
-    const onPanes = (await page.locator("[data-top]").boundingBox())!;
-    await page.locator("[data-machine-docs]").click();
-    const docs = page.locator("[data-docs-page]");
-    await expect(docs).toBeVisible();
-    // The same header, where it was: below the strip, beside the rail.
-    const head = (await page.locator("[data-top]").boundingBox())!;
-    expect(head).toEqual(onPanes);
-    expect(head.y).toBe(28);
-    expect((await page.locator("[data-rail]").boundingBox())!.y).toBe(head.y);
-    await expect(page.locator("[data-top] [data-open-palette] svg")).toBeVisible();
-    // The page starts under it and doesn't cover the rail.
-    const box = (await docs.boundingBox())!;
-    expect(box.y).toBe(head.y + head.height);
-    expect(box.x).toBe((await page.locator("[data-rail]").boundingBox())!.width);
-    // A lone machine's Docs are Machines': Machines stays lit.
-    await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("aria-current", "page");
-  });
-
   test("rail routes keep the way back: Machines returns to the same tab and pane", async ({ page }) => {
     await newWorkspace(page);
     const t = (await tab(page)).id;
@@ -146,7 +123,7 @@ test.describe("on a computer", () => {
     const rail = page.locator("[data-rail]");
     // The app's places (Arugula #1345). A machine on its own has no platform
     // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
-    // Machines or Runs in its bar (its Docs are its bar's, Arugula #418).
+    // Machines or Runs in its bar (its Docs are in Go to…, Arugula #1484).
     expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["mark", "machines", "settings"]);
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);

@@ -77,7 +77,7 @@ export function InboxPlace({ fleet }: { fleet: Fleet | null }) {
   // What isn't an ask is dismissed here; an ask is answered.
   const extra = (i: InboxItem, answers: boolean) => (
     <>
-      {(!answers || i.subject.type === "pane") && (
+      {(!answers || i.subject.type === "pane") && !!i.subject.url && (
         <Button keys="↵" onClick={() => openItem(i)}>
           Open
         </Button>
