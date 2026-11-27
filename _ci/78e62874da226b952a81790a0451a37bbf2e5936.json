@@ -3,7 +3,7 @@
   "commit": "78e62874da226b952a81790a0451a37bbf2e5936",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-27T15:44:44Z",
+  "at": "2026-11-27T15:47:22Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -156,13 +156,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 140598246251,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/46026139114/job/140598246251"
         }
       ]
