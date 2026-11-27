@@ -137,6 +137,10 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
         // As the person: their own Claude Code settings, as their own
         // start would have.
         "user_settings": true,
+        // The person isn't at its terminal: mode `auto` with the lead's
+        // tools, as a board's lead starts (Arugula #1543).
+        "permission_mode": "auto",
+        "allow": LEAD_ALLOW.iter().map(|t| json!({ "tool": t })).collect::<Vec<_>>(),
     });
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);

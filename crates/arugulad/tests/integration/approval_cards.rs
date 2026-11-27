@@ -288,6 +288,9 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     assert_eq!((&config["agent"], &config["title"]), (&json!("claude"), &json!("#12 Fix the login")), "{b}");
     assert_eq!(config["work"], json!({ "issue": "#12", "project": "prj_1" }), "{b}");
     assert_eq!(config["user_settings"], true, "{b}");
+    // Arugula #1543: mode auto with the lead's tools, no card per command.
+    let allow: Vec<Value> = arugulad_base::approvals::LEAD_ALLOW.iter().map(|t| json!({ "tool": t })).collect();
+    assert_eq!((&config["permission_mode"], &config["allow"]), (&json!("auto"), &json!(allow)), "{b}");
     let cwd = config["cwd"].as_str().unwrap();
     assert_eq!(config["worktree"], cwd, "{b}");
     assert!(Path::new(cwd).is_dir() && cwd != work.to_str().unwrap(), "{cwd}");
