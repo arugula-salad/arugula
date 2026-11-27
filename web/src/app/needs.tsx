@@ -25,7 +25,9 @@ import { platformFetch } from "../shared/maintenance";
 import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
 import type { Fleet, FleetPane } from "../shell/fleet";
+import { kindOf, readableCommand, whatItDoes } from "../shell/swarm/model";
 import { act } from "../shell/swarm/view";
+import type { PanelTarget } from "../shared/kit/panel-key";
 import { permissionTarget } from "../shell/ui/answer-card";
 import { answerItem, forTeammate, markItem, memberName } from "../platform/inbox";
 import { go } from "../platform/router";
@@ -71,6 +73,21 @@ export function yours(fleet: Fleet, p: FleetPane): boolean {
   if (p.person.kind === "me") return true;
   if (p.person.kind === "team" || fleet.host(p.host)?.hosted) return fleet.role(p) !== "viewer";
   return false;
+}
+
+/** A session's name as Arugula names an agent: its agent and title
+ * (`Claude Code · #983 cloud half`); anything else, what it runs. */
+export function sessionName(p: FleetPane): string {
+  const what = whatItDoes(p);
+  if (kindOf(p) !== "agent") return what;
+  const cmd = p.info.command ?? "";
+  const agent = cmd && readableCommand(cmd) !== cmd ? readableCommand(cmd) : "";
+  return agent && what !== agent ? `${agent} · ${what}` : what;
+}
+
+/** A pane's tab: its session on its machine (by control's id, else its name here). */
+export function paneTarget(fleet: Fleet, p: FleetPane, role: "lead" | "worker" | "agent", title?: string): PanelTarget {
+  return { kind: "agent", role, machine: fleet.host(p.host)?.id ?? p.host, ...(p.session ? { session: p.session.name } : {}), pane: p.id, title: title ?? sessionName(p) };
 }
 
 /** The pane an item is about (a `pane` subject, #1431), if this page has it. */
@@ -210,7 +227,8 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
     if (!i) return;
     setSelected(i.id);
     if (expand) setOpen(i.id);
-    peek?.(i);
+    // The page's peek as it is now: the keys are bound once, before its machines are reached.
+    now.current.peek?.(i);
     requestAnimationFrame(() => document.querySelector(`[data-need-item="${CSS.escape(i.id)}"]`)?.scrollIntoView({ block: "nearest" }));
   };
 
@@ -243,8 +261,8 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
   }
 
   // The keys read the list as it is now.
-  const now = useRef({ rows: [] as InboxItem[], selected, open, receipts });
-  now.current = { ...now.current, selected, open, receipts };
+  const now = useRef({ rows: [] as InboxItem[], selected, open, receipts, peek });
+  now.current = { ...now.current, selected, open, receipts, peek };
   const find = (id: string | null) => now.current.rows.find((i) => i.id === id);
   const at = () => now.current.rows.findIndex((i) => i.id === now.current.selected);
   const press = (n: number) => {

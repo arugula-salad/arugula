@@ -51,11 +51,11 @@ import { isClaudeScreen, lastLines } from "../shared/transcript";
 import { useSubscribe } from "../shared/ui/hooks";
 import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { activityOf, kindOf, readableCommand, shortHost, whatItDoes } from "../shell/swarm/model";
+import { activityOf, kindOf, shortHost } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
 import { readInbox } from "../platform/inbox";
 import { boot } from "./machine-page";
-import { paneOwner, yours } from "./needs";
+import { paneOwner, sessionName, yours } from "./needs";
 import { StaffMove, StaffRestart, StaffStart } from "./panel-staff";
 import type { AppSession } from "./session";
 
@@ -98,16 +98,6 @@ export function standingOf(p: FleetPane): Standing {
   return "quiet";
 }
 
-/** A session's name as Arugula names an agent: its agent and title
- * (`Claude Code · #983 cloud half`); anything else, what it runs. */
-export function sessionName(p: FleetPane): string {
-  const what = whatItDoes(p);
-  if (kindOf(p) !== "agent") return what;
-  const cmd = p.info.command ?? "";
-  const agent = cmd && readableCommand(cmd) !== cmd ? readableCommand(cmd) : "";
-  return agent && what !== agent ? `${agent} · ${what}` : what;
-}
-
 /** A pane as the Overview groups it. */
 export function ovPane(fleet: Fleet, p: FleetPane): OvPane {
   const owner = paneOwner(fleet, p);
@@ -126,11 +116,6 @@ export function ovPane(fleet: Fleet, p: FleetPane): OvPane {
     standing: standingOf(p),
     last: p.info.activity?.last_ms ?? 0,
   };
-}
-
-/** A pane's tab: its session on its machine (by control's id, else its name here). */
-export function paneTarget(fleet: Fleet, p: FleetPane, role: "lead" | "worker" | "agent", title?: string): PanelTarget {
-  return { kind: "agent", role, machine: fleet.host(p.host)?.id ?? p.host, ...(p.session ? { session: p.session.name } : {}), pane: p.id, title: title ?? sessionName(p) };
 }
 
 /** How a tile's standing reads as a kit mark. */
