@@ -670,10 +670,11 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
 
 // ---- One run
 
-export function RunPage({ project, run, msg, thread }: { project: string; run: string; msg?: number; thread?: number }) {
+/** A run's page; `pane`, the same as a pane beside a board (Lift 6a, #1483): no way back to the Runs list, which the pane's own × and ⋯ stand for. */
+export function RunPage({ project, run, msg, thread, pane }: { project: string; run: string; msg?: number; thread?: number; pane?: boolean }) {
   const p = useProject(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <RunDetail key={run} p={p} id={run} msg={msg} thread={thread} />;
+  return <RunDetail key={run} p={p} id={run} msg={msg} thread={thread} pane={pane} />;
 }
 
 /** The run, kept current: read now, then (while it goes) again each time
@@ -707,7 +708,7 @@ function useRun(id: string): { run: RunView | null; missing: string | null } {
   return { run, missing };
 }
 
-function RunDetail({ p, id, msg, thread }: { p: PlatformProject; id: string; msg?: number; thread?: number }) {
+function RunDetail({ p, id, msg, thread, pane }: { p: PlatformProject; id: string; msg?: number; thread?: number; pane?: boolean }) {
   const { run, missing } = useRun(id);
   const [specs] = useSpecs(p.id);
   const workspaces = useWorkspaces(p.id) ?? [];
@@ -731,7 +732,7 @@ function RunDetail({ p, id, msg, thread }: { p: PlatformProject; id: string; msg
       <PageHeader
         title={<span data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</span>}
         named
-        back={{ href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
+        back={pane ? undefined : { href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
         state={
           <StateChip tone={runTone(run.state)} data-run-state-label>
             {STATES[run.state] ?? run.state}

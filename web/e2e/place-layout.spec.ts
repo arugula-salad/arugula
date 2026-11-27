@@ -318,3 +318,13 @@ test("Layout has no sheet where the platform keeps no prefs (404)", async ({ pag
   await page.locator("[data-board-more]").click();
   await expect(page.locator("[role=menu] [data-board-layout-prefs]")).toHaveCount(0);
 });
+
+test("a run beside the board is its run page, with no way back to the Runs list (Lift 6a, #1483)", async ({ page }) => {
+  const run = { id: "run_deploy", project: P, workspace: null, trigger: "manual", source: {}, op: "", op_hash: "", daemon: "", state: "succeeded", started_by: "acct_a", started_by_agent: null, grant: null, last_seq: 0, created_at: Date.now() - 60_000, started_at: Date.now() - 60_000, ended_at: Date.now(), exit_code: 0, pane: null, events: [] };
+  await page.route(/\/api\/runs\/run_deploy(\?.*)?$/, (r) => r.fulfill({ json: run }));
+  const l = await openBoard(page);
+  await l.lead({ kind: "run", ref: "run_deploy", title: "Run · deploy-preview" });
+  const p = pane(page, "Run · deploy-preview");
+  await expect(p.locator('[data-run="run_deploy"]')).toBeVisible();
+  await expect(p.locator("[data-run-back]")).toHaveCount(0);
+});
