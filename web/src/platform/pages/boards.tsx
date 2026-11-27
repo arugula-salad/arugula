@@ -29,7 +29,8 @@ import { controlOrigin, session, type PlatformProject } from "../session";
 import { blindLine, blindMachines, type Grant } from "../settings/grants";
 import { toast } from "../toast";
 import { roleIn } from "../settings/environments";
-import { mayWrite } from "./issues";
+import { IssueList, mayWrite, useIssueHome } from "./issues";
+import type { IssueFilter } from "../../shared/issues/text";
 import { Missing } from "./project";
 import { currentProject } from "../current-project";
 import { where } from "../where";
@@ -132,11 +133,11 @@ export function AllBoardsPage({ board }: { board?: string }) {
 /** `/p/:project/boards`, `/p/:project/boards/:board` (that board's row
  * selected) and `/p/:project/triage` (Not on a board's row selected): one page,
  * so going between them keeps the list as it is. */
-export function BoardsPage({ project, board, triage }: { project: string; board?: string; triage?: boolean }) {
+export function BoardsPage({ project, board, triage, issues }: { project: string; board?: string; triage?: boolean; issues?: IssueFilter }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return board ? <BoardDesk key={board} p={p} id={board} /> : <BoardList p={p} triage={triage} />;
+  return board ? <BoardDesk key={board} p={p} id={board} /> : <BoardList p={p} triage={triage} issues={issues} />;
 }
 
 /** The names of the machines of the reader's whose agents can't see the project's boards (#313); none while the grants load or when they can't be read. */
@@ -170,18 +171,22 @@ function BlindMachines({ project, may }: { project: string; may: boolean }) {
   );
 }
 
-/** Not on a board's row: pinned first in the Boards list (Arugula #1130), whatever the search. */
+/** Not on a board's row: pinned first in the Boards list (Arugula #1130), whatever the search, while it has any (Lift 5a). */
 const LOOSE = { loose: true } as const;
 const LOOSE_KEY = "loose";
-type BoardRow = ProjectBoard | typeof LOOSE;
+/** All issues' row, last before Done (Lift 5a): the project's issues, the Issues page that was. */
+const ALL = { all: true } as const;
+const ALL_KEY = "all";
+type BoardRow = ProjectBoard | typeof LOOSE | typeof ALL;
 const isLoose = (r: BoardRow): r is typeof LOOSE => "loose" in r;
+const isAll = (r: BoardRow): r is typeof ALL => "all" in r;
 
 /** A project's boards on the list page (Arugula #1128): a row a board, its
  * progress as `13/18` and the lanes' bar, From Plane and Done (folded) as
  * groups; the board itself in the middle. Not on a board is the first row,
  * with its count (Arugula #1130): selected, its issues go in the middle, and
  * one dragged onto a board's row goes on that board. */
-function BoardList({ p, triage }: { p: PlatformProject; triage?: boolean }) {
+function BoardList({ p, triage, issues }: { p: PlatformProject; triage?: boolean; issues?: IssueFilter }) {
   const list = useBoards(p.id);
   const [q, setQ] = useState("");
   const [making, setMaking] = useState(false);
@@ -196,18 +201,22 @@ function BoardList({ p, triage }: { p: PlatformProject; triage?: boolean }) {
   const made = live.filter((b) => !b.source);
   const plane = live.filter((b) => b.source);
   const fromPlane = [...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)];
+  const total = tri.whole;
+  const home = useIssueHome(p.id);
   const groups: ListGroup<BoardRow>[] = [
-    { key: LOOSE_KEY, items: [LOOSE] },
+    // Not on a board only while it has issues (or its own address asks for it).
+    { key: LOOSE_KEY, items: triage || (total ?? 0) > 0 ? [LOOSE] : [] },
     { items: made },
     { title: "From Plane", key: "plane", items: fromPlane, attrs: { "data-boards-plane": "" } },
+    { key: ALL_KEY, items: [ALL] },
     { title: "Done", key: "done", items: done, fold: { open: unfolded || !!q.trim(), toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
   ];
   const boardPath = (id: string) => pathOf({ page: "board", project: p.id, board: id }, names);
   const loosePath = pathOf({ page: "triage", project: p.id }, names);
-  // Not on a board's row is selected by its own address; a board opens on its own page (Lift 5a).
-  const select = triage ? LOOSE_KEY : null;
-  const pick = (r: BoardRow) => (isLoose(r) ? go(loosePath) : go(boardPath(r.id)));
-  const total = tri.whole;
+  const allPath = pathOf({ page: "issues", project: p.id }, names);
+  // Not on a board's row and All issues' are selected by their own addresses; a board opens on its own page (Lift 5a).
+  const select = triage ? LOOSE_KEY : issues ? ALL_KEY : null;
+  const pick = (r: BoardRow) => (isLoose(r) ? go(loosePath) : isAll(r) ? go(allPath) : go(boardPath(r.id)));
   const status =
     list === null ? (
       <BlockLoading inline what="boards" />
@@ -246,10 +255,10 @@ function BoardList({ p, triage }: { p: PlatformProject; triage?: boolean }) {
         setQuery={setQ}
         sort={{ options: TIME_SORTS, value: sort, onSort: setSort }}
         groups={groups}
-        keyOf={(r) => (isLoose(r) ? LOOSE_KEY : r.id)}
+        keyOf={(r) => (isLoose(r) ? LOOSE_KEY : isAll(r) ? ALL_KEY : r.id)}
         previewOn="click"
         select={select}
-        opened={!!triage}
+        opened={!!triage || !!issues}
         // The address follows the row, so a board's link is the page with its row selected; from Not on a board, Back returns there.
         onSelect={pick}
         onOpen={pick}
@@ -264,9 +273,17 @@ function BoardList({ p, triage }: { p: PlatformProject; triage?: boolean }) {
               age: total !== null && <span data-boards-loose-n>{total.toLocaleString()}</span>,
               attrs: { "data-boards-loose": "" },
             };
+          if (isAll(r))
+            return {
+              dense: true,
+              name: "All issues",
+              title: "All issues",
+              age: home && <span data-boards-all-n>{home.native_issues.toLocaleString()}</span>,
+              attrs: { "data-boards-all": "" },
+            };
           return { ...boardRow(r), attrs: { "data-board-item": r.id, ...(r.closed_at == null ? { "data-drop-target": "" } : {}) } };
         }}
-        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : null)}
+        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : isAll(r) ? <IssueList p={p} filter={issues ?? {}} /> : null)}
       />
     </div>
   );

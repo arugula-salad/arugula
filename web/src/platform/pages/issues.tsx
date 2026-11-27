@@ -77,41 +77,13 @@ export function ListLoading({ rows = 3 }: { rows?: number }) {
   );
 }
 
-/** What the list holds, as the runs' list counts its runs: the issues
- * read (a page of them, `+` when there are more) by their state (UI
- * audit #164), and of them those assigned to the reader. */
-function IssueStats({ list, more, closed, me }: { list: NativeIssue[]; more: boolean; closed: boolean; me?: string }) {
-  const mine = me ? list.filter((i) => i.assignees.includes(me)).length : 0;
-  return (
-    <div class="sw-stats" data-issues-stats>
-      <span>
-        <b>
-          {list.length}
-          {more ? "+" : ""}
-        </b>{" "}
-        {closed ? "closed" : "open"}
-      </span>
-      {mine > 0 && (
-        <span class="needs">
-          <b>{mine}</b> assigned to you
-        </span>
-      )}
-    </div>
-  );
-}
-
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
 };
 
-export function IssuesPage({ project, filter }: { project: string; filter: IssueFilter }) {
-  const on = useIssuesOn(project);
-  if ("show" in on) return on.show;
-  return <IssueList p={on.p} filter={filter} />;
-}
-
-function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
+/** All issues (Lift 5a): a row of the project's Boards list, the Issues page that was; `/p/:project/issues` selects it. */
+export function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   const [list, setList] = useState<NativeIssue[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,7 +155,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
   return (
     <section class="platform-section sw-page issues-page" data-issues={p.id}>
       <PageHeader
-        title="Issues"
+        title="All issues"
         actions={
           <>
             <button class="secondary issues-export" title="Download every issue" data-issues-export onClick={exportMenu}>
@@ -192,7 +164,6 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
             {mayWrite(p) && <NewIssueButton p={p} home={home} />}
           </>
         }
-        stats={!!list?.length && <IssueStats list={list} more={more} closed={filter.state === "closed"} me={session.me?.account} />}
       />
       {home?.both && home.home === "github" && <IssuesBoth home={home} />}
       <div class="issues-tools">
@@ -283,6 +254,9 @@ function IssuesBoth({ home }: { home: IssueHome }) {
     </details>
   );
 }
+
+/** Where the project's new issues go and how many are here, null until the platform has said. */
+export const useIssueHome = (project: string): IssueHome | null => useHome(project)[0];
 
 /** Where the project's new issues go, once the platform has said: null
  * until then, so nothing offers the wrong place meanwhile. */
