@@ -33,8 +33,6 @@ import type { BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, P
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
-import { Card } from "../ui/card";
-import { Markdown } from "../ui/markdown";
 import { ChevronIcon, EditIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip, Chip } from "../ui/state-chip";
@@ -47,19 +45,20 @@ import { SearchField } from "../ui/search-field";
 import { SectionHead } from "../ui/section-head";
 import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
-import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, deskTabs } from "./desk";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
-import { AttachmentChip, CardSessions, Drawer, Labels, Owners, RowSessionChip, SessionChip, notFinishedTitle, useRowSessions, type Act } from "./card";
+import { Mark } from "../kit/state-mark";
+import { Surface } from "../kit/surface";
+import { CardSessions, Drawer, useRowSessions, type Act } from "./card";
 import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { closedWithLine, PICK_DELAY_MS, cardTone, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, marksOf, waitingOf, notFinishedLine, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -1100,6 +1099,10 @@ function Lane({
   asks: boolean;
 }) {
   const n = laneCount(z);
+  /** Done shows its first rows, then "N more" (Lift 5a). */
+  const [all, setAll] = useState(false);
+  const rows = needsFirst(z.rows);
+  const cut = z.id === "lane_done" && !all && rows.length > DONE_SHOWN + 1 ? DONE_SHOWN : rows.length;
   // No lane takes a dropped card: a row's lane follows its work (Arugula #1383). A card dragged to another group drops on the group (#664).
   return (
     <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
@@ -1116,10 +1119,17 @@ function Lane({
         </span>
       </header>
       {!fold.folded && (
-        <ul class="board-rows card-list">
-          {z.rows.map((r) => (
+        <ul class="board-rows">
+          {rows.slice(0, cut).map((r) => (
             <BoardItemRow key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} opened={opened} asks={asks} />
           ))}
+          {cut < rows.length && (
+            <li>
+              <button type="button" class="link board-more-rows" data-board-lane-more={rows.length - cut} onClick={() => setAll(true)}>
+                {rows.length - cut} more
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </section>
@@ -1207,26 +1217,13 @@ function BoardItemRow({
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
-  const mark = proofMark(r);
-  const marks = marksOf(r);
-  // A stalled row says so on its agent's chip; with no such chip the mark stays.
-  const waiting = waitingOf(r);
-  const stalledMark = r.attachments.some(holdsRow) || waiting ? null : marks.stalled;
-  const stalledWords = marks.stalled?.words;
-  // A row that waits on a person says who on its agent's chip, else as a mark of its own (#764).
-  const waitingMark = r.attachments.some(holdsRow) ? null : waiting;
-  const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
-  const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
-  const held = heldChip(r);
-  // The card's sessions the row doesn't hold (Arugula #1082): a shell put on it, an agent not attached.
+  // Who works on it: the row's own live session first, else one the card's sessions list (Arugula #1082).
   const cardSessions = useRowSessions(r);
-  const tone = cardTone(r);
-  // Proof attached to the row is its "Proof" link (`AttachmentChip`); the tag stands for proof that has none (a merged PR, CI), and for none.
-  const proofLink = mark && (!mark.proven || !r.attachments.some((a) => a.role === "proof")) && (
-    <Chip kind="tag" tone={mark.proven ? "ok" : "muted"} title={mark.title} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
-      {mark.words}
-    </Chip>
-  );
+  const own = liveSessions(r, waitingOf(r), marksOf(r).stalled?.words)[0];
+  const other = cardSessions.find((x) => x.needs) ?? cardSessions[0];
+  const who = own && !(other?.needs && !own.needs) ? { name: own.name, word: own.word } : other ? { name: other.name, word: other.state ?? "" } : undefined;
+  const st = tileState(r, Date.now(), !!own?.needs || !!other?.needs);
+  const meta = tileMeta(r, who);
   const more = (e: MouseEvent) =>
     menuAt(e, [
       { label: "Details", run: () => open(r.id) },
@@ -1245,7 +1242,7 @@ function BoardItemRow({
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
-  // The card's empty space opens the drawer (Enter on the focused card too); its links, chips, buttons and forms do their own.
+  // The tile's empty space opens the drawer (Enter on the focused tile too); its links, buttons and forms do their own.
   const body = (e: MouseEvent) => {
     if (e.button !== 0 || (e.target as Element).closest("a, button, summary, input, textarea, select, form, details, .board-ask")) return;
     if (window.getSelection()?.toString()) return;
@@ -1254,13 +1251,28 @@ function BoardItemRow({
   const key = (e: KeyboardEvent) => {
     if (e.key === "Enter" && e.target === e.currentTarget) (e.preventDefault(), open(r.id));
   };
-  const title = card ? r.live!.title : label || "Note";
+  const title = card ? r.live!.title : r.note ? firstLine(r.note) : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <Card as="li" tone={tone} class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={needsDot(r) ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} draggable={groups.length > 0 && !phone && !editing} onDragStart={(e) => {
-      e.dataTransfer?.setData(ROW_DRAG, r.id);
-      e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
-    }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
+    <Surface
+      kind="card"
+      as="li"
+      class="board-tile"
+      data-board-row={r.id}
+      data-lane={r.lane}
+      data-status={r.status}
+      data-tile={st.mark}
+      data-needs-you={st.needs ? "" : undefined}
+      current={opened === r.id}
+      draggable={groups.length > 0 && !phone && !editing}
+      onDragStart={(e: DragEvent) => {
+        e.dataTransfer?.setData(ROW_DRAG, r.id);
+        e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
+      }}
+      tabIndex={editing ? undefined : 0}
+      onClick={editing ? undefined : body}
+      onKeyDown={editing ? undefined : key}
+    >
       {editing ? (
         <RowForm
           project={project}
@@ -1269,119 +1281,42 @@ function BoardItemRow({
           done={() => setEditing(null)}
         />
       ) : (
-        <div class="board-main">
-          <div class="board-card-head board-line board-card-title">
-            <div class="board-card-lead">
-              {needsDot(r) && <span class="board-needs-dot" data-board-needs-dot title="Needs you" role="img" aria-label="Needs you" />}
-              {href ? (
-                <a class="board-card-name board-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
-                  {title}
-                </a>
-              ) : (
-                <span class="board-card-name board-title" data-board-title>
-                  {title}
-                </span>
-              )}
-            </div>
+        <>
+          <div class="board-tile-head">
+            <Mark state={st.mark} />
+            {label && (
+              <span class="board-ptr m-id" data-board-ptr>
+                {label}
+              </span>
+            )}
+            {st.word && (
+              <span class={st.needs ? "board-tile-word k-needs" : "board-tile-word m-meta"} data-board-tile-word>
+                {st.word}
+              </span>
+            )}
             <IconButton label="Row actions" class="bar-btn sq board-more" data-board-row-menu onClick={more}>
               <MoreIcon size="sm" />
             </IconButton>
           </div>
-          <div class="board-line board-sub dim">
-            {label && <span class="board-ptr" data-board-ptr>{label}</span>}
-            {card && <Owners who={r.live!.assignees ?? []} />}
-            {r.agent && (
-              <span class="board-agent dim" data-row-agent>
-                {agentShort(r.agent)}
-              </span>
-            )}
-            {proofLink}
-          </div>
-          {card && <Labels labels={r.live!.labels ?? []} />}
-          {(marks.notFinished || marks.cancelled || marks.after || stalledMark || waitingMark || marks.blocked.length > 0) && (
-            <div class="board-line board-marks" data-board-marks>
-              {marks.notFinished && (
-                <StateChip tone="muted" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
-                  {notFinishedLine(marks.notFinished)}
-                </StateChip>
-              )}
-              {marks.cancelled && (
-                <Chip kind="tag" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
-                  cancelled
-                </Chip>
-              )}
-              {marks.after && (
-                <StateChip tone="accent" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
-                  {marks.after.words}
-                </StateChip>
-              )}
-              {stalledMark && (
-                <StateChip tone="danger" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
-                  {stalledMark.words}
-                </StateChip>
-              )}
-              {waitingMark && (
-                <StateChip tone={waitingMark.mine ? "warn" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
-                  {waitingMark.words}
-                </StateChip>
-              )}
-              {marks.blocked.map((m, i) => (
-                <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
-                  {m.words}
-                </StateChip>
-              ))}
-            </div>
+          {href ? (
+            <a class="board-tile-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
+              {title}
+            </a>
+          ) : (
+            <span class="board-tile-title" data-board-title>
+              {title}
+            </span>
           )}
-          {closedWithLine(r.live) && (
-            <div class="board-line board-sub dim" data-board-closed-with title="The merged pull request that closed this issue, and the words of it that did">
-              {closedWithLine(r.live)}
-            </div>
-          )}
-          {(current.length > 0 || (r.sessions ?? []).length > 0 || cardSessions.length > 0 || held) && (
-            <div class="board-line board-chips" data-board-attachments>
-              {current.map((a) => (
-                <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} waiting={waiting} />
-              ))}
-              {held && (
-                <Chip class="dim" title={held.title} data-board-held={r.held?.session}>
-                  {held.text}
-                </Chip>
-              )}
-              {(r.sessions ?? []).map((x) => (
-                <SessionChip key={x.session} s={x} project={project} />
-              ))}
-              {cardSessions.map((x) => (
-                <RowSessionChip key={x.key} s={x} project={project} />
-              ))}
-            </div>
-          )}
-          {(r.docs ?? []).length > 0 && (
-            <div class="board-line board-chips" data-board-row-docs>
-              {(r.docs ?? []).map((d) => (
-                <DocLink key={d.id} d={d} project={project} platform={platform} />
-              ))}
-            </div>
-          )}
-          {earlier.length > 0 && (
-            <details class="board-earlier" data-board-earlier={earlier.length}>
-              <summary class="dim">{earlierLine(earlier.length)}</summary>
-              <div class="board-line board-chips">
-                {earlier.map((a) => (
-                  <AttachmentChip key={a.id} a={a} platform={platform} />
-                ))}
-              </div>
-            </details>
-          )}
-          {r.note && (
-            <div class="board-note dim" data-board-note>
-              <Markdown text={r.note} refs={null} />
-            </div>
+          {meta.length > 0 && (
+            <p class="board-tile-meta m-meta" data-board-tile-meta>
+              {meta.join(" · ")}
+            </p>
           )}
           {asks && r.ask && !r.ask.raised && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
-          {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
-        </div>
+          {asks && r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
+        </>
       )}
-    </Card>
+    </Surface>
   );
 }
 

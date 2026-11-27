@@ -166,13 +166,6 @@ export function holdsRow(a: Pick<BoardAttachment, "role" | "block" | "released">
   return a.role === "work" && !a.released && !!a.block && a.block.state !== "closed";
 }
 
-/** Who holds a row's issue (Arugula #765): the chip's words, and its title, which says which machine. Not said while the holder's own agent block is attached and open: that block's chip is the claim. */
-export function heldChip(r: Pick<BoardRow, "held" | "attachments">): { text: string; title: string } | null {
-  const h = r.held;
-  if (!h || r.attachments.some(holdsRow)) return null;
-  return { text: `held by ${h.session}`, title: `Held by the session ${h.session} on ${h.machine_name || h.machine}: another session's agent start on this issue is refused unless it takes over` };
-}
-
 /** What a row says of a blocker the reader may not read. */
 export const UNSEEN_BLOCKER = "blocked by something you can't see";
 
@@ -196,11 +189,6 @@ export function relationLine(x: Pick<BoardRowRelation, "kind" | "direction" | "o
   const lead = (x.direction === "out" ? k?.out : k?.in) ?? x.kind;
   const other = x.other ? `#${x.other.number} ${x.other.title}`.trim() : "something you can't see";
   return `${lead} ${other}`;
-}
-
-/** The fold's summary: `earlier agents (2)`. */
-export function earlierLine(n: number): string {
-  return `earlier agent${n === 1 ? "" : "s"} (${n})`;
 }
 
 /** What a machine reported of an agent block, as a tag. */
@@ -514,12 +502,6 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing accent (working), Review info (in review), Done ok; amber (warn) is only what needs you. A stalled row is danger (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
-export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
-  if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
-  return r.lane === "next" ? "muted" : r.lane === "doing" ? "accent" : r.lane === "review" ? "info" : "ok";
-}
-
 /** A live item's state chip tone, as the lists' chips take it: open in review (info), merged ok, checks running the accent (working), failed danger, closed muted. */
 export function liveTone(s: BoardLiveState): Tone {
   if (s === "checks_running" || s === "running") return "accent";
@@ -590,6 +572,49 @@ export function progressWords(p: Pick<BoardProgress, "done" | "total" | "proven"
   if (!p.total) return "No work yet";
   return [`${Math.round((p.done / p.total) * 100)}%`, `${p.done} of ${p.total} done`, p.proven ? `${p.proven} proven` : "", p.review ? `${p.review} in review` : ""].filter(Boolean).join(" · ");
 }
+
+/** A tile's mark and its state word (Lift 5a): who it waits on before what it is. `needs`: it waits on the reader (its edge is amber, never a fill); `sessionNeeds`, a session on its card waits on input. */
+export interface TileState {
+  mark: "working" | "asks" | "waits" | "stuck" | "failing" | "done" | "idle";
+  word?: string;
+  needs?: boolean;
+}
+
+export function tileState(r: Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">, now: number = Date.now(), sessionNeeds = false): TileState {
+  const a = r.ask && !r.ask.raised ? r.ask : null;
+  if (a?.mine) return { mark: "asks", word: "asks you", needs: true };
+  if (sessionNeeds || r.attachments.some((x) => holdsRow(x) && x.block?.state === "needs_input")) return { mark: "asks", word: "needs you", needs: true };
+  if (a) return { mark: "waits", word: `asks ${a.who_name || "someone"}` };
+  const failing = (l: BoardLive | null | undefined) => l?.state === "checks_failed" || l?.state === "run_failed" || (!!l?.left_queue && isOpenPr(l));
+  if (failing(r.live) || r.attachments.some((x) => x.role === "work" && failing(x.live))) return { mark: "failing", word: "failing" };
+  const m = marksOf(r, now);
+  if (m.stalled) return { mark: "stuck", word: m.stalled.words };
+  if (m.cancelled) return { mark: "done", word: "cancelled" };
+  if (m.blocked.length) return { mark: "waits", word: m.blocked[0]!.words };
+  if (m.after) return { mark: "waits", word: m.after.words };
+  if (m.notFinished) return { mark: r.lane === "done" ? "done" : "waits", word: "not finished" };
+  return { mark: r.lane === "next" ? "idle" : r.lane === "doing" ? "working" : r.lane === "review" ? "waits" : "done" };
+}
+
+/** A tile's meta line, each part dim: its open PR and where it is (`PR #2868 · queued 2m`), else a done item's end (`merged · proven`); then who works on it (`fix-crumb · working`); a row with neither in Next or Doing says `no agent yet`. */
+export function tileMeta(r: Pick<BoardRow, "lane" | "pointer" | "live" | "attachments" | "proof" | "marks">, who: { name: string; word: string } | undefined, now: number = Date.now()): string[] {
+  const out: string[] = [];
+  const pr = openPrs({ zones: [{ rows: [r as BoardRow] } as BoardZone] })[0];
+  if (pr && pr.id !== (r.pointer.kind === "forge_item" ? r.pointer.id : "")) out.push(`PR ${pr.label} · ${prWord(pr.live, now)}`);
+  else if (pr) out.push(prWord(pr.live, now));
+  else if (r.lane === "done" && r.live) out.push([liveWord(r.live), proofMark(r)?.proven ? "proven" : ""].filter(Boolean).join(" · "));
+  if (who) out.push(`${who.name} · ${who.word}`);
+  if (!out.length && (r.lane === "next" || r.lane === "doing") && r.pointer.kind !== "none") out.push("no agent yet");
+  return out;
+}
+
+/** A lane's rows with those that wait on the reader first, the rest in the board's order. */
+export function needsFirst<R extends Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">>(rows: R[]): R[] {
+  return [...rows.filter((r) => tileState(r).needs), ...rows.filter((r) => !tileState(r).needs)];
+}
+
+/** How many of Done's rows show before "N more". */
+export const DONE_SHOWN = 2;
 
 /** A check's words: its conclusion once it has one, else its status. */
 export function checkWord(c: { status: string; conclusion: string | null }): string {

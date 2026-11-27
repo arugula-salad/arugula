@@ -24,11 +24,11 @@ const ROWS = {
   next: [row("row_1622", "next", 1622, "Chat: polls, as cards")],
   doing: [row("row_1448", "doing", 1448, "Row hover shows actions", { ask: ask("ask_1", true, "Truncate the middle, or hide the project?", ["Truncate middle", "Hide project"]) })],
   review: [row("row_1443", "review", 1443, "Sidebar caret beside the crumb", { attachments: [pr] }), row("row_1416", "review", 1416, "Run this board card", { ask: ask("ask_2", false, "What should the card say?", []) })],
-  done: [row("row_1444", "done", 1444, "Needs you at a third")],
+  done: [1444, 1445, 1446, 1447].map((n) => row(`row_${n}`, "done", n, `Done ${n}`, { live: { state: "merged", kind: "pr", number: n, title: `Done ${n}` }, proof: n === 1444 ? { by: "ci" } : undefined })),
 };
 
 const VIEW = {
-  board: { id: B, project: P, title: "Product improvements", goal: "Make Arugula better to use.", created_by: "acct_a", created_at: 1, updated_at: 1, done_note: "", closed_by: "", progress: { done: 1, total: 5, proven: 1, review: 2, doing: 1 }, lead: { machine: "mch_dust", machine_name: "dust", session: "claude@dust", at: 1 } },
+  board: { id: B, project: P, title: "Product improvements", goal: "Make Arugula better to use.", created_by: "acct_a", created_at: 1, updated_at: 1, done_note: "", closed_by: "", progress: { done: 4, total: 8, proven: 1, review: 2, doing: 1 }, lead: { machine: "mch_dust", machine_name: "dust", session: "claude@dust", at: 1 } },
   zones: (["next", "doing", "review", "done"] as const).map((lane) => ({ id: `lane_${lane}`, rev: 1, title: lane[0].toUpperCase() + lane.slice(1), kind: "lane", rows: ROWS[lane] })),
   groups: [],
   docs: [{ id: "bdc_1", pointer: { kind: "doc", id: "pdc_design" }, title: "Design pass", sections: 3, written: 3, added_by: "acct_a", created_at: 1 }],
@@ -62,11 +62,11 @@ test("the board on the left two thirds, its Needs you and lead on the right thir
   await expect(page.locator(`[data-board="${B}"] .board-ask`)).toHaveCount(0);
   // The title block: the meta line, the lead and its machine, the progress line.
   await expect(page.locator("[data-board-heading]")).toHaveText("Product improvements");
-  await expect(page.locator("[data-board-meta]")).toContainText("1/5");
+  await expect(page.locator("[data-board-meta]")).toContainText("4/8");
   await expect(page.locator("[data-board-meta]")).toContainText("1 asks you");
   await expect(page.locator("[data-board-meta]")).toContainText("#2868 queued");
   await expect(page.locator("[data-board-lead-facts]")).toContainText("dust");
-  await expect(page.locator("[data-board-progress-words]")).toHaveText("20% · 1 of 5 done · 1 proven · 2 in review");
+  await expect(page.locator("[data-board-progress-words]")).toHaveText("50% · 4 of 8 done · 1 proven · 2 in review");
   await page.screenshot({ path: info.outputPath("board-desk-1440.png") });
 });
 
@@ -140,4 +140,45 @@ test("every project's old Boards addresses still land: /boards on a project's Bo
   await page.goto("/boards");
   await expect(page).toHaveURL(/\/p\/prj_[^/]+\/boards$/);
   await expect(page.locator("[data-boards-page]")).toBeVisible();
+});
+
+test("lanes read Next · Doing · Review · Done; a tile says its state and who it waits on, with no fill; Done folds to N more", async ({ page }, info) => {
+  await openDesk(page);
+  const lanes = page.locator(`[data-board="${B}"] [data-board-zone]`);
+  const x = async (id: string) => (await page.locator(`[data-board-zone="${id}"]`).boundingBox())!.x;
+  const xs = await Promise.all(["lane_next", "lane_doing", "lane_review", "lane_done"].map(x));
+  expect([...xs].sort((a, b) => a - b)).toEqual(xs);
+  await expect(lanes).toHaveCount(4);
+  // Yours: its state word, an amber edge, no fill.
+  const mine = page.locator('[data-board-row="row_1448"]');
+  await expect(mine.locator("[data-board-tile-word]")).toHaveText("asks you");
+  await expect(mine).toHaveAttribute("data-needs-you", "");
+  await expect(mine).toHaveCSS("border-left-width", "2px");
+  // A teammate's, who it waits on; the PR's, where its PR is.
+  await expect(page.locator('[data-board-row="row_1416"] [data-board-tile-word]')).toHaveText("asks Jake");
+  await expect(page.locator('[data-board-row="row_1443"] [data-board-tile-meta]')).toContainText("PR #2868 · queued");
+  await expect(page.locator('[data-board-row="row_1622"] [data-board-tile-meta]')).toHaveText("no agent yet");
+  // No tile is tinted by its lane, and none says "no proof".
+  const fills = await page.locator("[data-board-row]").evaluateAll((els) => [...new Set(els.map((e) => getComputedStyle(e).backgroundColor))]);
+  expect(fills).toHaveLength(1);
+  await expect(page.locator(`[data-board="${B}"]`)).not.toContainText("no proof");
+  // Done shows two, then 2 more.
+  const done = page.locator('[data-board-zone="lane_done"]');
+  await expect(done.locator("[data-board-row]")).toHaveCount(2);
+  await expect(done.locator("[data-board-row]").first().locator("[data-board-tile-meta]")).toHaveText("merged · proven");
+  await page.screenshot({ path: info.outputPath("board-lanes-1440.png") });
+  await done.locator("[data-board-lane-more]").click();
+  await expect(done.locator("[data-board-row]")).toHaveCount(4);
+});
+
+test("j and k move between tiles; Enter opens one", async ({ page }) => {
+  await openDesk(page);
+  await page.keyboard.press("j");
+  await expect(page.locator("[data-board-row]").first()).toBeFocused();
+  await page.keyboard.press("j");
+  await expect(page.locator("[data-board-row]").nth(1)).toBeFocused();
+  await page.keyboard.press("k");
+  await expect(page.locator("[data-board-row]").first()).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-board-drawer]")).toBeVisible();
 });
