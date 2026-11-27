@@ -790,6 +790,13 @@
     "BoardLead": {
       "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
       "properties": {
+        "active": {
+          "description": "Whether the session is working now (`true`) or idle (`false`), for\na board's dot and `@here` (Arugula #1536); `None` while it can't be\ntold (its machine is away, or a server before it).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "at": {
           "description": "When the session took the lead.",
           "format": "uint64",
@@ -926,6 +933,26 @@
       ],
       "type": "object"
     },
+    "BoardRooms": {
+      "description": "The rooms a board's agents talk in (Arugula #1536): the board's channel\n(its object thread) and its project's #agents.",
+      "properties": {
+        "agents": {
+          "description": "The project's #agents, `ob_…`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "description": "The board's channel, `ob_…`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channel"
+      ],
+      "type": "object"
+    },
     "BoardRunAsked": {
       "description": "[`BOARD_RUN`]'s answer: the card (`prp_…`) and its message in the\nperson's staff room. `again`: it was open already.",
       "properties": {
@@ -1059,6 +1086,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "rooms": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoardRooms"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its channel and its project's #agents (Arugula #1536); `None` from a\nserver before them."
         },
         "said": {
           "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",

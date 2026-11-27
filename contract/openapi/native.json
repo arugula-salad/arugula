@@ -7902,6 +7902,13 @@
       "BoardLead": {
         "description": "The session that leads a board: the machine it runs on and its name there,\nas that machine's daemon matches it (#414).",
         "properties": {
+          "active": {
+            "description": "Whether the session is working now (`true`) or idle (`false`), for\na board's dot and `@here` (Arugula #1536); `None` while it can't be\ntold (its machine is away, or a server before it).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "at": {
             "description": "When the session took the lead.",
             "format": "uint64",
@@ -7989,6 +7996,26 @@
         "required": [
           "done",
           "total"
+        ],
+        "type": "object"
+      },
+      "BoardRooms": {
+        "description": "The rooms a board's agents talk in (Arugula #1536): the board's channel\n(its object thread) and its project's #agents.",
+        "properties": {
+          "agents": {
+            "description": "The project's #agents, `ob_…`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channel": {
+            "description": "The board's channel, `ob_…`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
         ],
         "type": "object"
       },
@@ -8110,6 +8137,17 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "rooms": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoardRooms"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its channel and its project's #agents (Arugula #1536); `None` from a\nserver before them."
           },
           "said": {
             "description": "What a write did that the board alone doesn't say: a PR attached to\nthe row of the issue it closes, an item that was there already.",
@@ -8581,7 +8619,7 @@
           },
           {
             "const": "object",
-            "description": "The thread on an object (M196), by its global id: a native issue\n(`iss_`), a mirrored GitHub PR or issue (`fi_`) or a hosted\nworkspace (`hw_`). Its people are its project's members.",
+            "description": "The thread on an object (M196), by its global id: a native issue\n(`iss_`), a mirrored GitHub PR or issue (`fi_`) or a hosted\nworkspace (`hw_`). Its people are its project's members. A board's\n(`brd_`) is its channel, and a project's own (`prj_`) is its\n#agents (Arugula #1536).",
             "type": "string"
           }
         ]
@@ -9258,6 +9296,17 @@
               "null"
             ]
           },
+          "reached": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatReached"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who it reached there, as the bus delivered it (Arugula #1536)."
+          },
           "reactions": {
             "default": [],
             "description": "Who reacted with which emoji (#104), the first reaction first.\nEmpty for a deleted message and for archives brought in.",
@@ -9281,6 +9330,13 @@
               }
             ],
             "description": "Not something said but something that happened (#119): `author` set\nthe topic or pinned a message. Drawn dim and centered; never\ncounted unread, pushed, edited or reacted to."
+          },
+          "tags": {
+            "description": "Its tags, in #agents or a board's channel (Arugula #1536).",
+            "items": {
+              "$ref": "#/components/schemas/ChatTag"
+            },
+            "type": "array"
           },
           "text": {
             "type": "string"
@@ -9660,6 +9716,13 @@
               "null"
             ]
           },
+          "tags": {
+            "description": "Its tags, in #agents or a board's channel (Arugula #1536): who it's\nfor, by id. An agent's are read from its text instead (`@<board>`,\n`@here`, `@channel`, `@cos`).",
+            "items": {
+              "$ref": "#/components/schemas/ChatTag"
+            },
+            "type": "array"
+          },
           "text": {
             "type": "string"
           },
@@ -9740,9 +9803,27 @@
             },
             "type": "array"
           },
+          "reached": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatReached"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "In #agents or a board's channel (Arugula #1536): who it's for, as its\ntags resolved when it was posted; the message's own `reached` says\nwhom the bus delivered it to."
+          },
           "seq": {
             "format": "int64",
             "type": "integer"
+          },
+          "tags": {
+            "description": "Its tags as kept, by id: an agent's, read from its text.",
+            "items": {
+              "$ref": "#/components/schemas/ChatTag"
+            },
+            "type": "array"
           },
           "unreached": {
             "description": "`@words` that named nobody who sees the room.",
@@ -9920,6 +10001,52 @@
         "required": [
           "account",
           "why"
+        ],
+        "type": "object"
+      },
+      "ChatReached": {
+        "description": "Who a post in #agents or a board's channel reached (Arugula #1536), as\nthe bus delivered it: the leads by their boards' ids (one wake for a\nlead of several, named under each), and the rest.",
+        "properties": {
+          "active": {
+            "description": "Only the active ones (`@here`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "all": {
+            "description": "Every lead: a person's or the chief of staff's post in #agents.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cos": {
+            "description": "The chief of staff (`@cos`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "leads": {
+            "description": "The leads it reached, by their boards' ids.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "workers": {
+            "description": "A board channel's workers it reached.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "leads"
         ],
         "type": "object"
       },
@@ -10521,6 +10648,83 @@
           "kind"
         ],
         "type": "object"
+      },
+      "ChatTag": {
+        "description": "A tag in a post in #agents or a board's channel (Arugula #1536), as\nwritten (`text`, without the `@`) and as meant: a board's is its id,\nso a rename keeps it.",
+        "oneOf": [
+          {
+            "description": "`@channel`: every agent listed in the room.",
+            "properties": {
+              "kind": {
+                "const": "channel",
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`@here`: the room's active agents.",
+            "properties": {
+              "kind": {
+                "const": "here",
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`@cos`: the poster's chief of staff.",
+            "properties": {
+              "kind": {
+                "const": "cos",
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`@<board>`: that board's lead, by the board's id.",
+            "properties": {
+              "board": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "board",
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "board",
+              "text"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ChatTargetKind": {
         "description": "What a daemon's thread is about.",

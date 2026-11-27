@@ -953,6 +953,26 @@ pub struct BoardLead {
     pub pane: Option<u32>,
     /// When the session took the lead.
     pub at: u64,
+    /// Whether the session is working now (`true`) or idle (`false`), for
+    /// a board's dot and `@here` (Arugula #1536); `None` while it can't be
+    /// told (its machine is away, or a server before it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub active: Option<bool>,
+}
+
+/// The rooms a board's agents talk in (Arugula #1536): the board's channel
+/// (its object thread) and its project's #agents.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct BoardRooms {
+    /// The board's channel, `ob_…`.
+    pub channel: String,
+    /// The project's #agents, `ob_…`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agents: Option<String>,
 }
 
 /// The session that holds an issue's row (Arugula #765): the one that last
@@ -2321,6 +2341,11 @@ pub struct BoardView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub grant: Option<BoardGrant>,
+    /// Its channel and its project's #agents (Arugula #1536); `None` from a
+    /// server before them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub rooms: Option<BoardRooms>,
 }
 
 /// [`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is
@@ -2741,6 +2766,20 @@ pub fn text(view: &BoardView) -> String {
     format!("{}\n{}", view.board.title, render(view))
 }
 
+/// Where a board's agents talk (Arugula #1536): its channel, and its
+/// project's #agents with who a post there reaches.
+pub fn rooms_text(title: &str, r: &BoardRooms) -> String {
+    let mut lines =
+        vec![format!("Channel: # {title} · {}", r.channel), "  the board's people and workers talk here".to_owned()];
+    if let Some(a) = &r.agents {
+        lines.push(format!("#agents: {a}"));
+        lines.push("  across boards: deploys, merge order, holds, asks for every lead;".to_owned());
+        lines.push("  a lead's post reaches only the leads it tags (@<board>, @here,".to_owned());
+        lines.push("  @channel); @cos is the chief of staff".to_owned());
+    }
+    lines.iter().map(|l| format!("{}\n", fit(l, TEXT_WIDTH))).collect()
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
 /// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
 /// it when one does, `Grant:` its grant to start agents ([`grant_line`]),
@@ -2804,7 +2843,15 @@ pub fn render(view: &BoardView) -> String {
         out += &format!("{}\n", fit(&format!("Goal: {}", first(&b.goal)), TEXT_WIDTH));
     }
     if let Some(l) = &b.lead {
-        out += &format!("{}\n", fit(&format!("Led by {} on {}", l.session, machine_label(l)), TEXT_WIDTH));
+        let state = match l.active {
+            Some(true) => " · active",
+            Some(false) => " · idle",
+            None => "",
+        };
+        out += &format!("{}\n", fit(&format!("Led by {} on {}{state}", l.session, machine_label(l)), TEXT_WIDTH));
+    }
+    if let Some(r) = &view.rooms {
+        out += &rooms_text(&b.title, r);
     }
     if let Some(g) = &view.grant {
         out += &format!("{}\n", grant_line(g));
@@ -3200,6 +3247,7 @@ mod tests {
             order: vec![],
             said: None,
             grant: None,
+            rooms: None,
         }
     }
 
@@ -3412,6 +3460,7 @@ mod tests {
             session: "ux".into(),
             pane: None,
             at: 5,
+            active: None,
         });
         let text = render(&v);
         assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
@@ -3420,6 +3469,30 @@ mod tests {
         v.board.lead = None;
         v.board.goal.clear();
         assert_eq!(render(&v), plain);
+    }
+
+    /// A board's text names its channel and its project's #agents, each
+    /// with its id, and its lead's state when it's known (Arugula #1536).
+    #[test]
+    fn a_boards_text_names_its_channel_and_agents() {
+        let mut v = view(vec![]);
+        v.board.title = "Design lift".into();
+        v.board.lead = Some(BoardLead {
+            machine: "m1".into(),
+            machine_name: "geek".into(),
+            session: "lead".into(),
+            active: Some(false),
+            ..Default::default()
+        });
+        v.rooms = Some(BoardRooms { channel: "ob_1".into(), agents: Some("ob_2".into()) });
+        let text = render(&v);
+        assert!(text.contains("Led by lead on geek · idle\n"), "{text}");
+        assert!(text.contains("Channel: # Design lift · ob_1\n"), "{text}");
+        assert!(text.contains("#agents: ob_2\n"), "{text}");
+        assert!(text.contains("@cos is the chief of staff"), "{text}");
+        assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+        v.rooms = Some(BoardRooms { channel: "ob_1".into(), agents: None });
+        assert!(!render(&v).contains("#agents"));
     }
 
     /// A board's goal, issue progress and done note head its text, and a

@@ -558,7 +558,13 @@ pane?: number,
 /**
  * When the session took the lead.
  */
-at: number, };
+at: number, 
+/**
+ * Whether the session is working now (`true`) or idle (`false`), for
+ * a board's dot and `@here` (Arugula #1536); `None` while it can't be
+ * told (its machine is away, or a server before it).
+ */
+active?: boolean, };
 
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
@@ -771,6 +777,20 @@ pointer: BoardPointer | null, note: string | null,
  * Refused: ask with a question instead.
  */
 status: BoardStatus | null, };
+
+/**
+ * The rooms a board's agents talk in (Arugula #1536): the board's channel
+ * (its object thread) and its project's #agents.
+ */
+export type BoardRooms = { 
+/**
+ * The board's channel, `ob_…`.
+ */
+channel: string, 
+/**
+ * The project's #agents, `ob_…`.
+ */
+agents?: string, };
 
 export type BoardRow = { id: string, rev: number, pointer: BoardPointer, note: string, 
 /**
@@ -1028,7 +1048,12 @@ said?: string,
 /**
  * Its live grant to start agents (Arugula #1416), if it has one.
  */
-grant?: BoardGrant, };
+grant?: BoardGrant, 
+/**
+ * Its channel and its project's #agents (Arugula #1536); `None` from a
+ * server before them.
+ */
+rooms?: BoardRooms, };
 
 /**
  * One thing a row may point at.
@@ -1470,7 +1495,15 @@ also: boolean,
 /**
  * The thread of replies this message starts, once it has any.
  */
-thread?: ChatThread, };
+thread?: ChatThread, 
+/**
+ * Its tags, in #agents or a board's channel (Arugula #1536).
+ */
+tags?: Array<ChatTag>, 
+/**
+ * Who it reached there, as the bus delivered it (Arugula #1536).
+ */
+reached?: ChatReached, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
@@ -1609,7 +1642,13 @@ also?: boolean,
  * An agent's post: the name of the session that wrote it (#429). Kept
  * beside the agent, trimmed and cut short; a person's post ignores it.
  */
-session?: string, };
+session?: string, 
+/**
+ * Its tags, in #agents or a board's channel (Arugula #1536): who it's
+ * for, by id. An agent's are read from its text instead (`@<board>`,
+ * `@here`, `@channel`, `@cos`).
+ */
+tags?: Array<ChatTag>, };
 
 /**
  * An agent a message is for (#647), as [`ChatThreadAgent`] names it.
@@ -1659,7 +1698,17 @@ mention_status?: Array<ChatMentionStatus>,
  * The advice when an agent's top-level post mentioned nobody, pushed
  * nobody and went to a room no session leads; `None` otherwise.
  */
-nobody?: string, };
+nobody?: string, 
+/**
+ * In #agents or a board's channel (Arugula #1536): who it's for, as its
+ * tags resolved when it was posted; the message's own `reached` says
+ * whom the bus delivered it to.
+ */
+reached?: ChatReached, 
+/**
+ * Its tags as kept, by id: an agent's, read from its text.
+ */
+tags?: Array<ChatTag>, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team
@@ -1747,6 +1796,33 @@ todo?: ProposalTodo, };
 export type ChatPushWhy = "mention" | "dm" | "keyword" | "message" | "thread" | "agent";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
+
+/**
+ * Who a post in #agents or a board's channel reached (Arugula #1536), as
+ * the bus delivered it: the leads by their boards' ids (one wake for a
+ * lead of several, named under each), and the rest.
+ */
+export type ChatReached = { 
+/**
+ * The leads it reached, by their boards' ids.
+ */
+leads: Array<string>, 
+/**
+ * Every lead: a person's or the chief of staff's post in #agents.
+ */
+all?: boolean, 
+/**
+ * Only the active ones (`@here`).
+ */
+active?: boolean, 
+/**
+ * The chief of staff (`@cos`).
+ */
+cos?: boolean, 
+/**
+ * A board channel's workers it reached.
+ */
+workers?: number, };
 
 /**
  * `POST`/`DELETE /api/chat/rooms/{id}/messages/{seq}/reactions` (and the
@@ -2044,6 +2120,13 @@ kind: string,
  * The pinned message's number, for `pin` and `unpin`.
  */
 target: number | null, };
+
+/**
+ * A tag in a post in #agents or a board's channel (Arugula #1536), as
+ * written (`text`, without the `@`) and as meant: a board's is its id,
+ * so a rename keeps it.
+ */
+export type ChatTag = { "kind": "channel", text: string, } | { "kind": "here", text: string, } | { "kind": "cos", text: string, } | { "kind": "board", board: string, text: string, };
 
 /**
  * What a daemon's thread is about.

@@ -321,6 +321,13 @@ pub const CATALOG: &[EventType] = &[
         power: Some("threads.read"),
     },
     EventType {
+        name: "chat.posted",
+        meaning: "A message was posted in a project's #agents or a board's channel, with whom it's for: its tags resolved by id (the boards whose leads it wakes, the chief of staff, here or channel). The bus delivers it to them; its receipt is what that delivered.",
+        matches: &[m("room", "the room, by its id"), BOARD, PROJECT, m("from", "the login of who wrote it")],
+        home: Home::Cloud,
+        power: Some("threads.read"),
+    },
+    EventType {
         name: "draft.answered",
         meaning: "A forge draft was sent, discarded or failed.",
         matches: &[
