@@ -1,14 +1,14 @@
 {
   "max": {
-    "duplicateComponentNames": 19,
-    "cssLines": 24987,
+    "duplicateComponentNames": 17,
+    "cssLines": 23822,
     "cssFiles": 49,
-    "customPropertiesDefined": 136,
-    "customPropertiesReferenced": 144,
-    "important": 16,
+    "customPropertiesDefined": 135,
+    "customPropertiesReferenced": 143,
+    "important": 9,
     "looks": 2,
     "htmlEntries": 5,
-    "dependencies": 18
+    "dependencies": 17
   },
   "headroom": {
     "duplicateComponentNames": 2,
