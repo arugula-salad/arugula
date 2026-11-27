@@ -13,7 +13,8 @@ import { layoutRefusal, ordinal, toggleFocus } from "../panes/layout";
 import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/ui/icons";
 import { PaneHint } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
-import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
+import { BarTitle, BarWhere } from "../../../shared/ui/bar";
+import { PaneHead } from "../../../shared/kit/panes/pane-head";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -71,7 +72,8 @@ function hostOf(client: Client, id: PaneId): string | null {
   return m ? (m.name ?? m.sprite) : null;
 }
 
-/** What names a pane, above it, and its handle (M110): its number, kind,
+/** What names a pane, above it, and its handle (M110), through the kit's
+ * one pane title row (`PaneHead`, #1483) with its own look until Lift 6a: its number, kind,
  * what it's running (its title, without the spinner a program puts in
  * front), status, host, repo, its card and branch, which pane has the keys, a click
  * to give it the keys, a drag to move it, Focus and its menu. It's one
@@ -124,7 +126,7 @@ export function PaneHeader({
     openFresh(client, at, items);
   };
   return (
-    <Bar
+    <PaneHead
       class={`pane-header live${active ? " active" : ""}`}
       data-pane-header={id}
       aria-current={active ? "true" : undefined}
@@ -199,7 +201,7 @@ export function PaneHeader({
       )}
       {/* #450: Claude Code running here, as it says from inside (its mod). */}
       {info?.live && info.type !== "agent" && <ContextStrip c={info.live} slim />}
-    </Bar>
+    </PaneHead>
   );
 }
 

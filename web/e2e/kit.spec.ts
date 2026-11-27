@@ -143,6 +143,17 @@ test("tabs, choice, composer and sheet work by keyboard", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
+
+  // A side sheet (Lift 6a's Running drawer, #1483): at the right, the window's height; Esc closes it.
+  const sideOpener = section(page, "sheet").getByRole("button", { name: "Open a side sheet" });
+  await sideOpener.click();
+  const drawer = page.getByRole("dialog", { name: "Running" });
+  const box = (await drawer.locator("[data-kit=sheet]").boundingBox())!;
+  const vp = page.viewportSize()!;
+  expect(Math.round(box.x + box.width)).toBe(vp.width);
+  expect(Math.round(box.height)).toBe(vp.height);
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
 });
 
 test("Look repaints the page in either theme", async ({ page }) => {

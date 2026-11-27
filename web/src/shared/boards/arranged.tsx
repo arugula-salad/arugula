@@ -66,8 +66,9 @@ export function PaneBody({ p, project, platform, own }: { p: LayoutPane; project
         {p.state || "Nothing to show"} · {p.machine ? `${p.machine} is offline` : "no machine"}
       </p>
     );
+  // A prompt's pane is its terminal, its question over it (`PromptAsk`, the pane's `above`).
+  if ((p.kind === "terminal" || p.kind === "prompt") && api.LiveWork) return <api.LiveWork machine={p.machine!} pane={pane} />;
   if (p.kind === "prompt" && api.LiveAsk) return <api.LiveAsk machine={p.machine!} pane={pane} />;
-  if (p.kind === "terminal" && api.LiveWork) return <api.LiveWork machine={p.machine!} pane={pane} />;
   const href = p.kind === "run" ? platform(`/p/${project}/runs/${p.ref}`) : p.kind === "card" ? platform(`/p/${project}/issues/${p.ref}`) : p.kind === "doc" ? platform(`/p/${project}/docs/${p.ref}`) : /^https?:\/\//.test(p.ref) ? p.ref : undefined;
   return (
     <div class="board-pane-note">
@@ -81,6 +82,13 @@ export function PaneBody({ p, project, platform, own }: { p: LayoutPane; project
       )}
     </div>
   );
+}
+
+/** A prompt pane's question, answered in place over its terminal (the kit pane's `above`, #1483); nothing while its machine is away. */
+export function PromptAsk({ p }: { p: LayoutPane }) {
+  const api = usePlatformApi();
+  if (p.kind !== "prompt" || p.offline || !p.machine || !api.LiveAsk || !api.LiveWork) return null;
+  return <api.LiveAsk machine={p.machine} pane={p.ref.replace(/^%/, "")} />;
 }
 
 /** "2:24 PM". */
@@ -118,7 +126,7 @@ export function forYou(items: InboxItem[], place: string): InboxItem[] {
 }
 
 /** A pane as the kit draws it, from the record. */
-export function paneItem(p: LayoutPane, o: { body: ComponentChildren; meta: string; dot: boolean; arriving: boolean; mine: boolean; move?: () => void; max: () => void; close: () => void; restore?: { name: string; run: () => void } }): PaneItem {
+export function paneItem(p: LayoutPane, o: { body: ComponentChildren; above?: ComponentChildren; meta: string; dot: boolean; arriving: boolean; mine: boolean; move?: () => void; max: () => void; close: () => void; restore?: { name: string; run: () => void } }): PaneItem {
   return {
     id: p.id,
     title: p.title,
@@ -138,6 +146,7 @@ export function paneItem(p: LayoutPane, o: { body: ComponentChildren; meta: stri
       </button>
     ) : undefined,
     body: o.body,
+    above: o.above,
     data: { "data-layout-pane": p.id, "data-pane-kind": p.kind, "data-pane-by": byWord(p.opened_by), "data-pane-touched": p.touched ? "" : undefined },
   };
 }

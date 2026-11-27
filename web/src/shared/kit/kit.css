@@ -865,8 +865,13 @@ a.k-row-line {
   right: 32px;
   z-index: 1;
   height: auto;
+  min-height: 0;
   padding: 2px;
   border: 0;
+  background: none;
+}
+.k-pane.is-default > .k-pane-head > .hbar-fill {
+  display: none;
 }
 .k-pane.is-focused {
   border-top-color: var(--accent);
@@ -1003,6 +1008,17 @@ a.k-row-line {
   max-height: calc(100vh - 120px);
   margin: 84px auto 0;
   overflow: auto;
+}
+/* A side sheet: a drawer at the right, the window's height (Running, Lift 6a). */
+.k-sheet.is-side {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(480px, 100vw);
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
 }
 .k-sheet-title {
   margin: 0 0 10px;
