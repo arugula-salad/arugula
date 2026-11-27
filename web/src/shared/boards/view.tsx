@@ -16,7 +16,7 @@
 // sheet with the item's body, comments, checks, attachments and proof (#369).
 //
 // Where it goes (Arugula #1129): the board block draws it all in one column,
-// as ever. The Boards page puts the controls (Lanes/Steps, find and its
+// as ever. The Boards page puts the controls (find and its
 // Label, Person and Group menus, the Docs, the adds, Workers and ⋯) in a
 // column at the right, under small headings, and a row's drawer takes that
 // column while it's open. With under ~900px of room the column goes under the
@@ -35,7 +35,7 @@ import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { CheckCircleIcon, ChevronIcon, EditIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
+import { ChevronIcon, EditIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip, Chip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
@@ -49,9 +49,7 @@ import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/men
 import { issues } from "../issues/store";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
-import { BoardError, STALE_ORDER, STALE_REV, boards } from "./store";
-import { StepsView } from "./steps-view";
-import { loadDone, loadLinks, loadMode, saveDone, saveLinks, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
+import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AttachmentChip, CardSessions, Drawer, Labels, Owners, RowSessionChip, SessionChip, notFinishedTitle, useRowSessions, type Act } from "./card";
 import { useLiveRowSessions } from "./live-sessions";
@@ -121,22 +119,6 @@ export function BoardPanel({
   const [editing, setEditing] = useState<string | null>(null);
   /** The row whose drawer is open. */
   const [drawer, setDrawer] = useState<string | null>(null);
-  /** Lanes or Steps, as this viewer last picked (Steps on a phone until they do). */
-  const [mode, setModeNow] = useState<BoardMode>(() => loadMode());
-  const setMode = (m: BoardMode) => (setModeNow(m), saveMode(m), setBehind(null));
-  /** Whether the Steps view draws done rows (#831), as this viewer last picked. */
-  const [showDone, setShowDoneNow] = useState(loadDone);
-  const setShowDone = (on: boolean) => (setShowDoneNow(on), saveDone(on));
-  const [showLinks, setShowLinksNow] = useState(loadLinks);
-  const setShowLinks = (on: boolean) => (setShowLinksNow(on), saveLinks(on));
-  const phone = usePhone();
-  /** The row whose reorder was refused because someone else moved its group first (Steps). */
-  const [behind, setBehind] = useState<string | null>(null);
-  useEffect(() => {
-    if (!behind) return;
-    const t = setTimeout(() => setBehind(null), 10_000);
-    return () => clearTimeout(t);
-  }, [behind]);
   /** The headings this viewer folded, kept in this browser per board. */
   const [folds, setFolds] = useState<Folds>(() => loadFolds(id));
   useEffect(() => setFolds(loadFolds(id)), [id]);
@@ -300,19 +282,6 @@ export function BoardPanel({
     if (to) void act(() => boards.move(id, g.id, g.rev, to));
   };
   const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
-  /** A reorder inside a step (Steps): it names the group's rows as this view read them. If someone moved them first, nothing moves; the board is read again and the row says so. It isn't made again by itself. */
-  const reorderRow = async (r: BoardRow, m: Reorder) => {
-    setBehind(null);
-    try {
-      setView(await boards.reorder(id, r.id, m.before, m.seen));
-      setStale(false);
-    } catch (e) {
-      if (e instanceof BoardError && e.reason === STALE_ORDER) {
-        setBehind(r.id);
-        again();
-      } else toast(`Couldn't move it: ${(e as Error).message}`);
-    }
-  };
   /** A row dropped on a group (#664): it moves there with its lane unchanged. */
   const dropRow = (row: string, group: string | null) => {
     const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
@@ -345,27 +314,6 @@ export function BoardPanel({
   const more = boardMenu(write, () => void rename(), () => setGoalDraft(view.board.goal), closeEpic);
   const grouped = !!view.groups?.length;
 
-  const views = (
-    <div class="seg small board-views" role="group" aria-label="View" data-board-views>
-      {(["lanes", "steps"] as const).map((m) => (
-        <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
-          {m === "lanes" ? "Lanes" : "Steps"}
-        </button>
-      ))}
-    </div>
-  );
-  const stepsToggles = mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
-    <div class="steps-toggles" data-steps-toggles>
-      <button type="button" class="secondary small steps-toggle" aria-pressed={showDone} data-board-done title={showDone ? "Hide done rows" : "Show done rows"} aria-label={phone ? (showDone ? "Hide done rows" : "Show done rows") : undefined} onClick={() => setShowDone(!showDone)}>
-        <CheckCircleIcon />
-        {!phone && "Done"}
-      </button>
-      <button type="button" class="secondary small steps-toggle" aria-pressed={showLinks} data-board-links title={showLinks ? "Hide links" : "Show links"} aria-label={phone ? (showLinks ? "Hide links" : "Show links") : undefined} onClick={() => setShowLinks(!showLinks)}>
-        <LinksIcon />
-        {!phone && "Links"}
-      </button>
-    </div>
-  );
   const findBar = (
     <div class="board-find" role="search" data-board-find>
       {/* The page's search answers `/`; a block's doesn't (the shell's sidebar does). */}
@@ -427,7 +375,6 @@ export function BoardPanel({
   const drawn = opened && (
     <Drawer
       place={inColumn ? "column" : "sheet"}
-      steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined}
       r={opened}
       platform={platform}
       close={() => setDrawer(null)}
@@ -463,7 +410,6 @@ export function BoardPanel({
         id={id}
         platform={platform}
       />
-      {!aside && <div class="board-switch">{views}</div>}
       {!aside && findBar}
       <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} />
       {stale && (
@@ -490,13 +436,7 @@ export function BoardPanel({
           }
         />
       )}
-      {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
-        <>
-          {!aside && stepsToggles}
-          <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} showLinks={showLinks} />
-        </>
-      )}
-      {mode === "lanes" && sections(narrowed).map((s) => {
+      {sections(narrowed).map((s) => {
         const key = groupFold(s.group?.id ?? null);
         const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
         // A find hides what doesn't match, and opens a heading that holds a match without saving it.
@@ -579,11 +519,6 @@ export function BoardPanel({
             drawn
           ) : (
             <>
-              <section class="board-aside-part" data-board-aside-part="view">
-                <h3 class="board-aside-head">View</h3>
-                {views}
-                {stepsToggles}
-              </section>
               <section class="board-aside-part" data-board-aside-part="find">
                 <h3 class="board-aside-head">Find</h3>
                 {findBar}

@@ -48,8 +48,6 @@ async function openApp(page: Page, path: (pane: number) => string): Promise<numb
 
 test("a card's sessions are on its row: what needs you first, finished ones left out; one opens its pane", async ({ page }, info) => {
   const pane = await openApp(page, () => `/p/${P}/boards/brd_00e2e0`);
-  // Lanes, where a row draws its chips.
-  await page.locator('[data-board-view="lanes"]').click();
   const rail = page.locator('[data-board-row="row_0970"]');
   // The computer's session put on #970, and the hosted one whose turn ended; not the stopped one.
   await expect(rail.locator("[data-board-card-session]")).toHaveCount(2);
@@ -104,7 +102,6 @@ test("a session's state shows on its row as it moves, without a reload: its live
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: answer(pane) }));
   await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: held() }));
   await page.reload();
-  await page.locator('[data-board-view="lanes"]').click();
   const chip = page.locator('[data-board-row="row_0985"] [data-board-card-session="hosted::ses_0985aaaa"]');
   const mine = page.locator('[data-board-row="row_0970"] [data-board-session="ses_0970eeee"]');
   await expect(chip).toContainText("working");
