@@ -141,12 +141,11 @@ async fn start(app: &Arc<App>, a: &AskApproved) -> Result<(String, Option<PaneId
     if let Some(w) = &worktree {
         config["worktree"] = json!(w);
     }
-    // A tab of the issue's that has a project already stays where it is.
-    let placed = app
-        .mux
-        .api(Api::Sessions)
-        .await
-        .is_some_and(|all| all.iter().any(|s| s.name == session && s.project.is_some()));
+    // A tab of the issue's that is in the card's project already stays; one
+    // elsewhere (the owner's default, say) is moved after the open.
+    let placed = app.mux.api(Api::Sessions).await.is_some_and(|all| {
+        all.iter().any(|s| s.name == session && s.project.as_ref().is_some_and(|p| p.id == a.project))
+    });
     let req = OpenRequest {
         kind: BlockType::Agent,
         config,

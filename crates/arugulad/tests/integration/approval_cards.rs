@@ -346,6 +346,29 @@ fn the_chief_of_staff_asks_the_person_approves_and_an_agent_starts_on_the_issue(
     let p = pane(&d, a["block"].as_u64().unwrap()).expect("the new block");
     assert_eq!(p["session_project"]["id"], "prj_2", "the card's project, not the default: {p}");
 
+    // A same-name tab already in a project, whichever, is no reason to leave
+    // the start in it: issue-15's tab is in the owner's default (prj_1) and
+    // moves to the card's (prj_2); issue-16's is in the card's (prj_1) and
+    // stays.
+    for (n, number, ask_id, project) in [(6, 15, "prp_5", "prj_2"), (7, 16, "prp_6", "prj_1")] {
+        let name = format!("issue-{number}");
+        let shell = d.post("/api/run", json!({ "session": name }))["pane"].as_u64().unwrap();
+        d.wait_for("its tab in the default project", || {
+            pane(&d, shell).is_some_and(|p| p["session_project"]["id"] == "prj_1")
+        });
+        let tab = pane(&d, shell).unwrap()["session"].clone();
+        let ask = format!("approve-{n}");
+        f.send(json!({ "t": "op", "id": ask, "op": { "op": "agents.approved", "ask": ask_id,
+            "project": project, "action": "start", "session": "Chief of staff", "pane": chief,
+            "issue": { "id": format!("iss_{number}"), "number": number, "title": "Same name" } } }));
+        d.wait_for("its answer", || f.answer(&ask).is_some());
+        let a = f.answer(&ask).unwrap();
+        assert_eq!(a["answer"], "approved", "{a}");
+        let p = pane(&d, a["block"].as_u64().unwrap()).expect("the new block");
+        assert_eq!((&p["session_name"], &p["session"]), (&json!(name), &tab), "the same tab: {p}");
+        assert_eq!(p["session_project"]["id"], project, "the card's project: {p}");
+    }
+
     // The chief of staff is gone (moved, Arugula #1340): its card's start
     // fails, and nothing opens in some other directory.
     drop(mcp);
