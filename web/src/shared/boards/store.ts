@@ -103,7 +103,11 @@ export const boards = {
   unrelate: (project: string, relation: string) => call<unknown>("DELETE", `/api/projects/${enc(project)}/relations/${enc(relation)}`),
   detach: (id: string, attachment: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/attachments/${enc(attachment)}`),
   /** Rename the board, or change its goal (empty clears it). */
-  edit: (id: string, e: { title?: string; goal?: string }) => call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e),
+  async edit(id: string, e: { title?: string; goal?: string }): Promise<BoardView> {
+    const v = await call<BoardView>("PATCH", `/api/boards/${enc(id)}`, e);
+    titles.set(id, v.board.title);
+    return v;
+  },
   /** Close the board as an epic, with what a person can now do. */
   close: (id: string, done_note: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/close`, { done_note }),
   reopen: (id: string) => call<BoardView>("POST", `/api/boards/${enc(id)}/reopen`, {}),

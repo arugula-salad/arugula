@@ -80,7 +80,7 @@ test("the Sessions page's old address lands on Boards, slug and all, and stays t
   });
   await openApp(page, () => `/p/${P}/sessions`);
   await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
-  await expect(page.locator('a[href*="brd_00e2e0"]').first()).toBeVisible();
+  await expect(page.locator('[data-board-item="brd_00e2e0"]')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
 });
 
