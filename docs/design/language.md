@@ -114,14 +114,23 @@ the ✻ mark on a well. Its name is its label.
 
 ## Panel
 
-`Panel` (`panel.tsx`): the agent panel on the right: its tabs, a head (who,
-where, what it's doing), the transcript or a well, and the composer.
+`Panel` (`panel.tsx`): the agent panel on the right: its tabs (the chief of
+staff first, a visitor in italics with its ×), a head (who, its state, its
+rung, its machine; Transcript or Terminal; ⤢ the floor), the transcript or a
+well, and the composer, or a line saying why there's none. It owns its
+widths (420; `[` 320, `]` 600, `\` a strip), the floor (`f`, Esc) and `l`/`h`
+focus. Don't build a panel of your own: a place draws one with `usePanel()`,
+whose tabs are `PanelTarget`s (an agent, a room, a reply thread), and a
+reply thread opens inside it. `Transcript` draws an agent's Markdown with its
+tool calls folded to a line. Names come from `agentName()`
+(`shared/agent-name.ts`), never a string of your own.
 
 ## Composer
 
 `Composer` (`composer.tsx`): where you write to an agent or a room. It glows
 while you're in it; ↵ sends, ⇧↵ is a new line; the line under it says who it
-goes to.
+goes to, with any actions on it (Silence, Stop). A send that fails keeps the
+text.
 
 ## Tabs
 
