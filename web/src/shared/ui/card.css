@@ -11,8 +11,8 @@
    `.drop-target.drop-over`) is a drag over it. */
 
 .card {
-  --c: var(--muted);
-  --ct: var(--subtle);
+  --c: var(--ink-faint);
+  --ct: var(--ink-dim);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -22,15 +22,15 @@
   margin: 0;
   padding: var(--card-pad);
   border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
+  border-radius: var(--radius);
+  background: var(--section);
 }
 
 /* A card that is a link opens as a whole, and fills its cell, so the cards
    in a row are one height (UI audit #162). */
 a.card {
   height: 100%;
-  color: var(--fg);
+  color: var(--ink);
   text-decoration: none;
 }
 
@@ -58,33 +58,33 @@ a.card {
 }
 
 .card-ok {
-  --c: var(--ok);
-  --ct: var(--ok);
+  --c: var(--done);
+  --ct: var(--done);
 }
 
 .card-warn {
-  --c: var(--warn);
-  --ct: var(--warn);
+  --c: var(--needs);
+  --ct: var(--needs);
 }
 
 .card-danger {
-  --c: var(--danger);
-  --ct: var(--danger);
+  --c: var(--fail);
+  --ct: var(--fail);
 }
 
 .card-info {
-  --c: var(--info);
-  --ct: var(--info);
+  --c: var(--review);
+  --ct: var(--review);
 }
 
 .card-teal {
-  --c: var(--teal);
-  --ct: var(--teal);
+  --c: var(--review);
+  --ct: var(--review);
 }
 
 .card-muted {
-  --c: var(--muted);
-  --ct: var(--subtle);
+  --c: var(--ink-faint);
+  --ct: var(--ink-dim);
 }
 
 /* One line, as a row of a long list: a box small enough to stack. */
@@ -94,7 +94,7 @@ a.card {
   gap: 8px;
   min-height: 32px;
   padding: var(--card-pad-dense);
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   white-space: nowrap;
 }
 
@@ -112,7 +112,7 @@ a.card {
 /* One that has been dealt with: plain again, its bar faint. */
 .card.seen {
   border-color: var(--line);
-  background: var(--surface);
+  background: var(--section);
 }
 
 .card.seen::before {
@@ -122,7 +122,7 @@ a.card {
 /* Hover lifts the edge: to --dim, or toward the tone. */
 .card:is(:hover, :focus-visible, :focus-within),
 .card.seen:is(:hover, :focus-visible, :focus-within) {
-  border-color: var(--dim);
+  border-color: var(--ink-dim);
 }
 
 .card-tone:is(:hover, :focus-visible, :focus-within) {
@@ -167,8 +167,8 @@ a.card {
 
 .card-title {
   min-width: 0;
-  color: var(--fg);
-  font: 600 var(--text-md)/1.35 var(--font-sans);
+  color: var(--ink);
+  font: 600 var(--text-body)/1.35 var(--font-sans);
   overflow-wrap: anywhere;
   text-decoration: none;
 }
@@ -183,8 +183,8 @@ a.card {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -195,8 +195,8 @@ a.card {
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: var(--dim);
-  font: 500 var(--text-xs)/1.3 var(--font-mono);
+  color: var(--ink-dim);
+  font: 500 var(--text-label)/1.3 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -204,8 +204,8 @@ a.card {
 /* What a card ends on: a progress strip and its words. */
 .card-foot {
   margin-top: 4px;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   line-height: 1.35;
 }
 

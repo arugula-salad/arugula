@@ -18,9 +18,9 @@
   width: 30px;
   height: 28px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--btn-radius);
-  color: var(--subtle);
-  font: 600 var(--text-sm) / 1 var(--font-sans);
+  border-radius: var(--radius-control);
+  color: var(--ink-dim);
+  font: 600 var(--text-meta) / 1 var(--font-sans);
   cursor: pointer;
   transition:
     border-color 0.12s,
@@ -30,12 +30,12 @@
 
 .weekdays > button:hover:not(:disabled) {
   border-color: var(--accent);
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .weekdays > button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent-fill) 18%, var(--bg));
+  background: color-mix(in srgb, var(--accent-fill) 18%, var(--canvas));
   color: var(--accent);
 }
 
@@ -65,15 +65,15 @@
   min-height: 32px;
   padding: 0 4px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background: var(--bg);
+  border-radius: var(--radius-control);
+  background: var(--canvas);
   transition:
     border-color 0.12s,
     box-shadow 0.12s;
 }
 
 .time-range:hover:not([data-disabled]):not(:focus-within) {
-  border-color: color-mix(in srgb, var(--fg) 35%, var(--surface));
+  border-color: color-mix(in srgb, var(--ink) 35%, var(--section));
 }
 
 .time-range:focus-within {
@@ -91,7 +91,7 @@
   /* "10:00 PM" with its picker, unclipped (Arugula #1109). */
   width: 116px;
   padding: 0 4px;
-  color: var(--fg);
+  color: var(--ink);
   font: 500 var(--t-field) var(--font-mono);
 }
 
@@ -102,13 +102,13 @@
 
 .time-range-to {
   padding: 0 2px;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 .time-range-note {
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 @media (pointer: coarse) {
@@ -134,14 +134,14 @@
   gap: 3px 8px;
   width: 100%;
   max-width: 520px;
-  color: var(--dim);
-  font: 500 var(--text-xs) / 14px var(--font-mono);
+  color: var(--ink-dim);
+  font: 500 var(--text-label) / 14px var(--font-mono);
 }
 
 .week-caption {
   grid-column: 1 / -1;
   margin-bottom: 3px;
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
@@ -155,7 +155,7 @@
   height: 14px;
   overflow: hidden;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 .week-bar > i {

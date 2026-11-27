@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { offenders } from "./check-colour.mjs";
+import { legacy, offenders } from "./check-colour.mjs";
 
 const bad = (css, file = "shared/x.css") => offenders(css, file).map((o) => [o.line, o.prop]);
 
@@ -71,4 +71,13 @@ test("a mark with no reason does not exempt", () => {
 test("a comment is not read, and a rule inside @media is", () => {
   assert.deepEqual(bad("/* color: #fff */ .a { color: red; }"), []);
   assert.deepEqual(bad("@media (x) {\n  .a { color: #fff; }\n}"), [[2, "color"]]);
+});
+
+test("a legacy name fails, in a stylesheet or a script; the roles and longer names that start the same don't (Lift 7)", () => {
+  assert.deepEqual(legacy(".a { color: var(--dim); }\n.b { background: var(--surface, red); }", "x.css"), [
+    { file: "x.css", line: 1, name: "dim" },
+    { file: "x.css", line: 2, name: "surface" },
+  ]);
+  assert.deepEqual(legacy('<i style={{ color: "var(--warn)" }} />', "x.tsx"), [{ file: "x.tsx", line: 1, name: "warn" }]);
+  assert.deepEqual(legacy(".a { color: var(--ink-dim); border-color: var(--line); padding: var(--raised-gap); background: var(--card-raised); }", "x.css"), []);
 });

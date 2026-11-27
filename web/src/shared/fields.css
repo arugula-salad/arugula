@@ -15,12 +15,12 @@
   --field-h: 32px;
   --field-h-bar: 24px;
   --field-line: var(--line-strong);
-  --field-line-hover: color-mix(in srgb, var(--fg) 35%, var(--surface));
+  --field-line-hover: color-mix(in srgb, var(--ink) 35%, var(--section));
   --field-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   /* The select's caret: two halves of a 5px square, from the right edge. */
   --field-caret:
-    linear-gradient(45deg, transparent 50%, var(--dim) 50%),
-    linear-gradient(-45deg, transparent 50%, var(--dim) 50%);
+    linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+    linear-gradient(-45deg, transparent 50%, var(--ink-dim) 50%);
 }
 
 @media (pointer: coarse), (max-width: 600px) {
@@ -39,9 +39,9 @@
   min-width: 0;
   padding: 0 10px;
   border: 1px solid var(--field-line);
-  border-radius: var(--field-radius);
-  background-color: var(--bg);
-  color: var(--fg);
+  border-radius: var(--radius-control);
+  background-color: var(--canvas);
+  color: var(--ink);
   font-family: inherit;
   font-size: var(--t-field);
   outline: none;
@@ -67,7 +67,7 @@
 .field.small {
   height: var(--field-h-bar);
   padding: 0 8px;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 :where(textarea),
@@ -78,7 +78,7 @@ textarea.field {
 }
 
 :where(input, textarea)::placeholder {
-  color: var(--dim);
+  color: var(--ink-dim);
   opacity: 1;
 }
 
@@ -95,7 +95,7 @@ textarea.field {
 
 :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea)[aria-invalid="true"],
 .field[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--fail);
 }
 
 :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea):disabled,
@@ -124,7 +124,7 @@ select.field {
 :where(input[type="time"]) {
   padding-right: 6px;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 :where(input[type="time"])::-webkit-calendar-picker-indicator {
@@ -171,8 +171,8 @@ select.field {
   padding: 0;
   border: 1px solid var(--field-line);
   border-radius: var(--tag-radius);
-  background-color: var(--bg);
-  color: var(--on-color);
+  background-color: var(--canvas);
+  color: var(--on-accent);
   vertical-align: middle;
   cursor: pointer;
   outline: none;
@@ -245,7 +245,7 @@ select.field {
 }
 
 :where(input[type="checkbox"]:not(.sw-switch), input[type="radio"])[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--fail);
 }
 
 :where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):disabled {

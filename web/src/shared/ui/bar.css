@@ -15,9 +15,9 @@
   padding: 0 8px;
   overflow: hidden;
   border-bottom: 1px solid var(--chrome-line, var(--line));
-  background: var(--chrome-panel, var(--surface));
-  color: var(--subtle);
-  font-size: var(--text-sm);
+  background: var(--chrome-panel, var(--section));
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   white-space: nowrap;
 }
 
@@ -25,7 +25,7 @@
    it still reads as the block's. */
 :where(.hbar.sub) {
   padding: 0 10px;
-  background: var(--surface);
+  background: var(--section);
   border-bottom-color: var(--line);
 }
 
@@ -38,8 +38,8 @@
   min-width: 6ch;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--fg);
-  font-size: var(--text-md);
+  color: var(--ink);
+  font-size: var(--text-body);
   font-weight: 500;
 }
 
@@ -49,8 +49,8 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 .hbar-fill {

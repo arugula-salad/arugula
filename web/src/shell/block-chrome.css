@@ -29,8 +29,8 @@
   max-width: 30em;
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--surface);
+  border-radius: var(--radius);
+  background: var(--section);
   text-align: center;
 }
 
@@ -49,13 +49,13 @@
 
 .agent-user {
   border: 1px solid var(--line);
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   padding: 10px 12px;
 }
 
 .agent-tool {
   border: 1px solid var(--line);
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   overflow: hidden;
 }
 
@@ -69,10 +69,10 @@
 }
 
 .editor-note {
-  background: var(--surface);
-  color: var(--subtle);
+  background: var(--section);
+  color: var(--ink-dim);
   border: 1px solid var(--line);
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
 }
 
 .agent-msg > .md,
@@ -83,7 +83,7 @@
 .agent-msg .md h1,
 .agent-msg .md h2,
 .agent-msg .md h3 {
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   line-height: 1.4;
   margin: 12px 0 8px;
 }
@@ -118,7 +118,7 @@
 }
 
 .editor-where b {
-  color: var(--fg);
+  color: var(--ink);
 }
 
 /* The agents block (M77): its empty line centred in it, and its headings
@@ -136,5 +136,5 @@
 .block.block-loading {
   align-items: center;
   justify-content: center;
-  color: var(--dim);
+  color: var(--ink-dim);
 }

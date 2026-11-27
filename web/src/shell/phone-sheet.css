@@ -13,10 +13,10 @@
   height: 80%;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
+  background: var(--section);
   border-radius: 0 0 var(--panel-radius) var(--panel-radius);
   box-shadow: var(--shadow-lg);
-  font-size: var(--text-lg);
+  font-size: var(--text-title);
 }
 
 /* A wide window in the phone layout: a column, not a banner. */
@@ -66,8 +66,8 @@
 
 .sheet h2 {
   margin: 2px 4px 6px;
-  font: 700 var(--text-xs)/1.2 var(--font-mono);
-  color: var(--dim);
+  font: 700 var(--text-label)/1.2 var(--font-mono);
+  color: var(--ink-dim);
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
 }
@@ -76,20 +76,20 @@
 .sheet .needs-you h2,
 .sheet .sheet-needs-none h2 {
   margin: 2px 4px 6px;
-  font: 600 var(--text-lg)/20px var(--font-sans);
+  font: 600 var(--text-title)/20px var(--font-sans);
   letter-spacing: 0;
   text-transform: none;
 }
 
 .sheet .sheet-needs-none h2 {
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .sheet h3 {
   margin: 6px 4px 4px;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
   font-weight: 600;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 /* "You" holds the notifications and the account, which keep their own
@@ -107,9 +107,9 @@
 
 /* Close pane and Close tab: the danger styling the old bottom block had. */
 .sheet-actions .danger {
-  color: var(--danger);
+  color: var(--fail);
   background: none;
-  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fail) 50%, transparent);
 }
 
 /* The tab bar: a segmented control, three targets across the width. */
@@ -139,5 +139,5 @@
 .sheet-session-head .sheet-pinned {
   display: inline-flex;
   flex: none;
-  color: var(--dim);
+  color: var(--ink-dim);
 }

@@ -14,13 +14,13 @@
 /* Where an issue opened on GitHub lives now (M205): a link, beside its
    state. */
 .issue-github {
-  color: var(--muted);
+  color: var(--ink-faint);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 
 .issue-github:hover {
-  color: var(--fg);
+  color: var(--ink);
   text-decoration: underline;
 }
 
@@ -32,9 +32,9 @@
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  background: var(--surface);
-  color: var(--fg);
+  border-radius: var(--radius-control);
+  background: var(--section);
+  color: var(--ink);
   white-space: nowrap;
 }
 
@@ -56,10 +56,10 @@
 .issues-note {
   margin: 0 0 12px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--review) 45%, transparent);
   border-left-width: 3px;
-  border-radius: var(--card-radius);
-  color: var(--fg);
+  border-radius: var(--radius);
+  color: var(--ink);
 }
 
 details.issues-note > summary {
@@ -69,7 +69,7 @@ details.issues-note > summary {
 .issues-note-repos {
   margin: 6px 0 0;
   padding-left: 1.2em;
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .issues-list {
@@ -77,7 +77,7 @@ details.issues-note > summary {
   margin: 12px 0 0;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: var(--card-radius);
+  border-radius: var(--radius);
 }
 
 .issues-list:empty {
@@ -99,7 +99,7 @@ details.issues-note > summary {
   display: block;
   height: 12px;
   border-radius: var(--chip-radius);
-  background: var(--raised);
+  background: var(--card-raised);
 }
 
 .loading-bar.short {
@@ -119,14 +119,14 @@ details.issues-note > summary {
 
 /* Close issue and its chevron, one split button of the set's (buttons.css). */
 .issue-split > button:first-child {
-  border-radius: var(--btn-radius) 0 0 var(--btn-radius);
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
 }
 
 .issue-split > button:last-child {
   min-width: 24px; /* axe's target size; the chevron is 12px */
   margin-left: -1px;
   padding: 0 var(--space-1);
-  border-radius: 0 var(--btn-radius) var(--btn-radius) 0;
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
 }
 
 /* Edit (the body, labels, assignees): at the end of its line. */
@@ -256,9 +256,9 @@ details.issues-note > summary {
   padding: 1px 4px;
   border-radius: var(--tag-radius);
   border: 1px solid var(--line);
-  background: var(--letterbox);
-  color: var(--peach);
-  font: var(--text-sm) var(--font-mono);
+  background: var(--well);
+  color: var(--needs);
+  font: var(--text-meta) var(--font-mono);
 }
 
 /* The thread is part of the page: the page scrolls, and the box to write
@@ -299,7 +299,7 @@ details.issues-note > summary {
   z-index: 1;
   margin-top: 8px;
   padding: 8px 0 calc(12px + env(safe-area-inset-bottom, 0px));
-  background: var(--bg);
+  background: var(--canvas);
 }
 
 .issue-thread .thread-note {
@@ -312,8 +312,8 @@ details.issues-note > summary {
   gap: 8px;
   align-items: baseline;
   margin: 10px 0;
-  color: var(--subtle);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   overflow-wrap: anywhere;
 }
 
@@ -321,19 +321,19 @@ details.issues-note > summary {
   flex: none;
   width: var(--msg-gutter, 36px);
   text-align: center;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 .issue-event.closed .issue-event-mark {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .issue-event.reopened .issue-event-mark {
-  color: var(--ok);
+  color: var(--done);
 }
 
 .issue-event b {
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .issue-form {
@@ -375,12 +375,12 @@ details.issues-note > summary {
   margin: 8px 0 0;
   padding: 6px 10px;
   border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  color: var(--subtle);
-  font-size: var(--text-sm);
+  border-radius: var(--radius-control);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 .issue-foot {
   margin: 12px 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }

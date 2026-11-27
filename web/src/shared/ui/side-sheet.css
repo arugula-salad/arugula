@@ -17,7 +17,7 @@
   width: min(440px, 100%);
   height: 100%;
   border-left: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--section);
   box-shadow: var(--shadow-lg);
   overflow-wrap: anywhere;
   outline: none;
@@ -38,14 +38,14 @@
 
 .side-sheet-head h2 {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-title);
   font-weight: 600;
 }
 
 .side-sheet-sub {
   margin: 2px 0 0;
-  font-size: var(--text-sm);
-  color: var(--dim);
+  font-size: var(--text-meta);
+  color: var(--ink-dim);
 }
 
 .side-sheet-body {

@@ -3,7 +3,7 @@
 // does `var(--x)` followed by hex digits (`var(--accent)40` is not a tint;
 // it's invalid, and the declaration is dropped). Use the token, or
 // `color-mix(in srgb, var(--token) N%, transparent)` for a tint. Shadows are
-// `--shadow-sm`, `--shadow-md` and `--shadow-lg`; what dims a page is
+// `--shadow-card` and `--shadow-raised`; what dims a page is
 // `--backdrop`. The tokens are in shared/kit/tokens.css (the roles, painted
 // by shared/kit/look.ts) and shared/style.css.
 //
@@ -20,6 +20,10 @@
 //      camera's black): `/* lint: literal — why */` on the declaration's
 //      line or the line above. The reason after the dash is required.
 //
+// And no legacy name (Lift 7, #1487): `var(--bg)`, `var(--dim)`,
+// `var(--surface)` … went for the roles they aliased, in a stylesheet or a
+// .ts/.tsx's inline style alike (`legacy()`, LEGACY's map says which role).
+//
 //   node scripts/check-colour.mjs [src]
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -29,6 +33,20 @@ const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g;
 const FUNC = /\b(?:rgba?|hsla?)\(/gi;
 const TINT = /var\(--[\w-]+\)[0-9a-fA-F]{2,8}(?![\w.%-])/g;
 const MARK = /lint:\s*literal\s*[—–-]+\s*\S/;
+/** Today's names before the roles, and the role each went to (tokens.css). */
+export const LEGACY = {
+  bg: "canvas", fg: "ink", dim: "ink-dim", subtle: "ink-dim", muted: "ink-faint", surface: "section", letterbox: "well", raised: "card-raised",
+  "raised-hover": "hover", divider: "line", "on-color": "on-accent", danger: "fail", ok: "done", merged: "done", warn: "needs", peach: "needs",
+  info: "review", teal: "review", pink: "review", "shadow-sm": "shadow-card", "shadow-md": "shadow-raised", "text-xs": "text-label",
+  "text-sm": "text-meta", "text-md": "text-body", "text-lg": "text-title", "text-2xl": "text-hero", "card-radius": "radius",
+  "btn-radius": "radius-control", "field-radius": "radius-control",
+};
+const OLD = new RegExp(`var\\(--(${Object.keys(LEGACY).sort((a, b) => b.length - a.length).map((k) => k.replace("-", "\\-")).join("|")})(?=[,)\\s])`, "g");
+
+/** Each legacy name `text` (a stylesheet or a script) uses, with its line. */
+export function legacy(text, file) {
+  return [...text.matchAll(OLD)].map((m) => ({ file, line: text.slice(0, m.index).split("\n").length, name: m[1] }));
+}
 const MASK = /^(?:-webkit-)?mask(?:-[\w-]+)?$/;
 const TOKEN_SELECTOR = /^(?::root|html\[data-[^\]]+\])$/;
 const TOKEN_FILES = new Set(["shared/kit/tokens.css", "shared/style.css"]);
@@ -81,11 +99,11 @@ export function offenders(css, file) {
   return out;
 }
 
-function walk(dir, acc = []) {
+function walk(dir, acc = [], ends = [".css"]) {
   for (const f of readdirSync(dir)) {
     const p = join(dir, f);
-    if (statSync(p).isDirectory()) walk(p, acc);
-    else if (p.endsWith(".css")) acc.push(p);
+    if (statSync(p).isDirectory()) walk(p, acc, ends);
+    else if (ends.some((e) => p.endsWith(e))) acc.push(p);
   }
   return acc;
 }
@@ -94,5 +112,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const src = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "src");
   const bad = walk(src).flatMap((p) => offenders(readFileSync(p, "utf8"), relative(src, p).replaceAll("\\", "/")));
   for (const b of bad) console.error(`${b.file}:${b.line}: ${b.prop}: ${b.found.join(" ")} is a raw colour. Use a palette token, or color-mix() of one (scripts/check-colour.mjs).`);
-  process.exit(bad.length ? 1 : 0);
+  const old = walk(src, [], [".css", ".ts", ".tsx"]).flatMap((p) => legacy(readFileSync(p, "utf8"), relative(src, p).replaceAll("\\", "/")));
+  for (const o of old) console.error(`${o.file}:${o.line}: --${o.name} went in Lift 7: use --${LEGACY[o.name]}, its role (shared/kit/tokens.css).`);
+  process.exit(bad.length || old.length ? 1 : 0);
 }

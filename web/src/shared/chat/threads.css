@@ -9,16 +9,16 @@
   margin-top: 4px;
   padding: 3px 8px 3px 4px;
   border: 1px solid transparent;
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   color: var(--accent);
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
   text-align: left;
 }
 
 .thread-footer:hover,
 .thread-footer:focus-visible {
   border-color: var(--line);
-  background: var(--surface);
+  background: var(--section);
 }
 
 .thread-footer-faces {
@@ -30,7 +30,7 @@
   margin-left: -4px;
   border-radius: 5px;
   font-size: 9px; /* off-scale: avatar initials */
-  box-shadow: 0 0 0 2px var(--bg);
+  box-shadow: 0 0 0 2px var(--canvas);
 }
 
 .thread-footer-faces .msg-avatar:first-child {
@@ -49,7 +49,7 @@
 }
 
 .thread-footer-go {
-  color: var(--dim);
+  color: var(--ink-dim);
   opacity: 0;
 }
 
@@ -62,8 +62,8 @@
   display: block;
   margin-bottom: 2px;
   padding: 0;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 .reply-link:hover {
@@ -104,7 +104,7 @@
   width: auto;
   padding: 0 10px;
   border: 1px solid var(--line);
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 .thread-also {
@@ -112,8 +112,8 @@
   align-items: center;
   gap: 6px;
   padding: 4px 2px 0;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   cursor: pointer;
 }
 
@@ -132,7 +132,7 @@
     z-index: 3;
     width: min(420px, 100%);
     /* UI audit #198: the shared shadow, lighter on a light palette. */
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-raised);
   }
 }
 
@@ -158,8 +158,8 @@
   display: block;
   margin-top: 6px;
   overflow: hidden;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -176,8 +176,8 @@
   bottom: 8px;
   padding: 1px 6px;
   border-radius: var(--tag-radius);
-  color: var(--dim);
-  font-size: var(--text-xs);
+  color: var(--ink-dim);
+  font-size: var(--text-label);
   opacity: 0;
 }
 
@@ -187,8 +187,8 @@
 }
 
 .thread-unfollow:hover {
-  background: var(--raised);
-  color: var(--fg);
+  background: var(--card-raised);
+  color: var(--ink);
 }
 
 /* There is no hover on a phone: the switch stays. */
@@ -207,7 +207,7 @@
   inset: var(--bar-h) 0 0 auto;
   width: min(420px, 100vw);
   flex-direction: row;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-raised);
 }
 
 .thread-beside .chat-details.chat-thread-panel {

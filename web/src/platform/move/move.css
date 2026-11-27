@@ -31,7 +31,7 @@
 
 .move-sub {
   margin: var(--space-4) 0 var(--space-2);
-  font-size: var(--text-md);
+  font-size: var(--text-body);
 }
 
 .move-notes {

@@ -16,9 +16,9 @@
 .board-confirm {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid var(--warn);
+  border: 1px solid var(--needs);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--section);
 }
 
 /* The lanes are columns, so the page takes more than the 880px reading column of its siblings. */
@@ -260,7 +260,7 @@
 
 .board-drawer-col-title {
   margin: var(--space-3) 0 var(--space-2);
-  font-size: var(--text-lg);
+  font-size: var(--text-title);
   font-weight: 600;
 }
 
@@ -331,9 +331,9 @@
 .board-said {
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--section);
 }
 
 .board-chips {
@@ -374,7 +374,7 @@
 
 .board-ptr {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
 
@@ -431,7 +431,7 @@
 
 .board-fact {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
 
@@ -441,22 +441,22 @@
   flex-wrap: wrap;
   gap: 6px 18px;
   margin: 6px 0;
-  font: 500 var(--text-sm)/1.2 var(--font-mono);
-  color: var(--dim);
+  font: 500 var(--text-meta)/1.2 var(--font-mono);
+  color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
 
 .board .sw-stats b {
   display: block;
   font: 700 var(--text-xl)/1 var(--font-mono);
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .board .sw-stats .board-needs-you-button {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--dim);
+  color: var(--ink-dim);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -524,7 +524,7 @@
   max-height: 16em;
   overflow-y: auto;
   border-radius: calc(var(--pane-radius) + 2px);
-  background: var(--raised);
+  background: var(--card-raised);
   box-shadow: var(--shadow-lg);
 }
 
@@ -537,13 +537,13 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
 .board-pick-list li.active,
 .board-pick-list li:hover {
-  background: var(--raised-hover);
+  background: var(--hover);
 }
 
 .board-pick-title {
@@ -560,8 +560,8 @@
 }
 
 .board-bad {
-  color: var(--danger);
-  font-size: var(--text-sm);
+  color: var(--fail);
+  font-size: var(--text-meta);
 }
 
 .board-list a {
@@ -596,7 +596,7 @@
 
 @container (max-width: 519px) {
   .page-head.board-head h1.named {
-    font-size: var(--text-2xl);
+    font-size: var(--text-hero);
   }
 }
 
@@ -655,7 +655,7 @@
   margin: 0 -10px;
   padding: 8px 34px 8px 10px;
   border: 1px solid transparent;
-  border-radius: var(--btn-radius, 6px);
+  border-radius: var(--radius-control, 6px);
   text-align: start;
   cursor: text;
 }
@@ -663,7 +663,7 @@
 .board-goal.editable:hover,
 .board-goal.editable:focus-visible {
   border-color: var(--line);
-  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
   outline: 0;
 }
 
@@ -672,7 +672,7 @@
 }
 
 .board-goal.empty {
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 .board-goal-pencil {
@@ -680,7 +680,7 @@
   top: 9px;
   right: 10px;
   display: inline-flex;
-  color: var(--dim);
+  color: var(--ink-dim);
   opacity: 0;
 }
 
@@ -709,10 +709,10 @@
 
 .board-docs-head {
   margin: 0 0 4px;
-  font: 600 var(--text-xs)/1.4 var(--font-mono);
+  font: 600 var(--text-label)/1.4 var(--font-mono);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 .board-doc-row {
@@ -722,12 +722,12 @@
   min-width: 0;
   margin: 0 -6px;
   padding: 3px 6px;
-  border-radius: var(--btn-radius, 6px);
+  border-radius: var(--radius-control, 6px);
 }
 
 .board-doc-row:hover,
 .board-doc-row:focus-within {
-  background: var(--raised);
+  background: var(--card-raised);
 }
 
 .board-doc-row .board-ptr {
@@ -736,8 +736,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg);
-  font: var(--text-xs)/1.5 var(--font-mono);
+  color: var(--ink);
+  font: var(--text-label)/1.5 var(--font-mono);
   text-decoration: none;
 }
 
@@ -774,7 +774,7 @@
   background: none;
   color: var(--accent);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
   font-weight: 600;
   cursor: pointer;
 }
@@ -795,9 +795,9 @@
   align-items: flex-start;
   gap: 6px;
   padding: 8px;
-  border: 1px solid var(--divider);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--surface);
+  background: var(--section);
 }
 
 .board-doc-picker input {
@@ -885,7 +885,7 @@
 }
 
 .platform-section a.card-title {
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .platform-section a.card-title::after {
@@ -914,7 +914,7 @@
 }
 
 .board-ask {
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  background: color-mix(in srgb, var(--needs) 8%, transparent);
 }
 
 /* The group's menu button sits at the end of its header. */
@@ -926,10 +926,10 @@
    (../ui/side-sheet.css); what is inside it is drawn here. */
 .board-drawer h3 {
   margin: 14px 0 4px;
-  font-size: var(--text-xs);
+  font-size: var(--text-label);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 .board-drawer .md {
@@ -938,7 +938,7 @@
 
 .board-drawer-comment {
   padding: 6px 0;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid var(--line);
 }
 
 .board-checks {
@@ -1009,7 +1009,7 @@
 /* A board from a Plane epic: where it comes from, under the title, and the group of them on a list. */
 .board-source {
   margin: 4px 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 .board-plane-group {
@@ -1018,7 +1018,7 @@
 
 .board-plane-group h3 {
   margin: 16px 0 8px;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
 }
 
 /* A card dragged to another group (#664): the group under it takes it

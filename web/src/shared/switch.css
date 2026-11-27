@@ -8,7 +8,7 @@
    would make it a field. */
 
 :root input.sw-switch {
-  --knob: var(--dim);
+  --knob: var(--ink-dim);
   flex: none;
   box-sizing: border-box;
   width: 32px;
@@ -18,7 +18,7 @@
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: radial-gradient(circle closest-side, var(--knob) 0 calc(100% - 1px), transparent 100%) 0% 50% / 16px 16px no-repeat,
-    var(--raised);
+    var(--card-raised);
   appearance: none;
   -webkit-appearance: none;
   vertical-align: middle;
@@ -27,17 +27,17 @@
 }
 
 :root input.sw-switch:checked {
-  --knob: var(--on-color);
+  --knob: var(--on-accent);
   border-color: var(--accent);
   background-color: var(--accent-fill);
   background-position: 100% 50%;
 }
 
 :root input.sw-switch.partial {
-  --knob: var(--warn);
-  border-color: var(--warn);
+  --knob: var(--needs);
+  border-color: var(--needs);
   border-style: dashed;
-  background-color: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  background-color: color-mix(in srgb, var(--needs) 18%, var(--section));
   background-position: 50% 50%;
 }
 
