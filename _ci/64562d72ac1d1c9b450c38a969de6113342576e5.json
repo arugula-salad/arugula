@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "commit": "64562d72ac1d1c9b450c38a969de6113342576e5",
+  "branch": "main",
+  "state": "pending",
+  "at": "2026-11-27T17:36:31Z",
+  "phases": {
+    "lint": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "lint",
+          "id": 140654169507,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654169507"
+        },
+        {
+          "name": "changes",
+          "id": 140654170083,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654170083"
+        },
+        {
+          "name": "suite-changed",
+          "id": 140655181897,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225254/job/140655181897"
+        }
+      ]
+    },
+    "build": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "build",
+          "id": 140654588576,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588576"
+        },
+        {
+          "name": "static",
+          "id": 140654588558,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588558"
+        },
+        {
+          "name": "clippy",
+          "id": 140654588656,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588656"
+        }
+      ]
+    },
+    "test": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "test",
+          "id": 140654588650,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588650"
+        },
+        {
+          "name": "test-2",
+          "id": 140654588627,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588627"
+        }
+      ]
+    },
+    "e2e": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "e2e-image",
+          "id": 140654588562,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588562"
+        }
+      ]
+    },
+    "claims": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop-xvfb",
+          "id": 140654588616,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588616"
+        }
+      ]
+    },
+    "macos": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "macos (test)",
+          "id": 140654588655,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225323/job/140654588655"
+        }
+      ]
+    },
+    "windows": {
+      "verdict": "pending",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "workspace",
+          "id": 140655523262,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225254/job/140655523262"
+        },
+        {
+          "name": "workspace-clippy",
+          "id": 140655523238,
+          "conclusion": null,
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225254/job/140655523238"
+        }
+      ]
+    },
+    "windows-desktop": {
+      "verdict": "pass",
+      "build": "newest",
+      "runs": [
+        {
+          "name": "desktop",
+          "id": 140652817163,
+          "conclusion": "success",
+          "url": "https://github.com/arugula-salad/arugula/actions/runs/46042225305/job/140652817163"
+        }
+      ]
+    }
+  }
+}
