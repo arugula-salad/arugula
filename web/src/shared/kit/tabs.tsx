@@ -1,5 +1,5 @@
-// Tabs (kit §4.1, 11, the tabs half; panes come with the board in Lift 5b):
-// an icon, a title, a count and a close. The arrow keys, Home and End move
+// Tabs (kit §4.1, 11, the tabs half; the panes are ./panes/): an icon, a
+// title, a count, a dot (new, or waiting on you) and a close. The arrow keys, Home and End move
 // between them; Delete closes the focused one.
 
 import type { ComponentChildren } from "preact";
@@ -13,6 +13,8 @@ export interface TabItem {
   count?: number;
   /** It can be closed. */
   closes?: boolean;
+  /** Something new or waiting on you is in it, and you haven't looked. */
+  dot?: boolean;
   /** A visitor, not one of the place's own (the agent panel's peeked agent): its title in italics. */
   peek?: boolean;
 }
@@ -36,6 +38,7 @@ export function Tabs({ label, tabs, current, onPick, onClose }: { label: string;
             {t.icon}
             <span class="k-tab-title">{t.title}</span>
             {t.count ? <span class="m-meta">{t.count}</span> : null}
+            {t.dot && <span class="k-pane-dot" aria-label="New" data-tab-dot />}
           </button>,
           t.closes && onClose ? (
             <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} data-tab-x={t.id} onClick={() => onClose(t.id)}>

@@ -413,6 +413,10 @@ export class ChatStore {
         this.inbox = { count: ev.count, by_project: ev.by_project ?? {}, heard: (this.inbox?.heard ?? 0) + 1 };
         this.emit();
         return;
+      case "layout":
+        // A place's layout changed (Arugula #1496): its page reads it again (`onObject(place)`).
+        this.objectChanged(ev.place);
+        return;
       case "github":
         this.toGithub.set(`${ev.room} ${ev.seq}`, ev.github);
         this.emit();

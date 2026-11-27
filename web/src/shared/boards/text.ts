@@ -767,6 +767,8 @@ export const NEED_KIND: Record<string, string> = {
   deploy_approval: "approval",
   changes_requested: "changes",
   todo: "todo",
+  // A tab an agent opened for you on a place (Lift 5b): it waits there.
+  for_you: "tab",
 };
 
 /** The agents' items on a board's issues (Arugula #1469), by the row each is on: the Inbox's open decisions whose `subject.issue` is a row's native issue, oldest first. A board ask isn't one: the view has it as the row's `ask`. */

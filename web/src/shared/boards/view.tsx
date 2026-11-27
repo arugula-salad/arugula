@@ -29,7 +29,8 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState, useContext } from "preact/hooks";
-import type { BoardLead, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardLead, BoardAnsweredAsk, BoardGroup, BoardPointer, LayoutNewPane, LayoutPane, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { TabItem } from "../kit/tabs";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
@@ -49,7 +50,10 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, askNeed, deskTabs, RowItems, rowItemWords, useBoardInbox } from "./desk";
+import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
+import { boardPlace, ChangedLine, forYou, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
+import { busyNow, HOME, usePlaceLayout } from "../place-layout";
+import { Panes, type PaneItem } from "../kit/panes/panes";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
 import { NeedRow } from "../kit/need-row";
@@ -61,6 +65,9 @@ import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
 import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+
+/** The narrowest a pane gets before the next one stacks under it: at 1440, the board and two panes beside it, the third stacked. */
+const PANE_MIN = 280;
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -175,9 +182,21 @@ export function BoardPanel({
   const [goalDraft, setGoalDraft] = useState<string | null>(null);
   const desk = placement === "desk";
   const phone = usePhone();
-  /** The desk's open tab (the board, a Doc's id or a PR's), and the PRs opened from the fold as tabs. */
-  const [tab, setTab] = useState("board");
-  const [prTabs, setPrTabs] = useState<string[]>([]);
+  /** The desk's tab now: the board's own (home), or one opened beside it. Only you switch it (Lift 5b): an agent's tab never becomes current. */
+  const [tab, setTabNow] = useState(HOME);
+  const setTab = (t: string) => (busyNow(), setTabNow(t));
+  /** The pane you focused (a click), and the one you maximised (⤢, esc back). */
+  const [focused, setFocused] = useState<string | null>(null);
+  const [max, setMax] = useState<string | null>(null);
+  /** Tabs you've looked at since they opened: their dot goes. */
+  const [looked, setLooked] = useState<ReadonlySet<string>>(new Set());
+  const arranged = usePlaceLayout(desk && shown ? boardPlace(id) : null, (why) => toast(`Couldn't change the layout: ${why}`));
+  const layout = arranged.layout;
+  const tabNow = layout.tabs.find((t) => t.id === tab) ?? layout.tabs[0]!;
+  useEffect(() => {
+    if (tabNow.id !== tab) setTabNow(HOME);
+    setLooked((s) => (s.has(tabNow.id) ? s : new Set([...s, tabNow.id])));
+  }, [tabNow.id]);
   /** The desk's find bar is shown (Filter, `f`, `/`); a find in use keeps it. */
   const [filterOpen, setFilterOpen] = useState(false);
   /** Link a Doc's picker is open (the desk's ⋯). */
@@ -185,26 +204,28 @@ export function BoardPanel({
   /** Add row's Sheet is open (the desk's Add row, `a`). */
   const [adding, setAdding] = useState(false);
   const prs = view ? openPrs(view) : [];
-  const tabs = view ? deskTabs(view, prs.filter((p) => prTabs.includes(p.id))) : [];
+  const tabs: TabItem[] = layout.tabs.map((t, i) => ({ id: t.id, title: tabTitle(t, view?.board.title ?? "Board"), count: i + 1, closes: t.id !== HOME, dot: t.id !== tab && ((t.for_you && !looked.has(t.id)) || t.panes.some((p) => arranged.quiet.has(p.id))) }));
   // The desk's keys (Lift 5a): its tabs by number, a row at a time, Filter, Add row and the lead.
   const tile = (by: number) => {
     const all = [...document.querySelectorAll<HTMLElement>(`[data-board="${id}"] [data-board-row]`)];
     const at = all.indexOf(document.activeElement as HTMLElement);
     all[Math.max(0, Math.min(all.length - 1, at < 0 ? 0 : at + by))]?.focus();
   };
-  const openFind = () => (setTab("board"), setFilterOpen(true), requestAnimationFrame(() => findBox.current?.focus()));
+  const openFind = () => (setTab(HOME), setFilterOpen(true), requestAnimationFrame(() => findBox.current?.focus()));
   useBindings(
     desk && shown && view
       ? [
           { id: "board.tab", label: "A tab of the board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4"), hint: { mac: "1–4", other: "1–4" }, run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
+          // Leaving a maximised pane is Esc's back; the panes' other actions are their buttons (no new keys until #1534's list).
+          { id: "board.pane.back", label: "Back from a maximised pane", group: "panes", keys: both("key:escape"), hint: { mac: "esc", other: "esc" }, when: () => !!max, run: () => setMax(null) },
           { id: "board.next", label: "The next row", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => tile(1) },
           { id: "board.prev", label: "The row before", keys: both("key:k"), run: () => tile(-1) },
           { id: "board.find", label: "Filter the rows", keys: both("key:f", "key:/"), run: openFind },
-          { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab("board"), setAdding(true)) },
+          { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab(HOME), setAdding(true)) },
           { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea")?.focus() },
         ]
       : [],
-    [desk, shown, !!view, tabs.map((t) => t.id).join(), id],
+    [desk, shown, !!view, tabs.map((t) => t.id).join(), id, max],
   );
   // The agents' items on the board's issues, from the project's Inbox (Arugula #1469).
   const inbox = useBoardInbox(placement === "desk" ? view : null);
@@ -361,9 +382,8 @@ export function BoardPanel({
     ...(more.length ? ["separator" as const, ...more] : []),
     ...(extra.length ? ["separator" as const, ...extra] : []),
   ];
-  const openPr = (p: OpenPr) => (setPrTabs((was) => (was.includes(p.id) ? was : [...was, p.id])), setTab(p.id));
-  const closeTab = (t: string) => (setPrTabs((was) => was.filter((x) => x !== t)), tab === t && setTab("board"));
   const grouped = !!view.groups?.length;
+
 
   const findBar = (
     <div class="board-find" role="search" data-board-find>
@@ -437,6 +457,139 @@ export function BoardPanel({
     />
   );
 
+  /** A group of the board (its section: the heading and its lanes), or the lanes of a board with none. */
+  const drawSection = (s: ReturnType<typeof sections>[number]) => {
+    const key = groupFold(s.group?.id ?? null);
+    const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
+    // A find hides what doesn't match, and opens a heading that holds a match without saving it.
+    if (narrows && held === 0) return null;
+    const folded = grouped && !narrows && isFolded(folds, key);
+    const lanes = (
+      <div class="board-lanes">
+        {s.lanes.map((z) => {
+          if (narrows && z.rows.length === 0) return null;
+          const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
+          return (
+          <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} opened={drawer} asks={!desk} />
+          );
+        })}
+      </div>
+    );
+    // No groups: the lanes alone, as before.
+    if (!grouped) return lanes;
+    const title = s.group?.title ?? "No group";
+    const rows = held;
+    return (
+      <GroupDrop key={s.group?.id ?? "none"} group={s.group?.id ?? null} take={write ? dropRow : undefined}>
+        <SectionHead
+          rule
+          titleData="board-group-title"
+          title={
+            <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
+              <ChevronIcon open={!folded} />
+              {title}
+              {folded && ` · ${rows}`}
+            </button>
+          }
+          count={folded ? undefined : rows}
+          action={
+            <>
+              {s.group && (
+                <span class="board-group-progress dim" data-board-group-progress>
+                  {groupLine(s.group.progress)}
+                </span>
+              )}
+              {s.group && write && (
+                <IconButton label={`Group actions: ${s.group.title}`} class="bar-btn sq board-more" data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                  <MoreIcon size="sm" />
+                </IconButton>
+              )}
+            </>
+          }
+        />
+        {!folded && lanes}
+      </GroupDrop>
+    );
+  };
+
+  // The desk's panes (Lift 5b): the board's groups are its default panes;
+  // what the lead and you opened is beside them, from the layout record.
+  // What you open takes the focus; what the lead opens never does.
+  const defaultName = (sec: ReturnType<typeof sections>[number]) => (grouped ? (sec.group?.id ?? "none") : LANES);
+  const defaultTitle = (name: string) => (name === LANES ? "Board" : name === "none" ? "No group" : ((view.groups ?? []).find((g) => g.id === name)?.title ?? name));
+  const show = async (pane: LayoutNewPane) => {
+    const r = await arranged.change({ op: "show", pane, intent: "beside", tab: tabNow.id, in_place_of: null });
+    if (r?.pane) setFocused(r.pane);
+  };
+  const openPr = (p: OpenPr) => void show({ kind: "pr", ref: p.live.repo ? `${p.live.repo}#${p.live.number}` : p.label, title: `#${p.live.number} ${p.live.title}`, machine: null, state: null });
+  const linked = (view.docs ?? []).filter((d) => d.pointer.kind === "doc");
+  const addPane: MenuItem[] = [
+    ...linked.map((d) => ({ label: d.title, run: () => void show({ kind: "doc", ref: "id" in d.pointer ? d.pointer.id : d.id, title: d.title, machine: null, state: null }), attrs: { "data-board-add-pane": d.id } })),
+    ...prs.map((p) => ({ label: `${p.label} ${p.live.title}`, run: () => openPr(p), attrs: { "data-board-add-pane": p.id } })),
+  ];
+  const closePane = (pane: string) => {
+    void arranged.change({ op: "close", pane });
+    if (focused === pane) setFocused(null);
+    if (max === pane) setMax(null);
+  };
+  const maxPane = (pane: string, opened: boolean) => {
+    if (max === pane) return setMax(null);
+    setMax(pane);
+    setFocused(pane);
+    if (opened) void arranged.change({ op: "maximise", pane });
+  };
+  const reset = () => (setMax(null), setFocused(null), void arranged.change({ op: "reset" }));
+  /** The board's own panes: a Doc, a PR's or a card's drawer. */
+  const own = (p: LayoutPane) => {
+    if (p.kind === "doc") {
+      const d = linked.find((x) => "id" in x.pointer && x.pointer.id === p.ref);
+      const unlink = d && write ? () => (closePane(p.id), void act(() => boards.removeDoc(id, d.id))) : undefined;
+      const menu = unlink && d ? [{ label: "Take off this board", run: unlink, attrs: { "data-board-doc-remove": d.id } }] : [];
+      if (d?.missing) return <DocLink d={d} project={view.board.project} platform={platform} remove={unlink} />;
+      return docTab ? docTab(p.ref, menu) : null;
+    }
+    const r = p.kind === "pr" ? prOf(p.ref, prs)?.row : p.kind === "card" ? rowOf(p.ref, view) : undefined;
+    return r ? <Drawer place="column" r={r} platform={platform} close={() => closePane(p.id)} project={view.board.project} others={allRows} write={write} act={act} id={id} /> : null;
+  };
+  const item = (p: LayoutPane): PaneItem =>
+    paneItem(p, {
+      body: <PaneBody p={p} project={view.board.project} platform={platform} own={own} />,
+      meta: paneMeta(p, defaultTitle),
+      dot: arranged.quiet.has(p.id),
+      arriving: arranged.arrived.has(p.id),
+      mine: !p.opened_by.machine,
+      move: tabNow.id === HOME ? () => void arranged.change({ op: "move", pane: p.id, tab: null, index: null }) : undefined,
+      max: () => maxPane(p.id, true),
+      close: () => closePane(p.id),
+      restore: p.in_place_of ? { name: defaultTitle(p.in_place_of), run: () => closePane(p.id) } : undefined,
+    });
+  const home = layout.tabs[0]!;
+  const defaults: PaneItem[] =
+    tabNow.id !== HOME
+      ? []
+      : sections(narrowed).flatMap((sec): PaneItem[] => {
+          const name = defaultName(sec);
+          if (layout.closed_defaults.includes(name)) return [];
+          // The lead shows something in its place for a while: ↺ puts it back.
+          const instead = home.panes.find((p) => p.in_place_of === name);
+          if (instead) return [item(instead)];
+          const body = drawSection(sec);
+          return body ? [{ id: name, title: defaultTitle(name), default: true, size: layout.default_sizes[name], max: () => maxPane(name, false), close: () => closePane(name), body, data: { "data-board-default": name } }] : [];
+        });
+  const openedPanes = tabNow.panes.filter((p) => tabNow.id !== HOME || !p.in_place_of).map(item);
+  const panes = (
+    <Panes
+      label={tabNow.id === HOME ? view.board.title : tabTitle(tabNow, view.board.title)}
+      defaults={defaults}
+      opened={openedPanes}
+      focused={focused}
+      max={max}
+      min={PANE_MIN}
+      onFocus={(pane) => (pane !== focused && setFocused(pane), arranged.seen(pane))}
+      onResize={(pane, size) => void arranged.change({ op: "resize", pane, size })}
+    />
+  );
+
   const board = (
     <div class="board" data-board={id}>
       {desk ? (
@@ -446,10 +599,17 @@ export function BoardPanel({
           <DeskHead
             view={view}
             write={write}
-            more={deskMore}
+            more={[...deskMore, ...layoutItems(layout, reset, (pane) => void arranged.change({ op: "reopen", pane }))]}
             prs={prs}
             actions={
               <>
+                <ChangedLine layout={layout} reset={reset} />
+                {addPane.length > 0 && (
+                  <button type="button" class="secondary small" aria-haspopup="menu" data-board-add-pane-menu onClick={(e) => menuAt(e, addPane)}>
+                    <PlusIcon size="xs" />
+                    pane
+                  </button>
+                )}
                 <button type="button" class="secondary small" aria-pressed={filterOpen || narrows} aria-keyshortcuts="f" data-board-filter onClick={() => (filterOpen && !narrows ? setFilterOpen(false) : openFind())}>
                   Filter
                 </button>
@@ -500,59 +660,7 @@ export function BoardPanel({
           }
         />
       )}
-      {sections(narrowed).map((s) => {
-        const key = groupFold(s.group?.id ?? null);
-        const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
-        // A find hides what doesn't match, and opens a heading that holds a match without saving it.
-        if (narrows && held === 0) return null;
-        const folded = grouped && !narrows && isFolded(folds, key);
-        const lanes = (
-          <div class="board-lanes">
-            {s.lanes.map((z) => {
-              if (narrows && z.rows.length === 0) return null;
-              const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
-              return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} opened={drawer} asks={!desk} />
-              );
-            })}
-          </div>
-        );
-        // No groups: the lanes alone, as before.
-        if (!grouped) return lanes;
-        const title = s.group?.title ?? "No group";
-        const rows = held;
-        return (
-          <GroupDrop key={s.group?.id ?? "none"} group={s.group?.id ?? null} take={write ? dropRow : undefined}>
-            <SectionHead
-              rule
-              titleData="board-group-title"
-              title={
-                <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
-                  <ChevronIcon open={!folded} />
-                  {title}
-                  {folded && ` · ${rows}`}
-                </button>
-              }
-              count={folded ? undefined : rows}
-              action={
-                <>
-                  {s.group && (
-                    <span class="board-group-progress dim" data-board-group-progress>
-                      {groupLine(s.group.progress)}
-                    </span>
-                  )}
-                  {s.group && write && (
-                    <IconButton label={`Group actions: ${s.group.title}`} class="bar-btn sq board-more" data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
-                      <MoreIcon size="sm" />
-                    </IconButton>
-                  )}
-                </>
-              }
-            />
-            {!folded && lanes}
-          </GroupDrop>
-        );
-      })}
+      {desk ? panes : sections(narrowed).map(drawSection)}
       {view.said && (
         <p class="board-said" role="status" data-board-said>
           {view.said}
@@ -574,30 +682,24 @@ export function BoardPanel({
   );
   if (!desk) return <CardSessions.Provider value={byCard}>{board}</CardSessions.Provider>;
 
-  const doc = (view.docs ?? []).find((d) => d.id === tab);
-  const pr = prs.find((p) => p.id === tab);
-  // A Doc's tab takes it off the board (Arugula #1524): in its own ⋯, or the × of one that's gone.
-  const unlink = doc && write ? () => (setTab("board"), void act(() => boards.removeDoc(id, doc.id))) : undefined;
+  // While panes are open beside the board, its right column narrows to a quarter.
+  const beside = openedPanes.length > 0 || tabNow.id !== HOME;
   return (
     <CardSessions.Provider value={byCard}>
       <RowItems.Provider value={itemWords}>
-        <div class="board-desk" data-board-desk={id}>
+        <div class={beside ? "board-desk is-beside" : "board-desk"} data-board-desk={id} data-board-beside={beside ? "" : undefined}>
           <section class="board-desk-main" aria-label={view.board.title}>
-            <DeskTabs tabs={tabs} current={doc || pr ? tab : "board"} pick={setTab} close={closeTab} />
-            {doc ? (
-              <div class="board-desk-tab" data-board-tab-doc={doc.id}>
-                {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id, unlink ? [{ label: "Take off this board", run: unlink, attrs: { "data-board-doc-remove": doc.id } }] : []) : <DocLink d={doc} project={view.board.project} platform={platform} remove={unlink} />}
-              </div>
-            ) : pr ? (
-              <div class="board-desk-tab" data-board-tab-pr={pr.id}>
-                <Drawer place="column" r={pr.row} platform={platform} close={() => setTab("board")} project={view.board.project} others={allRows} write={write} act={act} id={id} />
-              </div>
-            ) : (
+            <DeskTabs tabs={tabs} current={tabNow.id} pick={setTab} close={(t) => (void arranged.change({ op: "close_tab", tab: t }), t === tab && setTab(HOME))} />
+            {tabNow.id === HOME ? (
               board
+            ) : (
+              <div class="board-desk-tab" data-board-tab={tabNow.id}>
+                {panes}
+              </div>
             )}
           </section>
           <div class="board-desk-side">
-            <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} />
+            <BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />
             <LeadPanel view={view} id={id} phone={phone} />
           </div>
         </div>

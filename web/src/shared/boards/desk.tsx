@@ -1,7 +1,7 @@
 // The board's desk (Lift 5a, plan §3.3; "desk" is the code's word, never
 // the screen's): what the Boards page draws around a board's lanes. On the
-// left two thirds, the tabs (`1`–`4`: the board, its Docs, a PR opened from
-// the fold), the red alert strip, the open PRs folded one row each, and the
+// left two thirds, the tabs (`1`–`6`: the board's own, then those opened
+// beside it, Lift 5b's ./arranged.tsx), the red alert strip, the open PRs folded one row each, and the
 // title block with its lead, machine and progress. On the right third, the
 // board's Needs you as NeedRows (its asks, and the agents' asks and to-dos
 // on its issues from the project's Inbox, Arugula #1469; a teammate's
@@ -28,14 +28,6 @@ import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
 import { boards } from "./store";
 import { boardItems, forTeammateFold, itemFor, itemNeed, itemWord, prWord, redLine, stalledFor, type OpenPr } from "./text";
-
-/** The tabs a board's number keys reach: Board, then three more. */
-export const DESK_KEYS = 4;
-
-/** The desk's tabs: the board, each linked Doc, and each PR opened from the fold (closable). */
-export function deskTabs(view: BoardView, prs: OpenPr[]): TabItem[] {
-  return [{ id: "board", title: "Board" }, ...(view.docs ?? []).map((d) => ({ id: d.id, title: d.title })), ...prs.map((p) => ({ id: p.id, title: p.label, closes: true }))];
-}
 
 export function DeskTabs({ tabs, current, pick, close }: { tabs: TabItem[]; current: string; pick: (id: string) => void; close: (id: string) => void }) {
   return (
@@ -120,6 +112,8 @@ export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
 /** The project's Inbox, for a board: the agents' items on its rows' issues (Arugula #1469), who reads, and how they answer. Null where the page has no Inbox (the shell's block: board asks alone). Read again when the stream says the Inbox changed, and after an answer. */
 export interface BoardInbox {
   byRow: Map<string, InboxItem[]>;
+  /** All of the project's items, for those not on a row (a tab an agent opened for you). */
+  items: InboxItem[];
   me: string | null;
   name: (account: string) => string;
   answer: (i: InboxItem, choice: string, note?: string) => Promise<boolean>;
@@ -148,6 +142,7 @@ export function useBoardInbox(view: BoardView | null): BoardInbox | null {
       view.zones.flatMap((z) => z.rows),
       read.items,
     ),
+    items: read.items,
     me: inbox.me(),
     name: inbox.name,
     answer: (i, choice, note) =>
@@ -181,11 +176,13 @@ interface Asked {
   answer?: (o: NeedOption, note?: string) => void;
   /** Where it's answered, when not here: its card, its session. */
   open?: string;
+  /** Or the tab it's in, on this board. */
+  go?: () => void;
   data: Record<string, string>;
 }
 
 /** The board's Needs you, at the top of the right third: what waits on you as NeedRows (its asks, and the agents' asks and to-dos on its issues, oldest first), the first open; a teammate's folded under one neutral row each (`· 1 for Jake ›`). */
-export function BoardNeeds({ view, answer, inbox, platform }: { view: BoardView; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean>; inbox: BoardInbox | null; platform: (path: string) => string | undefined }) {
+export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view: BoardView; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean>; inbox: BoardInbox | null; platform: (path: string) => string | undefined; tabs?: { item: InboxItem; n: number; go: () => void }[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
@@ -216,6 +213,18 @@ export function BoardNeeds({ view, answer, inbox, platform }: { view: BoardView;
       });
     }
   }
+  // What an agent put in a tab for you (Lift 5b): its row points at the tab, and only you go there.
+  for (const t of tabs) {
+    const who = inbox ? itemFor(t.item, inbox.me, inbox.name) : "you";
+    all.push({
+      key: t.item.id,
+      who,
+      since: t.item.since,
+      need: { ...itemNeed(t.item, who, undefined, now), kind: t.n > 0 ? `tab ${t.n}` : "tab" },
+      go: t.n > 0 ? t.go : undefined,
+      data: { "data-board-item": t.item.id, "data-board-for-you": t.item.subject.tab ?? "" },
+    });
+  }
   all.sort((a, b) => a.since - b.since);
   const mine = all.filter((x) => x.who === "you");
   const theirs = new Map<string, Asked[]>();
@@ -230,7 +239,11 @@ export function BoardNeeds({ view, answer, inbox, platform }: { view: BoardView;
         onToggle={() => setOpen(shown === x.key ? "" : x.key)}
         onAnswer={x.answer}
         extra={
-          x.open ? (
+          x.go ? (
+            <button type="button" class="k-button is-plain" data-board-item-tab onClick={x.go}>
+              Open tab
+            </button>
+          ) : x.open ? (
             <a class="k-button is-plain" href={x.open} data-board-item-open>
               Open
             </a>

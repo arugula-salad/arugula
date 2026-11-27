@@ -1,5 +1,6 @@
 // A board's own page (Lift 5a, Arugula #1481): the desk. On the left two
-// thirds its tabs (`1`–`4`: the board, its Docs, a PR opened from the fold),
+// thirds its tabs (the board's own, then what's opened beside it: Lift 5b,
+// place-layout.spec.ts),
 // the red alert strip (a mark and an edge, no fill), the open PRs one row
 // each, and the title block (meta, lead, machine, progress); on the right
 // third the board's Needs you as rows, a teammate's asks folded, above the
@@ -150,41 +151,28 @@ test("Needs you takes the agents' items on its issues: yours answered there, a t
   await needs.screenshot({ path: info.outputPath("board-needs-360.png") });
 });
 
-test("tabs: 1 is the board, 2 its Doc; a PR from the fold opens as a tab that closes", async ({ page }) => {
+test("the board's own tab first; its PRs fold one row each, and + pane offers its Docs and PRs (Lift 5b: they open as panes, place-layout.spec)", async ({ page }) => {
   await openDesk(page);
-  const tabs = page.locator("[data-board-tabs] [role=tab]");
-  await expect(tabs).toHaveText(["Board", "Design pass"]);
-  await page.keyboard.press("2");
-  await expect(page.locator('[data-board-tab-doc="bdc_1"]')).toBeVisible();
-  await expect(page.locator(`[data-board="${B}"]`)).toHaveCount(0);
-  await page.keyboard.press("1");
-  await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
+  await expect(page.locator("[data-board-tabs] [role=tab]")).toHaveText(["Product improvements1"]);
   // The PR fold: one row a PR, its queue said.
   const fold = page.locator('[data-board-pr="fi_2868"]');
   await expect(fold).toContainText("#2868 Sidebar caret sits beside the crumb");
   await expect(fold).toContainText("queued");
-  await fold.locator(".k-row-line").click();
-  await expect(tabs).toHaveText(["Board", "Design pass", "#2868"]);
-  await expect(page.locator('[data-board-tab-pr="fi_2868"] [data-board-drawer="row_1443"]')).toBeVisible();
-  await page.getByRole("button", { name: "Close #2868" }).click();
-  await expect(tabs).toHaveText(["Board", "Design pass"]);
-  await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
+  await page.locator("[data-board-add-pane-menu]").click();
+  await expect(page.locator('[role=menu] [data-board-add-pane="bdc_1"]')).toHaveText("Design pass");
+  await expect(page.locator('[role=menu] [data-board-add-pane="fi_2868"]')).toContainText("#2868");
 });
 
-test("a Doc's tab takes it off the board from its ⋯ (Arugula #1524)", async ({ page }) => {
-  const gone: string[] = [];
-  const doc = { id: "pdc_design", project: P, title: "Design pass", author: "acct_a", agent: null, sections: 1, written: 1, rev: 1, created_at: 1, updated_at: 1 };
-  await page.route(`**/api/projects/${P}/docs/pdc_design`, (r) => r.fulfill({ json: { doc, sections: [{ id: "s1", heading: "Why", intent: "", body: "What it's for.", rev: 1 }], assets: [], writer: true, deleter: true, link: null } }));
-  await page.route(`**/api/boards/${B}/docs/bdc_1`, (r) => (gone.push(r.request().method()), r.fulfill({ json: { ...VIEW, docs: [] } })));
+test("before the platform keeps layouts (404), a PR from the fold still opens beside the board, for this page alone", async ({ page }) => {
+  await page.route(`**/api/layouts/*`, (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
   await openDesk(page);
-  await page.keyboard.press("2");
-  const tab = page.locator('[data-board-tab-doc="bdc_1"]');
-  await tab.locator("[data-doc-more]").click();
-  await page.locator('[role=menu] [data-board-doc-remove="bdc_1"]').click();
-  await expect.poll(() => gone).toEqual(["DELETE"]);
-  // Back on the board, with the Doc's tab gone.
-  await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
-  await expect(page.locator("[data-board-tabs] [role=tab]")).toHaveText(["Board"]);
+  await page.locator('[data-board-pr="fi_2868"] .k-row-line').click();
+  const pr = page.locator('[data-layout-pane][data-pane-kind="pr"]');
+  await expect(pr.locator('[data-board-drawer="row_1443"]')).toBeVisible();
+  await expect(page.locator("[data-board-changed]")).toContainText("changed by you");
+  await pr.hover();
+  await pr.locator("[data-pane-close]").click();
+  await expect(pr).toHaveCount(0);
 });
 
 test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
