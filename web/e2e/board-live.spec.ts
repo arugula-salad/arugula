@@ -165,9 +165,9 @@ test.describe("its lead", () => {
     await expect(lead).toContainText("lead · Product Improvements · suite-box");
     await expect(lead.locator("[data-board-lead-open]")).toHaveText("Terminal");
     await page.screenshot({ path: info.outputPath("board-lead.png") });
-    // Terminal: its pane, on its machine's page, as the Overview's Open in Panes.
+    // Terminal: its pane, on its machine's page, as the Overview's Open in Panes, in the project of the pane's session (the page moves there once it knows, #1161).
     await lead.locator("[data-board-lead-open]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${pane}`));
+    await expect(page).toHaveURL(new RegExp(`/p/prj_[^/]+/machines.*pane=${pane}`));
   });
 
   test("a lead whose pane isn't here, or a teammate's, has its panel, not Terminal", async ({ page }) => {
