@@ -1,8 +1,9 @@
 // The tab's head line (M110, #1025; Lift 6a, v6's Machines): what the tab
 // is (its state, name, machine and kind), then above the panes and outside
-// their cells the pane count and switcher, the layouts (Tamed, Grid,
-// Columns), Focus and + Pane. Every button is a daemon intent (`arrange`, `focus`), so the
-// layout it makes is everyone's, and a refusal says why here.
+// their cells Tamed and Grid, and + Pane. Each layout is a daemon intent
+// (`arrange`), so it's everyone's, and a refusal says why here. Columns, the
+// pane switcher and Focus went in Lift 6a (#1483): Go to… and the keys have
+// the panes, and Tamed has one large.
 
 import { useEffect, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
@@ -10,18 +11,15 @@ import { directory } from "../../hosts";
 import { Mark, type State } from "../../../shared/kit/state-mark";
 import type { Preset, TabView } from "../../../shared/proto";
 import { keyHint } from "../../../shared/keys";
-import { openMenu, type MenuItem } from "../../../shared/ui/menu";
-import { arrange, arrangeRefusal, goToPane, layoutRefusal, PRESETS, toggleFocus } from "../panes/layout";
+import { arrange, arrangeRefusal, layoutRefusal, PRESETS } from "../panes/layout";
 import { AddPaneDrawer, addPane, useAddPane } from "./add-pane";
-import { paneStatus, paneType } from "./pane-header";
-import { ChevronIcon, FocusIcon, PlusIcon } from "../../../shared/ui/icons";
+import { paneType } from "./pane-header";
+import { PlusIcon } from "../../../shared/ui/icons";
 
 export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   const ids = paneIds(tab);
   const count = ids.length;
-  const focused = tab.focus !== null;
   const why = arrangeRefusal(client, tab);
-  const focusWhy = layoutRefusal(client, tab) ?? (count < 2 && !focused ? "There's only one pane" : null);
   const open = useAddPane();
   // Someone who only watches (a viewer, a read-only link's page) adds no
   // panes: no greyed + Pane for them (UI audit #197).
@@ -37,25 +35,6 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
   }, [note]);
   const refused = (m: string) => setNote(m.charAt(0).toUpperCase() + m.slice(1));
 
-  const switcher = (e: MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const active = client.active(tab.id);
-    const items: MenuItem[] = [
-      { header: focused ? "Panes (one shown)" : "Panes in this tab" },
-      ...ids.map((id, i): MenuItem => {
-        const info = client.info(id);
-        const s = paneStatus(info);
-        return {
-          label: `${i + 1}  ${client.title(id) || info?.command || `pane %${id}`} · ${paneType(info)}${s.word && s.word !== "idle" ? ` · ${s.word}` : ""}`,
-          checked: id === active,
-          shortcut: i < 9 ? keyHint("pane.jump")?.replace("1–9", String(i + 1)) : undefined,
-          run: () => goToPane(client, id),
-        };
-      }),
-    ];
-    openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault() {} }, items);
-  };
-
   return (
     <div class="pane-toolbar" data-pane-toolbar role="toolbar" aria-label="Panes">
       <span class="pt-head" data-tab-head={tab.id}>
@@ -63,15 +42,8 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
         <b class="pt-title">{tabLabel(client, tab)}</b>
         <span class="m-meta">{[directory.current, paneType(client.info(client.active(tab.id) ?? ids[0]!))].filter(Boolean).join(" · ")}</span>
       </span>
-      <button class="pt-count bar-btn" data-pane-count={count} aria-haspopup="menu" title="Go to a pane" onClick={switcher}>
-        <strong>{count}</strong> {count === 1 ? "pane" : "panes"}
-        <span class="pt-caret" aria-hidden="true">
-          <ChevronIcon />
-        </span>
-      </button>
-      <span class="pt-sep" aria-hidden="true" />
       <div class="pt-presets" role="group" aria-label="Arrange">
-        {PRESETS.map(({ preset, label }) => (
+        {PRESETS.filter((p) => p.preset !== "columns").map(({ preset, label }) => (
           <button
             key={preset}
             class="pt-preset bar-btn"
@@ -91,17 +63,6 @@ export function PaneToolbar({ client, tab }: { client: Client; tab: TabView }) {
           </button>
         ))}
       </div>
-      <button
-        class={`pt-focus bar-btn${focused ? " on" : ""}`}
-        data-pane-focus
-        aria-pressed={focused}
-        disabled={!!focusWhy}
-        title={focusWhy ?? `${focused ? "Show every pane again" : "Fill the tab with the active pane"} (${keyHint("pane.focus")})`}
-        onClick={() => toggleFocus(client, tab, undefined, refused)}
-      >
-        <FocusIcon on={focused} size="xs" />
-        {focused ? "Restore" : "Focus"}
-      </button>
       {note && (
         <span class="pt-note" role="status" data-pane-toolbar-note>
           {note}
@@ -135,14 +96,7 @@ function headMark(client: Client, ids: number[]): State {
 }
 
 function hint(p: Preset): string {
-  switch (p) {
-    case "columns":
-      return "Columns: every pane side by side";
-    case "grid":
-      return "Grid: rows of equal panes";
-    case "main_stack":
-      return "Tamed: the active pane large, the rest stacked beside it";
-  }
+  return p === "grid" ? "Grid: rows of equal panes" : "Tamed: the active pane large, the rest stacked beside it";
 }
 
 /** What each preset looks like, drawn small. */
@@ -150,11 +104,9 @@ function Thumb({ preset }: { preset: Preset }) {
   const r = (x: number, y: number, w: number, h: number) => <rect x={x} y={y} width={w} height={h} rx="1" />;
   return (
     <svg class="pt-thumb" width="18" height="13" viewBox="0 0 18 13" aria-hidden="true">
-      {preset === "columns"
-        ? [r(0.5, 0.5, 5, 12), r(6.5, 0.5, 5, 12), r(12.5, 0.5, 5, 12)]
-        : preset === "grid"
-          ? [r(0.5, 0.5, 8, 5.5), r(9.5, 0.5, 8, 5.5), r(0.5, 7, 8, 5.5), r(9.5, 7, 8, 5.5)]
-          : [r(0.5, 0.5, 10, 12), r(11.5, 0.5, 6, 3.5), r(11.5, 4.75, 6, 3.5), r(11.5, 9, 6, 3.5)]}
+      {preset === "grid"
+        ? [r(0.5, 0.5, 8, 5.5), r(9.5, 0.5, 8, 5.5), r(0.5, 7, 8, 5.5), r(9.5, 7, 8, 5.5)]
+        : [r(0.5, 0.5, 10, 12), r(11.5, 0.5, 6, 3.5), r(11.5, 4.75, 6, 3.5), r(11.5, 9, 6, 3.5)]}
     </svg>
   );
 }

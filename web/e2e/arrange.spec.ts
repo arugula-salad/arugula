@@ -1,4 +1,4 @@
-// M110 (#1025): the pane toolbar's presets and Focus.
+// M110 (#1025): the tab's presets (Tamed and Grid, Lift 6a) and a pane's Focus.
 // Each rebuilds the tab's split tree in the daemon (`arrange`, `focus`,
 // M109): the same panes, the same processes and their scrollback, only
 // placed anew; focus gives back exactly the layout it hid.
@@ -57,17 +57,14 @@ const shape = (page: Page) =>
     return walk(window.__arugula.client.tabView()!.root) as Shape;
   });
 
-test("every preset and Focus keep the panes and what they printed", async ({ page }) => {
+test("Grid, Tamed and Focus keep the panes and what they printed", async ({ page }) => {
   await newWorkspace(page);
   const marks = await shells(page, 6);
   const ids = await allPanes(page);
   const toolbar = page.locator("[data-pane-toolbar]");
-  await expect(toolbar.locator("[data-pane-count]")).toHaveAttribute("data-pane-count", "6");
-
-  // Columns: one row of six.
-  await toolbar.locator('[data-preset="columns"]').click();
-  await expect.poll(() => shape(page)).toEqual({ dir: "row", of: ids });
-  await kept(page, marks);
+  // Tamed and Grid, no Columns, count or Focus in the head line (Lift 6a, #1483).
+  await expect(toolbar.locator("[data-preset]")).toHaveCount(2);
+  await expect(toolbar.locator("[data-pane-count], [data-pane-focus]")).toHaveCount(0);
 
   // Grid: ⌈√6⌉ = 3 columns, filled row by row.
   await toolbar.locator('[data-preset="grid"]').click();
@@ -83,22 +80,22 @@ test("every preset and Focus keep the panes and what they printed", async ({ pag
   // The terminals agree with what's drawn (the arrangement resized them).
   await run(page, main, "echo after-$((6*7))", "after-42");
 
-  // Focus fills the tab with the active pane, for everyone; a second
+  // A pane's Focus fills the tab with it, for everyone; a second
   // click gives back the very same tree.
   const before = await shape(page);
-  await toolbar.locator("[data-pane-focus]").click();
+  await page.locator(`[data-pane-expand="${main}"]`).click();
   await expect.poll(async () => (await tab(page)).focus).toBe(main);
   await expect.poll(() => panes(page)).toEqual([main]);
-  await expect(toolbar.locator("[data-pane-focus]")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(`[data-pane-expand="${main}"]`)).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-pane-header]")).toHaveCount(1);
   await kept(page, marks);
-  await toolbar.locator("[data-pane-focus]").click();
+  await page.locator(`[data-pane-expand="${main}"]`).click();
   await expect.poll(async () => (await tab(page)).focus).toBeNull();
   expect(await shape(page)).toEqual(before);
   await expect.poll(() => panes(page)).toHaveLength(6);
   await kept(page, marks);
 
-  // The header's expand is the same operation, and Ctrl+Shift+Enter too.
+  // Another pane's, and Ctrl+Shift+Enter, the same.
   const other = ids[1];
   await page.locator(`[data-pane-expand="${other}"]`).click();
   await expect.poll(async () => (await tab(page)).focus).toBe(other);
@@ -107,18 +104,6 @@ test("every preset and Focus keep the panes and what they printed", async ({ pag
   await expect.poll(async () => (await tab(page)).focus).toBeNull();
   expect(await shape(page)).toEqual(before);
   await kept(page, marks);
-});
-
-test("the pane count opens a switcher that goes to a pane", async ({ page }) => {
-  await newWorkspace(page);
-  const marks = await shells(page, 4);
-  const ids = [...marks.keys()];
-  await page.locator("[data-pane-count]").click();
-  const items = page.locator(".menu [role=menuitemradio]");
-  await expect(items).toHaveCount(4);
-  await items.nth(2).click();
-  await expect.poll(() => active(page)).toBe((await allPanes(page))[2]);
-  expect(ids).toContain(await active(page));
 });
 
 test("+ Pane says where before it opens a shell, then gives it the keys", async ({ page }) => {

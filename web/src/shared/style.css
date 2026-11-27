@@ -195,7 +195,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* A chevron beside text sits on the text's line, as the glyph did. */
 .caret .icon,
-.pt-caret .icon,
 .chat-caret .icon,
 .menu-chevron .icon,
 .fold .icon,
@@ -9398,23 +9397,6 @@ html[data-workspace="new"] .thread-panel {
   white-space: nowrap;
 }
 
-.pt-count strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.pt-caret {
-  color: var(--ink-faint);
-  font-size: var(--text-label);
-}
-
-.pt-sep {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--card-raised);
-}
-
 .pt-presets {
   display: flex;
   gap: 2px;
@@ -9679,7 +9661,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 /* Disabled with a reason (the title says it): it looks it. */
-.app.ws :is(.ws-share, .ws-icon-button, .pt-add, .pt-preset, .pt-focus):disabled {
+.app.ws :is(.ws-share, .ws-icon-button, .pt-add, .pt-preset):disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
