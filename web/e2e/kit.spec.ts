@@ -1,7 +1,7 @@
 // The kit (design lift §4.1, Arugula #1478), on its living reference,
 // /design: each of the fourteen parts renders, shows a focus ring, says its
 // state in more than colour, and works by keyboard. `DESIGN_SHOTS=dir` saves
-// the page in Slate and Latte, to look at.
+// the page dark and light, to look at.
 import { expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -150,7 +150,7 @@ test("Look repaints the page in either theme", async ({ page }) => {
   await page.locator("body").click({ position: { x: 2, y: 2 } });
   await page.keyboard.press("s");
   const look = page.getByRole("dialog", { name: "Look" });
-  await look.getByRole("radio", { name: "Latte" }).click();
+  await look.getByRole("radio", { name: "Light" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
   const canvas = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim());
   const before = await canvas();
@@ -160,7 +160,7 @@ test("Look repaints the page in either theme", async ({ page }) => {
 
   if (SHOTS) {
     await page.setViewportSize({ width: 1440, height: 6000 });
-    for (const scheme of ["Slate", "Latte"]) {
+    for (const scheme of ["Dark", "Light"]) {
       await page.getByRole("button", { name: "Look" }).click();
       await page.getByRole("dialog", { name: "Look" }).getByRole("button", { name: "Reset" }).click();
       await page.getByRole("dialog", { name: "Look" }).getByRole("radio", { name: scheme }).click();

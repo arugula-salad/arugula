@@ -84,47 +84,6 @@ details.issues-note > summary {
   display: none;
 }
 
-/* A row is a Card (shared/ui/card.css) laid out as a line, not a column. */
-.issue-row.card {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.issue-row-main {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.platform-section a.issue-row-title {
-  margin-right: 6px;
-  color: var(--fg);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.platform-section a.issue-row-title:hover {
-  color: var(--accent);
-}
-
-.issue-row-meta {
-  display: block;
-  margin-top: 3px;
-  font-size: var(--text-sm);
-}
-
-.issue-row-who {
-  display: flex;
-  gap: 2px;
-}
-
-.issue-row-who .msg-avatar {
-  width: 20px;
-  height: 20px;
-  font-size: 10px; /* off-scale: avatar initials */
-}
-
 /* A label's chip (../ui/state-chip.css), beside the next. */
 .chip.issue-label {
   margin-right: 4px;
@@ -134,13 +93,6 @@ details.issues-note > summary {
 [data-issue-home] .control-confirm {
   display: block;
   padding: 3px 0;
-}
-
-/* A list's rows' shapes while it loads (UI audit #163, #164). */
-.issues-loading .issue-row-main {
-  display: grid;
-  gap: 6px;
-  padding: 2px 0;
 }
 
 .loading-bar {

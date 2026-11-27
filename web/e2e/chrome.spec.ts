@@ -256,21 +256,21 @@ test.describe("on a computer", () => {
     });
     await newWorkspace(page);
     await expect(page.locator(".app-bar")).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
     expect(saved).toEqual({ theme: "light", preset: "arugula", light: null, warmth: 0, depth: 0 });
     // Appearance has no switch any more.
     await expect((await openSettingsPage(page)).locator("[data-appearance-controls]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
     await page.locator('[data-theme-choice="dark"]').click();
-    await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!))).toEqual({ theme: "dark", preset: "arugula", light: null, warmth: 0, depth: 0 });
 
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });
     await fresh.goto(page.url());
     await expect(fresh.locator("[data-rail]")).toBeVisible();
-    await expect(fresh.locator("html")).toHaveAttribute("data-palette", "slate");
+    await expect(fresh.locator("html")).toHaveAttribute("data-scheme", "dark");
     await fresh.close();
   });
 });
@@ -469,9 +469,9 @@ test.describe("accessibility", () => {
   test("terminal text contrasts with explicit program backgrounds after a theme change", async ({ page }) => {
     await newWorkspace(page);
     await openSettingsPage(page);
-    for (const [theme, palette] of [["light", "latte"], ["dark", "slate"]]) {
+    for (const theme of ["light", "dark"]) {
       await page.locator(`[data-theme-choice="${theme}"]`).click();
-      await expect(page.locator("html")).toHaveAttribute("data-palette", palette);
+      await expect(page.locator("html")).toHaveAttribute("data-scheme", theme);
       await page.evaluate(async () => {
         const v = window.__arugula.client.viewOf(window.__arugula.client.active()!)!;
         v.setVisible(false); // Inspect the DOM renderer's actual cell colors.
@@ -491,7 +491,7 @@ test.describe("accessibility", () => {
           if (!css.color || !css.backgroundColor) return 0;
           const a = lum(css.color), b = lum(css.backgroundColor);
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-        }).catch(() => 0), { message: `${palette} ${text}` }).toBeGreaterThanOrEqual(4.5);
+        }).catch(() => 0), { message: `${theme} ${text}` }).toBeGreaterThanOrEqual(4.5);
       }
     }
   });

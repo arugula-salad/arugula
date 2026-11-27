@@ -22,16 +22,14 @@ function modules(): Plugin {
   };
 }
 
-/** The shared Doc's house pair (doc-view.css): Slate and Latte as the app
- * draws them (appearance.ts's PALETTES, made legible), with a Doc's tokens
- * (houseColours), written in where doc-view.css says, so the two can't drift
- * (UI audit #180, #729). The page can't import appearance.ts: it would touch
- * the app's cookie. */
+/** The shared Doc's house pair (doc-view.css): Arugula at its own
+ * sliders, dark and light (kit/look.ts's paint), with a Doc's tokens
+ * (house), written in where doc-view.css says, so the two can't drift (UI
+ * audit #180, #729, #1511). The page can't import appearance.ts: it would
+ * touch the app's cookie. */
 function docPalette(): Plugin {
-  const MARKS = { "/* PALETTES: slate */": ["slate", "dark"], "/* PALETTES: latte */": ["latte", "light"] } as const;
-  type Appearance = typeof import("./src/shared/appearance.ts");
+  const MARKS = { "/* HOUSE: dark */": true, "/* HOUSE: light */": false } as const;
   type Look = typeof import("./src/shared/kit/look.ts");
-  let appearance: Promise<Appearance> | null = null;
   let look: Promise<Look> | null = null;
   return {
     name: "arugula-doc-palette",
@@ -40,14 +38,11 @@ function docPalette(): Plugin {
       // The Doc's embed page (#1258) takes doc-view.css by @import, which
       // this doesn't see, so its own stylesheet has the markers too.
       if (!/\/shell\/doc-(view|embed)\.css$/.test(id.split("?")[0])) return;
-      appearance ??= runnerImport<Appearance>(resolve(import.meta.dirname, "src/shared/appearance.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
       look ??= runnerImport<Look>(resolve(import.meta.dirname, "src/shared/kit/look.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
-      const { houseColours, PALETTES } = await appearance;
-      const { paint, sliders } = await look;
-      for (const [mark, [palette, scheme]] of Object.entries(MARKS)) {
-        const p = PALETTES.find((q) => q.id === palette);
-        if (!p || !code.includes(mark)) this.error(`${id}: no ${palette} palette or no \`${mark}\` to put it in`);
-        const vars = [...Object.entries(paint(p.ui, scheme === "dark", sliders(scheme === "dark"))).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
+      const { house, paint, sliders } = await look;
+      for (const [mark, dark] of Object.entries(MARKS)) {
+        if (!code.includes(mark)) this.error(`${id}: no \`${mark}\` to put the house pair in`);
+        const vars = [...Object.entries(paint(dark, sliders(dark))).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(house(dark)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
         code = code.replace(mark, vars);
       }
       return { code, map: null };

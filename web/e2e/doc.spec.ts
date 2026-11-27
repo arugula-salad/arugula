@@ -333,10 +333,12 @@ test.describe("callouts and tiles on a Pixel 7", () => {
   });
 });
 
+const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
+
 // #256: a drawing that names the Doc's colours has them resolved for the
 // scheme, and redrawn when it changes, on the page's own paper; one in hex
 // looks as it did; a chart's `colors` pick its series.
-test("named colours resolve for Mocha and Latte, and an old hex drawing looks as it did", async ({ page }) => {
+test("named colours resolve in dark and light, and an old hex drawing looks as it did", async ({ page }) => {
   await reset(page);
   const [term] = await panes(page);
   const doc = await newDoc(post(page), term);
@@ -354,15 +356,14 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
     // The hex drawing: its own text, on the light backing.
     await expect(old).not.toHaveAttribute("data-named");
     expect(await old.evaluate((i: HTMLImageElement) => decodeURIComponent(i.src))).toContain('fill="#e8f0fe" stroke="#335"');
-    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe("rgb(239, 241, 245)");
+    expect(await old.evaluate((i) => getComputedStyle(i).backgroundColor)).toBe(rgb(houseColours("light").paper));
     const strokes = await block.locator('[data-section="s3"] svg.chart path[data-line]').evaluateAll((ps) => ps.map((p) => getComputedStyle(p).stroke));
-    const rgb = (h: string) => `rgb(${[1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)).join(", ")})`;
     expect(strokes).toEqual([rgb(hex("leaf", scheme)!), rgb(hex("stone", scheme)!)]);
   };
   await expect(named).toBeVisible({ timeout: 15_000 });
   expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("dark");
   await look("dark");
-  await shoot(page, doc, "block-named-colours-mocha");
+  await shoot(page, doc, "block-named-colours-dark");
 
   // The scheme changes under it: the drawing is redrawn, no reload.
   const wear = (scheme: Scheme) =>
@@ -380,16 +381,16 @@ test("named colours resolve for Mocha and Latte, and an old hex drawing looks as
   await expect(named).toBeVisible({ timeout: 15_000 });
   expect(await page.evaluate(() => document.documentElement.dataset.scheme)).toBe("light");
   await look("light");
-  await shoot(page, doc, "block-named-colours-latte");
+  await shoot(page, doc, "block-named-colours-light");
 
-  // The house pair is the scheme's, not the viewer's Look: at the darkest,
-  // the Doc is still Slate's paper under the viewer's chrome.
-  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "dark", preset: "arugula", light: 1, warmth: 0, depth: 0 })));
+  // The house pair is the scheme's, not the viewer's Look: at another
+  // preset, the Doc is still Arugula's paper under the viewer's chrome.
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "dark", preset: "sea-glass", light: 0, warmth: 1, depth: 1 })));
   await page.reload();
   await expect(named).toBeVisible({ timeout: 15_000 });
   await look("dark");
-  expect(await block.evaluate((d) => getComputedStyle(d).backgroundColor)).toBe("rgb(12, 17, 24)");
-  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe("rgb(12, 17, 24)");
+  expect(await block.evaluate((d) => getComputedStyle(d).backgroundColor)).toBe(rgb(houseColours("dark").paper));
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(rgb(houseColours("dark").paper));
 });
 
 test.describe("a viewer", () => {

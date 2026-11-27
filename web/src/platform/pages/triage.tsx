@@ -23,6 +23,7 @@ import { TRIAGE_NONE, addedWords, boxState, itemHref, rangeKeys, sourceLabel, ta
 import { addUntriaged, countUntriaged, keyOf, pointerOf, readUntriaged, type Chosen, type UntriagedPage } from "./untriaged";
 import { ObjectChip, Chip } from "../../shared/ui/state-chip";
 import { ChevronIcon } from "../../shared/ui/icons";
+import { Row } from "../../shared/kit/row";
 
 /** The open issues on no board, `null` while they load, for each of `projects` (read in parallel); one that can't be read counts none. */
 export function useUntriaged(projects: readonly string[]): Map<string, number> | null {
@@ -396,7 +397,6 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
                     return (
                       <li
                         key={k}
-                        class="untri-row"
                         data-selected={on || undefined}
                         data-triage-row={name}
                         draggable={canDrag}
@@ -407,27 +407,35 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
                         onDragStart={(e) => dragStart(e, k)}
                         onDragEnd={endDrag}
                       >
-                        {write && <input type="checkbox" checked={on} aria-label={`Select ${name}`} data-triage-select onChange={() => {}} />}
-                        <span class="untri-num">{name}</span>
-                        {href ? (
-                          <a class="untri-title" href={href} title={i.title} draggable={false} {...(github ? { target: "_blank", rel: "noopener noreferrer" } : { onClick: (e: MouseEvent) => follow(e, href) })}>
-                            {i.title}
-                          </a>
-                        ) : (
-                          <span class="untri-title dim">{i.title}</span>
-                        )}
-                        <span class="untri-fill" />
-                        {i.labels?.map((l) => (
-                          <Chip key={l} kind="tag" class="untri-label">
-                            {l}
-                          </Chip>
-                        ))}
-                        <span class="untri-age dim">{ago(i.updated_at, Date.now(), "short")}</span>
-                        {write && (
-                          <button type="button" class="untri-add" aria-label={`Add ${name} to a board`} aria-haspopup="menu" data-triage-add onClick={(e) => void menu(e.currentTarget, tri.taking(k))}>
-                            ＋
-                          </button>
-                        )}
+                        <Row
+                          kind={on ? "selected" : "plain"}
+                          lead={write && <input type="checkbox" checked={on} aria-label={`Select ${name}`} data-triage-select onChange={() => {}} />}
+                          label={name}
+                          title={
+                            href ? (
+                              <a href={href} title={i.title} draggable={false} {...(github ? { target: "_blank", rel: "noopener noreferrer" } : { onClick: (e: MouseEvent) => follow(e, href) })}>
+                                {i.title}
+                              </a>
+                            ) : (
+                              i.title
+                            )
+                          }
+                          meta={[
+                            ...(i.labels ?? []).map((l) => (
+                              <Chip key={l} kind="tag">
+                                {l}
+                              </Chip>
+                            )),
+                            ago(i.updated_at, Date.now(), "short"),
+                            ...(write
+                              ? [
+                                  <button type="button" class="untri-add" aria-label={`Add ${name} to a board`} aria-haspopup="menu" data-triage-add onClick={(e) => void menu(e.currentTarget, tri.taking(k))}>
+                                    ＋
+                                  </button>,
+                                ]
+                              : []),
+                          ]}
+                        />
                       </li>
                     );
                   })}

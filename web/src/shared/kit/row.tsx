@@ -4,7 +4,8 @@
 // expands holds its body under the line, and its line says so
 // (`aria-expanded`); a NeedRow is one. A row nothing clicks (an ask that is
 // always open, in an agent block or beside a terminal) has a plain line,
-// not a button that does nothing.
+// not a button that does nothing. `lead` goes before the mark: a list's
+// select box.
 
 import type { ComponentChildren } from "preact";
 import { Mark, type State } from "./state-mark";
@@ -14,6 +15,7 @@ export type RowKind = "plain" | "need" | "selected" | "done";
 
 export function Row({
   kind = "plain",
+  lead,
   mark,
   label,
   title,
@@ -26,6 +28,8 @@ export function Row({
 }: {
   inert?: boolean;
   kind?: RowKind;
+  /** Before the mark: a control of the row's own (its select box). */
+  lead?: ComponentChildren;
   mark?: State;
   /** The kind of thing, a word: "ask", "board", "doc". */
   label?: string;
@@ -40,6 +44,7 @@ export function Row({
 }) {
   const line = (
     <>
+        {lead}
         {mark ? <Mark state={mark} /> : null}
         {label ? <span class="k-row-kind m-meta">{label}</span> : null}
         <span class="k-row-title" data-row-title>

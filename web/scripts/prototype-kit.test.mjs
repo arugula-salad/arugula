@@ -1,7 +1,7 @@
-// The prototype kit (#699, shared/ui/runner.html): its colors are the ones the
-// page paints, `legible()` of Latte and of Slate (appearance.ts), and it is
-// opt-in. appearance.ts is imported as the page runs it: its imports leave off
-// `.ts`, so a hook adds it. Run with `node --test`.
+// The prototype kit (#699, shared/ui/runner.html): its colors are the house
+// pair's, kit/look.ts's `paperUi()` (Arugula at its own sliders, on a Doc's
+// paper), and it is opt-in. look.ts is imported as the page runs it: an
+// import that leaves off `.ts` gets it from a hook. Run with `node --test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -17,7 +17,7 @@ registerHooks({
     return next(spec, ctx);
   },
 });
-const { PALETTES, legible, contrast } = await import("../src/shared/appearance.ts");
+const { paperUi, contrast } = await import("../src/shared/kit/look.ts");
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 /** style.css with the role tokens (kit/tokens.css) it imports, each legacy
@@ -33,8 +33,8 @@ function appStyle() {
 const runner = read("../src/shared/ui/runner.html");
 const kit = runner.match(/<template id="arugula-kit"><style>([\s\S]*?)<\/style><\/template>/)?.[1];
 
-/** What the page paints for a palette: `apply()` sets exactly `legible(p)`. */
-const painted = (id) => legible(PALETTES.find((p) => p.id === id));
+/** What a prototype in a Doc is drawn in, light or dark. */
+const painted = (scheme) => paperUi(scheme === "dark");
 
 // Each kit color token and the painted key it takes its value from.
 const TOKENS = {
@@ -64,15 +64,15 @@ const MIXED = {
   "on-fill": "color-mix(in srgb, var(--ar-accent) 18%, transparent)",
 };
 
-test("each kit color is what the page paints: Latte's legible() in light, Slate's in dark", () => {
+test("each kit color is the house pair's, light and dark", () => {
   assert.ok(kit, "runner.html has the kit's template");
-  const latte = painted("latte");
-  const slate = painted("slate");
+  const latte = painted("light");
+  const slate = painted("dark");
   for (const [name, key] of Object.entries(TOKENS)) {
     const m = kit.match(new RegExp(`--ar-${name}: light-dark\\((#[0-9a-f]{6}), (#[0-9a-f]{6})\\);`));
-    assert.ok(m, `--ar-${name} is declared as light-dark(Latte, Slate)`);
-    assert.equal(m[1], latte[key], `--ar-${name} light is Latte's painted ${key}`);
-    assert.equal(m[2], slate[key], `--ar-${name} dark is Slate's painted ${key}`);
+    assert.ok(m, `--ar-${name} is declared as light-dark(light, dark)`);
+    assert.equal(m[1], latte[key], `--ar-${name} light is the light pair's ${key}`);
+    assert.equal(m[2], slate[key], `--ar-${name} dark is the dark pair's ${key}`);
   }
   for (const [name, value] of Object.entries(MIXED)) {
     assert.equal(kit.match(new RegExp(`--ar-${name}: ([^;]*);`))?.[1], value, `--ar-${name} is the app's mix`);
@@ -94,14 +94,14 @@ function tones() {
   return out;
 }
 
-test("each ar-chip tone reads at 4.5:1 on its own tint, in Latte and in Slate", () => {
+test("each ar-chip tone reads at 4.5:1 on its own tint, light and dark", () => {
   // The chip's fill is 12% of its color over the surface; the text must read on that.
   assert.match(kit, /\.ar-chip \{[^}]*background: color-mix\(in srgb, var\(--c\) 12%, var\(--ar-surface\)\);/);
   const t = tones();
   assert.deepEqual(Object.keys(t).sort(), ["accent", "danger", "info", "merged", "ok", "teal", "warn"]);
   // The base chip, with no tone: faint edge, subtle text.
   t.base = { c: "faint", ct: "subtle" };
-  for (const id of ["latte", "slate"]) {
+  for (const id of ["light", "dark"]) {
     const u = painted(id);
     const key = (name) => u[TOKENS[name]];
     for (const [tone, { c, ct }] of Object.entries(t)) {
@@ -182,7 +182,7 @@ test("the kit's dialog sits under style.css's backdrop and has its title size", 
   assert.match(kit, /\.ar-dialog > \.ar-dialog-buttons \{[^}]*justify-content: flex-end;/);
 });
 
-test("the kit's card is the app's: its sizes, its tones and Latte's tint", () => {
+test("the kit's card is the app's: its sizes, its tones and the light tint", () => {
   const style = appStyle();
   for (const [app, ar] of [["card-pad", "card-pad"], ["card-pad-dense", "card-pad-dense"], ["card-gap", "card-gap"], ["card-bar", "card-bar"]]) {
     const v = style.match(new RegExp(`--${app}: ([^;]+);`))?.[1];
@@ -194,25 +194,25 @@ test("the kit's card is the app's: its sizes, its tones and Latte's tint", () =>
   // The same seven tones as the app's card, each naming a kit color.
   const tones = [...kit.matchAll(/\.ar-card-(\w+) \{ --c: var\(--ar-([\w-]+)\); --ct: var\(--ar-([\w-]+)\); \}/g)].map((m) => m[1]);
   assert.deepEqual(tones.sort(), ["accent", "danger", "info", "muted", "ok", "teal", "warn"]);
-  // The tint is style.css's: the oklch numbers of Latte, the mix of a dark palette.
+  // The tint is style.css's: the oklch numbers in light, a mix in dark.
   const all = (src, name) => [...src.matchAll(new RegExp(`--(?:ar-)?card-${name}: ([^;]+);`, "g"))].map((m) => m[1]).join(" | ");
   const oklch = (v) => v.match(/oklch\(from var\(--c\) .*? h\)/)?.[0];
   for (const [name, mixed] of [["edge", "color-mix(in srgb, var(--c) 45%, var(--ar-border))"], ["tint", "color-mix(in srgb, var(--c) 7%, var(--ar-surface))"]]) {
     const latte = oklch(all(style, name));
-    assert.ok(latte, `style.css has Latte's ${name}`);
-    assert.ok(all(kit, name).includes(latte), `the kit's --ar-card-${name} has Latte's ${latte}`);
-    assert.ok(all(kit, name).includes(mixed), `and a dark palette's mix`);
+    assert.ok(latte, `style.css has the light ${name}`);
+    assert.ok(all(kit, name).includes(latte), `the kit's --ar-card-${name} has the light ${latte}`);
+    assert.ok(all(kit, name).includes(mixed), `and the dark mix`);
   }
 });
 
 test("each ar-card tone reads at 4.5:1 on its dark tint (7% of the tone over the surface)", () => {
-  const u = painted("slate");
+  const u = painted("dark");
   const key = (name) => u[TOKENS[name]];
   for (const m of kit.matchAll(/\.ar-card-(\w+) \{ --c: var\(--ar-([\w-]+)\); --ct: var\(--ar-([\w-]+)\); \}/g)) {
     const tint = mix(u.surface, key(m[2]), 0.07);
     const body = contrast(key("text"), tint);
     const title = contrast(key(m[3]), tint);
-    assert.ok(body >= 4.5, `slate ${m[1]}: body text on ${tint} is ${body.toFixed(2)}:1`);
-    assert.ok(title >= 4.5, `slate ${m[1]}: ${key(m[3])} on ${tint} is ${title.toFixed(2)}:1`);
+    assert.ok(body >= 4.5, `dark ${m[1]}: body text on ${tint} is ${body.toFixed(2)}:1`);
+    assert.ok(title >= 4.5, `dark ${m[1]}: ${key(m[3])} on ${tint} is ${title.toFixed(2)}:1`);
   }
 });

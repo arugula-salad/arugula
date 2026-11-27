@@ -8,9 +8,9 @@
 // (4.5:1) on the surfaces it sits on. Ported from the brand v2 prototype's
 // `theme()` (design-pass/prototypes/brand2).
 
-/** A theme's colors: style.css's legacy custom properties, without the
- * `--`. The brand paints the roles; these still give the terminals, the
- * editors and Docs their colors, and the few legacy hues no role covers. */
+/** What a terminal, an editor block and the prototype kit are drawn in: a
+ * look's roles under the names they had before the brand (style.css's
+ * legacy custom properties, without the `--`), made by `uiOf()`. */
 export interface Ui {
   bg: string;
   fg: string;
@@ -373,24 +373,23 @@ const n = (v: number) => +v.toFixed(3);
 /** The custom properties a look sets on the root: tokens.css's roles, the
  * depth's shadows and highlights, and the few legacy colors no role covers
  * yet (the theme's `ui`, made legible on the brand's surfaces). */
-export function paint(ui: Ui, dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record<string, string> {
-  const hue = dark ? p.dark : p.light;
-  const b = neutrals(dark, s, hue);
+export function paint(dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record<string, string> {
+  const own = dark ? p.dark : p.light;
+  const b = neutrals(dark, s, own);
   // A fill (a primary button, send, a bar, the logo, a tint) can be
   // brighter than the accent's words: in light, a loud or yellow-green
   // accent stays bright, with dark words on it, rather than going olive.
-  const lit = !dark && (hue.chroma > 1.3 || (hue.hue >= 85 && hue.hue <= 118));
-  const bright = lit ? lch(0.86, (0.14 + 0.02 * hue.chroma) * hue.chroma, hue.hue) : undefined;
-  const accent = accentText(hue.hue, (dark ? 0.126 : 0.14) * hue.chroma, dark, [...b.on, b.well], bright);
+  const lit = !dark && (own.chroma > 1.3 || (own.hue >= 85 && own.hue <= 118));
+  const bright = lit ? lch(0.86, (0.14 + 0.02 * own.chroma) * own.chroma, own.hue) : undefined;
+  const accent = accentText(own.hue, (dark ? 0.126 : 0.14) * own.chroma, dark, [...b.on, b.well], bright);
   const fill = bright ?? accent;
   let onAccent: Rgb = [255, 255, 255];
   if (dark || lit) {
     let l = 0.26;
-    onAccent = lch(l, 0.05, hue.hue);
-    for (let i = 0; i < 20 && contrast(toHex(onAccent), toHex(fill)) < FLOOR; i++) onAccent = lch((l -= 0.02), 0.05, hue.hue);
+    onAccent = lch(l, 0.05, own.hue);
+    for (let i = 0; i < 20 && contrast(toHex(onAccent), toHex(fill)) < FLOOR; i++) onAccent = lch((l -= 0.02), 0.05, own.hue);
   }
-  const surfaces = b.on.map(toHex);
-  const legacy = (c: string) => legibleOn(c, surfaces, dark ? "#ffffff" : "#000000");
+  const hue = (h: keyof typeof HUES) => toHex(tone(HUES[h], dark, b.on));
   const [line, lineStrong, hover] = b.lines;
   const [dp, k] = [s.depth, b.shadow];
   return {
@@ -417,17 +416,121 @@ export function paint(ui: Ui, dark: boolean, s: Sliders, p: Preset = PRESETS[0])
     needs: toHex(b.needs),
     fail: toHex(b.fail),
     review: toHex(b.review),
-    done: legacy(ui.ok),
+    done: hue("green"),
     // Flat to deep: the shadows, a top highlight and a sheen, none at 0.
     "shadow-card": `0 1px 2px rgb(0 0 0 / ${n(0.22 * dp * k)}), 0 ${n(1 + 4 * dp)}px ${n(4 + 8 * dp)}px -${n(2 + 2 * dp)}px rgb(0 0 0 / ${n(0.4 * dp * k)})`,
     "shadow-raised": `0 2px 6px rgb(0 0 0 / ${n(0.3 * k)}), 0 18px 40px -10px rgb(0 0 0 / ${n(0.6 * k)})`,
     highlight: `inset 0 1px 0 rgb(255 255 255 / ${n((dark ? 0.07 : 0.9) * dp)})`,
     sheen: `linear-gradient(180deg, rgb(255 255 255 / ${n((dark ? 0.025 : 0.4) * dp)}), transparent 90px)`,
     // Legacy colors with no role: each screen's phase drops its uses.
-    subtle: legacy(ui.subtle),
-    peach: legacy(ui.peach),
-    teal: legacy(ui.teal),
-    pink: legacy(ui.pink),
-    merged: legacy(ui.merged),
+    subtle: toHex(lift(N2(b.ink, b.dim), b.on, dark)),
+    peach: hue("peach"),
+    teal: hue("teal"),
+    pink: hue("pink"),
+    merged: hue("plum"),
   };
+}
+
+/** Halfway between two colors. */
+const N2 = (a: Rgb, b: Rgb): Rgb => a.map((v, i) => Math.round((v + b[i]) / 2));
+
+// ---- the hues no role covers (#1511)
+
+/** The OKLCH hues of what isn't a signal: a terminal's ANSI colors, an
+ * editor's syntax, a Doc's named colors and a few legacy chips. Red and
+ * blue are failing's and in-review's; the rest sit between. */
+export const HUES = { red: 27, peach: 52, yellow: 86, green: 150, teal: 182, cyan: 210, blue: 251, plum: 298, pink: 335 } as const;
+
+/** A hue at the brand's loudness, its lightness stepped until it reads at
+ * 4.5:1 on every one of `on`. */
+function tone(h: number, dark: boolean, on: Rgb[], C = 0.13, from = dark ? 0.76 : 0.5): Rgb {
+  let L = from;
+  let c = lch(L, C, h);
+  for (let i = 0; i < 60 && worst(c, on) < FLOOR; i++) c = lch((L += dark ? 0.01 : -0.01), C, h);
+  return c;
+}
+
+/** A look's roles (paint's) under the names a terminal, an editor block
+ * and the prototype kit take, on the well a terminal sits in: the page and
+ * a pane wear the same colors. */
+export function uiOf(t: Record<string, string>, dark: boolean): Ui {
+  const on = [t.well, t.canvas, t["card-raised"]].map(channels);
+  const h = (k: keyof typeof HUES) => toHex(tone(HUES[k], dark, on));
+  return fix(
+    {
+      bg: t.well,
+      fg: t["well-ink"],
+      dim: t["well-dim"],
+      surface: t.canvas,
+      letterbox: t.rail,
+      raised: t["card-raised"],
+      "raised-hover": mix(t["card-raised"], t.ink, 0.08),
+      accent: t.accent,
+      danger: t.fail,
+      ok: h("green"),
+      warn: t.needs,
+      info: t.review,
+      peach: h("peach"),
+      teal: h("teal"),
+      pink: h("pink"),
+      merged: h("plum"),
+      muted: t["ink-faint"],
+      subtle: mix(t["well-ink"], t["well-dim"], 0.5),
+      "on-color": t["on-accent"],
+    },
+    dark,
+  );
+}
+
+/** The prototype kit's colors (shared/ui/runner.html): Arugula's at its
+ * own sliders, on a Doc's paper rather than the well. */
+export function paperUi(dark: boolean): Ui {
+  const t = paint(dark, sliders(dark));
+  return uiOf({ ...t, well: t.paper, "well-ink": t.ink, "well-dim": t["ink-dim"] }, dark);
+}
+
+/** A terminal's sixteen colors, in xterm's order (black, red, green,
+ * yellow, blue, magenta, cyan, white, then each bright), each reading on
+ * the well. */
+export function ansi(t: Record<string, string>, dark: boolean): string[] {
+  const on = [channels(t.well)];
+  const names = ["red", "green", "yellow", "blue", "plum", "cyan"] as const;
+  const base = names.map((k) => toHex(tone(HUES[k], dark, on)));
+  // Bright is a step further from the well, a little louder.
+  const bright = names.map((k) => toHex(tone(HUES[k], dark, on, 0.15, dark ? 0.84 : 0.42)));
+  return [t["card-raised"], ...base, t["well-dim"], t["ink-faint"], ...bright, t["well-ink"]];
+}
+
+/** A Doc's house pair (#729): Arugula at its own sliders, whatever the
+ * reader picked, so a shared Doc reads the same for everyone. Its tokens
+ * without the `--doc-` (`paper`, `ink-soft`, `leaf-soft`…), which the app
+ * and the share page set on the root, and shared/docs/colours.json holds
+ * for the daemon. */
+export function house(dark: boolean): Record<string, string> {
+  const t = paint(dark, sliders(dark));
+  const paper = t.paper;
+  const on = [paper, t["card-raised"]].map(channels);
+  const line = mix(paper, t.ink, 0.2);
+  const out: Record<string, string> = {
+    paper,
+    sunken: t.well,
+    tint: t["card-raised"],
+    ink: t.ink,
+    "ink-soft": toHex(lift(N2(channels(t.ink), channels(t["ink-dim"])), on, dark)),
+    "ink-faint": toHex(lift(channels(t["ink-dim"]), on, dark)),
+    line,
+    "line-quiet": mix(paper, line, 0.5),
+    rule: line,
+    // A Doc's links are in-review's blue; the accent means live (a fresh fill).
+    link: toHex(lift(channels(t.review), on, dark)),
+    live: t.accent,
+    // What a drawing sits on in either scheme: the light paper.
+    drawing: dark ? house(false).paper : paper,
+  };
+  // The named colors (#256), in a chart's order.
+  const named = { leaf: "green", pepper: "peach", sky: "blue", plum: "plum", sun: "yellow" } as const;
+  for (const [name, k] of Object.entries(named)) out[name] = toHex(tone(HUES[k], dark, on));
+  out.stone = out["ink-faint"];
+  for (const name of [...Object.keys(named), "stone"]) out[`${name}-soft`] = mix(paper, out[name], 0.2);
+  return out;
 }
