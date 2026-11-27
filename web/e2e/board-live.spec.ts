@@ -40,6 +40,11 @@ function board(pane: number, lead?: (pane: number) => unknown, grant?: unknown) 
 async function openBoard(page: Page, lead?: (pane: number) => unknown, grant?: unknown): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
+  // The suite's daemon by control's id, `m_suite`, as the hub lists it: the agent panel's lead tab reaches it (#1520).
+  await page.route("**/api/hosts", async (r) => {
+    const list = (await (await r.fetch()).json()) as { this: string; hosts: unknown[] };
+    await r.fulfill({ json: { ...list, hosts: [...list.hosts, { name: list.this, id: "m_suite", urls: [], transport: "tailnet", added_ms: 0, last_seen_ms: null }] } });
+  });
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(board(pane, lead, grant)) }));
@@ -176,36 +181,36 @@ test.describe("on a computer", () => {
 test.describe("its lead", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("your own lead whose pane is here: its name and machine in the title block, its panel on the right, Terminal opens its pane", async ({ page }, info) => {
-    const pane = await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "Product Improvements", pane, at: 1 }));
+  test("your own lead whose pane is here: its name and machine in the title block, and Lead 🔒 in the agent panel with Transcript and Terminal (#1520)", async ({ page }, info) => {
+    await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "Product Improvements", pane, at: 1 }));
     await expect(page.locator("[data-board-lead-facts]")).toContainText("Product Improvements");
     await expect(page.locator("[data-board-lead-facts]")).toContainText("suite-box");
-    const lead = page.locator(".board-desk-side [data-board-lead]");
-    await expect(lead).toContainText("lead · Product Improvements · suite-box");
-    await expect(lead.locator("[data-board-lead-open]")).toHaveText("Terminal");
+    const side = page.locator(".board-desk-side [data-kit=panel]");
+    await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("Lead 🔒");
+    await expect(side.locator("[data-panel-toggle]")).toHaveText("⇄ channel");
     await page.screenshot({ path: info.outputPath("board-lead.png") });
-    // Terminal: its pane, on its machine's page, as the Overview's Open in Panes, in the project of the pane's session (the page moves there once it knows, #1161).
-    await lead.locator("[data-board-lead-open]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/prj_[^/]+/machines.*pane=${pane}`));
+    // Its pane is here: the panel shows it as a terminal too.
+    await side.locator('[data-panel-view="terminal"]').click();
+    await expect(side.locator('[data-panel-view="terminal"]')).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("a lead whose pane isn't here, or a teammate's, has its panel, not Terminal", async ({ page }) => {
+  test("a lead whose pane isn't here, or a teammate's, is still the board's Lead 🔒 tab", async ({ page }) => {
     // Its pane is gone from your machine.
     await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "lead", pane: pane + 1000, at: 1 }));
-    const lead = page.locator(".board-desk-side [data-board-lead]");
-    await expect(lead).toContainText("lead · lead · suite-box");
-    await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
+    const side = page.locator(".board-desk-side [data-kit=panel]");
+    await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("Lead 🔒");
     // A teammate's machine, which this page doesn't reach.
     await openBoard(page, () => ({ machine: "m_team", machine_name: "jos-box", session: "Jo's lead", pane: 99_999, at: 1 }));
-    await expect(lead).toContainText("lead · Jo's lead · jos-box");
-    await expect(lead.locator("[data-board-lead-open]")).toHaveCount(0);
+    await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("Lead 🔒");
   });
 
-  test("a board no one leads says nothing of it", async ({ page }) => {
+  test("a board no one leads has its channel alone, with no switch", async ({ page }) => {
     await openBoard(page);
     await expect(page.locator("[data-board-heading]")).toHaveText("Launch");
     await expect(page.locator("[data-board-lead-facts]")).toHaveCount(0);
-    await expect(page.locator(".board-desk-side [data-board-lead]")).toContainText("No lead yet");
+    const side = page.locator(".board-desk-side [data-kit=panel]");
+    await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("# Launch");
+    await expect(side.locator("[data-panel-toggle]")).toHaveCount(0);
   });
 });
 
