@@ -2634,6 +2634,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "with_lead": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WithLead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A hosted session's ask that its own lead answers first (Arugula\n#1393, #1469): `state` is `needs_you`, and it waits on that agent,\nnot on a person, until `until`."
+        },
         "working_on": {
           "description": "With the owner's `work`: what it was started on.",
           "type": [
@@ -3337,6 +3348,25 @@
         "days",
         "from",
         "to"
+      ],
+      "type": "object"
+    },
+    "WithLead": {
+      "description": "An agent's ask that its lead answers first (Arugula #1393, #1469): the\nagent that started the session, live, has until `until` (ms) before the\nask reaches its person. Never a question's words.",
+      "properties": {
+        "name": {
+          "description": "The lead, as its machine names it: \"<session> on <machine>\".",
+          "type": "string"
+        },
+        "until": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "until"
       ],
       "type": "object"
     }
