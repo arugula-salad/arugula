@@ -23,7 +23,7 @@ import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
 import { IssuePage } from "./pages/issue";
-import { IssuesPage, NewIssuePage } from "./pages/issues";
+import { NewIssuePage } from "./pages/issues";
 import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
@@ -129,7 +129,7 @@ function body(r: Route, lost: string | null) {
     case "project":
       return <ProjectHome id={r.project} board={r.board} card={r.card} zoom={r.zoom} />;
     case "issues":
-      return <IssuesPage project={r.project} filter={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
+      return <BoardsPage project={r.project} issues={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
     case "new-issue":
       return <NewIssuePage project={r.project} />;
     case "issue":
