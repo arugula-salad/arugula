@@ -466,24 +466,9 @@
   color: var(--accent);
 }
 
-.board-ask-question {
-  font-weight: 600;
-}
-
-.board-ask-why p,
 .board-asked-one {
   margin: 4px 0;
   overflow-wrap: anywhere;
-}
-
-.board-ask-options {
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.board-ask-text input {
-  flex: 1;
-  min-width: 0;
 }
 
 .board-foot {
@@ -911,10 +896,6 @@
 
 .board-done-list .board-list {
   margin-top: 8px;
-}
-
-.board-ask {
-  background: color-mix(in srgb, var(--needs) 8%, transparent);
 }
 
 /* The group's menu button sits at the end of its header. */
