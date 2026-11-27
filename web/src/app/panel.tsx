@@ -12,7 +12,8 @@
 // - An agent's tab is its session: its transcript (an agent block's
 //   Markdown, its tool calls folded to a line; a terminal's last lines in a
 //   well), read from its machine through the page's own connection while
-//   the tab is open, never through control (#1271); `v` shows the pane
+//   the tab is open, never through control (#1271); Claude Code's screen in
+//   a terminal folded the same way (shared/transcript.ts); `v` shows the pane
 //   itself, live, in a well. Its composer writes to it as the peek did: an
 //   agent block at its next tool call, a terminal typed with Enter, a
 //   cloud workspace's session in its thread; Silence and Stop sit beside
@@ -24,8 +25,8 @@
 //   message's reply thread in it.
 //
 // In any room here, "N replies" and "Reply in thread" open the thread in
-// the panel, over its room, which keeps its place: back (or Esc) returns to
-// it. The page's address doesn't change and nothing opens in Chat.
+// the panel, over its room, which keeps its place: the one Back (or Esc)
+// returns to it, and its ⋯ has Follow. The page's address doesn't change and nothing opens in Chat.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -35,7 +36,7 @@ import { boards } from "../shared/boards/store";
 import { chat } from "../shared/chat-store";
 import { RoomBody } from "../shared/chat/room";
 import { call, saidOf } from "../shared/chat/session-card";
-import { ThreadPanel } from "../shared/chat/thread-panel";
+import { followThread, followingThread, ThreadPanel } from "../shared/chat/thread-panel";
 import { Button } from "../shared/kit/button";
 import { Composer } from "../shared/kit/composer";
 import { CHIEF_KEY, Panel, PanelNote, panelKey, Transcript, type AgentPanelProps, type PanelHead, type PanelTarget, type PanelView } from "../shared/kit/panel";
@@ -46,8 +47,9 @@ import { needAge, needsYou, needsYouRank } from "../shared/needs-you";
 import { PlatformApiContext, usePlatformApi, type ChatNav } from "../shared/platform-api";
 import { surfacesFor } from "../shared/surfaces";
 import { cleanTitle } from "../shared/titles";
-import { lastLines } from "../shared/transcript";
+import { isClaudeScreen, lastLines } from "../shared/transcript";
 import { useSubscribe } from "../shared/ui/hooks";
+import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, readableCommand, shortHost, whatItDoes } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
@@ -176,7 +178,7 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
   const over =
     room && parent !== null ? (
       <PlatformApiContext.Provider value={here}>
-        <ThreadPanel key={`${room.id}/${parent}`} store={chat} room={room} parent={parent} phone={false} close={() => setDrill({ key, parent: null })} />
+        <ThreadPanel key={`${room.id}/${parent}`} store={chat} room={room} parent={parent} phone={false} inPanel close={() => setDrill({ key, parent: null })} />
       </PlatformApiContext.Provider>
     ) : undefined;
 
@@ -202,7 +204,7 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
       onView={shown.onView}
       floors={surfacesFor().floor}
       lede={shown.lede}
-      back={over ? { label: `Back to ${shown.head.name}`, go: () => setDrill({ key, parent: null }) } : undefined}
+      back={over ? { label: `Back to ${shown.head.name}`, go: () => setDrill({ key, parent: null }), more: room && parent !== null ? threadMore(room.id, parent) : undefined } : undefined}
       over={over}
       flush={shown.flush}
       foot={shown.foot}
@@ -210,6 +212,13 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
       <PlatformApiContext.Provider value={here}>{shown.body}</PlatformApiContext.Provider>
     </Panel>
   );
+}
+
+/** A thread's ⋯ in the panel: Follow, or stop, once it has loaded. */
+function threadMore(room: string, parent: number): MenuItem[] | undefined {
+  const on = followingThread(chat, room, parent);
+  if (on === undefined) return undefined;
+  return [{ label: on ? "Stop following" : "Follow", hint: on ? "You hear its replies" : "Hear its replies", run: () => void followThread(chat, room, parent).catch(() => {}) }];
 }
 
 /** The chief of staff's head from how its lead stands (#1342). */
@@ -279,7 +288,7 @@ function useChief(on: boolean, place: Place, view: PanelView, setView: (v: Panel
         <TerminalWell machine={term.machine} pane={term.pane} label={head.machine ?? ""} />
       ) : (
         <div class="chat-thread" data-ov-staff={r.id}>
-          <RoomBody key={r.id} room={r} phone={false} embedded name="Chief of staff" empty={{ title: "Nothing said to your chief of staff yet.", why }} />
+          <RoomBody key={r.id} room={r} phone={false} embedded target={head.machine ? `staff room · ${head.machine}` : "staff room"} name="Chief of staff" empty={{ title: "Nothing said to your chief of staff yet.", why }} />
         </div>
       ),
     },
@@ -313,7 +322,7 @@ function useThread(t: Extract<PanelTarget, { kind: "thread" }> | null): { shown:
       flush: true,
       body: (
         <div class="chat-thread" data-panel-room={room.id}>
-          <RoomBody key={room.id} room={room} phone={false} embedded name={t.title} empty={{ title: "Nothing said here yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
+          <RoomBody key={room.id} room={room} phone={false} embedded target={`room · ${t.title}`} name={t.title} empty={{ title: "Nothing said here yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
         </div>
       ),
     },
@@ -404,11 +413,13 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
     }
   }
   const text = tail?.join("\n") ?? "";
+  // Claude Code in a terminal: its screen, its tool calls folded as an agent block's are.
+  const claude = !md && !!pane && kindOf(pane) === "agent" && isClaudeScreen(text);
   const body = (
     <>
       <Tail text={text}>
-        {md && tail?.length ? (
-          <Transcript text={text} data-panel-transcript={key} data-panel-live={read ? "" : undefined} />
+        {(md || claude) && tail?.length ? (
+          <Transcript text={text} claude={claude} data-panel-transcript={key} data-panel-live={read ? "" : undefined} />
         ) : (
           <Well>
             <pre data-panel-transcript={key} data-panel-live={read ? "" : undefined}>

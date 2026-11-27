@@ -1,7 +1,9 @@
 // Composer (kit §4.1, 10): where you write to an agent or a room. It glows
 // while you're in it; ↵ sends, ⇧↵ is a new line; the line under it says who
 // it goes to, with any actions on what it writes to (Silence, Stop). A send
-// that says it failed (`false`) keeps the text.
+// that says it failed (`false`) keeps the text. Chat's composer takes this
+// look in the agent panel (RoomBody's `target`), keeping its mentions,
+// files and drafts.
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
@@ -36,6 +38,7 @@ export function Composer({
   return (
     <div class="k-composer" data-kit="composer">
       <textarea
+        class="k-composer-field"
         rows={2}
         aria-label={placeholder}
         placeholder={placeholder}

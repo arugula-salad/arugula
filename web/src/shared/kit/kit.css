@@ -382,11 +382,22 @@
   outline: 0;
   border-color: var(--focus);
 }
-.k-panel-col.is-floor > .k-panel {
+/* The floor: only the body (a transcript, a room or a terminal) over the
+   page; the tabs, head and composer stay in the column under it. */
+.k-panel-col.is-floor .k-panel-body {
   position: fixed;
   z-index: 40;
   inset: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--section);
   box-shadow: var(--highlight), var(--shadow-raised);
+}
+.k-panel-unfloor {
+  position: fixed;
+  z-index: 41;
+  top: 20px;
+  right: 20px;
 }
 .k-panel-tabs {
   display: flex;
@@ -477,10 +488,16 @@
 .k-panel-back {
   display: flex;
   align-items: center;
+  padding: 0 8px 0 0;
+  border-bottom: 1px solid var(--line);
+}
+.k-panel-back > button[data-panel-back] {
+  display: flex;
+  flex: 1;
+  align-items: center;
   gap: 6px;
   padding: 6px 14px;
   border: 0;
-  border-bottom: 1px solid var(--line);
   background: none;
   color: var(--ink-dim);
   font: inherit;
@@ -488,8 +505,11 @@
   text-align: left;
   cursor: pointer;
 }
-.k-panel-back:hover {
+.k-panel-back > button[data-panel-back]:hover {
   color: var(--ink);
+}
+.k-panel-back > .k-panel-tool {
+  margin: 0;
 }
 .k-panel-body {
   position: relative;
@@ -679,7 +699,8 @@
   border-color: transparent;
   background: linear-gradient(var(--card), var(--card)) padding-box, var(--glow), var(--focus) border-box;
 }
-.k-composer textarea {
+/* Two classes: chat's composer, drawn as this one in the panel, styles its textarea too. */
+.k-composer .k-composer-field {
   width: 100%;
   min-height: 0;
   padding: 2px 0 8px;

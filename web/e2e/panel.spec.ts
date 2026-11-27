@@ -2,8 +2,9 @@
 // the suite's daemon (./overview-fixture.ts): the chief of staff first, a
 // peek that follows the selection in Needs you, the widths (`[` `]` `\`,
 // remembered), `l` and `h` moving focus, the Terminal (`v`) live in a well,
-// the floor (`f`, Esc out), an ended session read only, a message's
-// replies opening in the panel and back to the same place, and a tab's ×.
+// the floor (`f`: the body over the page; ⤢ or Esc out), an ended session
+// read only, a message's replies opening in the panel (one Back, Follow in
+// its ⋯) and back to the same place, and a tab's ×.
 import { expect, test, type Page } from "@playwright/test";
 import { overview, P, paneItem, proposing, say, START, suiteHost } from "./overview-fixture";
 
@@ -171,24 +172,30 @@ test("v shows the peeked session's pane live in a well, and back to its transcri
   await expect(panel(page).locator("[data-panel-terminal]")).toHaveCount(0);
 });
 
-test("the chief of staff's room, then the floor: f puts the panel over the page and Esc leaves it", async ({ page }, info) => {
+test("the chief of staff's room, then the floor: f puts its body over the page, and ⤢ or Esc leaves it", async ({ page }, info) => {
   await overview(page);
   await proposing(page, START);
-  await expect(panel(page).locator('[data-ov-staff="dm_cos"] [data-msg="1"]')).toBeVisible();
+  const staff = panel(page).locator('[data-ov-staff="dm_cos"]');
+  await expect(staff.locator('[data-msg="1"]')).toBeVisible();
   await expect(panel(page).locator("[data-panel-head]")).toHaveAttribute("data-panel-head", "Chief of staff");
+  // Its room writes in the kit's composer, which says where it goes.
+  await expect(staff.locator("[data-kit=composer]")).toContainText("staff room");
   await page.screenshot({ path: info.outputPath("panel-chief.png") });
   await blur(page);
   await page.keyboard.press("f");
   await expect(col(page)).toHaveAttribute("data-panel-floor", "");
-  const box = (await panel(page).boundingBox())!;
+  // Only the body: the room over the page; the panel, its tabs and head, stay in their column.
+  const box = (await panel(page).locator("[data-panel-body]").boundingBox())!;
   expect(box.width).toBeGreaterThan(1300);
   expect(box.height).toBeGreaterThan(800);
+  expect((await panel(page).boundingBox())!.width).toBeLessThan(700);
+  await expect(panel(page).locator("[data-panel-floor-toggle]")).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("panel-floor.png") });
   const url = page.url();
   await page.keyboard.press("Escape");
   await expect(col(page)).not.toHaveAttribute("data-panel-floor", "");
   expect(page.url()).toBe(url);
-  // ⤢ does the same.
+  // ⤢ does the same: the head's goes in, the floor's comes out.
   await panel(page).locator("[data-panel-floor-toggle]").click();
   await expect(col(page)).toHaveAttribute("data-panel-floor", "");
   await panel(page).locator("[data-panel-floor-toggle]").click();
@@ -260,9 +267,20 @@ test("a message's replies open in the panel over its room; back and Esc return t
   const thread = panel(page).locator('[data-thread-panel="30"]');
   await expect(thread).toBeVisible();
   await expect(thread).toContainText("Jo, as last time.");
+  // One way back, the panel's; no head of the thread's own (its ×, its "Thread"), and Follow in the ⋯.
+  await expect(panel(page).locator("[data-panel-back]")).toHaveCount(1);
   await expect(panel(page).locator("[data-panel-back]")).toHaveText(/Back to Chief of staff/);
+  await expect(thread.locator("[data-thread-close], [data-thread-back], [data-thread-follow]")).toHaveCount(0);
+  await expect(thread.getByText("Thread", { exact: true })).toHaveCount(0);
+  await expect(thread.locator("[data-kit=composer]")).toContainText("thread · ");
   expect(page.url()).toBe(url);
   await page.screenshot({ path: info.outputPath("panel-thread.png") });
+  await panel(page).locator("[data-panel-more]").click();
+  await expect(page.getByRole("menuitem", { name: /^Follow/ })).toBeVisible();
+  // Esc shuts the menu first, and the thread stays.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menuitem", { name: /^Follow/ })).toHaveCount(0);
+  await expect(thread).toBeVisible();
   await panel(page).locator("[data-panel-back]").click();
   await expect(thread).toHaveCount(0);
   await expect(footer).toBeVisible();

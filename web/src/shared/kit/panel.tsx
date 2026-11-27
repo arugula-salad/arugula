@@ -8,7 +8,8 @@
 //
 // The frame owns its width (420 by default; `[` narrower to 320, `]` wider
 // to 600, `\` a thin strip and back), kept per person in this browser; the
-// floor (`f`: the panel over the whole page; Esc leaves it); and its keys,
+// floor (`f`: its body, the transcript or the terminal, over the whole page;
+// ⤢ or Esc leaves it, and its tabs, head and composer stay where they were); and its keys,
 // in the one key table: `l` focuses the panel, `h` the work beside it
 // (`[data-work]`), `v` Transcript or Terminal. What a tab shows is the
 // page's: `AgentPanel` (app/panel.tsx) draws agents, rooms and threads in
@@ -20,9 +21,10 @@ import { both, useBindings, type Binding } from "../keys";
 import { usePlatformApi } from "../platform-api";
 import { ChatMarkdown } from "../chat/chat-markdown";
 import { surfacesFor } from "../surfaces";
-import { partsOf } from "../transcript";
+import { claudeParts, partsOf } from "../transcript";
 import { dialogUp } from "../ui/modal";
-import { ChevronIcon, ExpandIcon, IconButton } from "../ui/icons";
+import { ChevronIcon, ExpandIcon, IconButton, MoreIcon } from "../ui/icons";
+import { escapeTaken, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { Avatar } from "./avatar";
 import { Kbd } from "./kbd";
 import { StateMark, type State } from "./state-mark";
@@ -119,8 +121,9 @@ export function Panel({
   onView?: (v: PanelView) => void;
   /** Whether it goes full screen (`f`). */
   floors?: boolean;
-  /** Drilled into something (a thread): the way back, also Esc. */
-  back?: { label: string; go: () => void };
+  /** Drilled into something (a thread): the way back, also Esc, and what
+   * else it does in a ⋯ beside it (Follow). */
+  back?: { label: string; go: () => void; more?: MenuItem[] };
   above?: ComponentChildren;
   foot?: ComponentChildren;
   /** Over the body, under the head: what the agent needs before you write to it (start it, restart it). */
@@ -178,7 +181,7 @@ export function Panel({
     },
     {
       id: "panel-floor",
-      label: "The panel full screen, and back",
+      label: "The panel's transcript or terminal full screen, and back",
       keys: both("key:f"),
       when: () => now.current.floors && !now.current.size.shut,
       run: () => setFloor((f) => !f),
@@ -206,6 +209,7 @@ export function Panel({
         !e.metaKey &&
         !e.altKey &&
         !dialogUp() &&
+        !escapeTaken(e) &&
         !document.querySelector(OWNS_ESCAPE) &&
         !document.activeElement?.closest(".xterm, .msg-edit"),
       run: () => (now.current.floor ? setFloor(false) : now.current.back?.go()),
@@ -255,20 +259,41 @@ export function Panel({
               ))}
             </div>
           )}
-          {floors && (
-            <IconButton class="k-panel-tool" label={floor ? "Leave full screen" : "Full screen"} title={floor ? "Leave full screen (f)" : "Full screen (f)"} aria-pressed={floor} data-panel-floor-toggle onClick={() => setFloor(!floor)}>
+          {floors && !floor && (
+            <IconButton class="k-panel-tool" label="Full screen" title="Full screen (f)" aria-pressed={false} data-panel-floor-toggle onClick={() => setFloor(true)}>
               <ExpandIcon />
             </IconButton>
           )}
         </header>
         )}
         {back && (
-          <button type="button" class="k-panel-back" data-panel-back onClick={back.go}>
-            <ChevronIcon dir="left" size="xs" /> {back.label}
-          </button>
+          <div class="k-panel-back">
+            <button type="button" data-panel-back onClick={back.go}>
+              <ChevronIcon dir="left" size="xs" /> {back.label}
+            </button>
+            {back.more?.length ? (
+              <IconButton
+                class="k-panel-tool"
+                label="More"
+                title="More"
+                data-panel-more
+                onClick={(e) => {
+                  const from = e.currentTarget;
+                  openMenu(menuBelow(from, true), back.more!, { from, end: true, label: back.label });
+                }}
+              >
+                <MoreIcon />
+              </IconButton>
+            ) : null}
+          </div>
         )}
         {lede && <div class="k-panel-lede">{lede}</div>}
         <div class={flush ? "k-panel-body is-flush" : "k-panel-body"} data-panel-body>
+          {floor && (
+            <IconButton class="k-panel-tool k-panel-unfloor" label="Leave full screen" title="Leave full screen (f, esc)" aria-pressed data-panel-floor-toggle onClick={() => setFloor(false)}>
+              <ExpandIcon />
+            </IconButton>
+          )}
           {children}
           {over && <div class="k-panel-over">{over}</div>}
         </div>
@@ -287,11 +312,12 @@ export function PanelNote({ children, end, ...data }: { children: ComponentChild
   );
 }
 
-/** An agent's transcript (its Markdown): prose as chat draws a message, sans
- * with ids and code in mono, and each tool call folded to its one line,
- * which opens; with surfacesFor's `said`, no tool calls. */
-export function Transcript({ text, ...data }: { text: string } & { [d: `data-${string}`]: unknown }) {
-  const parts = partsOf(text, surfacesFor().transcript);
+/** An agent's transcript (its Markdown; `claude`: Claude Code's screen in a
+ * terminal): prose as chat draws a message, sans with ids and code in mono,
+ * and each tool call folded to its one line, which opens; with
+ * surfacesFor's `said`, no tool calls. */
+export function Transcript({ text, claude, ...data }: { text: string; claude?: boolean } & { [d: `data-${string}`]: unknown }) {
+  const parts = (claude ? claudeParts : partsOf)(text, surfacesFor().transcript);
   return (
     <div class="k-panel-transcript" {...data}>
       {parts.map((p, i) =>
