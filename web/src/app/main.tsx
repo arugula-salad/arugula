@@ -36,7 +36,7 @@ import { go, pathOf } from "../platform/router";
 import { controlOrigin, session } from "../platform/session";
 import { fromControl } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
-import { appAgentPanel, appDocLinks, appMachineDocs, appMachines, appOverview, appOwnPane } from "./machines";
+import { appAgentPanel, appDocLinks, appInbox, appMachineDocs, appMachines, appOverview, appOwnPane } from "./machines";
 import { appLive } from "./live";
 import { appMachineSettings } from "./settings";
 import { AppSession } from "./session";
@@ -82,6 +82,7 @@ const api: PlatformApi = {
   ...platformApi,
   Machines: appMachines(appSession),
   Overview: appOverview(appSession),
+  Inbox: appInbox(appSession),
   AgentPanel: appAgentPanel(appSession),
   machineDocs: appMachineDocs(appSession),
   // Docs' Shared by you: each link's title, URL and pane, from its machine.

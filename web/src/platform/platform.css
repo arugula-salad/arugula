@@ -379,56 +379,6 @@ html[data-native-tabs] .platform {
   }
 }
 
-/* The inbox (M171): an entry per item and reason, the item's link on its
-   own line, then what it is, then Seen and Done; unseen ones stand out. */
-.platform-inbox-list li {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 12px;
-}
-
-.platform-inbox-list li:not(.card) {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.platform-inbox-list li > :not(.platform-inbox-actions) {
-  grid-column: 1;
-  min-width: 0;
-}
-
-.platform-inbox-list li.unseen .platform-inbox-title {
-  font-weight: 600;
-}
-
-.platform-inbox-item {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.platform-inbox-ref {
-  color: var(--ink-dim);
-}
-
-.platform-inbox-title {
-  color: var(--ink);
-}
-
-.platform-inbox-actions {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  display: flex;
-  gap: 12px;
-}
-
-.platform-inbox-actions button {
-  min-height: 32px;
-}
-
 /* A phone's width doesn't hold every place and the account: the bar
    scrolls sideways rather than cut them off. */
 .platform-bar {
@@ -1378,13 +1328,6 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
   font-size: var(--text-meta);
   white-space: nowrap;
-}
-
-/* Boards, Docs and the Inbox widened to every project (Arugula #881). */
-[data-all-projects-toggle][aria-pressed="true"] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--canvas);
 }
 
 /* Search's "This team | All teams", beside the box (Arugula #883, #1115). */

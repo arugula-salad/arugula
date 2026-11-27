@@ -246,6 +246,18 @@ pub fn said_of(via: &str) -> Option<&str> {
     via.strip_prefix(SAID_VIA).filter(|s| s.starts_with("ses_"))
 }
 
+/// An agent's ask that its lead answers first (Arugula #1393, #1469): the
+/// agent that started the session, live, has until `until` (ms) before the
+/// ask reaches its person. Never a question's words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WithLead {
+    /// The lead, as its machine names it: "<session> on <machine>".
+    pub name: String,
+    pub until: u64,
+}
+
 /// A session as its card shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -295,6 +307,10 @@ pub struct SessionCard {
     pub turn: Option<SessionTurn>,
     /// What it asks, while it waits on a person.
     pub open: Option<SessionOpen>,
+    /// While `open` waits on its lead, not its person (Arugula #1469).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub with_lead: Option<WithLead>,
     /// The answer to it that its box hasn't taken yet.
     pub answered: Option<SessionAnswered>,
     /// Someone asked its box to cancel the turn, and it hasn't yet.

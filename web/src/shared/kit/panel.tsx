@@ -7,7 +7,8 @@
 // open), and its foot (the composer, or why there is none).
 //
 // The frame owns its width (420 by default; `[` narrower to 320, `]` wider
-// to 600, `\` a thin strip and back), kept per person in this browser; the
+// to 600, `\` a thin strip and back), kept per person in this browser (a
+// place that starts it `folded`, a Doc's page, keeps its own fold); the
 // floor (`f`: its body, the transcript or the terminal, over the whole page;
 // ⤢ or Esc leaves it, and its tabs, head and composer stay where they were); and its keys,
 // in the one key table: `l` focuses the panel, `h` the work beside it
@@ -44,6 +45,9 @@ export interface AgentPanelProps {
   targets: PanelTarget[];
   /** panelKey of the tab in front; undefined: the chief of staff. */
   current?: string;
+  /** This place starts the panel as a strip (`\` opens it), whatever the
+   * reader's fold elsewhere, which it leaves as it was: a Doc's author. */
+  folded?: boolean;
   /** A tab picked: its panelKey, or CHIEF_KEY for the chief of staff. */
   onPick?: (key: string) => void;
   /** A tab's ×; without it, a target's tab has no ×. */
@@ -106,6 +110,7 @@ export function Panel({
   lede,
   over,
   flush,
+  folded,
   children,
 }: {
   label: string;
@@ -132,15 +137,17 @@ export function Panel({
   over?: ComponentChildren;
   /** The body holds its own scroller (a room): no padding, no scroll of its own. */
   flush?: boolean;
+  /** A strip at first, and its fold not kept: the place's own (AgentPanelProps'). */
+  folded?: boolean;
   children: ComponentChildren;
 }) {
-  const [size, setSize] = useState(readWidth);
+  const [size, setSize] = useState(() => (folded === undefined ? readWidth() : { ...readWidth(), shut: folded }));
   const [floor, setFloor] = useState(false);
   const col = useRef<HTMLDivElement>(null);
   const put = (next: { w: number; shut: boolean }) => {
     setSize(next);
     try {
-      localStorage.setItem(STORE, JSON.stringify(next));
+      localStorage.setItem(STORE, JSON.stringify(folded === undefined ? next : { ...next, shut: readWidth().shut }));
     } catch {
       // Not kept: it holds for this page.
     }

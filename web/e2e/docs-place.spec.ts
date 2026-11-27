@@ -29,7 +29,7 @@ const docOf = (project: string, id: string, title: string, author: string, ago: 
 type Doc = ReturnType<typeof docOf>;
 
 /** The fixture page at `path`, with the platform's answers for both projects' Docs. */
-async function open(page: Page, path: string, docs: Record<string, Doc[]>) {
+async function open(page: Page, path: string, docs: Record<string, Doc[]>, more?: () => Promise<void>) {
   const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
   await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }));
@@ -47,6 +47,7 @@ async function open(page: Page, path: string, docs: Record<string, Doc[]>) {
   if (SHOTS) await page.addInitScript(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "system", preset: "arugula", light: null, warmth: 0, depth: 0 })));
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/(p\/prj_|docs)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
+  await more?.();
   await page.goto(path);
 }
 
@@ -136,4 +137,42 @@ test("/docs goes to the current project's Docs", async ({ page }) => {
   await page.goto("/docs");
   await expect(page).toHaveURL(new RegExp(`/p/${SITE}[^/]*/docs$`));
   await expect(titles(page)).toHaveCount(4);
+});
+
+test("a Doc opens as its paper with its contents beside it: On this page scrolls to a section, and Linked is its boards", async ({ page }) => {
+  const id = "pdc_aaaa0009";
+  const d = docOf(SITE, id, "Launch checklist", "acct_a", HOUR);
+  const long = (n: number) => Array.from({ length: 30 }, (_, i) => `Line ${i} of part ${n}.`).join("\n\n");
+  const view = {
+    doc: { ...d, sections: 3, written: 2 },
+    sections: [
+      { id: "s1", heading: "Before", intent: "", body: long(1), rev: 1 },
+      { id: "s2", heading: "The day", intent: "", body: '```svg\n<svg viewBox="0 0 40 20"><rect width="40" height="20" fill="leaf-soft"/></svg>\n```\n\n' + long(2), rev: 1 },
+      { id: "s3", heading: "After", intent: "what's left", body: null, rev: 0 },
+    ],
+    assets: [],
+    writer: false,
+    deleter: false,
+    link: null,
+  };
+  const json = (r: Route, body: unknown) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+  await open(page, `/p/${SITE}/docs/${id}`, team(), async () => {
+    await page.route(new RegExp(`/api/projects/[^/]+/docs/${id}/boards$`), (r) => json(r, { boards: [{ board: "brd_aaaa0001", title: "Launch", strip: true, rows: 0 }] }));
+    await page.route(new RegExp(`/api/projects/[^/]+/docs/${id}$`), (r) => json(r, view));
+  });
+  const toc = page.locator("[data-doc-toc]");
+  // The written sections, the one with a drawing marked; the pending one isn't listed.
+  await expect(toc.locator("[data-doc-toc-go]")).toHaveText(["Before", "The day◧"]);
+  await expect(toc.locator("[data-doc-toc-go]").first()).toHaveAttribute("aria-current", "location");
+  await toc.locator("[data-doc-toc-go]").nth(1).click();
+  await expect(toc.locator("[data-doc-toc-go]").nth(1)).toHaveAttribute("aria-current", "location");
+  await expect(page.locator('[data-section="s2"]')).toBeInViewport();
+  // Linked: the boards it's on, where the line under the Doc used to say so.
+  await expect(toc.locator("[data-doc-board=brd_aaaa0001]")).toContainText("Launch");
+  await expect(page.locator("[data-doc-boards]")).toHaveCount(0);
+  // The Doc is a sheet of paper, left of its contents.
+  const paper = (await page.locator(".project-doc .doc").boundingBox())!;
+  const aside = (await toc.boundingBox())!;
+  expect(paper.x + paper.width).toBeLessThanOrEqual(aside.x);
+  await shoot(page, "doc-page");
 });

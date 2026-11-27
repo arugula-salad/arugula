@@ -53,9 +53,9 @@ import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, readableCommand, shortHost, whatItDoes } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
-import { readInbox } from "../platform/inbox-count";
+import { readInbox } from "../platform/inbox";
 import { boot } from "./machine-page";
-import { paneOwner, yours } from "./overview-needs";
+import { paneOwner, yours } from "./needs";
 import { StaffMove, StaffRestart, StaffStart } from "./panel-staff";
 import type { AppSession } from "./session";
 
@@ -149,7 +149,7 @@ export function AgentPanelPlace(props: AgentPanelProps & { session: AppSession |
 }
 
 /** The panel over `fleet`: the chief of staff, then `targets`. */
-export function AgentPanel({ project, above, targets, current, onPick, onClose, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
+export function AgentPanel({ project, above, targets, current, onPick, onClose, folded, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
@@ -208,6 +208,7 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
       over={over}
       flush={shown.flush}
       foot={shown.foot}
+      folded={folded}
     >
       <PlatformApiContext.Provider value={here}>{shown.body}</PlatformApiContext.Provider>
     </Panel>
