@@ -69,3 +69,39 @@ if people miss it. Newest at the bottom.
 - **Settings › Project › CI alerts, Runs and workspaces, Claude spend** as rows of their own: parts of one Agents row (Lift 7, Arugula #1487).
 - **The Team page** (`/t/:team/chat`, `/members`, its tabs): its members are Settings › Team, its chat the team's project's chat (Lift 7, Arugula #1487).
 - **The avatar menu's phone-only Your account…:** the menu has each of Settings' scopes on every screen (Lift 7, Arugula #1487).
+
+## #2947 (Lift 6b, the Docs list)
+
+- **The shell's Docs page (`#docs`):** a machine's Docs are in Go to… by title, and the app's Docs are the rail's; an old `#docs` lands on one of them (Lift 6b, Arugula #1484).
+- **My Docs and Team Docs tabs:** one list, with a Mine filter in a team (Lift 6b, Arugula #1484).
+- **The Docs list's sort (Updated or Created), search, time groups and preview pane:** the latest changed first; Go to… finds a Doc by title; a Doc opens on its page (Lift 6b, Arugula #1484).
+- **A Docs row's ⋯ and the list's ticks (Move several to a team):** a Doc's ⋯ on its page has the same, one Doc at a time (Lift 6b, Arugula #1484).
+- **The Docs page's empty state with Start an agent:** the list's empty state says where Docs come from (Lift 6b, Arugula #1484).
+
+## #2950 (Lift 7, Deploys)
+
+- **The Deploys place** (`/p/:project/deploys`, a project's deploys newest first): each environment's history is in Settings › Project › Secrets and environments, where the address lands; a deploy waiting on you is a Needs-you row (Lift 7, Arugula #1487).
+- **"Plan a deploy" (`/p/:project/deploys/new`) and each environment's Deploy…:** an agent's `plan_deploy` or `arugula deploys plan` plans one; the address lands on the environments (Lift 7, Arugula #1487).
+
+## #2953 (Lift 6d: the Inbox)
+
+- **The Inbox's old list** (its swarm-coloured cards, "N need you · N items" stats, the Decide / Names you / Chat headings): every project's items under their project, each a kit NeedRow answered in place (Lift 6d, Arugula #1486).
+- **The Inbox's All projects toggle** (`[data-all-projects-toggle]` on `/inbox`): the Inbox is always every project's; `/inbox?all=1` still opens it (Lift 6d, Arugula #1486).
+- **Deploys waiting for you as cards on the Inbox:** a deploy's row opens its page, where it's approved (Lift 6d, Arugula #1486).
+- **The Inbox badge's @ for a waiting deploy and its "N deploys wait" tip:** the badge is the server's count, as it is (Lift 6d, Arugula #1486).
+
+## #2951 (Lift 7, the legacy token names)
+
+- **The legacy token names** (`--bg`, `--fg`, `--dim`, `--surface`, `--raised`, `--ok`, `--warn`, `--danger`, `--info`, `--text-xs…2xl`, the radii …): every rule names the role it aliased, `tokens.css` holds only the roles, and check-colour refuses the old names (Lift 7, Arugula #1487).
+- **Five colors no role covered:** `--subtle` is `--ink-dim`; a merged change (`--merged`, purple) is `--done`; `--teal` and `--pink` are `--review`; `--peach` is `--needs` (Lift 7, Arugula #1487).
+
+## #2952 (Lift 7, Getting started)
+
+- **Getting started's Welcome step** (right-click, drag to split, Jump anywhere, Edit in nvim, the CLI line): the hints say each at its moment; Edit in nvim is in + Pane and Settings (Lift 7, Arugula #1487).
+- **Getting started's Agents step** (each adapter's state, Start an agent, What your agent can do, the Claude Code plugin's two lines, the hooks check): adapters are the Start-an-agent dialog's and the agent block's, what an agent can do is that dialog's, and Claude Code's one click is under Add a machine where it isn't set up (Lift 7, Arugula #1487).
+- **Getting started's Things to try** and its done marks (`seen:getting-started.try.*`), **the step rail, Back/Next, and the "it's in Go to…" toast**: Getting started is one screen, Add a machine (Lift 7, Arugula #1487).
+- **Getting started's Make a team / Share a session** after joining: Settings › Team and a session's Share (Lift 7, Arugula #1487).
+
+## #2954 (Lift 6d: no bell)
+
+- **The bell on a machine's page** (`[data-open-attention]`, its count of what needs you on every machine): the rail's Inbox badge is the one count; the attention drawer still opens from Go to… and the sidebar until Lift 6a (Lift 6d, Arugula #1486).
