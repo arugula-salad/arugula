@@ -42,57 +42,21 @@
   margin-left: auto;
 }
 
-/* The sessions: cards, as many to a row as fit at about 270px. */
+/* The sessions: one row each (Lift 6a), a pinned one's unpin at its end. */
 .machines-sessions {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr));
-  gap: var(--space-2);
 }
 .machines-session-item {
-  min-width: 0;
-}
-.machines-session {
-  min-width: 0;
-  height: 100%;
-}
-.machines-session-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
   min-width: 0;
 }
-.platform-section .machines-session-name {
-  min-width: 0;
+.machines-session-item > .k-row {
   flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font: 600 var(--text-body) var(--font-sans);
-  color: inherit;
-  text-decoration: none;
+  min-width: 0;
 }
-.machines-session-name:hover {
-  text-decoration: underline;
-}
-.platform-section .machines-session-meta {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-label);
-}
-.platform-section .machines-tab {
-  margin: var(--space-2) 0 0;
-  padding: 0 var(--space-2);
-  font: 500 var(--text-label) var(--font-sans);
-}
-/* "+N more tabs", under a busy session's first few. */
-.platform-section .machines-more {
-  align-self: flex-start;
-  margin: var(--space-1) 0 0;
-  padding: 0 var(--space-2);
-}
-
 .panes-rows {
   margin: 0;
   padding: 0;
