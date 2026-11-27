@@ -10,7 +10,7 @@ if people miss it. Newest at the bottom.
 - **"Use the Slate look":** Reset does the same (Arugula #1477).
 - **The footer's machine, and the focused pane's repository and branch:** the crumb says where you are (Lift 3, Arugula #1479).
 - **The footer's "N need you":** the rail's Inbox is the one count (Lift 3, Arugula #1479).
-- **Slate and Latte's look:** the cyan accent on navy and the purple on cream; Arugula's green on near-black and olive on grey paper replace them, and Moss, Sea glass, Stone & ink and Graphite & acid are the other presets. Docs, terminals and editors keep Slate and Latte's colors for now (Arugula #1482).
+- **Slate and Latte's look:** the cyan accent on navy and the purple on cream; Arugula's green on near-black and olive on grey paper replace them, and Moss, Sea glass, Stone & ink and Graphite & acid are the other presets. Docs, terminals and editors follow since Arugula #1511.
 - **Bundled fonts:** Instrument Sans, Big Shoulders Display and JetBrains Mono ("Arugula Mono"); the app uses Helvetica Neue and SF Mono from the system (Arugula #1482).
 - **A stored slider setting from before the brand:** it starts again at Arugula's; the theme is kept (Arugula #1482).
 - **The palette's other menu rows:** Go to… lists 25 commands (no clipboard ones, no single settings); the rest stay in their menus (Lift 3, Arugula #1479).
@@ -58,3 +58,4 @@ if people miss it. Newest at the bottom.
 - **Swarm's rail cards** (their kind colours, pop-in, uppercase titles and tinted frames): the rail is a list of NeedRows, as Needs you's (Lift 4, Arugula #1480).
 - **All issues' issue cards** (their state-coloured bars, the bold title, the "Closed" chip and the 20px avatars): each issue is a kit Row, ○ open or ✓ closed, #N, title, labels, who and when (Arugula #1521).
 - **Not on a board's own row look** (the dimmed select box until hovered, the accent-tinted selection, labels hidden on a phone): the kit Row, with its select box before it (Arugula #1521).
+- **The terminals' and editors' Slate and Latte colors:** a terminal, an editor block and nvim are drawn from the look, on the well; a Doc from Arugula's own pair, whatever the look (Arugula #1511).

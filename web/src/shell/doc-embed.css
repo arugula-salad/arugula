@@ -8,16 +8,16 @@
 @import "../shared/buttons.css";
 @import "../shared/docs/docs.css";
 
-/* The house pair, as doc-view.css has it: the build writes the palettes in
+/* The house pair, as doc-view.css has it: the build writes the house pair in
    for the markers (vite.config.ts's docPalette), which it can't do through
    the @import above. */
 :root:root {
-  /* PALETTES: slate */
+  /* HOUSE: dark */
 }
 
 @media (prefers-color-scheme: light) {
   :root:root {
-    /* PALETTES: latte */
+    /* HOUSE: light */
     /* The page is the Doc's paper: no darker letterbox around it. */
     --well: var(--canvas);
   }

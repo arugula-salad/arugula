@@ -48,7 +48,7 @@
   --fail: #ec6c5f;
   --fail-tint: color-mix(in srgb, var(--fail) 14%, transparent);
   --review: #8fb4dc;
-  --done: #5fd394;
+  --done: #6fc884;
   --backdrop: rgb(0 0 0 / 0.4);
 
   /* Depth: a card's shadow, a raised thing's (a popover, a menu), a top
@@ -114,9 +114,9 @@
   --btn-radius: var(--radius-control);
   --field-radius: var(--radius-control);
   /* Colors no role covers yet; look.ts paints them. */
-  --subtle: #b4c0d0;
-  --peach: #f29b6b;
-  --teal: #5fd3c4;
-  --pink: #ad9cf2;
-  --merged: #b49cf2;
+  --subtle: #bec8d3;
+  --peach: #f2985f;
+  --teal: #25cbb7;
+  --pink: #e490d2;
+  --merged: #bb9ef9;
 }

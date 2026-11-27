@@ -42,9 +42,9 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
 
   // A theme applies at once, and Reset goes back to nothing picked.
   await look.locator('[data-theme-choice="light"]').click();
-  await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+  await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
   await look.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(page.locator("html")).not.toHaveAttribute("data-palette", "latte");
+  await expect(page.locator("html")).not.toHaveAttribute("data-scheme", "light");
   await expect(page.locator("[data-appearance]")).toHaveCount(0);
 
   await closeSettingsPage(page);
