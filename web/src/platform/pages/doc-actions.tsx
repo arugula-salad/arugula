@@ -233,8 +233,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   return { share, copy, open, items, load, dialogs };
 }
 
-/** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them. */
-export function PlatformDocActions({ p, doc, reload, menu, deleter, gone, undone, writer, edit }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove & Rename) {
+/** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them, with `more` (a place's own, as a board's tab's) at its end. */
+export function PlatformDocActions({ p, doc, reload, menu, more, deleter, gone, undone, writer, edit }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean; more?: MenuItem[] } & Remove & Rename) {
   const a = useDocActions(p, doc, true, reload, { deleter, gone, undone }, { writer, edit });
   return (
     <>
@@ -246,7 +246,7 @@ export function PlatformDocActions({ p, doc, reload, menu, deleter, gone, undone
         labels={{ share: a.share?.title }}
         hooks={{ copy: { "data-doc-copy-link": "", "data-link": linkOf(p, doc) }, share: { "data-doc-share": "" }, open: { "data-doc-open-tab": "" } }}
       >
-        {menu && <MoreButton doc={doc} items={a.items} />}
+        {menu && <MoreButton doc={doc} items={more?.length ? (from) => [...a.items(from), "separator", ...more] : a.items} />}
       </DocActions>
       {a.dialogs}
     </>

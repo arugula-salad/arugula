@@ -29,7 +29,7 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardLead, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
@@ -49,9 +49,10 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, deskTabs } from "./desk";
+import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, askNeed, deskTabs } from "./desk";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
+import { NeedRow } from "../kit/need-row";
 import { Mark } from "../kit/state-mark";
 import { Surface } from "../kit/surface";
 import { CardSessions, Drawer, useRowSessions, type Act } from "./card";
@@ -59,7 +60,7 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -113,7 +114,7 @@ export function BoardPanel({
   /** The page's own items for the desk's ⋯ (Workers). */
   extra?: MenuItem[];
   /** A project Doc's tab, as the page draws a Doc. */
-  docTab?: (doc: string) => preact.ComponentChildren;
+  docTab?: (doc: string, more: MenuItem[]) => preact.ComponentChildren;
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -572,6 +573,8 @@ export function BoardPanel({
 
   const doc = (view.docs ?? []).find((d) => d.id === tab);
   const pr = prs.find((p) => p.id === tab);
+  // A Doc's tab takes it off the board (Arugula #1524): in its own ⋯, or the × of one that's gone.
+  const unlink = doc && write ? () => (setTab("board"), void act(() => boards.removeDoc(id, doc.id))) : undefined;
   return (
     <CardSessions.Provider value={byCard}>
       <div class="board-desk" data-board-desk={id}>
@@ -579,7 +582,7 @@ export function BoardPanel({
           <DeskTabs tabs={tabs} current={doc || pr ? tab : "board"} pick={setTab} close={closeTab} />
           {doc ? (
             <div class="board-desk-tab" data-board-tab-doc={doc.id}>
-              {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id) : <DocLink d={doc} project={view.board.project} platform={platform} />}
+              {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id, unlink ? [{ label: "Take off this board", run: unlink, attrs: { "data-board-doc-remove": doc.id } }] : []) : <DocLink d={doc} project={view.board.project} platform={platform} remove={unlink} />}
             </div>
           ) : pr ? (
             <div class="board-desk-tab" data-board-tab-pr={pr.id}>
@@ -972,60 +975,6 @@ function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: A
   );
 }
 
-/** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons. The board's own flags (`raised`) have no card: the chip in trouble carries them (#903). */
-function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | { text: string }) => Promise<boolean> }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const send = async (a: { option: string } | { text: string }) => {
-    setBusy(true);
-    await answer(a);
-    setBusy(false);
-  };
-  return (
-    <div class={`board-ask${a.mine ? " mine" : ""}`} data-board-ask={a.id}>
-      <div class="board-line board-ask-question">
-        <StateChip tone="warn">Asks</StateChip>
-        <span data-board-ask-question>{a.question}</span>
-      </div>
-      {a.why && (
-        <details class="board-ask-why">
-          <summary class="dim">Why</summary>
-          <p>{a.why}</p>
-        </details>
-      )}
-      {a.can_answer && a.options.length > 0 && (
-        <div class="board-line board-ask-options">
-          {a.options.map((o) => (
-            <button key={o} type="button" class="secondary small" disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
-              {o}
-              {o === a.recommend && <span class="dim"> · recommended</span>}
-            </button>
-          ))}
-        </div>
-      )}
-      {a.can_answer && a.options.length === 0 && (
-        <form
-          class="board-line board-ask-text"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (answerReady(text)) void send({ text: text.trim() }).then(() => setText(""));
-          }}
-        >
-          <input type="text" value={text} maxLength={2000} aria-label="Your answer" placeholder="your answer" data-board-ask-text onInput={(e) => setText(e.currentTarget.value)} />
-          <button type="submit" class="primary" disabled={busy || !answerReady(text)} data-board-ask-send>
-            Send
-          </button>
-        </form>
-      )}
-      {!a.can_answer && (
-        <div class="board-line dim" data-board-ask-waiting>
-          {askWaitingLine(a)}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** The last answers on a row, folded. */
 function Answered({ asked }: { asked: BoardAnsweredAsk[] }) {
   return (
@@ -1248,7 +1197,7 @@ function BoardItemRow({
     ]);
   // The tile's empty space opens the drawer (Enter on the focused tile too); its links, buttons and forms do their own.
   const body = (e: MouseEvent) => {
-    if (e.button !== 0 || (e.target as Element).closest("a, button, summary, input, textarea, select, form, details, .board-ask")) return;
+    if (e.button !== 0 || (e.target as Element).closest("a, button, summary, input, textarea, select, form, details, [data-board-ask]")) return;
     if (window.getSelection()?.toString()) return;
     open(r.id);
   };
@@ -1316,7 +1265,11 @@ function BoardItemRow({
               {meta.join(" · ")}
             </p>
           )}
-          {asks && r.ask && !r.ask.raised && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
+          {asks && r.ask && !r.ask.raised && (
+            <div data-board-ask={r.ask.id}>
+              <NeedRow need={askNeed(r, r.ask, Date.now())} open onAnswer={(o) => void act(() => boards.answer(id, r.ask!.id, o.id ? { option: o.id } : { text: o.label }))} />
+            </div>
+          )}
           {asks && r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
         </>
       )}
