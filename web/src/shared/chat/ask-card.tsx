@@ -23,9 +23,12 @@
 //   answering did. The Overview's Needs you draws the same card. A "Run
 //   this board" card (`run_board`, Arugula #1416) says the board, where its
 //   lead runs, which machines its issue agents may use and how many at
-//   once, and when the grant lapses. A to-do (`todo`, Arugula #1462),
-//   answered, is the receipt its Needs you row shows ("Done by you 3:41 PM
-//   · <note>"), read from its record: the note is its person's alone.
+//   once, and when the grant lapses. A to-do (`todo`, Arugula #1462) is
+//   answered as its Needs you row answers it (`TodoCard`): its what, why
+//   and how in a well to copy, a note checked for secrets, and Done or
+//   Can't through the Inbox (`POST /api/inbox/{prp}`); answered, it's the
+//   receipt the row shows ("Done by you 3:41 PM · <note>"), read from its
+//   record: the note is its person's alone.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
@@ -34,7 +37,10 @@ import type { ChatAsk, ChatMessage, ChatRoom, ProposalRun, SessionAct, SessionVi
 import { Bar, BarWhere } from "../ui/bar";
 import { StateChip } from "../ui/state-chip";
 import { Card } from "../ui/card";
+import { Button } from "../kit/button";
 import { receiptLine, type Receipt } from "../kit/need-row";
+import { Well } from "../kit/well";
+import { TodoAnswer } from "./todo-answer";
 import { ChoiceForm, SessionAskForm, useSession } from "./session-card";
 
 const enc = encodeURIComponent;
@@ -327,6 +333,69 @@ function todoLine(a: ChatAsk): string {
   return receiptLine({ what: r?.what ?? "Answered", by: a.mine ? "you" : p.answered_by_name || "someone", at: r?.at ?? "", note: r?.note });
 }
 
+/** An open to-do's card, for its person: what, why, how (copied as it
+ * is), and its answer. Answered, the card reads its record again, which
+ * draws it as its receipt. Anyone else waits. */
+function TodoCard({ a, answered }: { a: ChatAsk; answered?: (a: ChatAsk) => void }) {
+  const api = usePlatformApi();
+  const [copied, setCopied] = useState(false);
+  const p = a.proposal!;
+  const how = p.todo?.how ?? "";
+  const answer = async (choice: string, note: string) => {
+    // Through the Inbox, as the row answers it; a page without one, the card's own route.
+    if (api.inbox) await api.inbox.answer(p.id, choice, note);
+    else await call<ChatAsk>("POST", askPath(a.room, a.seq), note.trim() ? { choice, note: note.trim() } : { choice });
+    answered?.(await call<ChatAsk>("GET", askPath(a.room, a.seq)));
+  };
+  return (
+    <Card
+      class="session-card session-ask proposal-card"
+      tone="warn"
+      head={
+        <Bar
+          sub
+          lead={
+            <StateChip tone="warn" data-ask-label>
+              {a.mine ? "waits on you" : `waits on ${a.asker_name || "its person"}`}
+            </StateChip>
+          }
+          where={<BarWhere>To do</BarWhere>}
+        />
+      }
+      data-ask={a.seq}
+      data-ask-state="open"
+      data-proposal={p.id}
+      data-proposal-action="todo"
+    >
+      <p class="session-card-line session-ask-question" data-proposal-todo>
+        {p.todo?.what ?? a.question}
+      </p>
+      {p.why && (
+        <p class="session-card-line" data-proposal-why>
+          <span class="dim">Why: </span>
+          {p.why}
+        </p>
+      )}
+      {how && (
+        <Well label="how">
+          <pre>{how}</pre>
+          <div class="k-row-actions">
+            <Button
+              onClick={() => {
+                void navigator.clipboard?.writeText(how);
+                setCopied(true);
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+        </Well>
+      )}
+      {a.mine ? <TodoAnswer options={a.choices.length ? a.choices : ["Done", "Can't"]} answer={answer} data-proposal-todo-answer /> : <p class="dim">Waiting for {a.asker_name || "its person"}.</p>}
+    </Card>
+  );
+}
+
 /** A proposal (Arugula #1278) as a card: what its agent wants to do as
  * its person and why, with Approve and Deny for them (`a.mine`); anyone
  * else waits. Answered, one dim line, linking the session it started.
@@ -356,6 +425,7 @@ export function ProposalCard({ a, project, answered, open }: { a: ChatAsk; proje
       </p>
     );
   }
+  if (p.action === "todo") return <TodoCard a={a} answered={answered} />;
   const answer = async (choice: "Approve" | "Deny") => {
     setBusy(choice);
     try {

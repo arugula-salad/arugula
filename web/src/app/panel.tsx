@@ -39,10 +39,10 @@ import { boards } from "../shared/boards/store";
 import { chat } from "../shared/chat-store";
 import { RoomBody } from "../shared/chat/room";
 import { call, saidOf } from "../shared/chat/session-card";
+import { TodoAnswer } from "../shared/chat/todo-answer";
 import { followThread, followingThread, ThreadPanel } from "../shared/chat/thread-panel";
 import { Button } from "../shared/kit/button";
 import { Composer } from "../shared/kit/composer";
-import { TextField } from "../shared/kit/field";
 import { receiptLine, type Receipt } from "../shared/kit/need-row";
 import { CHIEF_KEY, Panel, PanelNote, panelKey, Transcript, type AgentPanelProps, type PanelHead, type PanelTarget, type PanelView } from "../shared/kit/panel";
 import type { State } from "../shared/kit/state-mark";
@@ -59,7 +59,6 @@ import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, shortHost } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
 import { answerItem, readInbox } from "../platform/inbox";
-import { looksSecret } from "../shared/secret-like";
 import { boot } from "./machine-page";
 import { paneOwner, receiptOf, sessionName, yours } from "./needs";
 import { StaffMove, StaffRestart, StaffStart } from "./panel-staff";
@@ -558,43 +557,16 @@ function farWhy(fleet: Fleet, host: { name: string; state: string } | undefined,
 /** An ended session's foot, on the reader's to-do from it: its note and
  * answers in place of the composer, and once answered, its receipt. */
 function TodoFoot({ item }: { item: InboxItem }) {
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [said, setSaid] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
-  if (receipt)
-    return (
-      <PanelNote data-panel-todo-receipt>{receiptLine(receipt)}</PanelNote>
-    );
-  const secret = looksSecret(note);
-  const answer = async (choice: string) => {
-    setBusy(true);
-    try {
-      await answerItem(item.id, choice, note);
-      setReceipt(await receiptOf(item, choice));
-    } catch (e) {
-      setSaid(`Couldn't answer it: ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
+  if (receipt) return <PanelNote data-panel-todo-receipt>{receiptLine(receipt)}</PanelNote>;
+  const answer = async (choice: string, note: string) => {
+    await answerItem(item.id, choice, note);
+    setReceipt(await receiptOf(item, choice));
   };
-  const options = item.answer?.options.length ? item.answer.options : ["Done", "Can't"];
   return (
     <div data-panel-todo-foot={item.id}>
       <PanelNote data-panel-todo>Done continues this conversation with your note.</PanelNote>
-      <TextField label="Note" hint="no secrets" warn={secret ? `That looks like ${secret}: leave it out` : undefined} value={note} onInput={setNote} onEnter={() => !secret && !busy && void answer(options[0]!)} />
-      <div class="k-row-actions">
-        {options.map((o, n) => (
-          <Button key={o} kind={n === 0 ? "primary" : "plain"} disabled={busy || !!secret} data-panel-todo-answer={o} onClick={() => void answer(o)}>
-            {o}
-          </Button>
-        ))}
-      </div>
-      {said && (
-        <p class="dim" role="status" data-panel-said>
-          {said}
-        </p>
-      )}
+      <TodoAnswer options={item.answer?.options.length ? item.answer.options : ["Done", "Can't"]} answer={answer} />
     </div>
   );
 }
