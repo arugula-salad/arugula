@@ -38,7 +38,7 @@ use tracing::{debug, warn};
 use crate::{
     board_state::{TROUBLE, Wait, wait_of},
     control::CloudRefused,
-    machine_sessions::LOOK,
+    machine_sessions::{LOOK, Pane},
 };
 
 /// What pane `p` waits for now, if anything.
@@ -51,14 +51,18 @@ fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
         return None;
     }
     let agent = i.kind == BlockType::Agent;
-    if !(agent || i.ask.is_some() || r.kind == ReasonKind::Gate) {
+    // A hooked terminal's `Notification` (Arugula #1514): the one `Input`
+    // reason that says what it asks. Another `Input` (a screen's, a held
+    // follow-up's) has no ask and isn't a pane ask.
+    let hooked = r.kind == ReasonKind::Input && r.ask.is_some();
+    if !(agent || i.ask.is_some() || hooked || r.kind == ReasonKind::Gate) {
         return None;
     }
     let needs = i.attention == Attention::NeedsInput;
     let kind = match r.kind {
         ReasonKind::Gate => PaneAskKind::Gate,
         ReasonKind::Diff if needs => PaneAskKind::Permission,
-        ReasonKind::Ask if needs && r.ask.as_ref().is_some_and(|a| a.what == AskWhat::Approve) => {
+        ReasonKind::Ask | ReasonKind::Input if needs && r.ask.as_ref().is_some_and(|a| a.what == AskWhat::Approve) => {
             PaneAskKind::Permission
         }
         ReasonKind::Ask | ReasonKind::Input if needs => PaneAskKind::Question,
@@ -77,6 +81,7 @@ fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
         since: r.since_ms,
         for_person: kind == PaneAskKind::Gate || i.kind.owner_answers(),
         parent,
+        project: Pane::of(p).place.project,
     })
 }
 
@@ -101,6 +106,9 @@ pub(crate) struct Asks {
     quiet_until: Option<Instant>,
     /// Control has no route for it: nothing more is sent until restart.
     off: bool,
+    /// Control refused a list with projects and took the same one without
+    /// (it is from before Arugula #1514): they go without until restart.
+    bare: bool,
 }
 
 impl Asks {
@@ -174,20 +182,45 @@ pub(crate) async fn tell(app: &crate::server::App, asks: &mut Asks) {
     }
     let Some(panes) = app.mux.api(crate::mux::Api::Panes).await else { return };
     let Some(report) = asks.worth_sending(report(&panes), now) else { return };
-    let body = match serde_json::to_value(&report) {
-        Ok(b) => b,
-        Err(e) => return warn!("this machine's asks: {e}"),
-    };
-    let call = app.control.cloud_now(reqwest::Method::PUT, AGENT_PANE_ASKS, Some(&body));
-    match tokio::time::timeout(crate::board_state::REQUEST, call).await {
-        Ok(answer) => {
+    let mut sent = put(app, &report, asks.bare).await;
+    // A control from before projects refuses the field it doesn't know
+    // (a 400, 413 or 422, as for a block state's): if the same list without
+    // them goes through, it's them.
+    if !asks.bare
+        && report.asks.iter().any(|a| a.project.is_some())
+        && matches!(sent, Some(Err(ref e)) if matches!(wait_of(e.clone()), Wait::Dropped(_)))
+    {
+        let again = put(app, &report, true).await;
+        if matches!(again, Some(Ok(()))) {
+            asks.bare = true;
+            debug!("control takes a machine's asks without their projects");
+        }
+        sent = again;
+    }
+    match sent {
+        Some(answer) => {
             if answer.is_ok() {
                 debug!(asks = report.asks.len(), "told control this machine's asks");
             }
-            asks.answered(report, answer.map(|_| ()), Instant::now());
+            asks.answered(report, answer, Instant::now());
         }
-        Err(_) => asks.timed_out_or(Wait::For(TROUBLE, "control didn't answer".into()), report, Instant::now()),
+        None => asks.timed_out_or(Wait::For(TROUBLE, "control didn't answer".into()), report, Instant::now()),
     }
+}
+
+/// `report` put to control, without its projects if `bare`; none if control
+/// didn't answer in time.
+async fn put(app: &crate::server::App, report: &PaneAsksReport, bare: bool) -> Option<Result<(), CloudRefused>> {
+    let mut report = report.clone();
+    if bare {
+        report.asks.iter_mut().for_each(|a| a.project = None);
+    }
+    let body = match serde_json::to_value(&report) {
+        Ok(b) => b,
+        Err(e) => return Some(Err(CloudRefused::Said { status: 400, said: e.to_string(), reason: None })),
+    };
+    let call = app.control.cloud_now(reqwest::Method::PUT, AGENT_PANE_ASKS, Some(&body));
+    tokio::time::timeout(crate::board_state::REQUEST, call).await.ok().map(|a| a.map(|_| ()))
 }
 
 #[cfg(test)]
@@ -291,6 +324,14 @@ mod tests {
         assert_eq!(report(&[started_by(ask(), 1)]).asks[0].parent, None, "its lead closed");
         let text = serde_json::to_string(&r).unwrap();
         assert_eq!(text, r#"{"asks":[{"pane":2,"kind":"question","since":100,"parent":1}]}"#);
+        // One in a project says it, after the rest; one in none is the
+        // same JSON as before (an older control refuses a field it doesn't
+        // know).
+        let mut placed = ask();
+        placed.info.session_project =
+            serde_json::from_value(serde_json::json!({ "id": "prj_7", "name": "Seven" })).unwrap();
+        let text = serde_json::to_string(&report(&[placed])).unwrap();
+        assert_eq!(text, r#"{"asks":[{"pane":2,"kind":"question","since":100,"project":"prj_7"}]}"#);
         assert!(!text.contains("asked"), "no text");
         serde_json::from_str::<PaneAsksReport>(&text).unwrap();
     }

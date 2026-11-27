@@ -176,3 +176,15 @@ async fn a_failed_report_is_tried_again_after_a_pause() {
     assert!(waited >= Duration::from_secs(25), "waited {waited:?}, not a pause");
     assert!(waited < Duration::from_secs(45), "waited {waited:?}");
 }
+
+/// An agent block waits on Claude Code's prompt to read a file outside its
+/// working directory (Arugula #1514): control is told it needs input, and
+/// that it asks for a permission, for its `session.needs_input` event.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_read_outside_the_working_directory_is_a_permission_control_is_told() {
+    let fake = FakeControl::default();
+    let d = joined(fake_control(fake.clone()).await);
+    let id = d.open("readout /elsewhere/notes.md");
+    let needs = told(&fake, id, "needs_input").await;
+    assert_eq!(needs["block"]["needs"], "permission", "{needs}");
+}

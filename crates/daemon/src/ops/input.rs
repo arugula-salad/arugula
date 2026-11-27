@@ -87,7 +87,7 @@ impl Handle for PaneAttention {
         if !super::waits::takes_hook(cx.app, id, req.pid).await {
             return Ok(Empty {});
         }
-        match cx.app.mux.api(|r| Api::Attention(id, req.state, req.why, r)).await {
+        match cx.app.mux.api(|r| Api::Attention(id, req.state, req.why, req.asks, r)).await {
             Some(true) => Ok(Empty {}),
             _ => Err(OpError::NoPane(id)),
         }

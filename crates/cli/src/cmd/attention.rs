@@ -52,7 +52,23 @@ fn attention_body(state: &str, hook: Option<&Value>) -> Option<Value> {
     if state == "needs_input" && is_no_new_need(hook) {
         return None;
     }
-    Some(json!({"state": state, "why": hook_message(hook)}))
+    let mut body = json!({"state": state, "why": hook_message(hook)});
+    if let Some(asks) = hook_asks(state, hook) {
+        body["asks"] = asks.into();
+    }
+    Some(body)
+}
+
+/// What a `Notification` hook that needs you asks (Arugula #1514): an
+/// approval for `permission_prompt` (Claude Code's tool, directory and
+/// additional-directory prompts), else a question. Nothing for any other
+/// hook, or a call with no hook.
+fn hook_asks(state: &str, hook: Option<&Value>) -> Option<&'static str> {
+    let v = hook?;
+    if state != "needs_input" || v["hook_event_name"] != "Notification" {
+        return None;
+    }
+    Some(if v["notification_type"] == "permission_prompt" { "approve" } else { "question" })
 }
 
 /// A `Stop` hook's turn summary: its last assistant message, on one line.
@@ -153,6 +169,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_notification_says_whether_it_asks_for_an_approval() {
+        let note = |t: Option<&str>| {
+            let mut h = json!({ "hook_event_name": "Notification", "message": "Claude needs your permission" });
+            if let Some(t) = t {
+                h["notification_type"] = t.into();
+            }
+            h
+        };
+        let asks = |s, h: Option<&Value>| attention_body(s, h).and_then(|b| b["asks"].as_str().map(str::to_owned));
+        assert_eq!(asks("needs_input", Some(&note(Some("permission_prompt")))).as_deref(), Some("approve"));
+        for t in [Some("elicitation_dialog"), Some("new_kind"), None] {
+            assert_eq!(asks("needs_input", Some(&note(t))).as_deref(), Some("question"), "{t:?}");
+        }
+        // Not a Notification, not needs-input, or no hook: nothing to say.
+        let stop = json!({ "hook_event_name": "Stop" });
+        assert_eq!(asks("needs_input", Some(&stop)), None);
+        assert_eq!(asks("done", Some(&note(Some("permission_prompt")))), None);
+        assert_eq!(asks("needs_input", None), None);
+    }
+
+    #[test]
     fn a_stop_hook_s_summary_is_its_last_assistant_message() {
         // Claude Code 2.1's Stop input carries it.
         let hook = json!({ "hook_event_name": "Stop", "stop_hook_active": false,
@@ -189,13 +226,17 @@ mod tests {
         // A permission, a question, no type and a type not known still need you.
         for t in [Some("permission_prompt"), Some("elicitation_dialog"), Some("new_kind"), None] {
             let body = attention_body("needs_input", Some(&note(t))).unwrap();
-            assert_eq!(body, json!({ "state": "needs_input", "why": "Claude is waiting for your input" }));
+            let asks = if t == Some("permission_prompt") { "approve" } else { "question" };
+            let why = "Claude is waiting for your input";
+            assert_eq!(body, json!({ "state": "needs_input", "why": why, "asks": asks }));
         }
         let ask = json!({ "hook_event_name": "Notification", "notification_type": "permission_prompt",
             "message": "Claude needs your permission to use Bash" });
         assert_eq!(
             attention_body("needs_input", Some(&ask)),
-            Some(json!({ "state": "needs_input", "why": "Claude needs your permission to use Bash" }))
+            Some(
+                json!({ "state": "needs_input", "why": "Claude needs your permission to use Bash", "asks": "approve" })
+            )
         );
         // Only a Notification, and only needs-input, is left out.
         let stop =

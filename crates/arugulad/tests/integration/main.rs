@@ -111,6 +111,7 @@ mod mention_card;
 mod mention_held;
 mod mention_merge;
 mod mention_tool_call;
+mod pane_asks;
 mod pipe;
 mod program_status;
 mod prompt;

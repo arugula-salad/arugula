@@ -169,7 +169,7 @@ impl Daemon {
             Api::Pane(pane, reply) => {
                 let _ = reply.send(self.panes.get(&pane).cloned());
             }
-            Api::Attention(pane, state, why, reply) => {
+            Api::Attention(pane, state, why, asks, reply) => {
                 let known = self.panes.contains_key(&pane) || self.blocks.contains_key(&pane);
                 // The owner dismissed it: what it waits on shows again only
                 // for the next card or to-do.
@@ -178,7 +178,11 @@ impl Daemon {
                 {
                     w.dismissed = true;
                 }
-                self.set_attention(pane, state, why.as_deref().unwrap_or("set by the API"));
+                let why = why.as_deref().unwrap_or("set by the API");
+                match asks.filter(|_| state == arugula_proto::Attention::NeedsInput) {
+                    Some(what) => self.set_attention_asking(pane, why, what),
+                    None => self.set_attention(pane, state, why),
+                }
                 let _ = reply.send(known);
             }
             Api::AttentionList(who, reply) => {

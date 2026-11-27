@@ -228,7 +228,7 @@ pub enum Api {
     /// as its hooks said (#512), or its session files when the hooks
     /// haven't spoken.
     Conversation(PaneId, oneshot::Sender<Option<String>>),
-    Attention(PaneId, Attention, Option<String>, oneshot::Sender<bool>),
+    Attention(PaneId, Attention, Option<String>, Option<arugula_proto::AskWhat>, oneshot::Sender<bool>),
     /// Every pane that wants you and why (M24), within what someone may
     /// read (`None`: the owner).
     AttentionList(Option<crate::acl::Principal>, oneshot::Sender<Vec<arugula_proto::api::AttentionItem>>),

@@ -439,6 +439,12 @@ pub struct AttentionRequest {
     /// pane named outright, taken as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    /// Claude Code's `Notification` hook: what it waits on you for, an
+    /// approval (`permission_prompt`) or a question (any other type), so the
+    /// pane's reason says so (Arugula #1514). None: no hook, or an older
+    /// CLI. An older daemon skips the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asks: Option<crate::AskWhat>,
 }
 
 /// `arugula mentions on|off %N` (#579): whether teammates' agents may mention
