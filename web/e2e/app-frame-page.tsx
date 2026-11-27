@@ -19,6 +19,8 @@ import "../src/shared/buttons.css";
 import { startPageKey } from "../src/shell/local-key";
 import { PlatformApiContext } from "../src/shared/platform-api";
 import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
+import { apply as applyAppearance } from "../src/shared/appearance";
+import { AppearanceLayer } from "../src/shared/ui/appearance";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { go } from "../src/platform/router";
@@ -113,6 +115,9 @@ const SUITE = "5e771e0000000001";
 // And what a pin names it by (session-pins.spec.ts stubs the pins).
 setHomeMachine(SUITE);
 
+// The reader's Look, and its keys (`s`, `t`, `d`), as the app's (app/main.tsx).
+applyAppearance();
+
 // In the frame, as app.html's root is (shared/frame.css).
 const root = document.getElementById("root")!;
 root.classList.add("frame");
@@ -124,6 +129,7 @@ render(
     <PlatformPage />
     <MenuLayer />
     <PromptLayer />
+    <AppearanceLayer />
   </PlatformApiContext.Provider>,
   root,
 );

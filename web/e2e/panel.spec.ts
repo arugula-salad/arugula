@@ -306,3 +306,106 @@ test("a tab's × closes it, and the chief of staff comes to the front", async ({
   await expect(panel(page).locator(`[data-tab="${key}"]`)).toHaveCount(0);
   await expect(panel(page).locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
 });
+
+// Lift 4's "done" (#1480): v6's shots 1, 2, 2b and 13 at 1440×900, in
+// Slate (dark, the default) and Latte (light, the Look key `t`). Written
+// to the test's output, never to the repo.
+test.describe("shots", () => {
+  /** The page as it is now, in Slate and then Latte, and back to Slate. */
+  async function shoot(page: Page, info: { outputPath(name: string): string }, name: string) {
+    await blur(page);
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
+    await page.screenshot({ path: info.outputPath(`${name}-slate.png`) });
+    await page.keyboard.press("t");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: info.outputPath(`${name}-latte.png`) });
+    await page.keyboard.press("t");
+    await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
+  }
+  const ago = (min: number) => Date.now() - min * 60_000;
+  /** The rows v6 draws around the one a shot is about. */
+  const around = (host: string, term: number) => [
+    { ...APPROVAL, title: "Start a worker on #1412 on geek?", since: ago(2) },
+    { ...paneItem(host, term), id: "perm_1448", kind: "permission", title: "Allow Bash: rm -rf web/node_modules/.vite", since: ago(20) },
+    { ...paneItem(host, term), id: "ask_1408", title: "When do you and Jake run the rehearsal?", since: ago(9 * 60) },
+  ];
+
+  test("1: an ask expanded in its row, its worker peeked", async ({ page }, info) => {
+    const { agent, term } = await overview(page);
+    const host = await suiteHost(page);
+    const ask = {
+      ...paneItem(host, agent),
+      title: "Crumb at 900px: truncate the middle, or hide the project?",
+      lines: ["At 900px the caret pushes the crumb's last segment off. Truncate the middle segments, or hide the project name?"],
+      answer: { via: "card", options: ["Truncate middle", "Hide project"] },
+      since: ago(7),
+    };
+    await say(page, [...around(host, term), ask]);
+    await row(page, ask.id).locator("button[aria-expanded]").first().click();
+    await expect(row(page, ask.id).getByRole("button", { name: /^Truncate middle/ })).toBeVisible();
+    await expect(panel(page).locator("[data-panel-transcript]")).toContainText("hello", { timeout: 20_000 });
+    await shoot(page, info, "shot-1");
+  });
+
+  test("2: a to-do expanded, its agent peeked", async ({ page }, info) => {
+    const { agent, term } = await overview(page);
+    const host = await suiteHost(page);
+    const todo = {
+      ...paneItem(host, agent),
+      id: "todo_1430",
+      kind: "todo",
+      title: "Run the migration with prod creds",
+      lines: ["Why: the migration needs the prod database's owner.", "cd ~/src/app\nDATABASE_URL=… pnpm migrate:prod"],
+      answer: { via: "todo", options: ["Done", "Can't"] },
+      since: ago(60),
+    };
+    await say(page, [...around(host, term), todo]);
+    await row(page, todo.id).locator("button[aria-expanded]").first().click();
+    await expect(row(page, todo.id).getByRole("textbox", { name: /Note/ })).toBeVisible();
+    await expect(panel(page).locator("[data-panel-transcript]")).toContainText("hello", { timeout: 20_000 });
+    await shoot(page, info, "shot-2");
+  });
+
+  test("2b: an ended session's to-do, the panel read only", async ({ page }, info) => {
+    const { term } = await overview(page);
+    const host = await suiteHost(page);
+    const ended = Date.now() - 3 * 3600_000 - 60_000;
+    await inject(page, "ws-2", "staging-checkout", { title: "#1431 staging checkout", attention: "idle", activity: { bps: 0, last_ms: ended }, reason: { kind: "exited", since_ms: ended, headline: "claude exited" } });
+    const todo = {
+      id: "todo_1431",
+      kind: "todo",
+      group: "decide",
+      counts: true,
+      for: "acct_a",
+      title: "Add STRIPE_KEY to the staging secrets",
+      from: { name: "claude" },
+      subject: { type: "pane", id: "ws-2.1", url: "/", project: P, machine: "ws-2", pane: "1" },
+      since: ended,
+      lines: ["Why: checkout on staging fails without it."],
+      answer: { via: "todo", options: ["Done", "Can't"] },
+    };
+    await say(page, [...around(host, term), todo]);
+    await row(page, todo.id).locator("button[aria-expanded]").first().click();
+    await expect(panel(page).locator("[data-panel-ended]")).toBeVisible();
+    await expect(panel(page).locator("[data-panel-todo]")).toBeVisible();
+    await shoot(page, info, "shot-2b");
+  });
+
+  test("13: after answering, the receipt row, and the panel's card answered", async ({ page }, info) => {
+    const { term } = await overview(page);
+    const host = await suiteHost(page);
+    await proposing(page, START);
+    const approval = { ...APPROVAL, title: "Start a worker on #1412 on geek?", lines: ["Why: the release waits on it."], since: ago(2) };
+    await say(page, [approval, ...around(host, term).slice(1)]);
+    // In the row: a receipt where it was.
+    await row(page, approval.id).locator("button[aria-expanded]").first().click();
+    await row(page, approval.id).getByRole("button", { name: /^Start/ }).click();
+    await expect(row(page, approval.id)).toContainText(/Start by you/);
+    // In the panel: the chief of staff's card, answered there, says so.
+    const card = panel(page).locator('[data-ov-staff="dm_cos"] [data-proposal="prp_start"]');
+    await card.locator("[data-proposal-approve]").click();
+    await expect(panel(page).locator('[data-proposal="prp_start"][data-ask-state="answered"]')).toBeVisible();
+    await shoot(page, info, "shot-13");
+  });
+});
