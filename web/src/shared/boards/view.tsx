@@ -114,7 +114,7 @@ export function BoardPanel({
   /** The page's own items for the desk's ⋯ (Workers). */
   extra?: MenuItem[];
   /** A project Doc's tab, as the page draws a Doc. */
-  docTab?: (doc: string) => preact.ComponentChildren;
+  docTab?: (doc: string, more: MenuItem[]) => preact.ComponentChildren;
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -576,6 +576,8 @@ export function BoardPanel({
 
   const doc = (view.docs ?? []).find((d) => d.id === tab);
   const pr = prs.find((p) => p.id === tab);
+  // A Doc's tab takes it off the board (Arugula #1524): in its own ⋯, or the × of one that's gone.
+  const unlink = doc && write ? () => (setTab("board"), void act(() => boards.removeDoc(id, doc.id))) : undefined;
   return (
     <CardSessions.Provider value={byCard}>
       <RowItems.Provider value={itemWords}>
@@ -584,7 +586,7 @@ export function BoardPanel({
             <DeskTabs tabs={tabs} current={doc || pr ? tab : "board"} pick={setTab} close={closeTab} />
             {doc ? (
               <div class="board-desk-tab" data-board-tab-doc={doc.id}>
-                {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id) : <DocLink d={doc} project={view.board.project} platform={platform} />}
+                {doc.pointer.kind === "doc" && docTab && !doc.missing ? docTab(doc.pointer.id, unlink ? [{ label: "Take off this board", run: unlink, attrs: { "data-board-doc-remove": doc.id } }] : []) : <DocLink d={doc} project={view.board.project} platform={platform} remove={unlink} />}
               </div>
             ) : pr ? (
               <div class="board-desk-tab" data-board-tab-pr={pr.id}>

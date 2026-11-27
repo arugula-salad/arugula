@@ -162,6 +162,22 @@ test("tabs: 1 is the board, 2 its Doc; a PR from the fold opens as a tab that cl
   await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
 });
 
+test("a Doc's tab takes it off the board from its ⋯ (Arugula #1524)", async ({ page }) => {
+  const gone: string[] = [];
+  const doc = { id: "pdc_design", project: P, title: "Design pass", author: "acct_a", agent: null, sections: 1, written: 1, rev: 1, created_at: 1, updated_at: 1 };
+  await page.route(`**/api/projects/${P}/docs/pdc_design`, (r) => r.fulfill({ json: { doc, sections: [{ id: "s1", heading: "Why", intent: "", body: "What it's for.", rev: 1 }], assets: [], writer: true, deleter: true, link: null } }));
+  await page.route(`**/api/boards/${B}/docs/bdc_1`, (r) => (gone.push(r.request().method()), r.fulfill({ json: { ...VIEW, docs: [] } })));
+  await openDesk(page);
+  await page.keyboard.press("2");
+  const tab = page.locator('[data-board-tab-doc="bdc_1"]');
+  await tab.locator("[data-doc-more]").click();
+  await page.locator('[role=menu] [data-board-doc-remove="bdc_1"]').click();
+  await expect.poll(() => gone).toEqual(["DELETE"]);
+  // Back on the board, with the Doc's tab gone.
+  await expect(page.locator(`[data-board="${B}"]`)).toBeVisible();
+  await expect(page.locator("[data-board-tabs] [role=tab]")).toHaveText(["Board"]);
+});
+
 test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
   await openDesk(page);
   await expect(page.locator("[data-board-find]")).toHaveCount(0);

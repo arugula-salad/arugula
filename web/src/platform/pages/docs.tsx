@@ -54,6 +54,7 @@ import { currentProject, onCurrentProject } from "../current-project";
 import { scopeOf } from "../scope";
 import { Missing } from "./project";
 import { MoveConfirm, PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
+import type { MenuItem } from "../../shared/ui/menu";
 import { PublicLinkBar } from "./doc-public";
 import { SharedByYou } from "./shared-by-you";
 
@@ -379,7 +380,8 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
 }
 const NO_FRESH = new Map<string, number>();
 
-export function DocPage({ project, doc }: { project: string; doc: string }) {
+/** `more`: the ⋯'s items where the page is shown in a place (a board's tab: Take off this board). */
+export function DocPage({ project, doc, more }: { project: string; doc: string; more?: MenuItem[] }) {
   useSubscribe((fn) => session.subscribe(fn));
   // Chat says when the Doc's thread's object changed.
   useSubscribe((fn) => chat.subscribe(fn));
@@ -457,7 +459,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           cached={images.cached}
           link="page"
           titleView={view && writer ? <TitleEdit project={project} view={view} opener={rename} wrote={show} /> : undefined}
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu more={more} deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
           byline={
             view && (
               <>
