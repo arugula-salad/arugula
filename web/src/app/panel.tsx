@@ -20,7 +20,10 @@
 //   it. A teammate's session, or one on a machine this page doesn't reach,
 //   is read only, and says why. A session that ended is its transcript,
 //   read only, ending in when it ended; on a to-do of the reader's, the
-//   line says Done carries on with their note.
+//   line says Done carries on with their note, over the note (checked for
+//   secrets as it's typed) and Done or Can't: answered, the to-do (`POST
+//   /api/inbox/{prp}`) wakes its conversation on its machine with the note,
+//   and the foot is the row's receipt, read from its record (#1462).
 // - A thread's tab is a chat room (a board's thread, an issue's), or one
 //   message's reply thread in it.
 //
@@ -39,6 +42,8 @@ import { call, saidOf } from "../shared/chat/session-card";
 import { followThread, followingThread, ThreadPanel } from "../shared/chat/thread-panel";
 import { Button } from "../shared/kit/button";
 import { Composer } from "../shared/kit/composer";
+import { TextField } from "../shared/kit/field";
+import { receiptLine, type Receipt } from "../shared/kit/need-row";
 import { CHIEF_KEY, Panel, PanelNote, panelKey, Transcript, type AgentPanelProps, type PanelHead, type PanelTarget, type PanelView } from "../shared/kit/panel";
 import type { State } from "../shared/kit/state-mark";
 import type { TabItem } from "../shared/kit/tabs";
@@ -53,9 +58,10 @@ import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, shortHost } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
-import { readInbox } from "../platform/inbox";
+import { answerItem, readInbox } from "../platform/inbox";
+import { looksSecret } from "../shared/secret-like";
 import { boot } from "./machine-page";
-import { paneOwner, sessionName, yours } from "./needs";
+import { paneOwner, receiptOf, sessionName, yours } from "./needs";
 import { StaffMove, StaffRestart, StaffStart } from "./panel-staff";
 import type { AppSession } from "./session";
 
@@ -443,7 +449,7 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
   };
 
   let foot: ComponentChildren;
-  if (ended) foot = todo ? <PanelNote data-panel-todo>Done continues this conversation with your note.</PanelNote> : undefined;
+  if (ended) foot = todo ? <TodoFoot key={todo.id} item={todo} /> : undefined;
   else if (team) foot = <PanelNote data-panel-readonly>{pane!.person.name}'s session. You see how it stands and its last lines; it takes nothing from you here.</PanelNote>;
   else if (far) foot = <PanelNote data-panel-readonly>{says}</PanelNote>;
   else if (pane) {
@@ -533,7 +539,53 @@ function farWhy(fleet: Fleet, host: { name: string; state: string } | undefined,
   return `${name} is connected, but this page doesn't see this session on it.`;
 }
 
-/** The reader's open to-do on an ended session's pane, if it has one: Done carries the conversation on. */
+/** An ended session's foot, on the reader's to-do from it: its note and
+ * answers in place of the composer, and once answered, its receipt. */
+function TodoFoot({ item }: { item: InboxItem }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  if (receipt)
+    return (
+      <PanelNote data-panel-todo-receipt>{receiptLine(receipt)}</PanelNote>
+    );
+  const secret = looksSecret(note);
+  const answer = async (choice: string) => {
+    setBusy(true);
+    try {
+      await answerItem(item.id, choice, note);
+      setReceipt(await receiptOf(item, choice));
+    } catch (e) {
+      setSaid(`Couldn't answer it: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const options = item.answer?.options.length ? item.answer.options : ["Done", "Can't"];
+  return (
+    <div data-panel-todo-foot={item.id}>
+      <PanelNote data-panel-todo>Done continues this conversation with your note.</PanelNote>
+      <TextField label="Note" hint="no secrets" warn={secret ? `That looks like ${secret}: leave it out` : undefined} value={note} onInput={setNote} onEnter={() => !secret && !busy && void answer(options[0]!)} />
+      <div class="k-row-actions">
+        {options.map((o, n) => (
+          <Button key={o} kind={n === 0 ? "primary" : "plain"} disabled={busy || !!secret} data-panel-todo-answer={o} onClick={() => void answer(o)}>
+            {o}
+          </Button>
+        ))}
+      </div>
+      {said && (
+        <p class="dim" role="status" data-panel-said>
+          {said}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The reader's open to-do from an ended session's block, if it has one
+ * (its subject names the asker's machine and block): Done carries the
+ * conversation on. */
 function useTodo(t: Extract<PanelTarget, { kind: "agent" }> | null, host: string | undefined, project: string): InboxItem | null {
   const [items, setItems] = useState<InboxItem[]>([]);
   const on = !!t;
@@ -546,11 +598,13 @@ function useTodo(t: Extract<PanelTarget, { kind: "agent" }> | null, host: string
     );
     return () => void (live = false);
   }, [on, project, chat.inbox?.heard ?? 0]);
+  // Answered here, it leaves the Inbox: the tab keeps it, for its receipt.
+  const kept = useRef<{ key: string; item: InboxItem } | null>(null);
   if (!t) return null;
-  return (
-    items.find((i) => i.kind === "todo" && !i.done_at && i.subject.type === "pane" && (i.subject.machine === t.machine || i.subject.machine === host) && String(i.subject.pane ?? "").replace(/^%/, "") === String(t.pane ?? "")) ??
-    null
-  );
+  const key = panelKey(t);
+  const found = items.find((i) => i.kind === "todo" && !i.done_at && i.answer && (i.subject.machine === t.machine || i.subject.machine === host) && String(i.subject.pane ?? "").replace(/^%/, "") === String(t.pane ?? ""));
+  if (found) kept.current = { key, item: found };
+  return found ?? (kept.current?.key === key ? kept.current.item : null);
 }
 
 /** A pane's last lines, read from its machine while the tab is open and the page is shown; `md`: they're Markdown. */

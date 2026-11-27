@@ -24,6 +24,7 @@ import { both, useBindings, type Binding } from "../shared/keys";
 import { platformFetch } from "../shared/maintenance";
 import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
+import { clock, todoReceipt } from "../shared/chat/ask-card";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { kindOf, readableCommand, whatItDoes } from "../shell/swarm/model";
 import { act } from "../shell/swarm/view";
@@ -124,9 +125,6 @@ function paneAnswer(fleet: Fleet, p: FleetPane, ask: Ask): Answering | null {
   return { options: q.options.map((o) => ({ id: o.label, label: o.label })), send: (o) => run("answer", { content: { question_0: o.id } }) };
 }
 
-/** "3:41 PM". */
-const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
 /** An answered to-do's receipt from its record: its card's ask (`GET
  * /api/chat/rooms/{room}/asks/{seq}`, the item's subject), which keeps
  * its note (#1462). None when it can't be read; the receipt then says the
@@ -136,17 +134,27 @@ async function todoRecord(i: InboxItem): Promise<Partial<Receipt> | null> {
   if (!room || seq === undefined) return null;
   try {
     const r = await platformFetch(`/api/chat/rooms/${encodeURIComponent(room)}/asks/${seq}`, { credentials: "same-origin" });
-    if (!r.ok) return null;
-    const p = ((await r.json()) as ChatAsk).proposal;
-    if (!p?.todo) return null;
-    return {
-      ...(p.state === "done" ? { what: "Done" } : p.state === "cant" ? { what: "Can't" } : {}),
-      ...(p.todo.answered_at ? { at: clock(p.todo.answered_at) } : {}),
-      ...(p.todo.note ? { note: p.todo.note } : {}),
-    };
+    return r.ok ? todoReceipt((await r.json()) as ChatAsk) : null;
   } catch {
     return null;
   }
+}
+
+/** What answering `i` with `what` left: you, now, and a to-do's record. */
+export async function receiptOf(i: InboxItem, what: string): Promise<Receipt> {
+  const record = i.kind === "todo" ? await todoRecord(i) : null;
+  return { what, by: "you", at: clock(Date.now()), ...record };
+}
+
+/** The asker's block a to-do names (its subject's machine and `pane`,
+ * whatever its type): its pane, where this page has it, else a panel's tab
+ * for it, which says its session ended once its machine says it's gone. */
+export function askerOf(fleet: Fleet, i: InboxItem): { pane?: FleetPane; target?: PanelTarget } {
+  const { machine, pane } = i.subject;
+  const id = Number(String(pane ?? "").replace(/^%/, ""));
+  if (i.kind !== "todo" || !machine || !pane || !Number.isInteger(id)) return {};
+  const p = fleet.panes.find((x) => x.id === id && (x.host === machine || fleet.host(x.host)?.id === machine));
+  return p ? { pane: p } : { target: { kind: "agent", role: "agent", machine, pane: id, title: i.from.name ?? i.from.agent ?? "its agent" } };
 }
 
 /** How an item answers here, if it can. */
@@ -237,8 +245,8 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
     setBusy(i.id);
     try {
       await a.send(o, note);
-      const record = i.kind === "todo" ? await todoRecord(i) : null;
-      setReceipts((m) => new Map(m).set(i.id, { item: i, receipt: { what: o.label, by: "you", at: clock(Date.now()), ...record } }));
+      const receipt = await receiptOf(i, o.label);
+      setReceipts((m) => new Map(m).set(i.id, { item: i, receipt }));
       setOpen(null);
     } catch (e) {
       toast(`Couldn't answer it: ${(e as Error).message}`);

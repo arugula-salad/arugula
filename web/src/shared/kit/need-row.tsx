@@ -70,6 +70,9 @@ export interface Receipt {
   note?: string;
 }
 
+/** A receipt in words: "Done by you 3:41 PM · swapped to PETG". */
+export const receiptLine = (r: Receipt) => `${r.what} by ${r.by}${r.at ? ` ${r.at}` : ""}${r.note ? ` · ${r.note}` : ""}`;
+
 /** The answers a kind offers when the item names none. */
 const DEFAULTS: Record<string, [NeedOption, NeedOption]> = {
   permission: [
@@ -149,7 +152,7 @@ export function NeedRow({
   const todo = need.kind === "todo";
   const meta: ComponentChildren[] = [];
   if (metaOf) meta.push(...metaOf);
-  else if (receipt) meta.push(`${receipt.what} by ${receipt.by} ${receipt.at}${receipt.note ? ` · ${receipt.note}` : ""}`);
+  else if (receipt) meta.push(receiptLine(receipt));
   else meta.push(<span class={mine ? "k-needs" : undefined}>{who(need)}</span>);
   if (need.escalated) meta.push("escalated");
   if (need.subject) meta.push(<span class="m-id">{need.subject.id}</span>);

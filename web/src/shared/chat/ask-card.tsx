@@ -23,7 +23,9 @@
 //   answering did. The Overview's Needs you draws the same card. A "Run
 //   this board" card (`run_board`, Arugula #1416) says the board, where its
 //   lead runs, which machines its issue agents may use and how many at
-//   once, and when the grant lapses.
+//   once, and when the grant lapses. A to-do (`todo`, Arugula #1462),
+//   answered, is the receipt its Needs you row shows ("Done by you 3:41 PM
+//   · <note>"), read from its record: the note is its person's alone.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
@@ -32,6 +34,7 @@ import type { ChatAsk, ChatMessage, ChatRoom, ProposalRun, SessionAct, SessionVi
 import { Bar, BarWhere } from "../ui/bar";
 import { StateChip } from "../ui/state-chip";
 import { Card } from "../ui/card";
+import { receiptLine, type Receipt } from "../kit/need-row";
 import { ChoiceForm, SessionAskForm, useSession } from "./session-card";
 
 const enc = encodeURIComponent;
@@ -301,6 +304,29 @@ export function answeredLine(a: ChatAsk): string {
   return `${who} approved: ${p.outcome ?? "done"}`;
 }
 
+/** "3:41 PM". */
+export const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** An answered to-do's receipt from its record (#1462): Done or Can't, when,
+ * and the note, which control sends its person alone (`a.mine`). */
+export function todoReceipt(a: ChatAsk): Partial<Receipt> | null {
+  const p = a.proposal;
+  if (!p?.todo) return null;
+  return {
+    ...(p.state === "done" ? { what: "Done" } : p.state === "cant" ? { what: "Can't" } : {}),
+    ...(p.todo.answered_at ? { at: clock(p.todo.answered_at) } : {}),
+    ...(p.todo.note && a.mine ? { note: p.todo.note } : {}),
+  };
+}
+
+/** What answering a to-do left, in a line: the row's receipt; cancelled, its agent's. */
+function todoLine(a: ChatAsk): string {
+  const p = a.proposal!;
+  if (p.state === "cancelled") return "Its agent cancelled it.";
+  const r = todoReceipt(a);
+  return receiptLine({ what: r?.what ?? "Answered", by: a.mine ? "you" : p.answered_by_name || "someone", at: r?.at ?? "", note: r?.note });
+}
+
 /** A proposal (Arugula #1278) as a card: what its agent wants to do as
  * its person and why, with Approve and Deny for them (`a.mine`); anyone
  * else waits. Answered, one dim line, linking the session it started.
@@ -318,7 +344,7 @@ export function ProposalCard({ a, project, answered, open }: { a: ChatAsk; proje
     const started = p.started?.startsWith("ses_") && project ? api.sessionHref?.(project, p.started) : undefined;
     return (
       <p class="session-ask-done dim" data-ask={a.seq} data-ask-state="answered" data-proposal={p.id} data-proposal-action={action} data-proposal-state={p.state}>
-        {answeredLine(a)}
+        {p.action === "todo" ? todoLine(a) : answeredLine(a)}
         {started && (
           <>
             {" "}
