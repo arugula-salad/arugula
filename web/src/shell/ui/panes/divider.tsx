@@ -5,8 +5,9 @@ import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import type { Client } from "../../client";
 import type { Rect, SplitRect } from "../../../shared/proto";
 import type { Cell } from "../cells";
-import { len, px } from "./geometry";
-import { PIXELS } from "./chrome-geometry";
+import { len, px } from "../../../shared/kit/panes/geometry";
+import { PIXELS } from "../../../shared/kit/panes/chrome-geometry";
+import { dragLine } from "../../../shared/kit/panes/drag-line";
 
 /** The hit band, in pixels, where it can't be a whole cell. */
 const HIT = 6;
@@ -72,10 +73,7 @@ export function Divider({
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
-    e.preventDefault();
     const handle = e.currentTarget as HTMLElement;
-    handle.setPointerCapture(e.pointerId);
-    const start = row ? e.clientX : e.clientY;
     const unit = per * scale;
     const base = split.extents.slice();
     const p = preview.current;
@@ -97,45 +95,41 @@ export function Divider({
       clearTimeout(timer);
       timer = window.setTimeout(flush, SETTLE);
     };
-    const move = (ev: PointerEvent) => {
-      // Any movement, even within a cell, is the pointer not yet still.
-      if (pending) settle();
-      const d = Math.round(((row ? ev.clientX : ev.clientY) - start) / unit);
-      if (d === last) return;
-      last = d;
-      const ext = base.slice();
-      const a = Math.max(1, Math.min(base[index] + d, base[index] + base[index + 1] - 1));
-      ext[index] = a;
-      ext[index + 1] = base[index] + base[index + 1] - a;
-      pending = ext;
-      p.to = a;
-      const delta = (a - preview.current.here) * per;
-      handle.style.transform = delta ? (row ? `translateX(${delta}px)` : `translateY(${delta}px)`) : "";
-      // Resize the terminals once the pointer is still, not at every step.
-      settle();
-    };
-    const up = () => {
-      handle.removeEventListener("pointermove", move);
-      handle.removeEventListener("pointerup", up);
-      handle.removeEventListener("pointercancel", up);
-      clearTimeout(timer);
-      flush();
-      // Hold the preview until the daemon's layout arrives; if it never
-      // changes (a refusal), snap back to it.
-      if (p.to === null || p.to === preview.current.here) p.to = null;
-      else {
-        p.released = preview.current.key;
-        p.timer = window.setTimeout(() => {
-          p.to = null;
-          p.released = null;
-          if (el.current) el.current.style.transform = "";
-        }, SNAP_BACK);
-      }
-      if (el.current && p.to === null) el.current.style.transform = "";
-    };
-    handle.addEventListener("pointermove", move);
-    handle.addEventListener("pointerup", up);
-    handle.addEventListener("pointercancel", up);
+    dragLine(e, split.dir === "row" ? "row" : "column", {
+      move: (moved) => {
+        // Any movement, even within a cell, is the pointer not yet still.
+        if (pending) settle();
+        const d = Math.round(moved / unit);
+        if (d === last) return;
+        last = d;
+        const ext = base.slice();
+        const a = Math.max(1, Math.min(base[index] + d, base[index] + base[index + 1] - 1));
+        ext[index] = a;
+        ext[index + 1] = base[index] + base[index + 1] - a;
+        pending = ext;
+        p.to = a;
+        const delta = (a - preview.current.here) * per;
+        handle.style.transform = delta ? (row ? `translateX(${delta}px)` : `translateY(${delta}px)`) : "";
+        // Resize the terminals once the pointer is still, not at every step.
+        settle();
+      },
+      done: () => {
+        clearTimeout(timer);
+        flush();
+        // Hold the preview until the daemon's layout arrives; if it never
+        // changes (a refusal), snap back to it.
+        if (p.to === null || p.to === preview.current.here) p.to = null;
+        else {
+          p.released = preview.current.key;
+          p.timer = window.setTimeout(() => {
+            p.to = null;
+            p.released = null;
+            if (el.current) el.current.style.transform = "";
+          }, SNAP_BACK);
+        }
+        if (el.current && p.to === null) el.current.style.transform = "";
+      },
+    });
   };
 
   return (

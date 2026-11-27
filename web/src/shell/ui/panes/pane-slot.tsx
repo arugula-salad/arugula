@@ -1,7 +1,7 @@
 // One pane in the grid: the block's view moved in, with what it carries on
 // top (badges, an answer card, the grip to drag it by) and its menu.
 
-import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
+import { useEffect, useRef } from "preact/hooks";
 import type { Client } from "../../client";
 import type { PaneId, Rect } from "../../../shared/proto";
 import { useWorkspaceDir } from "../../blocks";
@@ -15,13 +15,9 @@ import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
-import { px } from "./geometry";
+import { px } from "../../../shared/kit/panes/geometry";
+import { useSlot } from "../../../shared/kit/panes/slot";
 import { Chip } from "../../../shared/ui/state-chip";
-
-/** Where hidden panes' terminals live: off the page but still alive. */
-export const parking = document.createElement("div");
-parking.id = "parking";
-document.body.appendChild(parking);
 
 /** A text box of the page's own, not xterm's hidden one (a terminal's
  * right-click lands there). */
@@ -58,20 +54,8 @@ export function PaneSlot({
   const entry = client.panes.get(id);
   const view = client.viewOf(id);
 
-  // Move the block's view in, rather than creating one: moving a block
-  // around the layout never restarts or redraws it from scratch.
-  useLayoutEffect(() => {
-    const slot = ref.current;
-    if (!view || !slot) return;
-    slot.appendChild(view.host);
-    view.setVisible(true);
-    return () => {
-      if (view.host.parentElement === slot) {
-        parking.appendChild(view.host);
-        view.setVisible(false);
-      }
-    };
-  }, [view]);
+  // Move the block's view in, rather than creating one.
+  useSlot(view, ref);
 
   const info = client.info(id);
   // M34: a chant workspace where it runs, to open as one.

@@ -5,11 +5,11 @@
 // its slot in the grid, or parking when its tab isn't shown. It keeps its
 // size in cells; the slot scrolls what doesn't fit.
 
-import { useLayoutEffect, useRef } from "preact/hooks";
+import { useRef } from "preact/hooks";
 import type { Client } from "../../client";
 import type { PaneId } from "../../../shared/proto";
 import { useSubscribe } from "../../../shared/ui/hooks";
-import { parking } from "./pane-slot";
+import { useSlot } from "../../../shared/kit/panes/slot";
 
 /** The pane in a slot, with Hand off to me: take control (#118), so the
  * reader's typing reaches it, and put the keys in it. Nothing when this
@@ -19,20 +19,7 @@ export function LiveSlot({ client, pane }: { client: Client; pane: PaneId }) {
   const ref = useRef<HTMLDivElement>(null);
   const view = client.viewOf(pane);
 
-  useLayoutEffect(() => {
-    const slot = ref.current;
-    if (!view || !slot) return;
-    const was = view.host.parentElement;
-    slot.appendChild(view.host);
-    view.setVisible(true);
-    return () => {
-      // Its grid slot took it back meanwhile: it's there.
-      if (view.host.parentElement !== slot) return;
-      if (was && was !== parking && was.isConnected) return void was.appendChild(view.host);
-      parking.appendChild(view.host);
-      view.setVisible(false);
-    };
-  }, [view]);
+  useSlot(view, ref, true);
 
   if (!view) return null;
   const mine = client.info(pane)?.driver?.who === client.me();

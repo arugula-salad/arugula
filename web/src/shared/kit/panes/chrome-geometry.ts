@@ -1,7 +1,7 @@
 // Project daemon-owned cell rectangles into pixels, reserving actual space
 // for headers. Terminal cells and the split weights stay daemon-owned.
-import type { Layout, Rect, SplitRect } from "../../../shared/proto";
-import type { Cell } from "../cells";
+import type { Layout, Rect, SplitRect } from "../../proto";
+import type { Cell } from "./geometry";
 
 export const HEADER_HEIGHT = 34;
 export const PANE_GAP = 6;
