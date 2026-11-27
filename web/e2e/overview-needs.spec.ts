@@ -1,6 +1,6 @@
 // The Overview's Needs you (Lift 4, #1480), this project's slice of the
 // Inbox, as kit NeedRows in the right third: a row expands in place and
-// answers there (a pane's permission on its machine, an approval and a
+// answers there (a pane's permission or gate on its machine, an approval and a
 // to-do through the Inbox), then stays as a receipt; a teammate's asks fold
 // into "N asks for Jo"; To do follows the asks, its how in a well and a note;
 // alerts aren't here; the keys j k e y x D n ↵ move, expand, answer and
@@ -111,6 +111,57 @@ test.describe("on a computer", () => {
     await r.getByRole("button", { name: /^Start/ }).click();
     await expect.poll(() => posted(page)).toEqual([{ id: APPROVAL.id, choice: "Start" }]);
     await expect(r).toContainText(/Start by you/);
+  });
+
+  test("a pane waiting at a gate offers Approve and Expire in its row, answered on its machine with the gate's key (#1546)", async ({ page }) => {
+    await overview(page);
+    const gate = { member: "delivery", op: "release", gate: "approve-release", env: "local", approvals: 0, needed: 1, source: { kind: "chant" } };
+    await page.evaluate(
+      ({ P, gate }) => {
+        const fleet = (window as unknown as { __app: { fleet: { inject(p: unknown[]): void; request: unknown } } }).__app.fleet;
+        // What it answers goes to its machine: kept here to look at.
+        (window as unknown as { __acts: unknown[] }).__acts = [];
+        fleet.request = async (_host: string, _method: string, path: string, body: unknown) => {
+          if (path === "/api/attention/act") (window as unknown as { __acts: unknown[] }).__acts.push(body);
+          return new Response("{}", { headers: { "content-type": "application/json" } });
+        };
+        fleet.inject([
+          {
+            key: "m_gate:5",
+            host: "m_gate",
+            id: 5,
+            session: { id: 1, name: "main" },
+            stale: false,
+            person: { id: "me", name: "me", kind: "me" },
+            driver: null,
+            watchers: [],
+            unread: 0,
+            mention: false,
+            info: {
+              id: 5,
+              title: "workspace",
+              type: "workspace",
+              attention: "needs_input",
+              session_project: { id: P, name: "Arugula" },
+              activity: { bps: 0, last_ms: Date.now() },
+              reason: { kind: "gate", since_ms: 1000, headline: "delivery: release waits at gate approve-release", bundle: `gate:${P}`, gate, actions: ["allow", "expire"] },
+            },
+          },
+        ]);
+      },
+      { P, gate },
+    );
+    const it = { ...paneItem("m_gate", 5), kind: "approval", title: "delivery: release waits at gate approve-release" };
+    await say(page, [it]);
+    const r = row(page, it.id);
+    await r.locator("button[aria-expanded]").first().click();
+    const approve = r.getByRole("button", { name: /^Approve/ });
+    const expire = r.getByRole("button", { name: /^Expire/ });
+    await expect(approve).toBeVisible();
+    await expect(expire).toBeVisible();
+    await expire.click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __acts: unknown[] }).__acts)).toEqual([{ action: "expire", pane: 5, id: "delivery/release/approve-release" }]);
+    await expect(r).toContainText(/Expire by you/);
   });
 
   test("a deploy waiting for your approval is a Needs-you row, and Open goes to its page, where the passkey approves it (Lift 7)", async ({ page }) => {
