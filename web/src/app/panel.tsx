@@ -139,7 +139,7 @@ export function AgentPanelPlace(props: AgentPanelProps & { session: AppSession |
 }
 
 /** The panel over `fleet`: the chief of staff, then `targets`. */
-export function AgentPanel({ project, above, targets, current, onPick, onClose, folded, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
+export function AgentPanel({ project, above, targets, current, onPick, onClose, folded, chiefIcon, toggle, fleet, session }: AgentPanelProps & { fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
@@ -173,14 +173,25 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
     ) : undefined;
 
   const tabs: TabItem[] = [
-    { id: CHIEF, title: agentName({ role: "chief" }) },
-    ...targets.map((t) => ({
-      id: panelKey(t),
-      title: t.kind === "agent" ? agentName({ role: t.role, title: t.title, session: t.session, machine: hostName(t.machine) ?? null }) : t.title,
-      closes: !!onClose,
-      peek: true,
-    })),
+    { id: CHIEF, title: agentName({ role: "chief" }), ...(chiefIcon ? { icon: <span class="k-panel-chief" aria-hidden="true">✦</span>, bare: true } : {}) },
+    ...targets.map((t) => {
+      // The place's own tab (named, or with its switch) stays; a visitor is in italics, with its ×.
+      const peek = !(t.kind === "agent" ? t.label : toggle?.key === panelKey(t));
+      return {
+        id: panelKey(t),
+        title: t.kind === "agent" ? (t.label ?? agentName({ role: t.role, title: t.title, session: t.session, machine: hostName(t.machine) ?? null })) : t.title,
+        closes: !!onClose && peek,
+        peek,
+        after:
+          toggle?.key === panelKey(t) ? (
+            <button type="button" class="k-button is-plain m-meta" title={toggle.title} data-panel-toggle onClick={toggle.run}>
+              ⇄ {toggle.label}
+            </button>
+          ) : undefined,
+      };
+    }),
   ];
+  const note = target?.kind === "agent" && target.note ? <p class="m-meta" data-panel-note>{target.note}</p> : null;
   return (
     <Panel
       label="Agent panel"
@@ -193,7 +204,12 @@ export function AgentPanel({ project, above, targets, current, onPick, onClose, 
       view={shown.view}
       onView={shown.onView}
       floors={surfacesFor().floor}
-      lede={shown.lede}
+      lede={note || shown.lede ? (
+        <>
+          {note}
+          {shown.lede}
+        </>
+      ) : undefined}
       back={over ? { label: `Back to ${shown.head.name}`, go: () => setDrill({ key, parent: null }), more: room && parent !== null ? threadMore(room.id, parent) : undefined } : undefined}
       over={over}
       flush={shown.flush}

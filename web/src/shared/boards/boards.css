@@ -72,6 +72,13 @@
   white-space: nowrap;
 }
 
+/* The Layout sheet (`,`, ../layout-prefs.tsx): its sentences, one switch each. */
+.layout-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .board-pane-note {
   display: flex;
   flex-direction: column;
@@ -112,6 +119,12 @@
 }
 
 .board-desk-side > .k-panel {
+  flex: 1;
+  width: auto;
+}
+
+/* The agent panel (#1520) fills the right third, Needs you over it; its own width is the desk's. */
+.board-desk-side > .k-panel-col:not(.is-shut) {
   flex: 1;
   width: auto;
 }

@@ -6,7 +6,20 @@
  * `fleet.hostById` takes it), or a chat room, or one message's reply thread
  * in it (`parent`, its seq). */
 export type PanelTarget =
-  | { kind: "agent"; role: "lead" | "worker" | "agent"; machine: string; session?: string; pane?: number; board?: string; row?: string; title?: string }
+  | {
+      kind: "agent";
+      role: "lead" | "worker" | "agent";
+      machine: string;
+      session?: string;
+      pane?: number;
+      board?: string;
+      row?: string;
+      title?: string;
+      /** The tab's words, where the place names it (a board's "Lead 🔒"). */
+      label?: string;
+      /** A line over its transcript ("Also leads: …"). */
+      note?: string;
+    }
   | { kind: "thread"; room: string; parent?: number; title: string };
 
 /** `agent:<machine>:<session|%pane>` or `thread:<room>[:<parent>]`. */

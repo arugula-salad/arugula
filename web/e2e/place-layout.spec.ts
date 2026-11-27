@@ -6,7 +6,8 @@
 // gets its pane quietly with a dot, a fourth agent pane closes the oldest
 // untouched one, a closed default stays closed until Reset, and what waits on
 // you goes to a tab of its own with a Needs-you row pointing at it. The
-// panes are worked by their buttons: no new keys until #1534's list. On the
+// panes are worked by their buttons: no new keys until #1534's list. Layout
+// (the ⋯'s Layout…) holds the sentences the lead follows (#1531's prefs). On the
 // app's frame fixture, with the cloud made up here (./place-layout-fake.ts).
 import { expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -279,4 +280,41 @@ test("a linked Doc opens from + pane as yours, and its ⋯ takes it off the boar
   await page.locator('[role=menu] [data-board-doc-remove="bdc_1"]').click();
   await expect.poll(() => gone).toEqual(["DELETE"]);
   await expect(d).toHaveCount(0);
+});
+
+test("Layout (the ⋯'s Layout…): the sentences the lead follows, each a switch, off until you turn it on, and kept", async ({ page }) => {
+  const kept: unknown[] = [];
+  let prefs: Record<string, boolean> = {};
+  await page.route("**/api/layout-prefs", (r) => {
+    if (r.request().method() === "PUT") {
+      const body = r.request().postDataJSON() as { prefs: Record<string, boolean> };
+      kept.push(body);
+      prefs = body.prefs;
+    }
+    return r.fulfill({ json: { prefs } });
+  });
+  await openBoard(page);
+  await page.locator("[data-board-more]").click();
+  await page.locator("[role=menu] [data-board-layout-prefs]").click();
+  const sheet = page.getByRole("dialog", { name: "Layout" });
+  await expect(sheet.getByRole("switch")).toHaveText(["Docs open as tabs", "Previews as tabs"]);
+  await expect(sheet.getByRole("switch", { checked: true })).toHaveCount(0);
+  await sheet.getByRole("switch", { name: "Docs open as tabs" }).click();
+  await expect.poll(() => kept).toEqual([{ prefs: { docs_as_tabs: true, previews_as_tabs: false } }]);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  // Again, as it was left.
+  await page.locator("[data-board-more]").click();
+  await page.locator("[role=menu] [data-board-layout-prefs]").click();
+  await expect(sheet.getByRole("switch", { name: "Docs open as tabs" })).toHaveAttribute("aria-checked", "true");
+  // No key of its own until #1534's list.
+  const ids = await page.evaluate(() => (window as unknown as { __arugulaKeys(): string[] }).__arugulaKeys());
+  expect(ids).not.toContain("board.layout");
+});
+
+test("Layout has no sheet where the platform keeps no prefs (404)", async ({ page }) => {
+  await page.route("**/api/layout-prefs", (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
+  await openBoard(page);
+  await page.locator("[data-board-more]").click();
+  await expect(page.locator("[role=menu] [data-board-layout-prefs]")).toHaveCount(0);
 });

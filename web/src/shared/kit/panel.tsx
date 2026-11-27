@@ -52,6 +52,10 @@ export interface AgentPanelProps {
   onPick?: (key: string) => void;
   /** A tab's ×; without it, a target's tab has no ×. */
   onClose?: (key: string) => void;
+  /** The chief of staff's tab as ✦ alone, to leave the width to the place's tab (a board, #1520). */
+  chiefIcon?: boolean;
+  /** A switch right after one tab (`key`, its panelKey): a board's ⇄ between its lead and its channel. */
+  toggle?: { key: string; label: string; title: string; run: () => void };
 }
 
 /** The page's agent panel, where it has one (the app's, over its machines). */

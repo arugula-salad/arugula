@@ -15,6 +15,10 @@ export interface TabItem {
   closes?: boolean;
   /** Something new or waiting on you is in it, and you haven't looked. */
   dot?: boolean;
+  /** Its icon alone: the title is its name and tooltip (the board's ✦, the chief of staff). */
+  bare?: boolean;
+  /** A control right after it (the board's ⇄ lead / channel). */
+  after?: ComponentChildren;
   /** A visitor, not one of the place's own (the agent panel's peeked agent): its title in italics. */
   peek?: boolean;
 }
@@ -34,12 +38,13 @@ export function Tabs({ label, tabs, current, onPick, onClose }: { label: string;
       {tabs.map((t, i) => {
         const on = t.id === current;
         return [
-          <button key={t.id} type="button" class={t.peek ? "k-tab is-peek" : "k-tab"} role="tab" data-tab={t.id} aria-selected={on} tabIndex={on ? 0 : -1} onClick={() => onPick(t.id)} onKeyDown={(e) => key(e, i)}>
+          <button key={t.id} type="button" class={t.peek ? "k-tab is-peek" : "k-tab"} role="tab" data-tab={t.id} aria-selected={on} aria-label={t.bare ? t.title : undefined} title={t.bare ? t.title : undefined} tabIndex={on ? 0 : -1} onClick={() => onPick(t.id)} onKeyDown={(e) => key(e, i)}>
             {t.icon}
-            <span class="k-tab-title">{t.title}</span>
+            {!t.bare && <span class="k-tab-title">{t.title}</span>}
             {t.count ? <span class="m-meta">{t.count}</span> : null}
             {t.dot && <span class="k-pane-dot" aria-label="New" data-tab-dot />}
           </button>,
+          t.after ? <span key={`${t.id}-after`} class="k-tab-after">{t.after}</span> : null,
           t.closes && onClose ? (
             <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} data-tab-x={t.id} onClick={() => onClose(t.id)}>
               <CloseIcon size="xs" />

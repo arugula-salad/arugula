@@ -71,6 +71,41 @@ test("the board on the left two thirds, its Needs you and lead on the right thir
   await page.screenshot({ path: info.outputPath("board-desk-1440.png") });
 });
 
+test("the right third is the agent panel (#1520): ✦ alone, and the board's one tab flipping Lead 🔒 ⇄ # channel; Also leads names its other boards", async ({ page }, info) => {
+  await openDesk(page);
+  // The same lead (claude@dust on mch_dust) leads another board of the project.
+  const other = { ...VIEW.board, id: "brd_0d02", title: "One Inbox" };
+  await page.route(/\/api\/projects\/prj_[0-9a-f]+\/boards$/, (r) => r.fulfill({ json: { project: P, boards: r.request().url().includes(P) ? [VIEW.board, other] : [] } }));
+  await page.reload();
+  const side = page.locator(".board-desk-side");
+  const tabs = side.locator("[data-kit=panel] [role=tab]");
+  await expect(tabs).toHaveCount(2);
+  // ✦: an icon, named for the chief of staff.
+  await expect(tabs.first()).toHaveAttribute("aria-label", "Chief of staff");
+  await expect(tabs.first()).toHaveText("✦");
+  // The board's tab, in front: its lead, privately, with what else it leads.
+  await expect(tabs.nth(1)).toHaveText("Lead 🔒");
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(side.locator("[data-panel-note]")).toHaveText("Also leads: One Inbox");
+  await expect(side.locator("[data-board-needs]")).toBeVisible();
+  await page.screenshot({ path: info.outputPath("board-panel-lead.png") });
+  // ⇄ flips it to the board's channel, its thread; clicking the tab again flips it back.
+  const toggle = side.locator("[data-panel-toggle]");
+  await expect(toggle).toHaveText("⇄ channel");
+  await toggle.click();
+  await expect(tabs.nth(1)).toHaveText("# Product improvements");
+  await expect(toggle).toHaveText("⇄ lead");
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveText("Lead 🔒");
+  // ✦ the chief of staff; the board's tab stays, with no ×.
+  await tabs.first().click();
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  await expect(side.locator("[data-tab-x]")).toHaveCount(0);
+  // No key of its own (#1534): the switch is clicked.
+  const ids = await page.evaluate(() => (window as unknown as { __arugulaKeys(): string[] }).__arugulaKeys());
+  expect(ids.filter((k) => /toggle|channel/.test(k))).toEqual([]);
+});
+
 test("the red alert strip says how long main has been red, with a mark and an edge and no fill", async ({ page }) => {
   await openDesk(page);
   const strip = page.locator('[data-board-alert="main"]');
