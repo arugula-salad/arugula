@@ -3,7 +3,7 @@
 // pills. Only Preact nodes come out, never HTML: whatever someone types
 // stays text.
 
-import type { ComponentChildren } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 
 /** Whether a mention (`@jake`) is the person reading. */
 export type IsMe = (token: string) => boolean;
@@ -84,6 +84,10 @@ export type ForgeInline = {
    * heard the message (#428), else null. Such a mention may go on with
    * `/session`, and the chip then holds both. */
   machine?: (word: string) => ComponentChildren;
+  /** Chat's agents' rooms (Arugula #1522): a tag at the start of `from`
+   * (`@Design lift`, which may hold spaces), drawn as `node`, and how much
+   * of `from` it is; null for none. */
+  tag?: (from: string) => { len: number; node: ComponentChildren } | null;
 };
 
 /** Only these hrefs come out of a body: whoever opened the PR wrote it. */
@@ -96,7 +100,15 @@ export function inline(text: string, isMe?: IsMe, landed?: (token: string) => bo
   let k = 0;
   for (const m of text.matchAll(forge ? (forge.image ? DOC_INLINE : FORGE_INLINE) : INLINE)) {
     const i = m.index!;
+    // Inside a tag that went on past its first word.
+    if (i < at) continue;
+    const tag = m[5] !== undefined && forge?.tag ? forge.tag(text.slice(i)) : null;
     if (i > at) out.push(...marked(plain(text.slice(at, i)), mark, () => k++));
+    if (tag) {
+      out.push(<Fragment key={k++}>{tag.node}</Fragment>);
+      at = i + tag.len;
+      continue;
+    }
     let s = m[0];
     if (m[1]) out.push(<code key={k++}>{s.slice(1, -1)}</code>);
     else if (m[2]) out.push(forge ? <strong key={k++}>{inline(s.slice(2, -2), isMe, landed, forge)}</strong> : <b key={k++}>{inline(s.slice(2, -2), isMe, landed, undefined, mark)}</b>);

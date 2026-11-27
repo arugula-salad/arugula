@@ -241,6 +241,12 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
 }
 
+.chat-reached {
+  margin: 2px 0 0;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
 /* Beside #agents or a board's channel: who's in it and who a post reaches. */
 .chat-about-list {
   display: grid;
@@ -325,9 +331,6 @@ html[data-native-tabs] .platform {
   margin: 14px 0 2px;
   font: 500 var(--text-label) var(--font-meta);
   letter-spacing: var(--track-section);
-}
-.chat-side .chat-section button {
-  padding: 3px 8px;
 }
 
 /* The stream's head: the room's name as a title, its topic beside it. */

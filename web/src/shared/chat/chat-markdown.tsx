@@ -14,11 +14,14 @@ export function ChatMarkdown({
   isMe,
   landed,
   machine,
+  tag,
 }: {
   text: string;
   isMe?: IsMe;
   landed?: (token: string) => boolean;
   machine?: ForgeInline["machine"];
+  /** In an agents' room: its tags, as pills (Arugula #1522). */
+  tag?: ForgeInline["tag"];
 }) {
   // The shortcode table comes only for a text that has one.
   const table = useEmoji(SHORTCODE.test(text));
@@ -26,5 +29,5 @@ export function ChatMarkdown({
     () => ({ text: table ? (s) => withEmoji(s, table) : undefined, jumbo: onlyEmoji(text, table), Code: CodeBlock }),
     [text, table],
   );
-  return <Markdown text={text} refs={null} chat={kit} isMe={isMe} landed={landed} machine={machine} />;
+  return <Markdown text={text} refs={null} chat={kit} isMe={isMe} landed={landed} machine={machine} tag={tag} />;
 }

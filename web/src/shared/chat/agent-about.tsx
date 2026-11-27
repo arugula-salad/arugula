@@ -12,7 +12,7 @@ import { ChevronIcon } from "../ui/icons";
 import { usePlatformApi } from "../platform-api";
 import { agentName } from "../agent-name";
 import { isAgentsRoom } from "./agent-rooms";
-import { useProjectBoards } from "./agents-section";
+import { useProjectBoards } from "./project-boards";
 
 function Who({ name, role, agent }: { name: string; role: string; agent?: boolean }) {
   return (

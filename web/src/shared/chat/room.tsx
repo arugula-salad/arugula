@@ -13,6 +13,8 @@
 // is all they see.
 
 import { isAgentRoom, isAgentsRoom, isBoardChannel } from "./agent-rooms";
+import { boardTitle, useProjectBoards } from "./project-boards";
+import { receipt, TAG_RULE, tagAt, tagOptions, tagsIn, type RoomTags, type TaggedMessage } from "./tags";
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
@@ -50,7 +52,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { savedAnchor, useAnchor } from "./use-anchor";
-import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
+import { ArrowIcon, BookmarkIcon, CheckIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
@@ -532,6 +534,27 @@ export const threadComposeRef: ComposeHandle = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
+/** An agents' room's message (Arugula #1522): its tags drawn as pills
+ * (its own, by id, else today's names) and its receipt, when control says
+ * who it reached. Null in any other room. */
+function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { len: number; node: ComponentChildren } | null; reached: string | null } | null {
+  const on = isAgentRoom(room);
+  const boards = useProjectBoards(on ? (room.project ?? undefined) : undefined);
+  return useMemo(() => {
+    if (!on) return null;
+    const t = m as TaggedMessage;
+    const title = (b: string) => boardTitle(room.project, b);
+    const known = t.tags ?? tagOptions(isAgentsRoom(room) ? "agents" : "board", (boards ?? []).map((b) => ({ id: b.id, title: b.title, lead: !!b.lead })), "").map((o) => o.tag);
+    return {
+      tag: (from: string) => {
+        const at = tagAt(from, known, title);
+        return at ? { len: at.len, node: <span class="mention" data-tag={at.kind}>@{at.name}</span> } : null;
+      },
+      reached: t.reached ? receipt(t.reached, title) : null,
+    };
+  }, [on, m, boards]);
+}
+
 export function RoomMessage({
   room,
   m,
@@ -570,6 +593,9 @@ export function RoomMessage({
     prev.via !== m.via ||
     m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
+  // In #agents and a board's channel (Arugula #1522): tags as pills, by
+  // id, and who the post reached.
+  const tagged = useTagged(room, m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
   const forMe = m.mentions.includes(chat.me);
@@ -713,7 +739,7 @@ export function RoomMessage({
             }}
           />
         ) : (
-          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} machine={machineIcon} />
+          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} machine={machineIcon} tag={tagged?.tag} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         <PinnedMark m={m} />
@@ -727,6 +753,11 @@ export function RoomMessage({
         )}
         <MentionStatus room={room} m={m} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
+        {tagged?.reached && (
+          <p class="chat-reached m-meta" data-reached>
+            <CheckIcon size="xs" /> {tagged.reached}
+          </p>
+        )}
         {!inThread && <ThreadFooter room={room} m={m} />}
       </div>
       <div class={panel === "react" || panel === "menu" ? "msg-tools open" : "msg-tools"} role="toolbar" aria-label="Message actions">
@@ -899,6 +930,8 @@ type Mentionable = {
   name: string;
   who: string;
   note?: string;
+  /** An agents' room's tag (Arugula #1522). */
+  tag?: string;
   /** A machine's (#428), or with `session`, one of its sessions, under it. */
   machine?: string;
   session?: boolean;
@@ -1042,15 +1075,22 @@ export function RoomCompose({
           return { token: m.token, name: m.name, who: "", machine: m.machine, session: m.session, note: m.session ? `@${m.token}` : a.owner === chat.me ? "yours" : a.owner_name };
         })
     : [];
+  // An agents' room's tags (Arugula #1522): @channel, @here, @cos and each
+  // board's lead, first, by id.
+  const tagRoom: RoomTags | null = isAgentRoom(room) ? (isAgentsRoom(room) ? "agents" : "board") : null;
+  const boards = useProjectBoards(tagRoom ? (room.project ?? undefined) : undefined);
+  const tagBoards = (boards ?? []).filter((b) => !b.closed_at).map((b) => ({ id: b.id, title: b.title, lead: !!b.lead }));
+  const tags = tagRoom && !thread ? tagOptions(tagRoom, tagBoards, typing ? typing[1] : "") : [];
   const options: Mentionable[] = typing
     ? [
+        ...tags.map((o) => ({ token: o.tag.text, name: `@${o.tag.text}`, who: "", note: o.note, tag: o.tag.kind })),
         ...mentionables(api, room.id)
           .filter((p) => p.token.startsWith(typing[1].toLowerCase()) || p.name.toLowerCase().startsWith(typing[1].toLowerCase()))
           .slice(0, 6),
         // The machines whose agents hear this room, and their recent sessions (#428).
         ...machineOptions,
         // `@channel` and `@here` after the people (#114).
-        ...broadcastOptions(typing[1]).map((b) => ({ token: b.token, name: `@${b.token}`, who: "", note: b.note })),
+        ...(tagRoom && !thread ? [] : broadcastOptions(typing[1]).map((b) => ({ token: b.token, name: `@${b.token}`, who: "", note: b.note }))),
       ]
     : [];
   const whole = !!typing && options.some((p) => p.token === typing[1].toLowerCase());
@@ -1068,6 +1108,9 @@ export function RoomCompose({
   const placeCaret = (at: number, focus: boolean) => {
     caretAfter.current = { at, focus };
   };
+  // What the lists offer is read off the caret as it's drawn: once it has
+  // moved, draw again, or an Enter straight after a pick picks again.
+  const [, caretMoved] = useState(0);
   useLayoutEffect(() => {
     const c = caretAfter.current;
     const el = input.current;
@@ -1075,6 +1118,7 @@ export function RoomCompose({
     caretAfter.current = null;
     el.setSelectionRange(c.at, c.at);
     if (c.focus) el.focus();
+    caretMoved((n) => n + 1);
   }, [text]);
 
   // `:jo` after a space or at the start: the shortcodes that begin so (two
@@ -1131,9 +1175,11 @@ export function RoomCompose({
     try {
       const posted = thread
         ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text, chat.agents(room.id))) : undefined)
-        : await chat.post(room.id, text, quote, files.ids, paused && anyway);
+        : await chat.post(room.id, text, quote, files.ids, paused && anyway, tagRoom ? tagsIn(text, tagOptions(tagRoom, tagBoards, "")) : undefined);
       // `@wake` names a chip here, though it's no machine or person to control.
       const reached = new Set((threadAgents ?? []).map((a) => sessionSlug(a.name)));
+      // A tag's first word is no one control knows: the tag says who.
+      if (tagRoom) for (const o of tagOptions(tagRoom, tagBoards, "")) reached.add(o.tag.text.split(/\s+/)[0]!.toLowerCase());
       setMissed(posted.unreached.filter((w) => !reached.has(w.toLowerCase())).map((w) => `Nobody here called ${w} can read this room`));
       setChosen(null);
       setToGithub(posted.github ? { seq: posted.seq, github: posted.github } : null);
@@ -1193,13 +1239,16 @@ export function RoomCompose({
         />
       )}
       {options.length > 0 && (
-        <ul class="mention-pick" role="listbox" aria-label="People to mention">
+        // In an agents' room, the box holds the delivery rule under the list.
+        <div class={tagRoom ? "mention-pick" : "mention-pop"} data-tag-list={tagRoom ?? undefined}>
+        <ul class={tagRoom ? "mention-tags" : "mention-pick"} role="listbox" aria-label="People to mention">
           {options.map((p, i) => (
             <li
               key={p.who || p.token}
               role="option"
               data-mention-machine={p.machine && !p.session ? p.token : undefined}
               data-mention-session={p.session ? p.token : undefined}
+              data-tag-option={p.tag}
               aria-selected={i === pick % options.length}
               class={`${i === pick % options.length ? "picked" : ""}${p.machine ? ` mention-machine-row${p.session ? " in-session" : ""}` : ""}${p.machine && !presence.machine(p.machine) ? " offline" : ""}`.trim()}
               onMouseDown={(e) => {
@@ -1226,6 +1275,12 @@ export function RoomCompose({
             </li>
           ))}
         </ul>
+          {tagRoom === "agents" && !thread && (
+            <p class="mention-rule" data-tag-rule>
+              {TAG_RULE}
+            </p>
+          )}
+        </div>
       )}
       {paused && (
         <p class="thread-note compose-paused" data-compose-paused>

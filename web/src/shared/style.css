@@ -7956,6 +7956,23 @@ button.thread-quote:hover {
   font-size: 9px; /* off-scale: avatar initials */
 }
 
+/* In an agents' room, the list's box holds the rule too (Arugula #1522). */
+.mention-pop {
+  display: contents;
+}
+.mention-tags {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mention-rule {
+  margin: 4px 0 0;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
 .mention-pick {
   position: absolute;
   left: 12px;
