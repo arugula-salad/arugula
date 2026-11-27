@@ -125,9 +125,9 @@ test("a waiting gate names the decision it enforces, its plan and the last relea
 
   // The swarm's card.
   await page.goto("/#swarm");
-  const card = page.locator('.swarm-card[data-kind="gate"]');
+  const card = page.locator('[data-need][data-kind="gate"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator(".cq")).toHaveText("delivery: ship waits at gate approve-ship");
+  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: ship waits at gate approve-ship");
   await expect(card.locator("[data-gate-decision]")).toHaveText(ENFORCES);
 });
 

@@ -196,7 +196,7 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
   expect(r.draft).toBeTruthy();
   expect(writes).toEqual([]);
   // The card: who drafted what, the text in a box to edit.
-  const card = page.locator(`.pane-ask .ask[data-ask="${r.draft}"]`);
+  const card = page.locator(`.pane-ask [data-ask="${r.draft}"]`);
   await expect(card).toContainText("an agent drafted a comment on jhgaylor/illogical#84");
   // #317: the card sits above the block's actions at the foot, not over them.
   const foot = el.locator(".item-foot");
@@ -231,7 +231,7 @@ test("an agent's comment waits as a draft until a person edits and sends it", as
     (b) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/merge`, { agent: true }).then((r) => r.json<{ draft: string }>()),
     block,
   );
-  const merge = page.locator(`.pane-ask .ask[data-ask="${d.draft}"]`);
+  const merge = page.locator(`.pane-ask [data-ask="${d.draft}"]`);
   await expect(merge).toContainText("drafted a merge");
   await merge.locator("[data-ask-decline]").click();
   await expect(el.locator(`[data-draft="${d.draft}"]`)).toHaveAttribute("data-draft-status", "dropped");
@@ -250,11 +250,11 @@ test("a waiting draft is the strip's one item, sent from its card, and goes once
   );
   expect(writes).toEqual([]);
   await expect(el.locator('[data-item-next="warn"]')).toContainText("Your comment draft");
-  await page.locator(`.pane-ask .ask[data-ask="${r.draft}"] [data-ask-submit]`).click();
+  await page.locator(`.pane-ask [data-ask="${r.draft}"] [data-ask-submit]`).click();
   await expect.poll(() => writes.length).toBe(1);
   expect(writes[0].route).toBe("/issues/84/comments");
   expect(writes[0].body).toEqual({ body: "Ship it" });
-  await expect(page.locator(`.pane-ask .ask[data-ask="${r.draft}"]`)).toHaveCount(0);
+  await expect(page.locator(`.pane-ask [data-ask="${r.draft}"]`)).toHaveCount(0);
   // Merged since: a draft still waiting isn't a want, and isn't drawn.
   const d = await page.evaluate(
     (b) => window.__arugula.client.request("POST", `/api/blocks/${b}/call/comment`, { body: "Too late", agent: true }).then((r) => r.json<{ draft: string }>()),

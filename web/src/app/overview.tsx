@@ -11,7 +11,7 @@
 //
 // Its old zoom addresses (`/p/:project/board/:board`, `…/card/:row`,
 // `…/work/:session`, Arugula #1287) still land: a board on its board, a
-// card in the board's drawer over this page, a session in its peek. A card
+// card in the board's drawer over this page, a session in the panel. A card
 // the address names (`?board=&card=`) opens the board's drawer over the
 // page, so the path and Esc climb back. The grouping is
 // ../shell/swarm/overview.ts; the machines are the machine page's
@@ -20,23 +20,23 @@
 import "./overview.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardRow, BoardView, InboxItem } from "../shared/proto";
+import { panelKey, type PanelTarget } from "../shared/kit/panel";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
 import { isCard, pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
-import { needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { Mark, type State } from "../shared/kit/state-mark";
 import { Surface } from "../shared/kit/surface";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon } from "../shared/ui/icons";
-import type { Fleet, FleetPane } from "../shell/fleet";
-import { activityOf, kindOf, readableCommand, whatItDoes } from "../shell/swarm/model";
-import { cleanTitle } from "../shared/titles";
-import { boardLead, boardSays, overviewOf, type OvBoard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
-import { OverviewNeeds, paneOfItem, paneOwner } from "./overview-needs";
+import type { Fleet } from "../shell/fleet";
+import { kindOf } from "../shell/swarm/model";
+import { boardSays, overviewOf, type OvBoard, type OvSession, type Standing } from "../shell/swarm/overview";
+import { OverviewNeeds, paneOfItem } from "./overview-needs";
+import { AgentPanel, CHIEF, ovPane, paneTarget } from "./panel";
 import { useProjectInbox } from "../platform/inbox-count";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
@@ -46,8 +46,6 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot } from "./machine-page";
-import { PeekContext, peekKey, type PeekPlace, talkKey } from "./overview-peek";
-import { staffStartTab, staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
 export function OverviewPlace({ project, board, card, zoom, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; session: AppSession | null }) {
@@ -66,45 +64,49 @@ export function OverviewPlace({ project, board, card, zoom, session }: { project
   return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} session={session} />;
 }
 
-/** A session's peek, as a tab. */
-// Keyed by the hub's id where it has one, so a reload or a daemon restart finds it again (#1390).
-const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: talkKey(s), title: s.name });
-
-/** A pane as the Overview groups it. */
-function ovPane(fleet: Fleet, p: FleetPane): OvPane {
-  const owner = paneOwner(fleet, p);
+/** The panel's tabs on this project's Overview, besides the chief of
+ * staff's, and the one in front; kept for the browser tab. */
+const TABS_MAX = 5;
+function usePanelTabs(project: string) {
+  const store = `arugula.ov-panel:${project}`;
+  const [s, setS] = useState<{ targets: PanelTarget[]; current?: string }>(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(store) ?? "null") as { targets?: PanelTarget[]; current?: string } | null;
+      if (v && Array.isArray(v.targets)) return { targets: v.targets.filter((t) => t && (t.kind === "agent" || t.kind === "thread")), current: v.current };
+    } catch {
+      // Unreadable: start empty.
+    }
+    return { targets: [] };
+  });
+  const put = (change: (was: typeof s) => typeof s) =>
+    setS((was) => {
+      const next = change(was);
+      try {
+        sessionStorage.setItem(store, JSON.stringify(next));
+      } catch {
+        // Not kept: it holds for this page.
+      }
+      return next;
+    });
   return {
-    key: p.key,
-    host: p.host,
-    machine: fleet.host(p.host)?.id,
-    id: p.id,
-    session: p.session,
-    project: p.info.session_project?.id ?? null,
-    on_issue: p.info.on_issue,
-    title: cleanTitle(p.info.title ?? ""),
-    name: sessionName(p),
-    agent: kindOf(p) === "agent",
-    ...(owner !== null ? { owner } : {}),
-    standing: standingOf(p),
-    last: p.info.activity?.last_ms ?? 0,
+    ...s,
+    /** Open a tab (or bring the one on the same thing to the front). */
+    open: (t: PanelTarget) =>
+      put(({ targets }) => {
+        const k = panelKey(t);
+        if (targets.some((x) => panelKey(x) === k)) return { targets: targets.map((x) => (panelKey(x) === k ? t : x)), current: k };
+        return { targets: [...targets, t].slice(-TABS_MAX), current: k };
+      }),
+    close: (k: string) =>
+      put(({ targets, current }) => {
+        const i = targets.findIndex((x) => panelKey(x) === k);
+        const left = targets.filter((x) => panelKey(x) !== k);
+        // Closing the one in front brings its neighbour, else the chief of staff.
+        const next = current !== k ? current : left.length ? panelKey(left[Math.min(i, left.length - 1)]!) : undefined;
+        return { targets: left, current: next };
+      }),
+    pick: (k: string) => put((was) => ({ ...was, current: k === CHIEF ? undefined : k })),
   };
-}
-
-/** It asks, it failed, it works, or it's quiet: what a tile says of a pane. */
-function standingOf(p: FleetPane): Standing {
-  if (needsYou(p.info)) return needsYouRank(p.info) <= 1 ? "needs" : "failed";
-  if (!p.stale && (activityOf(p) > 0.3 || p.info.attention === "working")) return "working";
-  return "quiet";
-}
-
-/** A session's name as Arugula names an agent: its agent and title
- * (`Claude Code · #983 cloud half`); anything else, what it runs. */
-function sessionName(p: FleetPane): string {
-  const what = whatItDoes(p);
-  if (kindOf(p) !== "agent") return what;
-  const cmd = p.info.command ?? "";
-  const agent = cmd && readableCommand(cmd) !== cmd ? readableCommand(cmd) : "";
-  return agent && what !== agent ? `${agent} · ${what}` : what;
 }
 
 /** A card's words in a list and the path: `#983 · Its title`. */
@@ -302,14 +304,6 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     if ("board" in zoom) go(pathOf(zoom.card ? { page: "project", project, board: zoom.board, card: zoom.card } : { page: "board", project, board: zoom.board }, names), true);
   }, [zoom && ("board" in zoom ? `${zoom.board}/${zoom.card}` : "")]);
 
-  const openPanes = (s: OvSession) => {
-    const lead = s.lead;
-    const machine = lead && fleet.host(lead.host)?.id;
-    if (lead) go(pathOf({ page: "machines", project, at: machine ? { at: "machine", machine, pane: lead.id } : { at: "machines", name: lead.host, pane: lead.id } }, names));
-    else if (s.hosted) go(api.sessionHref?.(project, s.hosted) ?? pathOf({ page: "session", project, session: s.hosted }, names));
-  };
-  const openCard = (c: { board: string; row: BoardRow }) => go(pathOf({ page: "project", project, board: c.board, card: c.row.id }, names));
-
   // The card the address opens: the board's drawer, over the page.
   const shownView = board ? views?.find((v) => v.board.id === board) : undefined;
   const opened = card ? shownView?.zones.flatMap((z) => z.rows).find((r) => r.id === card) : undefined;
@@ -332,68 +326,37 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     }
   };
 
-  // The panel's tabs: the chief of staff's pinned first, and the peeks Needs you opens.
-  const talk = useTalk(project);
+  // The panel's tabs: the chief of staff's first (the panel's own), then the agents and rooms opened here.
+  const tabs = usePanelTabs(project);
   const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
-  const sessions = [...ovCards.flatMap((c) => c.sessions), ...o.loose, ...o.boards.flatMap((b) => (b.lead ? [b.lead.peek] : []))];
-  const peeks: PeekPlace = {
-    fleet,
-    find: (key) => {
-      // A session by its tile's key, or by the hub's id for it (`/work/ses_…`, #1380).
-      const is = (s: OvSession) => peekKey(s) === key || s.hub === key;
-      for (const c of ovCards) for (const s of c.sessions) if (is(s)) return { s, card: c };
-      const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && is(b.lead.peek))?.lead?.peek;
-      return s && { s, card: null };
-    },
-    lead: (l) => boardLead(l, ovPanes, byCard, hostOf, (id) => platform.project(id)?.name),
-    openPanes,
-    openCard,
-    askLead: chat.on ? (id) => talk.open({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
-    project: p?.name ?? "this project",
-    rung: (s, c) => {
-      // A board's lead, by its tab: under the reader's chief of staff, who writes to it in its boards' threads.
-      const led = o.boards.filter((b) => b.lead && talkKey(b.lead.peek) === talkKey(s));
-      if (led.length) {
-        const cos = staffRoom?.lead;
-        return { line: `lead of ${led.map((b) => b.title).join(", ")}`, parent: cos ? { machine: cos.machine, session: cos.session, who: "the chief of staff" } : null, rooms: led.map((b) => b.id) };
-      }
-      // An agent on an issue's card: under its board's lead, who writes to it in the issue's thread.
-      if (!c || c.row.pointer.kind !== "issue" || !(s.hosted || s.panes.some((x) => x.agent))) return null;
-      const b = o.boards.find((x) => x.id === c.board);
-      const label = pointerLabel(c.row.pointer, c.row.live) || "its issue";
-      const l = b?.lead;
-      return { line: `on ${label} for ${b?.title ?? "its board"}`, parent: l ? { machine: l.machine, session: l.session, who: `its lead, ${l.session}` } : null, rooms: [c.row.pointer.id], issue: { id: c.row.pointer.id, label } };
-    },
-    hostedIn: (id) => (id ? session?.daemons.find((d) => d.id === id)?.hosted?.project : undefined),
+  const sessions = [...ovCards.flatMap((c) => c.sessions), ...o.loose];
+  const leads = o.boards.flatMap((b) => (b.lead ? [b.lead.peek] : []));
+  /** A session's rung: a board's lead, a worker on a card, or an agent. */
+  const roleOf = (paneKey: string): "lead" | "worker" | "agent" =>
+    leads.some((l) => l.panes.some((x) => x.key === paneKey)) ? "lead" : o.cardOf.get(paneKey) ? "worker" : "agent";
+  /** A session's tab: its agent's pane (else the pane it opens), or a cloud workspace's session. */
+  const targetOf = (s: OvSession): PanelTarget | null => {
+    const ov = s.panes.find((x) => x.agent) ?? s.lead;
+    const fp = ov && fleet.panes.find((x) => x.key === ov.key);
+    if (fp) return paneTarget(fleet, fp, roleOf(fp.key), s.name);
+    return s.hosted ? { kind: "agent", role: "worker", machine: "cloud", session: s.hosted, title: s.name } : null;
   };
 
-  // A peek tab saved under its tile's key (`host#N`) takes the hub's id for its session once the page knows it (#1390).
-  const stale = talk.tabs.flatMap((t) => {
-    const s = t.kind === "peek" ? peeks.find(t.id)?.s : undefined;
-    return s && talkKey(s) !== t.id ? [{ from: `peek:${t.id}`, to: { ...t, id: talkKey(s) } }] : [];
-  });
+  // A session by its old address (`/work/:session`, #1287, by its tile's key or the hub's id, #1380): in the panel.
+  const zoomKey = zoom && "session" in zoom ? zoom.session : undefined;
+  const zoomed = zoomKey ? [...sessions, ...leads].find((s) => s.key.slice(s.key.indexOf("|") + 1) === zoomKey || s.hub === zoomKey) : undefined;
   useEffect(() => {
-    for (const { from, to } of stale) talk.rekey(from, to);
-  }, [stale.map((x) => `${x.from}>${x.to.id}`).join(" ")]);
-
-  // The chief of staff's tab, pinned first, once it has a room (#1275); until then, Start (#1341).
-  const chief: TalkTab | null = staffTab(project);
-  const chiefTab = chief ?? staffStartTab(project);
-
-  // A session on no card, by its old address: its peek.
-  const zoomed = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
-  useEffect(() => {
-    if (!zoomed) return;
-    talk.open(peekTab(zoomed));
+    const t = zoomed && targetOf(zoomed);
+    if (!t) return;
+    tabs.open(t);
     go(pathOf({ page: "project", project }, names), true);
-  }, [zoomed && talkKey(zoomed)]);
+  }, [zoomed?.key]);
 
-  // Moving through Needs you peeks the asker: its session's peek, or the chief of staff's room for its card.
+  // Moving through Needs you peeks the asker: its pane's session, or the chief of staff for the staff room's.
   const peek = (i: InboxItem) => {
     const pane = paneOfItem(fleet, i);
-    const s = pane && sessions.find((x) => x.panes.some((y) => y.key === pane.key));
-    if (s) talk.open(peekTab(s));
-    else if (chief && i.subject.room && i.subject.room === staffRoom?.id) talk.pick(`${chief.kind}:${chief.id}`);
+    if (pane) tabs.open(paneTarget(fleet, pane, roleOf(pane.key), sessions.find((x) => x.panes.some((y) => y.key === pane.key))?.name));
+    else if ((i.subject.room && i.subject.room === staffRoom?.id) || i.from.name?.startsWith("Chief of staff")) tabs.pick(CHIEF);
   };
 
   const moved = o.boards.filter(moving);
@@ -444,7 +407,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   };
 
   const main = (
-    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" data-ov-main>
+    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
       <header class="ov-title" data-ov-title>
         <h1>{p?.name ?? "Overview"}</h1>
         {chat.on && p?.team && <Faces p={p} />}
@@ -502,22 +465,21 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     </Surface>
   );
   const needs = <OverviewNeeds items={inbox?.items ?? []} me={platform.me?.account} fleet={fleet} toast={(t) => api.toast(t)} peek={peek} />;
-  const panel = <TalkPanel talk={talk} pinned={chiefTab} phone={phone} />;
+  const panel = (above?: typeof needs) => (
+    <AgentPanel project={project} above={above} targets={tabs.targets} current={tabs.current} onPick={tabs.pick} onClose={tabs.close} fleet={fleet} session={session} />
+  );
   return (
     <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
-      <PeekContext.Provider value={peeks}>
-        {phone ? (
-          [needs, main, panel]
-        ) : (
-          <>
-            {main}
-            <div class="ov-side" data-ov-side>
-              {needs}
-              {panel}
-            </div>
-          </>
-        )}
-      </PeekContext.Provider>
+      {phone ? (
+        [needs, main, panel()]
+      ) : (
+        <>
+          {main}
+          <div class="ov-side" data-ov-side>
+            {panel(needs)}
+          </div>
+        </>
+      )}
       {opened && shownView && (
         <Drawer
           r={opened}

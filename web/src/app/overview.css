@@ -1,14 +1,15 @@
-/* The project's Overview (./overview.tsx, Lift 4): two thirds and one
-   third. The left is a section: the title line, Boards as cards (the quiet
-   ones folded into one) and the Running line. The right third stacks Needs
-   you, To do and a teammate's asks (./overview-needs.tsx) above the agent
-   panel, which reaches the window's foot. On a narrow window or a phone,
-   one column: Needs you, then the rest, the panel at its own height. Kit
-   parts draw the surfaces and rows; this lays them out. */
+/* The project's Overview (./overview.tsx, Lift 4): the work, and the agent
+   panel's column beside it, as wide as the panel (the kit's Panel: 420 by
+   default). The left is a section: the title line, Boards as cards (the
+   quiet ones folded into one) and the Running line. The right holds Needs
+   you, To do and a teammate's asks (./overview-needs.tsx) over the panel,
+   which reaches the window's foot. On a narrow window or a phone, one
+   column: Needs you, then the rest, the panel at its own height. Kit parts
+   draw the surfaces, rows and the panel; this lays them out. */
 
 .ov {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(22rem, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--gap);
   align-items: start;
 }
@@ -167,13 +168,10 @@
   font-size: var(--text-meta);
 }
 
-/* The right third: Needs you over the panel, held in the window. */
+/* The right: Needs you over the panel, held in the window. */
 .ov-side {
   position: sticky;
   top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap);
   height: calc(100vh - 80px);
   min-width: 0;
 }
@@ -200,285 +198,9 @@
 .ov-more:hover {
   color: var(--ink);
 }
-.ov-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+.ov-main:focus {
+  outline: 0;
 }
-.ov-word {
-  color: var(--ink-dim);
-}
-
-.ov-talk {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--line);
-}
-.ov-talk > .empty-line {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-}
-/* A tab: its unread dot, its name, its ×. They scroll sideways, not wrap. */
-.ov-tabs {
-  flex: none;
-  display: flex;
-  gap: 2px;
-  padding: var(--space-1) var(--space-2) 0;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--line);
-}
-.ov-tab {
-  flex: none;
-  max-width: 11rem;
-  display: flex;
-  align-items: center;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.ov-tab.ov-tab-on {
-  border-bottom-color: var(--accent);
-}
-.ov-tab button {
-  border: 0;
-  background: none;
-  color: var(--dim);
-  cursor: pointer;
-}
-.ov-tab [role="tab"] {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
-  font: 500 var(--text-sm) var(--font-sans);
-}
-.ov-tab [role="tab"] span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-tab.ov-tab-on [role="tab"],
-.ov-tab button:hover {
-  color: var(--fg);
-}
-.ov-tab-close {
-  display: grid;
-  place-items: center;
-  padding: 2px;
-  border-radius: var(--field-radius);
-}
-.ov-tab-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent-fill);
-}
-/* The open conversation: chat's own room, its list scrolling, its box at the foot. */
-.ov-talk-open {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ov-talk-room {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* The who-line under the tabs (#1290): who the open tab talks to, and where a message goes. */
-.ov-who {
-  flex: none;
-  margin: 0;
-  padding: var(--space-1) var(--space-3);
-  border-bottom: 1px solid var(--line);
-  font-size: var(--text-xs);
-  line-height: 1.4;
-}
-.ov-who:empty {
-  display: none;
-}
-.ov-who b {
-  color: var(--fg);
-  font-weight: 500;
-}
-.ov-talk-note {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-}
-/* An agent's head in the who-line (#1342), its rung and its parent's latest word under it (#1441), a line each. */
-.ov-who .agent-rung,
-.ov-who .agent-word {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* An issue agent's tab (#1441): its issue's thread over its peek. */
-.ov-agent-tab {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ov-agent-tab > .ov-talk-room {
-  flex: 3 1 0;
-  min-height: 12em;
-}
-.ov-agent-tab > .ov-peek-tab {
-  flex: 2 1 0;
-  min-height: 0;
-  border-top: 1px solid var(--line);
-}
-.ov-agent-tab .ov-peek-tail {
-  min-height: 4em;
-}
-.ov-agent-note {
-  flex: none;
-  margin: 0;
-  padding: var(--space-1) var(--space-3);
-  font-size: var(--text-xs);
-}
-/* The chief of staff's tab before there is one (#1341): what it does, the
-   machine to run it on and Start; a card when the machine needs a grant. */
-.ov-staff-start {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-bottom: var(--space-3);
-}
-.ov-staff-start-go {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-}
-.ov-staff-start-go label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-}
-.ov-staff-cannot {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-xs);
-}
-.ov-staff-grant {
-  margin: 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  font-size: var(--text-sm);
-}
-.ov-staff-grant p {
-  margin: 0 0 var(--space-1);
-}
-.ov-staff-grant-acts {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-.ov-staff-failed {
-  margin: 0 var(--space-3);
-  color: var(--danger);
-  font-size: var(--text-sm);
-}
-/* Over the staff room while its chief of staff is asleep (#1453): why
-   nothing hears it, and Run it on another machine. */
-.ov-staff-move {
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--line);
-}
-.ov-staff-move > p {
-  margin: 0 var(--space-3);
-  font-size: var(--text-sm);
-}
-.ov-staff-move .ov-staff-start-go {
-  justify-content: flex-start;
-  margin: 0 var(--space-3);
-}
-
-/* A session's peek (#1271): its head, its last lines, its buttons, and its box at the foot. */
-.ov-peek-tab {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-}
-.ov-peek-tab-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-2);
-  font-size: var(--text-md);
-}
-.ov-peek-tab-head .mono {
-  font: var(--text-sm) var(--font-mono);
-}
-.ov-peek-card-link {
-  margin-left: auto;
-}
-.ov-peek-why,
-.ov-peek-said {
-  margin: 0;
-  font-size: var(--text-sm);
-}
-.ov-peek-tail {
-  flex: 1 1 auto;
-  min-height: 8em;
-  margin: 0;
-  overflow: auto;
-  padding: var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  font: var(--text-xs) / 1.5 var(--font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-/* An agent's transcript (#1382): its Markdown in the page's type, as chat draws a message. */
-.ov-peek-tail.ov-peek-md {
-  font: inherit;
-  white-space: normal;
-}
-.ov-peek-acts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-.ov-peek-panes {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: auto;
-}
-.ov-peek-reply {
-  display: flex;
-  gap: var(--space-2);
-}
-.ov-peek-reply input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 
 /* A narrow window, or a phone: one column, the panel at its own height. */
 @media (max-width: 1000px) {
@@ -492,13 +214,6 @@
   .ov-needs {
     max-height: none;
   }
-}
-.ov.phone .ov-panel,
-.ov-side .ov-panel:not(.ov-panel-talking) {
-  min-height: 12rem;
-}
-.ov.phone .ov-panel {
-  height: 70vh;
 }
 
 /* The card's drawer leaves the bar uncovered: its path climbs back. */

@@ -223,7 +223,7 @@ test("Expire turns a gate down, from the card and the phone: the next run stops 
 
   // The swarm's card: Approve, Expire, Dismiss.
   await page.goto("/#swarm");
-  const card = page.locator('.swarm-card[data-kind="gate"]');
+  const card = page.locator('[data-need][data-kind="gate"]');
   await expect(card.locator("[data-expire-gate]")).toHaveText("Expire", { timeout: 15_000 });
   await card.locator("[data-expire-gate]").click();
   await cleared();
@@ -263,10 +263,10 @@ test("on a phone, an editor approves from the sheet, gates first; a viewer sees 
 
   // On the swarm's rail: a gate card, with Approve.
   await page.goto("/#swarm");
-  const card = page.locator('.swarm-card[data-kind="gate"]');
+  const card = page.locator('[data-need][data-kind="gate"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator(".ch .ct")).toHaveText("Waits at a gate");
-  await expect(card.locator(".cq")).toHaveText("delivery: release waits at gate approve-release");
+  await expect(card.locator("[data-row-title]")).toHaveText("Waits at a gate");
+  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: release waits at gate approve-release");
   await expect(card.locator("[data-approve-gate]")).toHaveText("Approve");
   expect(await card.getAttribute("data-bundle")).toBe(`gate:${ws}`);
 

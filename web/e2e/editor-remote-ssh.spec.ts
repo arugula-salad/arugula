@@ -192,7 +192,7 @@ test("a breakpoint on the box is a card on the phone's rail, and Continue runs o
   test.setTimeout(120_000);
   await openFile("app.js", 1);
   await vs.keyboard.press("F5");
-  const card = phone.locator('.swarm-card[data-kind="paused"]');
+  const card = phone.locator('[data-need][data-kind="paused"]');
   await expect(card).toBeVisible({ timeout: 60_000 });
   await expect(card).toContainText("app.js:3");
   await card.locator("[data-continue]").click();
@@ -213,7 +213,7 @@ test("an edit from Claude Code in a pane on the box is accepted from the phone's
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ text: `edit ${PROJ}/src/cart.js function total(items) {\\n  return items.reduce((a, b) => a + b.price, 0);\\n}\\nmodule.exports = { total };\\n`, enter: true }),
   });
-  const card = phone.locator('.swarm-card[data-kind="diff"]');
+  const card = phone.locator('[data-need][data-kind="diff"]');
   await expect(card).toBeVisible({ timeout: 20_000 });
   await card.locator("[data-accept]").click();
   await expect.poll(() => onBox(`cat ${PROJ}/src/cart.js`), { timeout: 15_000 }).toContain("a + b.price, 0");

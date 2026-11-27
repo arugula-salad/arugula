@@ -22,7 +22,9 @@ import { openFile } from "./diff";
 import { workChip } from "../../shared/boards/text";
 import { platformHref } from "../platform-links";
 import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./agent-context";
-import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
+import { headline, type Ask, type Question } from "../../shared/ask";
+import { askNeed, NeedRow } from "../../shared/kit/need-row";
+import { needAge } from "../../shared/needs-you";
 import { pick, store } from "../upload";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
@@ -781,8 +783,10 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
       {s.asks.length > 0 && can && (
         <div class="agent-asks">
           {s.asks.map((a) => (
-            <AskCard
+            <NeedRow
               key={a.id}
+              need={askNeed(a, needAge(a.at_ms))}
+              open
               ask={a}
               actions={{
                 answer: (content) => call("answer", { id: a.id, content }),

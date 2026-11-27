@@ -13,6 +13,8 @@ export interface TabItem {
   count?: number;
   /** It can be closed. */
   closes?: boolean;
+  /** A visitor, not one of the place's own (the agent panel's peeked agent): its title in italics. */
+  peek?: boolean;
 }
 
 export function Tabs({ label, tabs, current, onPick, onClose }: { label: string; tabs: TabItem[]; current: string; onPick: (id: string) => void; onClose?: (id: string) => void }) {
@@ -30,13 +32,13 @@ export function Tabs({ label, tabs, current, onPick, onClose }: { label: string;
       {tabs.map((t, i) => {
         const on = t.id === current;
         return [
-          <button key={t.id} type="button" class="k-tab" role="tab" data-tab={t.id} aria-selected={on} tabIndex={on ? 0 : -1} onClick={() => onPick(t.id)} onKeyDown={(e) => key(e, i)}>
+          <button key={t.id} type="button" class={t.peek ? "k-tab is-peek" : "k-tab"} role="tab" data-tab={t.id} aria-selected={on} tabIndex={on ? 0 : -1} onClick={() => onPick(t.id)} onKeyDown={(e) => key(e, i)}>
             {t.icon}
             <span class="k-tab-title">{t.title}</span>
             {t.count ? <span class="m-meta">{t.count}</span> : null}
           </button>,
           t.closes && onClose ? (
-            <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} onClick={() => onClose(t.id)}>
+            <button key={`${t.id}-x`} type="button" class="k-tab k-tab-x" tabIndex={-1} aria-label={`Close ${t.title}`} title={`Close ${t.title}`} data-tab-x={t.id} onClick={() => onClose(t.id)}>
               <CloseIcon size="xs" />
             </button>
           ) : null,

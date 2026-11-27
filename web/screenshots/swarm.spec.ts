@@ -118,7 +118,7 @@ async function swarm(page: Page, phone = false) {
     await page.waitForTimeout(8000);
     return;
   }
-  await expect(page.locator(".swarm-card[data-bundle]").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-need][data-bundle]").first()).toBeVisible({ timeout: 30_000 });
   // Let the field settle and the activity come through, then fit it.
   await page.waitForTimeout(8000);
   // The first visit's hint isn't part of the picture.

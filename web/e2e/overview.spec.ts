@@ -7,9 +7,10 @@
 // and read again only after a long absence (#1297); a card's address
 // opening its board's drawer over the page, its session live and its
 // question answered there. The right: Needs you (./overview-needs.spec.ts)
-// over the agent panel, whose first tab is the chief of staff's room
-// (#1275), its head saying where it runs (#1342), Start with no room
-// (#1341), and asleep or led by no one, run elsewhere (#1453, #1472, #1500).
+// over the agent panel (./panel.spec.ts), whose first tab is the chief of
+// staff's room (#1275), its head saying where it runs (#1342), Start with no
+// room (#1341), and asleep or led by no one, run elsewhere (#1453, #1472,
+// #1500).
 // And on a phone, one column with Needs you on top.
 import { devices, expect, test } from "@playwright/test";
 import { B, chatOn, cli, hookInput, LATER, overview, P, proposing, spyOpened, opened, staffRoomOn, startsOnLaptop, START, suiteHost } from "./overview-fixture";
@@ -37,12 +38,11 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-quiet-names]")).toHaveText("Later");
     // Running: what runs here, on to Machines.
     await expect(page.locator("[data-ov-running]")).toContainText(/Running\s*\d+ (agent|shell)/);
-    // The right third: Needs you above the panel, a third of the width.
+    // The right: Needs you above the panel, as wide as the panel (420 by default).
     const [m, side] = await Promise.all([main.boundingBox(), page.locator("[data-ov-side]").boundingBox()]);
     expect(side!.x).toBeGreaterThan(m!.x + m!.width);
-    expect(side!.width / (m!.width + side!.width)).toBeGreaterThan(0.28);
-    expect(side!.width / (m!.width + side!.width)).toBeLessThan(0.4);
-    await expect(page.locator("[data-ov-side] > [data-ov-needs] + [data-ov-panel]")).toHaveCount(1);
+    expect(Math.round(side!.width)).toBe(420);
+    await expect(page.locator("[data-ov-side] [data-panel-col] > [data-ov-needs] + [data-kit=panel]")).toHaveCount(1);
     // Nothing of the old Overview: no zoom pill, no divider, no briefing, no Not on a card.
     await expect(page.locator("[data-ov-levels], [data-ov-split], [data-ov-briefing], [data-ov-loose]")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("overview.png") });
@@ -186,12 +186,14 @@ test.describe("on a computer", () => {
   });
 
 
-  test("the reader's staff room is the talk panel's first tab, pinned, its head saying where its chief of staff runs and whether it's awake (Arugula #1275, #1342)", async ({ page }) => {
+  test("the chief of staff is the panel's first tab, pinned: its staff room, its head saying where it runs and whether it's awake (Arugula #1275, #1342)", async ({ page }) => {
     await overview(page);
-    const panel = page.locator("[data-ov-panel]");
+    const panel = page.locator("[data-kit=panel]");
     await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
-    // No staff room yet: no pinned tab.
-    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
+    // Chat off: the tab is there, and says rooms come with chat.
+    const tab = panel.locator('[data-tab="chief"]');
+    await expect(tab).toHaveText("Chief of staff");
+    await expect(panel.locator("[data-panel-chat-off]")).toBeVisible();
     await page.evaluate((P) => {
       const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 1, read: 0, unread: 1, mentions: 0, wants: 1, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
       const said = [{ seq: 1, at: Date.now() - 60_000, author: "acct_me", name: "Me's agent on geek", text: "3 boards moved since this morning.", quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: { machine: "m_geek", machine_name: "geek" }, reactions: [], files: [], pinned: false, also: false }];
@@ -207,16 +209,16 @@ test.describe("on a computer", () => {
       c.rooms = [...c.rooms, room];
       c.emit();
     }, P);
-    const tab = panel.locator('[data-ov-tab="staff:dm_cos"]');
-    await expect(tab.getByRole("tab")).toHaveText("Chief of staff");
-    await expect(tab.getByRole("tab")).toHaveAttribute("aria-selected", "true");
-    await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
-    await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator('[data-tab-x="chief"]')).toHaveCount(0);
+    await expect(panel.locator("[data-tab]").first()).toHaveAttribute("data-tab", "chief");
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
     // Its head (#1342): a machine this page doesn't reach tells only where it runs.
-    const head = panel.locator('[data-ov-who="staff"] [data-agent-head]');
-    await expect(head).toHaveText("Chief of staff · geek");
-    await expect(head).toHaveAttribute("data-agent-state", "unknown");
+    const head = panel.locator("[data-panel-head]");
+    await expect(head).toHaveAttribute("data-panel-head", "Chief of staff");
+    await expect(head).toHaveAttribute("data-panel-state", "unknown");
+    await expect(head).toContainText("chief of staff");
+    await expect(head).toContainText("geek");
     // Led by the project's scratch session on the suite's daemon, which this page reads: idle there, its shell quiet.
     const host = await suiteHost(page);
     await page.evaluate((host) => {
@@ -224,31 +226,33 @@ test.describe("on a computer", () => {
       c.rooms = c.rooms.map((r) => (r.id === "dm_cos" ? { ...r, lead: { machine: "m_suite", machine_name: host, session: "scratch" } } : r));
       c.emit();
     }, host);
-    await expect(head).toHaveText(`Chief of staff · idle on ${host}`);
-    await expect(head.locator("[title]")).toHaveAttribute("title", "wakes on its own");
+    await expect(head).toHaveAttribute("data-panel-state", "idle");
+    await expect(head).toContainText(host);
+    await expect(head.locator('[title="wakes on its own"]')).toHaveCount(1);
     // No session leads it: none.
     await page.evaluate(() => {
       const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;
       c.rooms = c.rooms.map((r) => (r.id === "dm_cos" ? { ...r, lead: undefined } : r));
       c.emit();
     });
-    await expect(head).toHaveText("Chief of staff · none");
+    await expect(head).toHaveAttribute("data-panel-state", "none");
+    await expect(head).toContainText("no one leads it");
   });
 
   test("with no staff room, the chief of staff's tab is Start: what it does and this computer to run it on; Start calls start_agent there, and the tab becomes its room with its head (Arugula #1341)", async ({ page }) => {
     await overview(page);
-    const panel = page.locator("[data-ov-panel]");
-    // Chat off: no staff room to have, no tab.
+    const panel = page.locator("[data-kit=panel]");
+    // Chat off: no staff room to have, so no Start.
     await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
-    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
+    await expect(panel.locator("[data-ov-staff-start]")).toHaveCount(0);
     await chatOn(page);
-    const tab = panel.locator(`[data-ov-tab="staffStart:${P}"]`);
-    await expect(tab.getByRole("tab")).toHaveText("Chief of staff");
-    await expect(tab.getByRole("tab")).toHaveAttribute("aria-selected", "true");
-    await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
-    await expect(panel.locator('[data-ov-who="staffStart"] [data-agent-head]')).toHaveText("Chief of staff · none");
+    const tab = panel.locator('[data-tab="chief"]');
+    await expect(tab).toHaveText("Chief of staff");
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator('[data-tab-x="chief"]')).toHaveCount(0);
+    await expect(panel.locator("[data-panel-head]")).toHaveAttribute("data-panel-state", "none");
     const start = panel.locator("[data-ov-staff-start]");
-    await expect(start.locator(".empty-state-title")).toHaveText("Start your chief of staff");
+    await expect(start.getByRole("heading")).toHaveText("Start your chief of staff");
     // The suite's daemon is the only machine, this page's own, and new enough.
     const host = await suiteHost(page);
     await expect(start.locator("[data-ov-staff-machine-one]")).toHaveText(`On ${host} (this computer)`);
@@ -285,24 +289,24 @@ test.describe("on a computer", () => {
       { P, host },
     );
     await start.locator("[data-ov-staff-go]").click();
-    // The tab is the room's now, still pinned first and open, its head saying where the chief of staff runs.
-    const room = panel.locator('[data-ov-tab="staff:dm_cos"]');
-    await expect(room.getByRole("tab")).toHaveAttribute("aria-selected", "true");
-    await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
-    await expect(panel.locator(`[data-ov-tab="staffStart:${P}"]`)).toHaveCount(0);
+    // The tab is the room's now, still first and open, its head saying where the chief of staff runs.
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator("[data-tab]").first()).toHaveAttribute("data-tab", "chief");
     await expect(panel.locator("[data-ov-staff-start]")).toHaveCount(0);
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toBeVisible();
-    await expect(panel.locator('[data-ov-who="staff"] [data-agent-head]')).toHaveText(`Chief of staff · idle on ${host}`);
+    await expect(panel.locator("[data-panel-head]")).toHaveAttribute("data-panel-state", "idle");
+    await expect(panel.locator("[data-panel-head]")).toContainText(host);
     expect(calls).toHaveLength(2);
   });
 
   test("a chief of staff asleep on an offline machine: its tab offers Run it on another machine, which asks for the grant, starts it on the machine picked and leaves the room led there (Arugula #1453)", async ({ page }) => {
     const { host, head } = await staffRoomOn(page, { machine: "m_pi", machine_name: "pi", session: "Chief of staff · Arugula" });
-    const panel = page.locator("[data-ov-panel]");
-    await expect(head).toHaveText("Chief of staff · asleep: pi is offline");
-    await expect(head).toHaveAttribute("data-agent-state", "asleep");
+    const panel = page.locator("[data-kit=panel]");
+    await expect(head).toHaveAttribute("data-panel-state", "asleep");
+    await expect(head).toContainText("pi is offline");
     // The offer, over the room: the reader's machines online to run it on, this computer first and picked; pi (asleep) not among them.
-    const move = panel.locator('[data-ov-staff="dm_cos"] [data-ov-staff-move="pi"]');
+    await expect(panel.locator('[data-ov-staff="dm_cos"]')).toBeVisible();
+    const move = panel.locator('[data-ov-staff-move="pi"]');
     await expect(move).toBeVisible();
     await expect(move).toContainText("the one on pi stands down");
     const machine = move.locator("[data-ov-staff-machine]");
@@ -314,16 +318,16 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-staff-restart]")).toHaveCount(0);
     await machine.selectOption("laptop");
     await startsOnLaptop(page, move, head, "It leads your person's staff room in Arugula. Session Chief of staff · Arugula on pi led it before: it's told to stand down");
-    await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
   });
 
   test("a staff room no session leads offers the same pick with Start, which starts it on the machine picked and leaves the room led there (Arugula #1472)", async ({ page }) => {
     const { host, head } = await staffRoomOn(page, null);
-    const panel = page.locator("[data-ov-panel]");
-    await expect(head).toHaveText("Chief of staff · none");
-    await expect(head).toHaveAttribute("data-agent-state", "none");
+    const panel = page.locator("[data-kit=panel]");
+    await expect(head).toHaveAttribute("data-panel-state", "none");
     // The offer, over the room: the reader's machines online, this computer first and picked; pi (offline) left out, and said so.
-    const move = panel.locator('[data-ov-staff="dm_cos"] [data-ov-staff-lead="none"]');
+    await expect(panel.locator('[data-ov-staff="dm_cos"]')).toBeVisible();
+    const move = panel.locator('[data-ov-staff-lead="none"]');
     await expect(move).toBeVisible();
     await expect(move).toContainText("No chief of staff leads this room");
     const machine = move.locator("[data-ov-staff-machine]");
@@ -333,14 +337,15 @@ test.describe("on a computer", () => {
     await expect(move.locator("[data-ov-staff-go]")).toHaveText("Start");
     await machine.selectOption("laptop");
     await startsOnLaptop(page, move, head, "It leads your person's staff room in Arugula");
-    await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
   });
 
   test("a running chief of staff has Restart: after one confirm it starts a new one on the same machine through Start's path, closes nothing itself, and the room ends led by the new block (Arugula #1500)", async ({ page }) => {
     const { head } = await staffRoomOn(page, { machine: "m_laptop", machine_name: "laptop", session: "old chief" });
-    const panel = page.locator("[data-ov-panel]");
-    await expect(head).toHaveText("Chief of staff · idle on laptop");
-    const restart = panel.locator('[data-ov-staff="dm_cos"] [data-ov-staff-restart="laptop"]');
+    const panel = page.locator("[data-kit=panel]");
+    await expect(head).toHaveAttribute("data-panel-state", "idle");
+    await expect(head).toContainText("laptop");
+    const restart = panel.locator('[data-ov-staff-restart="laptop"]');
     await expect(panel.locator("[data-ov-staff-move]")).toHaveCount(0);
     const calls: { tool: string; arguments: unknown }[] = [];
     await page.route("**/api/mcp/call", (r) => {
@@ -362,13 +367,13 @@ test.describe("on a computer", () => {
     expect(calls[0].arguments).toEqual({ agent: "claude", recipe: "chief-of-staff", project: P, prompt: "" });
     expect(await page.evaluate(() => (window as unknown as { __asked: string[] }).__asked)).toEqual(["laptop"]);
     await expect.poll(lead).toEqual({ machine: "m_laptop", machine_name: "laptop", session: "Chief of staff · Arugula" });
-    await expect(head).toHaveText("Chief of staff · idle on laptop");
+    await expect(head).toHaveAttribute("data-panel-state", "idle");
     await expect(restart.locator("[data-ov-staff-restart-open]")).toBeEnabled();
   });
 
   test("a Restart that fails to start says why and leaves the room led by the running chief of staff (Arugula #1500)", async ({ page }) => {
     const { head } = await staffRoomOn(page, { machine: "m_laptop", machine_name: "laptop", session: "old chief" });
-    const restart = page.locator('[data-ov-panel] [data-ov-staff="dm_cos"] [data-ov-staff-restart="laptop"]');
+    const restart = page.locator('[data-kit=panel] [data-ov-staff-restart="laptop"]');
     const calls: { tool: string }[] = [];
     await page.route("**/api/mcp/call", (r) => {
       calls.push(r.request().postDataJSON());
@@ -382,7 +387,8 @@ test.describe("on a computer", () => {
     expect(calls.map((c) => c.tool)).toEqual(["start_agent"]);
     const session = await page.evaluate(() => (window as unknown as { __chat: { rooms: { staff?: boolean; lead: { session: string } }[] } }).__chat.rooms.find((x) => x.staff)!.lead.session);
     expect(session).toBe("old chief");
-    await expect(head).toHaveText("Chief of staff · idle on laptop");
+    await expect(head).toHaveAttribute("data-panel-state", "idle");
+    await expect(head).toContainText("laptop");
   });
 
   test("a proposal's message in the staff room is its card in the staff tab; answered, a line (Arugula #1278)", async ({ page }) => {
@@ -394,7 +400,7 @@ test.describe("on a computer", () => {
     await expect(card.locator("[data-proposal-approve]")).toBeVisible();
     // Its plain text is only the fallback.
     await expect(staff).not.toContainText("Your chief of staff asks to start an agent");
-    await expect(page.locator('[data-ov-tab="staff:dm_cos"] [role="tab"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator('[data-kit=panel] [data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
     await card.locator("[data-proposal-approve]").click();
     const done = staff.locator('[data-proposal="prp_start"][data-ask-state="answered"]');
     await expect(done).toHaveText("Sam approved: Started a session on #12. Its session");

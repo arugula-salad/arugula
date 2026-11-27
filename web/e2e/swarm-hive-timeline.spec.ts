@@ -52,7 +52,7 @@ async function clearRail(page: Page) {
       await f.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch(() => {});
     }
   });
-  await expect(page.locator(".swarm-card[data-bundle]")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator("[data-need][data-bundle]")).toHaveCount(0, { timeout: 10_000 });
 }
 
 /** How far a pane is from the middle of the part of the screen the bar and rail leave free. */
@@ -112,7 +112,7 @@ for (const theme of ["hive", "timeline"] as const) {
 
     // Three failed tests on the workstation: one card, three panes that need you.
     const failed = await fake.trouble("workstation", 3);
-    const card = page.locator(`.swarm-card[data-panes~="workstation:${failed[0]}"]`);
+    const card = page.locator(`[data-need][data-panes~="workstation:${failed[0]}"]`);
     await expect(card).toBeVisible({ timeout: 20_000 });
     await expect.poll(() => scene(page, (c) => c.clusters.find((x) => x.name === "workstation")?.need ?? 0)).toBe(3);
     if (theme === "timeline") {
@@ -121,7 +121,7 @@ for (const theme of ["hive", "timeline"] as const) {
         .poll(() => scene(page, (c, k) => c.runsOf!(k).some((r) => r.exit === 101), `workstation:${failed[0]}`), { timeout: 45_000 })
         .toBe(true);
     }
-    await card.locator(".ct").click();
+    await card.locator("[data-row-title]").click();
     await expect.poll(() => offCentre(page, `workstation:${failed[0]}`), { timeout: 5_000 }).toBeLessThan(30);
     await page.locator("[data-fit]").click();
     await clearRail(page);

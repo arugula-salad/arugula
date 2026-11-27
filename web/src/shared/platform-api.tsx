@@ -9,6 +9,7 @@ import { createContext, type ComponentChildren, type ComponentType } from "preac
 import { useContext } from "preact/hooks";
 import type { PaneQuote } from "./chat-store";
 import type { MachineAt } from "./machine-paths";
+import type { AgentPanelProps } from "./kit/panel";
 import type { Inbox } from "./proto";
 
 /** Where a project's Overview is zoomed in to (Arugula #1287): a board
@@ -177,6 +178,11 @@ export interface PlatformApi {
    * shown only where there is no Overview (the page doesn't reach
    * machines, #1088). A page without it shows those alone. */
   Overview?: ComponentType<{ project: string; board?: string; card?: string; zoom?: OverviewZoom; children?: ComponentChildren }>;
+  /** The agent panel (Lift 4, #1480): the project's chief of staff first,
+   * then agents, rooms and reply threads as tabs (kit/panel.tsx's
+   * `usePanel`). Where the page reaches machines itself (the app); a page
+   * without it has no panel. */
+  AgentPanel?: ComponentType<AgentPanelProps>;
   /** Settings › Machines' sections (Arugula #1107): Access and sharing,
    * Agents and Advanced, whose parts are mostly the machine's own, read
    * from it through the page's own client to it, each saying so when the

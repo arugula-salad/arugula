@@ -36,7 +36,7 @@ import type { DocLinkUrl, DocMoveRequest, DocOpened, DocOpenRequest, DocRow } fr
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { MachinesList } from "./machines-list";
-import { yours } from "./overview-peek";
+import { yours } from "./overview-needs";
 import { newSessionsIn } from "../shell/new-session";
 import { projectRef } from "../shell/ui/session-project";
 import { inShown, projectOf, showProject } from "../shell/project-view";

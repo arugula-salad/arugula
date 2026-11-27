@@ -15,7 +15,10 @@ import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
 import { EXPIRE_TITLE, gateKey, type Action, type ActRequest, type ActResponse, type OpenRequest, type OpenResponse, type Reason } from "../../shared/proto";
-import { AskCard, type Answered } from "../../shared/ask";
+import type { Answered } from "../../shared/ask";
+import { Button } from "../../shared/kit/button";
+import { NeedList, NeedRow } from "../../shared/kit/need-row";
+import type { State } from "../../shared/kit/state-mark";
 import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButtons, VIEWER_NOTE, type Requester } from "../ui/answer-card";
 import { PresenceAvatar } from "../ui/people";
 import { escapeTaken, MenuLayer, openMenu } from "../../shared/ui/menu";
@@ -26,11 +29,11 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
-import { CloseIcon, IconButton, NvimIcon } from "../../shared/ui/icons";
+import { CloseIcon, NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
 import { ariaKeys, keyHint, useBinding } from "../../shared/keys";
 import { useWall } from "./wall";
-import { finished, needsYou, needsYouRank, NEEDS_YOU, sortNeedsYou } from "../../shared/needs-you";
+import { finished, needAge, needsYou, needsYouRank, NEEDS_YOU, sortNeedsYou } from "../../shared/needs-you";
 import { NO_BOARD, boardGroup, onIssueChip } from "../../shared/boards/text";
 import { boardFocus, rowChip } from "./board-focus";
 import { useBoardView } from "./board-live";
@@ -600,23 +603,25 @@ export function SwarmView({
           {shown.length === 0 && answered.length === 0 && (
             <EmptyLine>Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</EmptyLine>
           )}
-          {railed.map((b) => (
-            <Card
-              key={b.key}
-              b={b}
-              fleet={fleet}
-              focus={focus}
-              show={() => field.current?.diveTo(b.panes[0].key)}
-              open={() => openKey(b.panes[0].key)}
-              share={() => shareKey(b.panes[0].key)}
-              follow={() => setFollowing(b.panes[0].key)}
-              acted={() => acted.current.add(b.key)}
-              back={leave}
-            />
-          ))}
-          {answered.map((d) => (
-            <AnsweredCard key={`${d.key}@${d.answered.at_ms}`} d={d} fleet={fleet} close={() => setAnswered((x) => x.filter((y) => y !== d))} />
-          ))}
+          <NeedList label={NEEDS_YOU} class="swarm-needs">
+            {railed.map((b) => (
+              <Card
+                key={b.key}
+                b={b}
+                fleet={fleet}
+                focus={focus}
+                show={() => field.current?.diveTo(b.panes[0].key)}
+                open={() => openKey(b.panes[0].key)}
+                share={() => shareKey(b.panes[0].key)}
+                follow={() => setFollowing(b.panes[0].key)}
+                acted={() => acted.current.add(b.key)}
+                back={leave}
+              />
+            ))}
+            {answered.map((d) => (
+              <AnsweredCard key={`${d.key}@${d.answered.at_ms}`} d={d} fleet={fleet} close={() => setAnswered((x) => x.filter((y) => y !== d))} />
+            ))}
+          </NeedList>
         </div>
         {waiting > 0 && (
           <div class="swarm-waiting" data-waiting={waiting}>
@@ -867,8 +872,18 @@ function Watching({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   );
 }
 
-/** One card of the rail: Swarm's, and the project Overview's Needs you
- * (Arugula inversion, L6), which names the card its panes work on. */
+/** A reason's mark on its row: an ask or a gate asks, a failure fails, a finish is done, the rest wait. */
+function markOf(r: Reason): State {
+  if (r.kind === "failed" || r.kind === "exited" || r.kind === "errors" || r.kind === "conflict") return "failing";
+  if (r.kind === "done") return "done";
+  if (r.kind === "ask" || r.kind === "gate" || r.kind === "diff") return "asks";
+  return "waits";
+}
+
+/** One row of the rail (the kit's NeedRow, as Needs you's): what it is,
+ * where, its answers in place (a permission's Allow, a question's form, a
+ * diff, a gate's Approve, a failure's Rerun or Continue), then Open,
+ * Follow, Share and Dismiss. */
 export function Card({
   b,
   fleet,
@@ -879,16 +894,9 @@ export function Card({
   follow,
   acted,
   back,
-  work,
-  bare,
 }: {
   b: Bundle;
   fleet: Fleet;
-  /** The card its panes work on, as the Overview names it (`#983 · Title`). */
-  work?: string | null;
-  /** Only the body, for a row that draws the title and who and where
-   * itself (Overview's, #1333); the card's name goes to `show` from its work line. */
-  bare?: boolean;
   focus?: { host: string; pane: number } | null;
   show: () => void;
   open: () => void;
@@ -907,7 +915,6 @@ export function Card({
   const first = b.panes[0];
   const machines = [...new Set(b.panes.map((p) => p.host))];
   const can = b.panes.every((p) => fleet.role(p) !== "viewer");
-  const ids = b.panes.slice(0, 4).map((p) => `%${p.id}`).join(" ") + (n > 4 ? " …" : "");
   // Every project the card's panes are in, not only the first one's.
   const projects = [...new Set(b.panes.map((p) => p.info.project?.name ?? groupOf(p, "project")))];
   const project = projects.length > 2 ? `${projects.length} projects` : projects.join(", ");
@@ -926,63 +933,107 @@ export function Card({
     setErr(e);
   };
   const all = (label: string) => (n > 1 ? `${label} all ${n}` : label);
-  // The card's main button: what to do about it. With nothing to rerun,
+  // The row's main button: what to do about it. With nothing to rerun,
   // continue, allow or answer, that's going to the pane (one pane; a
-  // bundle's is Dismiss all). With a main button, Dismiss goes down with
-  // Show and Edit.
+  // bundle's is Dismiss all).
   const verb = ["rerun", "continue", "allow"].some((a) => r.actions.includes(a as Action)) || r.ask?.what === "question";
-  // Open is the main button when there's nothing else to do: a bundle
-  // opens its first pane.
   const openFirst = !verb && !isPresence(first) && r.kind !== "ask" && r.kind !== "diff";
-  const kind = r.kind === "exited" || r.kind === "errors" ? "failed" : r.kind === "diff" ? "ask" : r.kind;
   const diff = n === 1 && r.kind === "diff" ? first.info.diff : null;
-  const focused = focus && b.panes.some((p) => p.host === focus.host && p.id === focus.pane);
+  const focused = !!focus && b.panes.some((p) => p.host === focus.host && p.id === focus.pane);
+  const question = !!ask && r.ask?.what === "question" && can && !diff && ask.kind !== "permission";
+  const what = diff || ask?.kind === "permission" ? null : shortPaths(headlineOf(r)) + (r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? ` ${shortPaths(r.command)}` : "");
+  const where = `${whose ? `${whose} · ` : ""}${n === 1 ? whatItDoes(first) : `${n} panes`} · ${session ? `${session} · ` : ""}${machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · ${project}`;
+
+  const answers = !can ? null : diff || (ask?.kind === "permission") || point ? null : question ? null : (
+    <>
+      {openFirst && (
+        <Button kind="primary" data-main data-open-card onClick={open}>
+          Open
+        </Button>
+      )}
+      {r.actions.includes("rerun") && (
+        <Button kind="primary" data-main data-rerun disabled={busy} onClick={() => void run("rerun")}>
+          {all("Rerun")}
+        </Button>
+      )}
+      {r.actions.includes("continue") && (
+        <Button kind="primary" data-main data-continue disabled={busy} onClick={() => void run("continue")}>
+          {all("Continue")}
+        </Button>
+      )}
+      {r.actions.includes("allow") && (
+        <Button kind="primary" data-main data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
+          {all(r.kind === "gate" ? "Approve" : "Allow")}
+        </Button>
+      )}
+      {r.actions.includes("expire") && (
+        <Button data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
+          {all("Expire")}
+        </Button>
+      )}
+      {r.actions.includes("deny") && r.ask?.what === "approve" && (
+        <Button kind="danger" disabled={busy} onClick={() => void run("deny")}>
+          {all("Deny")}
+        </Button>
+      )}
+      {r.ask?.what === "question" && (
+        <Button kind="primary" data-main onClick={open}>
+          Answer…
+        </Button>
+      )}
+    </>
+  );
+  // The same everywhere (as in Chat's Activity): Open, unless it's the
+  // main button, Follow, Share and Dismiss.
+  const nav = (
+    <>
+      {answers}
+      {!isPresence(first) && !openFirst && <Button onClick={open}>Open</Button>}
+      {n === 1 && followable(first) && (
+        <Button data-follow-card onClick={follow}>
+          Follow
+        </Button>
+      )}
+      {/* #237: a pane that wants someone: bring them in. Its owner
+          shares, as in the session menu; one pane's session only. */}
+      {n === 1 && !isPresence(first) && first.session && fleet.role(first) === "owner" && (
+        <Button data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
+          Share
+        </Button>
+      )}
+      {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (
+        <Button data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
+          {all("Dismiss")}
+        </Button>
+      )}
+    </>
+  );
   return (
-    <div
-      class={`swarm-card in t-${kind}${focused ? " focus" : ""}${b.gone ? " gone" : ""}`}
+    <NeedRow
+      need={{ kind: r.kind, title: cardTitle(r, n, machines.map(shortHost)), from: {}, for: "you", lines: what ? [what] : [], age: needAge(b.since) }}
+      mark={markOf(r)}
+      meta={[
+        <Watching key="w" fleet={fleet} panes={b.panes} />,
+        <span key="m" data-card-meta>
+          {where}
+        </span>,
+        ...(n > 1 ? [<span key="n" data-count>{`×${n}`}</span>] : []),
+      ]}
+      open
+      selected={focused}
+      onToggle={show}
+      ask={question ? ask! : undefined}
+      actions={question ? { answer: (content) => void run("answer", { content }), decline: () => void run("deny") } : undefined}
+      extra={nav}
       inert={b.gone}
       data-bundle={b.key}
       data-panes={b.panes.map((p) => p.key).join(" ")}
       data-kind={r.kind}
-      style={{ "--c": `rgb(${REASON_COL[r.kind]})` }}
+      data-gone={b.gone ? "" : undefined}
     >
-      {!bare && (
-        <>
-        <div class="ch">
-          {/* A real button (UI audit #172): Space works too. */}
-          <button class="ct" title="Find it in the swarm" onClick={show}>
-            {cardTitle(r, n, machines.map(shortHost))}
-          </button>
-          <Watching fleet={fleet} panes={b.panes} />
-          {n > 1 && <span class="n">×{n}</span>}
-        </div>
-        <div class="cm" title={ids}>
-          {whose ? <b class="whose">{whose} · </b> : null}
-          {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
-          {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
-        </div>
-        </>
-      )}
-      {work &&
-        (bare ? (
-          <button class="cm cm-work" data-card-work title="Show the card" onClick={show}>
-            {work}
-          </button>
-        ) : (
-          <div class="cm" data-card-work>
-            {work}
-          </div>
-        ))}
-      {diff ? null : ask?.kind === "permission" ? (
-        <PermissionBody ask={ask} />
-      ) : (
-        <div class="cq" title={r.command && !r.headline.includes(r.command) ? `${headlineOf(r)}\n${r.command}` : headlineOf(r)}>
-          {shortPaths(headlineOf(r))}
-          {r.command && r.kind !== "ask" && r.kind !== "gate" && !r.headline.includes(r.command) ? <code> {shortPaths(r.command)}</code> : null}
-        </div>
-      )}
       {r.kind === "gate" && r.gate && <GateWhy gate={r.gate} />}
-      {point && proposalLine(point) && <div class="dim gate-why">{proposalLine(point)}</div>}
+      {point && proposalLine(point) && <p class="dim">{proposalLine(point)}</p>}
+      {!diff && ask?.kind === "permission" && <PermissionBody ask={ask} />}
       {diff ? (
         <DiffCard
           key={diff.id}
@@ -1003,97 +1054,32 @@ export function Card({
           }
         />
       ) : !can ? (
-        <p class="ask-viewer">{VIEWER_NOTE}</p>
+        <p class="dim">{VIEWER_NOTE}</p>
       ) : ask?.kind === "permission" ? (
         <PermissionButtons ask={ask} act={(action, extra) => void run(action, { ...extra, id: ask.id })} />
-      ) : point ? (
+      ) : point && n === 1 ? (
         // #621: answered with one of its choices; a bundle is opened.
-        <div class="ca" data-point={point.id}>
-          {n === 1 && <PointChoices point={point} busy={busy} answer={(answer) => void run("answer", { content: { answer } })} />}
-          {r.actions.includes("dismiss") && (
-            <button class="secondary small" disabled={busy} onClick={() => void run("dismiss")}>
-              {all("Dismiss")}
-            </button>
-          )}
+        <div data-point={point.id}>
+          <PointChoices point={point} busy={busy} answer={(answer) => void run("answer", { content: { answer } })} />
         </div>
-      ) : ask && r.ask?.what === "question" ? (
-        <AskCard
-          ask={ask}
-          actions={{
-            answer: (content) => void run("answer", { content }),
-            decline: () => void run("deny"),
-          }}
-        />
-      ) : (
-        <div class="ca">
-          {openFirst && (
-            <button class="primary small" data-open-card onClick={open}>
-              Open
-            </button>
-          )}
-          {r.actions.includes("rerun") && (
-            <button class="primary small" data-rerun disabled={busy} onClick={() => void run("rerun")}>
-              {all("Rerun")}
-            </button>
-          )}
-          {r.actions.includes("continue") && (
-            <button class="primary small" data-continue disabled={busy} onClick={() => void run("continue")}>
-              {all("Continue")}
-            </button>
-          )}
-          {r.actions.includes("allow") && (
-            <button class="primary small" data-approve-gate={r.kind === "gate" ? "" : undefined} disabled={busy} onClick={() => void run("allow")}>
-              {all(r.kind === "gate" ? "Approve" : "Allow")}
-            </button>
-          )}
-          {r.actions.includes("expire") && (
-            <button class="secondary small" data-expire-gate disabled={busy} title={EXPIRE_TITLE} onClick={() => void run("expire")}>
-              {all("Expire")}
-            </button>
-          )}
-          {r.actions.includes("deny") && r.ask?.what === "approve" && (
-            <button class="secondary danger small" disabled={busy} onClick={() => void run("deny")}>
-              {all("Deny")}
-            </button>
-          )}
-          {r.ask?.what === "question" && (
-            <button class="primary small" onClick={open}>
-              Answer…
-            </button>
-          )}
+      ) : null}
+      {point && r.actions.includes("dismiss") && (
+        <div class="k-row-actions">
+          <Button disabled={busy} onClick={() => void run("dismiss")}>
+            {all("Dismiss")}
+          </Button>
         </div>
       )}
-      {/* The same two everywhere (as in Chat's Activity): Open, unless
-          it's the main button above, and Dismiss. */}
-      <div class="ca ca-nav">
-        {!isPresence(first) && !openFirst && (
-          <button class="secondary small" onClick={open}>
-            Open
-          </button>
-        )}
-        {n === 1 && followable(first) && (
-          <button class="secondary small" data-follow-card onClick={follow}>
-            Follow
-          </button>
-        )}
-        {/* #237: a pane that wants someone: bring them in. Its owner
-            shares, as in the session menu; one pane's session only. */}
-        {n === 1 && !isPresence(first) && first.session && fleet.role(first) === "owner" && (
-          <button class="secondary small" data-share-card title={`Share ${first.session.name} with someone`} onClick={share}>
-            Share
-          </button>
-        )}
-        {can && !point && (r.actions.includes("dismiss") || r.kind === "ask" || r.kind === "diff") && (
-          <button class="secondary small" data-dismiss-card disabled={busy} onClick={() => void run("dismiss")}>
-            {all("Dismiss")}
-          </button>
-        )}
-      </div>
-      {err && <div class="swarm-card-err">{err}</div>}
-    </div>
+      {err && (
+        <p role="alert" data-card-err>
+          {err}
+        </p>
+      )}
+    </NeedRow>
   );
 }
 
+/** A row answered by someone, kept a while: who answered it, and the follow-up box. */
 function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () => void }) {
   // The pane as it is now, not as it was when answered: an agent in a
   // terminal waits on its inbox only once it stops, maybe after the answer,
@@ -1101,27 +1087,21 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
   const p = fleet.panes.find((x) => x.key === d.key) ?? d.pane;
   const can = fleet.role(p) !== "viewer";
   return (
-    <div class="swarm-card in t-answered" data-answered={d.answered.id} data-panes={p.key} style={{ "--c": "rgb(124,134,152)" }}>
-      <div class="ch">
-        <b class="answered-by">{answeredLine(d.answered)}</b>
-        <IconButton label="Close" class="link swarm-close" onClick={close}>
-          <CloseIcon size="sm" />
-        </IconButton>
-      </div>
-      <div class="cm">
-        %{p.id} · {p.host}
-      </div>
-      <div class="cq">{d.answered.headline}</div>
-      {can && (
-        <FollowUpBox
-          open={p.info.inbox || p.info.type === "agent"}
-          pane={p.id}
-          request={requester(fleet, p.host)}
-          paneOp={(op) => fleet.paneOp(p.host, p.id, op)}
-          toast={() => {}}
-        />
-      )}
-    </div>
+    <NeedRow
+      need={{ kind: "answered", title: d.answered.headline, from: {}, for: "you", age: "" }}
+      receipt={{ what: d.answered.how, by: d.answered.name, at: "" }}
+      meta={[<span key="by" data-answered-by>{answeredLine(d.answered)}</span>, <span key="at" class="m-id">{`%${p.id} · ${shortHost(p.host)}`}</span>]}
+      open={can}
+      extra={
+        <Button data-answered-close onClick={close}>
+          Close
+        </Button>
+      }
+      data-answered={d.answered.id}
+      data-panes={p.key}
+    >
+      {can ? <FollowUpBox open={p.info.inbox || p.info.type === "agent"} pane={p.id} request={requester(fleet, p.host)} paneOp={(op) => fleet.paneOp(p.host, p.id, op)} toast={() => {}} /> : null}
+    </NeedRow>
   );
 }
 

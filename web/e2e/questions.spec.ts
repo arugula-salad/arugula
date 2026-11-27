@@ -63,10 +63,9 @@ test.describe("desktop", () => {
     const card = block.getByRole("dialog", { name: "Which colour do you prefer?" });
     await expect(card).toBeVisible();
     await expect(block.locator(".agent-status")).toHaveCount(0);
-    await expect(card.locator(".ask-message")).toHaveText("Please answer the following questions.");
-    await expect(card.locator(".ask-header")).toHaveCount(0);
+    await expect(card.locator("[data-ask-message]")).toHaveText("Please answer the following questions.");
     await expect(block.locator(".agent-tool")).toHaveCount(0);
-    await expect(card.locator(".ask-text").first()).toHaveAttribute("title", "Colour");
+    await expect(card.locator("[data-ask-text]").first()).toHaveAttribute("title", "Colour");
     const submit = card.getByRole("button", { name: "Submit" });
     await expect(submit).toBeDisabled();
 
@@ -74,11 +73,11 @@ test.describe("desktop", () => {
     const q = (n: number) => card.locator(`[data-question="${n}"]`);
     await q(0).getByRole("radio", { name: /^Red/ }).click();
     await expect(q(0).getByRole("radio", { name: /^Red/ })).toHaveAttribute("aria-checked", "true");
-    await q(0).locator(".ask-other").fill("dark red please");
+    await q(0).locator("[data-ask-other]").fill("dark red please");
     await q(1).getByRole("checkbox", { name: /Apple/ }).check();
     await q(1).getByRole("checkbox", { name: /Plum/ }).check();
-    await q(1).locator(".ask-other").fill("kiwi");
-    await q(2).locator(".ask-other").fill("a parrot");
+    await q(1).locator("[data-ask-other]").fill("kiwi");
+    await q(2).locator("[data-ask-other]").fill("a parrot");
     await submit.click();
     await expect(card).toBeHidden();
     await expect(block.locator(".agent-msg").last()).toHaveText(
@@ -93,7 +92,7 @@ test.describe("desktop", () => {
     await composer.press("Enter");
     const layout = block.getByRole("dialog", { name: "Which layout?" });
     await layout.getByRole("radio", { name: /^Sidebar/ }).click();
-    await expect(layout.locator(".ask-preview")).toContainText("| Nav  | Content Area |");
+    await expect(layout.locator("[data-ask-preview]")).toContainText("| Nav  | Content Area |");
     await layout.getByRole("button", { name: "Skip" }).click();
     await expect(block.locator(".agent-msg").last()).toHaveText("You didn't answer the question.");
 
@@ -113,7 +112,7 @@ test.describe("desktop", () => {
     await composer.fill("signin");
     await composer.press("Enter");
     const link = block.getByRole("dialog", { name: "Sign in to Fake" });
-    await expect(link.locator(".ask-url")).toHaveText("https://example.com/fake-signin");
+    await expect(link.locator("[data-ask-url]")).toHaveText("https://example.com/fake-signin");
     const popup = page.waitForEvent("popup");
     await link.getByRole("button", { name: "Open link" }).click();
     await (await popup).close();
@@ -174,7 +173,7 @@ test.describe("phone", () => {
     await pear.tap();
     await card.locator('[data-question="0"]').getByRole("checkbox", { name: /Plum/ }).tap();
     await expect(pear).toBeChecked();
-    await card.locator('[data-question="1"] .ask-other').fill("a parrot");
+    await card.locator('[data-question="1"] [data-ask-other]').fill("a parrot");
     const submit = card.getByRole("button", { name: "Submit" });
     expect((await submit.boundingBox())!.height).toBeGreaterThanOrEqual(40);
     await submit.tap();
@@ -193,7 +192,7 @@ test.describe("phone", () => {
     // The phone's "needs you" dot.
     await expect(page.locator(".sheet-button .att.needs_input")).toBeVisible();
     await card.locator('[data-question="0"]').getByRole("radio", { name: /^Red/ }).tap();
-    await card.locator('[data-question="2"] .ask-other').fill("a parrot");
+    await card.locator('[data-question="2"] [data-ask-other]').fill("a parrot");
     await card.getByRole("button", { name: "Submit" }).tap();
     await expect(card).toBeHidden();
     await expect.poll(() => text(page, term)).toContain('"Which pet do you prefer?":"a parrot"');

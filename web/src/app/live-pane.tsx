@@ -11,7 +11,8 @@
 import "./live.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ActRequest, ActResponse } from "../shared/proto";
-import { AskCard } from "../shared/ask";
+import { askNeed, NeedRow } from "../shared/kit/need-row";
+import { needAge } from "../shared/needs-you";
 import { usePhone } from "../shared/ui/hooks";
 import { StateChip } from "../shared/ui/state-chip";
 import { PermissionBody, PermissionButtons, VIEWER_NOTE } from "../shell/ui/answer-card";
@@ -108,8 +109,9 @@ export function LivePane({ machine, pane, reach }: { machine: string; pane: stri
   );
 }
 
-/** A pane as the Overview's Work level draws it (Arugula #1289): the
- * same view Panes mounts, filling its slot, typed into where you may.
+/** A pane as the agent panel's Terminal draws it (Lift 4, #1480; the
+ * Overview's Work level's before, #1289): the same view Panes mounts,
+ * filling its slot, typed into where you may.
  * `watch` holds your keys back (a teammate's session); so does a pane
  * whose session you only view. */
 export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pane: string; reach: Reach; watch?: boolean }) {
@@ -147,23 +149,23 @@ export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pan
   }, [readOnly, !!view]);
   if (c === "unreachable")
     return (
-      <p class="dim ov-work-note" data-live-unreachable>
+      <p class="dim" data-live-unreachable>
         Its machine can't be reached from here.
       </p>
     );
   if (!client?.connected)
     return (
-      <p class="dim ov-work-note" data-live-reaching>
+      <p class="dim" data-live-reaching>
         Reaching its machine…
       </p>
     );
   if (!info)
     return (
-      <p class="dim ov-work-note" data-live-gone>
+      <p class="dim" data-live-gone>
         Its pane isn't on its machine now.
       </p>
     );
-  return <div ref={ref} class="live-slot ov-work-slot" data-live-slot={pane} data-ov-work-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
+  return <div ref={ref} class="work-slot" data-live-slot={pane} data-live-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
 }
 
 /** What the pane asks, at the drawer's top, with its choices. */
@@ -193,12 +195,9 @@ export function LiveAsk({ machine, pane, reach }: { machine: string; pane: strin
           {can ? <PermissionButtons ask={ask} act={(action, extra) => void act(action, extra)} /> : <p class="ask-viewer">{VIEWER_NOTE}</p>}
         </>
       ) : !can ? (
-        <div class="ask" data-ask={ask.id}>
-          <p class="ask-message">{ask.questions?.[0]?.question ?? ask.message}</p>
-          <p class="ask-viewer">{VIEWER_NOTE}</p>
-        </div>
+        <NeedRow key={ask.id} need={{ ...askNeed(ask, needAge(ask.at_ms)), for: "an editor", lines: [VIEWER_NOTE] }} open data-ask={ask.id} />
       ) : (
-        <AskCard key={ask.id} ask={ask} actions={{ answer: (content) => void act("answer", { content }), decline: () => void act("deny") }} />
+        <NeedRow key={ask.id} need={askNeed(ask, needAge(ask.at_ms))} open ask={ask} actions={{ answer: (content) => void act("answer", { content }), decline: () => void act("deny") }} />
       )}
       {err && <p class="board-bad">{err}</p>}
     </section>
