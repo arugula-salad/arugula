@@ -1398,11 +1398,6 @@ html[data-native-tabs] .platform {
   flex: none;
 }
 
-/* A team's page (Arugula #895): its tabs under the header. */
-.team-page .team-tabs {
-  margin-bottom: 16px;
-}
-
 /* A phone's places, in a bar along the bottom (decision 15, Arugula #1345). */
 .app-tabs {
   display: none;

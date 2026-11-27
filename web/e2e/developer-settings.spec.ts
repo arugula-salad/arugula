@@ -14,7 +14,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, closeSettingsPage, menuItem, menuItems, open, paneEl, ready, openSettingsPage, settingsRow } from "./helpers";
+import { closeContexts, closeSettingsPage, menuItem, menuItems, open, paneEl, ready, openSettingsPage, settingsRow, setting } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -151,7 +151,7 @@ test("with a flag on, Settings still offers them; off takes chant workspaces awa
   await closeSettingsPage(page);
   expect(await shown(page, pane)).toEqual([]);
   // Still offered, all off.
-  await expect((await openSettingsPage(page)).getByRole("button", { name: "Developer settings…" })).toBeVisible();
+  await expect((await setting(page, "button", "Developer settings…"))).toBeVisible();
 });
 
 test("each flag turns on its own feature and no other", async ({ page }) => {

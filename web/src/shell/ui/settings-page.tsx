@@ -9,15 +9,14 @@
 // controls in place, with Preferences a part of it (Arugula #1318), so
 // `#settings=preferences` opens at Appearance.
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import type { Client } from "../client";
 import { platformHref, openPlatform } from "../platform-links";
 import { subscribeSeen } from "../../shared/seen";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { MenuItem } from "../../shared/ui/menu";
-import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
-import { PageHeader } from "../../shared/ui/page-header";
-import { Section, SectionIndex } from "../../shared/ui/settings-section";
+import { SettingsList } from "../../shared/ui/settings-list";
+import { Section } from "../../shared/ui/settings-section";
 import { accountHeader, AppBar, useAccount } from "./app-bar";
 import { settingsGroups } from "./commands";
 import { RemoteSessionsSection } from "./remote-sessions";
@@ -89,7 +88,6 @@ export function SettingsPage({ client }: { client: Client }) {
   useSubscribe(subscribePush);
   useSubscribe(subscribeSeen);
   const account = useAccount();
-  const body = useRef<HTMLDivElement>(null);
   const [, tick] = useState(0);
   const did = () => tick((t) => t + 1);
   const groups = settingsGroups(client);
@@ -104,35 +102,29 @@ export function SettingsPage({ client }: { client: Client }) {
   const section = (id: string) => {
     const g = at(id);
     return g ? (
-      <Section key={id} id={id} title={g.title} lede={g.lede}>
+      <Section key={id} id={id} title={g.title}>
         {rows(g.items)}
       </Section>
     ) : null;
   };
-  // The route's section, once: the hash stays `#settings=…` as you scroll.
-  // Preferences is Appearance's now.
-  const routed = () => {
-    const s = settingsRoute()?.section;
-    return s === "preferences" ? "appearance" : s;
+  // Look took Appearance (Lift 7): its old address opens Preferences.
+  const routed = settingsRoute()?.section;
+  const open = routed === "appearance" ? "preferences" : routed;
+  const hrefOf = (id: string | null) => (id ? `#settings=${id}` : "#settings");
+  const go = (href: string) => {
+    if (location.hash !== href) location.hash = href;
   };
-  const opened = useRef(routed());
-  useEffect(() => {
-    const fn = () => (opened.current = routed());
-    addEventListener("hashchange", fn);
-    return () => removeEventListener("hashchange", fn);
-  }, []);
   // The app's Settings, where there is one: this page is Phones and browsers.
   const app = platformHref("/settings");
   return (
     <div class="chat agents-page settings-place" data-settings-page>
       <AppBar client={client} at="settings" />
       <div class="settings-place-scroll">
-        {app ? (
-          <div class="settings-body" data-settings-kept>
-            <PageHeader title="Settings" />
-            {section("push")}
-            <p class="dim" data-settings-in-app>
-              Your other settings, and those of your machines, projects and team, are in{" "}
+        <SettingsList label="Settings" header={<h1>Settings</h1>} section={open} hrefOf={hrefOf} go={go} {...(app ? { "data-settings-kept": "" } : {})}>
+          {section("push")}
+          {app ? (
+            <p class="m-meta" data-settings-in-app>
+              Everything else is in{" "}
               <a
                 href={app}
                 onClick={(e) => {
@@ -145,30 +137,19 @@ export function SettingsPage({ client }: { client: Client }) {
               </a>
               .
             </p>
-          </div>
-        ) : (
-          <div class="settings-layout">
-            <SectionIndex body={body} anchor={(id) => `#settings=${id}`} opened={() => opened.current} />
-            <div class="settings-body" ref={body}>
-              <PageHeader title="Settings" />
-              {section("push")}
-              <Section id="appearance" title="Appearance" lede="Theme and look on this device, and your preferences.">
-                <AppearanceControls />
-                <div class="prompt-buttons">
-                  <ResetAppearance />
-                </div>
-                {section("preferences")}
-              </Section>
+          ) : (
+            <>
+              {section("preferences")}
               {section("machine")}
               <RemoteSessionsSection client={client} />
               {account && (
-                <Section id="account" title="Account" lede={accountHeader(account.login())}>
+                <Section id="account" title="Account" summary={accountHeader(account.login())}>
                   {rows(account.items())}
                 </Section>
               )}
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </SettingsList>
       </div>
     </div>
   );

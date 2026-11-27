@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
-import { active, closeContexts, menuItem, panes, reset, run, openSettingsPage, closeSettingsPage } from "./helpers";
+import { active, closeContexts, menuItem, panes, reset, run, closeSettingsPage, openLook, closeLook, setting } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { paint, sliders } from "../src/shared/kit/look";
 import { ANY, blockPort, daemonPort } from "./ports";
@@ -156,14 +156,14 @@ async function editorDrawer(page: Page) {
 
 /** Settings › Editor › `label`. */
 async function choose(page: Page, label: "VS Code" | "nvim" | "Ask each time") {
-  await (await openSettingsPage(page)).getByRole("radio", { name: label, exact: true }).click();
+  await (await setting(page, "radio", label)).click();
   await closeSettingsPage(page);
 }
 
-/** Appearance › the theme whose palette is `id`. */
+/** Look › the theme whose palette is `id`. */
 async function paletteTo(page: Page, id: "latte" | "slate") {
-  await (await openSettingsPage(page)).locator(`[data-theme-choice="${id === "latte" ? "light" : "dark"}"]`).click();
-  await closeSettingsPage(page);
+  await (await openLook(page)).locator(`[data-theme-choice="${id === "latte" ? "light" : "dark"}"]`).click();
+  await closeLook(page);
 }
 
 /** VS Code editor blocks are refused here, so code-server is never

@@ -132,7 +132,7 @@ test("its × closes it for this reader, for good, and Undo stays in Settings ›
   await expect(page.locator(`[data-project-home="${ME}"]`)).toBeVisible();
   await expect(note(page)).toHaveCount(0);
 
-  await page.goto(`/p/${ME}/settings`);
+  await page.goto(`/p/${ME}/settings#general`);
   const row = page.locator('[data-recent-split="spl_1"]');
   await expect(row.locator("span")).toHaveText(/^25 issues, 1 board and 2 Docs moved to Rhythm · /);
   await expect(row.locator("span")).toHaveText(ON_A_DAY);
@@ -144,7 +144,7 @@ test("its × closes it for this reader, for good, and Undo stays in Settings ›
 });
 
 test("in settings, a refused undo says why; a project with no moves lists none", async ({ page }) => {
-  await open(page, `/p/${RHYTHM}/settings`, () => ({ status: 409, body: { error: "something's in the way", reason: "in_the_way" } }));
+  await open(page, `/p/${RHYTHM}/settings#general`, () => ({ status: 409, body: { error: "something's in the way", reason: "in_the_way" } }));
   await expect(page.locator('[data-recent-split="spl_1"] span')).toHaveText(/^Moved here from Default · /);
   await page.locator("[data-recent-split-undo]").click();
   await expect(page.locator("[data-recent-split-said]")).toHaveAttribute("data-recent-split-said", "refused");

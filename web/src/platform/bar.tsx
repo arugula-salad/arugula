@@ -17,6 +17,7 @@ import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
 import { openPlatformFeedback } from "./feedback";
 import { names } from "./links";
+import { settingsPlaces } from "./settings/scopes";
 import { Avatar } from "../shared/kit/avatar";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
@@ -164,10 +165,9 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
 }
 
 /** You, and your account's menu: the status page on hosted Arugula
- * (Arugula #1176), feedback and signing out; your presence is Chat's
- * (Arugula #1079). Your initials (the kit's Avatar), on the rail's foot or a
- * phone's bar. The rail has Settings, so the menu has no way there; a phone
- * has no rail, so its menu keeps Your account… (Arugula #1319). */
+ * (Arugula #1176), each of Settings' scopes (Lift 7), feedback and signing
+ * out; your presence is Chat's (Arugula #1079). Your initials (the kit's
+ * Avatar), on the rail's foot or a phone's bar. */
 export function AccountButton() {
   useSubscribe((fn) => session.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
@@ -181,7 +181,8 @@ export function AccountButton() {
     const status = statusPage(controlOrigin());
     const items: MenuItem[] = [
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
-      ...(phone ? [{ label: "Your account…", run: () => go("/settings") }] : []),
+      // Each of Settings' scopes (Lift 7), the rail's Settings being the project's.
+      ...settingsPlaces().map((sp) => ({ label: sp.title, attrs: { [`data-settings-${sp.key}`]: "" }, run: () => go(pathOf(sp.to, names)) })),
       ...(status ? [{ label: "Status", external: true, hint: "Whether hosted Arugula is up", attrs: { "data-status-page": "" }, run: () => openStatusPage(status) }] : []),
       // Arugula #1240: straight to control, as the person signed in.
       { label: "Send feedback…", run: openPlatformFeedback },

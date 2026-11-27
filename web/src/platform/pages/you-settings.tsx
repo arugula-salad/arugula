@@ -4,11 +4,10 @@
 // control's to set, since a device subscribes with its own keys on
 // control's origin, aru-081), what every device is pushed about, drawn in
 // place (./you-push.tsx, Arugula #1310), how loud chat is, words that
-// notify you, and quiet hours. Appearance: this device's palette, finish,
-// corners and density, the dialog's controls drawn in place, whether this
-// device is lent to agents (its hand runs in the app, shared/lending.ts),
-// and under them your preferences (Tips, the editor), which are the
-// account's (Arugula #1318). Sign-in and security, control's dialog drawn
+// notify you, and quiet hours. Preferences: Tips and the editor, the
+// account's (Arugula #1318), and whether this device is lent to agents
+// (its hand runs in the app, shared/lending.ts). How it looks is Look's
+// (`s`, Lift 7), not a section. Sign-in and security, control's dialog drawn
 // in place (./you-security.tsx, Arugula #1311), with the Docs you shared
 // with a link as a ↗ row under it until Docs has them (Arugula #1315).
 // Connected apps and agents: the products linked to the account (M229),
@@ -16,15 +15,13 @@
 // with what your own key spent (M231). Each merged section's old address
 // lands on it (paths.ts, MOVED).
 //
-// Elsewhere: your machines and teams are in Team and billing, as are plan
+// Elsewhere: your machines and teams are in Team, as are plan
 // and billing, each owner's; hosted Arugula's status page is in the avatar
 // menu (bar.tsx); Help is in the command palette.
 
-import { onAppearance, appearance, THEMES } from "../../shared/appearance";
 import { lendReached, lending, onLending, setLend } from "../../shared/lending";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
-import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
 import { session } from "../session";
@@ -47,7 +44,7 @@ export function YouSettings() {
         <ChatAlerts />
         <QuietHoursSettings />
       </Section>
-      <Appearance />
+      <Preferences />
       <SignInAndSecurity />
       <Section
         id="connected"
@@ -59,30 +56,6 @@ export function YouSettings() {
         <ClaudeSettings me={session.me?.account} />
       </Section>
     </>
-  );
-}
-
-/** How Arugula looks on this device, the controls in place, then your
- * preferences, a part of it. */
-function Appearance() {
-  useSubscribe(onAppearance);
-  useSubscribe(subscribeSeen);
-  useSubscribe(onLending);
-  const theme = THEMES.find((t) => t.id === appearance().theme)!.name;
-  return (
-    <Section
-      id="appearance"
-      title="Appearance"
-      summary={joined(`${theme} on this device`, lending() && "lent to agents", preferencesSaid())}
-      lede="Theme and look on this device, whether agents may use it, and your preferences."
-    >
-      <AppearanceControls />
-      <div class="prompt-buttons">
-        <ResetAppearance />
-      </div>
-      <LendDevice />
-      <Preferences />
-    </Section>
   );
 }
 
@@ -116,13 +89,15 @@ function preferencesSaid(): string {
   return joined(tips, opens);
 }
 
-/** Tips and what Open in editor opens: your account's, so they follow you
- * to every device (shared/seen.ts), as control's page has them. */
+/** Tips and what Open in editor opens, your account's, so they follow you
+ * to every device (shared/seen.ts), and whether this device is lent to
+ * agents. How it looks is Look's (`s`), not a section. */
 function Preferences() {
   useSubscribe(subscribeSeen);
+  useSubscribe(onLending);
   const editor = editorShown();
   return (
-    <Section id="preferences" title="Preferences" summary={preferencesSaid()} lede="These follow your account to every device." hooks={{ "data-preferences": "" }}>
+    <Section id="preferences" title="Preferences" summary={joined(preferencesSaid(), lending() && "lent to agents")} hooks={{ "data-preferences": "" }}>
       <ul class="platform-list settings-rows">
         <li>
           <label class="settings-switch">
@@ -151,6 +126,7 @@ function Preferences() {
           </label>
         </li>
       </ul>
+      <LendDevice />
     </Section>
   );
 }

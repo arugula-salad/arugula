@@ -295,9 +295,36 @@ export async function openSettingsPage(page: Page) {
   return settings;
 }
 
+/** A control on the Settings page, its section's row opened first
+ * (Lift 7: a section is a row that opens in place): `setting(page,
+ * "switch", "Tips")`. */
+export async function setting(page: Page, role: "button" | "switch" | "radio", name: string) {
+  const settings = await openSettingsPage(page);
+  const control = settings.getByRole(role, { name, exact: true });
+  if (!(await control.first().isVisible())) {
+    const row = settings.locator("[data-settings-row]").filter({ has: page.getByRole(role, { name, exact: true, includeHidden: true }) });
+    await row.locator("button[aria-expanded]").first().click();
+  }
+  await expect(control.first()).toBeVisible();
+  return control;
+}
+
 /** A row of the Settings page that opens or does something: `Developer settings…`. */
 export async function settingsRow(page: Page, name: string) {
-  await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
+  await (await setting(page, "button", name)).click();
+}
+
+/** Look (`s`, the top bar's Look): this device's theme, preset and sliders. */
+export async function openLook(page: Page) {
+  await page.locator("[data-top] [data-open-look]").click();
+  const look = page.locator("[data-appearance]");
+  await expect(look).toBeVisible();
+  return look;
+}
+
+export async function closeLook(page: Page) {
+  await page.locator("[data-appearance]").getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("[data-appearance]")).toHaveCount(0);
 }
 
 /** The directory picker for the active pane, as its key did before Lift 3

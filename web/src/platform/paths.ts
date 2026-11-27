@@ -75,9 +75,9 @@
 //                                  sections); no project, no data
 //   /deploys/:deploy               a deploy (M218): its card, approvals
 //                                  and log; a push for one opens here
-//   /t/:team/chat                  a team's own page (Arugula #895): its
-//   /t/:team/members               channels and its members; the team's
-//                                  id, with its slug
+//   /t/:team/chat                  a team's page was (Arugula #895): its
+//   /t/:team/members               chat now (its project's), and Settings ›
+//                                  Team's Members (Lift 7)
 //
 // Old addresses for Settings land in its scopes: `/p/:project/settings`,
 // `/settings/personal` and `/t/:team/settings` (the page puts the new path
@@ -138,7 +138,8 @@ export type Route =
   | SettingsRoute
   | { page: "design" }
   | { page: "deploy"; deploy: string }
-  | { page: "team"; team: string; tab: TeamTab }
+  /** A team's old page's chat (`/t/:team/chat`): its project's chat. */
+  | { page: "team"; team: string }
   /** The machines, a machine's page or Swarm, in a project (Arugula #989). */
   | { page: "machines"; project: string; at: MachineAt }
   /** An id-only address, to be put where it belongs (`resolve`). */
@@ -167,11 +168,6 @@ const SECTION = /^[a-z][a-z0-9-]{0,47}$/;
 /** A machine's id at the front of a path segment, before its slug: a
  * daemon's id is hex. */
 const MACHINE_ID = /^([0-9a-f]{6,64})(?:-.*)?$/;
-
-/** A team page's tabs. Its Settings are Settings' team scope (Arugula
- * #1104), a tab that goes there. */
-export const TEAM_TABS = ["chat", "members"] as const;
-export type TeamTab = (typeof TEAM_TABS)[number];
 
 /** A team's id at the front of a path segment, before its slug: a team's
  * id has no prefix (docs/data-model.md). */
@@ -248,6 +244,11 @@ export function parse(path: string, search = "", hash = ""): Route {
     return board?.startsWith("brd_") ? { page: "all-boards", board, ...all } : missing;
   }
   if (parts.length === 1 && parts[0] === "docs") return q.get("shared") === "1" ? { page: "docs", shared: true } : { page: "docs", ...all };
+  // A project's Machines section (its join token) is Machines' Add a machine (Lift 7).
+  if (parts.length === 4 && parts[0] === "settings" && parts[1] === "project" && parts[3] === "machines") {
+    const project = idOf(parts[2]);
+    return project ? { page: "machines", project, at: { at: "machines", add: true } } : missing;
+  }
   if (parts[0] === "settings") return withOldSection(settingsRoute(parts.slice(1), q), hash) ?? missing;
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
@@ -284,10 +285,11 @@ export function parse(path: string, search = "", hash = ""): Route {
   }
   if (parts[0] === "t" && parts.length === 3) {
     const team = TEAM.exec(parts[1])?.[1];
-    // Its Settings tab, from before they were Settings' (Arugula #1104).
+    // Its Settings tab, from before they were Settings' (Arugula #1104), and
+    // its Members, Settings › Team's since Lift 7.
     if (team && parts[2] === "settings") return withOldSection({ page: "settings", scope: "team", owner: team }, hash) ?? missing;
-    const tab = TEAM_TABS.find((t) => t === parts[2]);
-    return team && tab ? { page: "team", team, tab } : missing;
+    if (team && parts[2] === "members") return { page: "settings", scope: "team", owner: team, section: "members" };
+    return team && parts[2] === "chat" ? { page: "team", team } : missing;
   }
   if (parts[0] !== "p" || parts.length < 2) return missing;
   const project = idOf(parts[1]);
@@ -429,9 +431,11 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
 }
 
 /** Sections that are parts of others now: yours, in You's four (Arugula
- * #1320; Preferences is part of Appearance, #1318, and Sign-in and
+ * #1320; Appearance is Look's since Lift 7, so its address is
+ * Preferences', and Sign-in and
  * machines' address is Sign-in and security's, #1311), a project's
- * (Arugula #1105), and a machine's, in Machines' four (the Settings Doc's
+ * (Arugula #1105; CI alerts, Runs and spend in Agents since Lift 7), and
+ * a machine's, in Machines' four (the Settings Doc's
  * Machines tab). Status left Settings for the avatar menu, so its address
  * is You's, at no section ("").
  * The section each is in now. A project's Overrides went (Arugula #1323):
@@ -440,7 +444,7 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
  * Project defaults now (Arugula #1322). */
 const MOVED: Record<"you" | "project" | "machine" | "team", Record<string, string>> = {
   you: {
-    preferences: "appearance",
+    appearance: "preferences",
     account: "security",
     push: "notifications",
     "chat-alerts": "notifications",
@@ -455,8 +459,12 @@ const MOVED: Record<"you" | "project" | "machine" | "team", Record<string, strin
   project: {
     plane: "repos",
     boards: "issues",
-    size: "runs",
-    finish: "runs",
+    runs: "agents",
+    size: "agents",
+    finish: "agents",
+    "run-grant": "agents",
+    "ci-alerts": "agents",
+    spend: "agents",
     "agent-model": "agents",
     "agent-workspace": "agents",
     overrides: "issues",
@@ -617,7 +625,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "deploy":
       return `/deploys/${r.deploy}`;
     case "team":
-      return `/t/${s(r.team)}/${r.tab}`;
+      return `/t/${s(r.team)}/chat`;
     case "machines":
       return `/p/${s(r.project)}${machinesPath(r.at, machineSlug(r.at, names))}`;
     case "find":

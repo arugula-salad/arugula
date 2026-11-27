@@ -5,7 +5,9 @@
 // (`aria-expanded`); a NeedRow is one. A row nothing clicks (an ask that is
 // always open, in an agent block or beside a terminal) has a plain line,
 // not a button that does nothing. `lead` goes before the mark: a list's
-// select box.
+// select box. One that `keep`s its body draws it while closed, hidden, so
+// what the body reads stays current (a Settings row's summary, read off
+// its controls).
 
 import type { ComponentChildren } from "preact";
 import { Mark, type State } from "./state-mark";
@@ -21,12 +23,17 @@ export function Row({
   title,
   meta,
   open,
+  keep,
   onClick,
   inert,
+  id,
   children,
   ...data
 }: {
   inert?: boolean;
+  /** Draw the body while closed, hidden. */
+  keep?: boolean;
+  id?: string;
   kind?: RowKind;
   /** Before the mark: a control of the row's own (its select box). */
   lead?: ComponentChildren;
@@ -58,7 +65,7 @@ export function Row({
     </>
   );
   return (
-    <div class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} inert={inert} {...data}>
+    <div id={id} class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} inert={inert} {...data}>
       {onClick ? (
         <button type="button" class="k-row-line" aria-expanded={open} aria-current={kind === "selected" ? "true" : undefined} onClick={onClick}>
           {line}
@@ -68,7 +75,11 @@ export function Row({
           {line}
         </div>
       )}
-      {open && children ? <div class="k-row-body">{children}</div> : null}
+      {(open || keep) && children ? (
+        <div class="k-row-body" hidden={!open}>
+          {children}
+        </div>
+      ) : null}
     </div>
   );
 }

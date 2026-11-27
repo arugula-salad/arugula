@@ -150,6 +150,9 @@ div.k-row-line {
   padding: 2px 12px 12px 31px;
   line-height: 1.5;
 }
+.k-row-body[hidden] {
+  display: none;
+}
 .k-row-body p {
   margin: 0;
 }
