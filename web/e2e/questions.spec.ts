@@ -123,7 +123,9 @@ test.describe("desktop", () => {
     await composer.fill("ask");
     await composer.press("Enter");
     const again = block.getByRole("dialog", { name: "Which colour do you prefer?" });
-    await again.getByRole("button", { name: "Stop" }).click();
+    // The agent's one Stop, beside its composer: the question has none of its own (Lift 6a).
+    await expect(again.getByRole("button", { name: "Stop" })).toHaveCount(0);
+    await block.getByRole("button", { name: "Stop", exact: true }).click();
     await expect(again).toBeHidden({ timeout: 2000 });
     await expect(block.locator(".agent-status")).toHaveText("Ready");
     await expect(block.locator(".agent-note").last()).toHaveText("The question was withdrawn");

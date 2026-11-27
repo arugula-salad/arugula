@@ -85,8 +85,6 @@ export interface AskActions {
   decline(): void;
   /** Hook questions: let Claude Code show its own picker. */
   terminal?(): void;
-  /** Agent blocks: stop the turn (the agent withdraws the question). */
-  stop?(): void;
 }
 
 /** What a list or a notification says about it. */
