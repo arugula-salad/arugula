@@ -11,6 +11,7 @@ import type { MachineAt } from "../shared/machine-paths";
 import type { OverviewZoom, PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 import { OnControl } from "../platform/pages/machines";
+import type { Fleet } from "../shell/fleet";
 import type { AppSession } from "./session";
 
 type Place = ComponentType<{ project: string; at: MachineAt }>;
@@ -23,6 +24,8 @@ let loading: Promise<Page> | null = null;
 const load = () => (loading ??= import("./machine-page"));
 let loadingOverview: Promise<OverviewPage> | null = null;
 const loadOverview = () => (loadingOverview ??= import("./overview"));
+let loadingInbox: Promise<typeof import("./inbox")> | null = null;
+const loadInbox = () => (loadingInbox ??= import("./inbox"));
 let loadingPanel: Promise<PanelPage> | null = null;
 const loadPanel = () => (loadingPanel ??= import("./panel"));
 
@@ -109,6 +112,35 @@ export function appOwnPane(session: () => AppSession | null): NonNullable<Platfo
       return docs.watch(fn);
     },
     here: (machine, pane) => !!page?.paneHere(machine, pane, session()),
+  };
+}
+
+/** `PlatformApi.Inbox` over `session` (Lift 6d, #1486): the Inbox, in a
+ * chunk of its own, drawn at once; a pane's ask answers in place once the
+ * machines are reached, and opens its pane while they aren't (or can't be:
+ * the hub doesn't reach them from this host). */
+export function appInbox(session: () => AppSession | null): ComponentType {
+  return function Inbox() {
+    const s = session();
+    useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
+    const [page, setPage] = useState<typeof import("./inbox") | null>(null);
+    const [fleet, setFleet] = useState<Fleet | null>(null);
+    const reachable = !s || s.reachable !== false;
+    useEffect(() => {
+      let live = true;
+      void loadInbox().then((p) => live && setPage(() => p));
+      return () => void (live = false);
+    }, []);
+    useEffect(() => {
+      if (!reachable) return;
+      let live = true;
+      void load()
+        .then((p) => p.boot(s))
+        .then((b) => live && setFleet(b.machines.fleet));
+      return () => void (live = false);
+    }, [reachable]);
+    if (!page) return <p class="dim">Loading…</p>;
+    return <page.InboxPlace fleet={reachable ? fleet : null} />;
   };
 }
 

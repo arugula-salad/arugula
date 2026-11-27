@@ -11,7 +11,7 @@ import { projectDocs } from "../shared/docs/store";
 import { SECTION_LABEL, chatPath, sectionOf } from "./bar";
 import { currentProject } from "./current-project";
 import { openPlatformFeedback } from "./feedback";
-import { inboxCounts, subscribeInbox } from "./inbox-count";
+import { inboxCounts, subscribeInbox } from "./inbox";
 import { names } from "./links";
 import { settingsPlaces } from "./settings/scopes";
 import { ownedProjects, openNewProject } from "./new-project";

@@ -53,9 +53,9 @@ import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, readableCommand, shortHost, whatItDoes } from "../shell/swarm/model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/swarm/overview";
-import { readInbox } from "../platform/inbox-count";
+import { readInbox } from "../platform/inbox";
 import { boot } from "./machine-page";
-import { paneOwner, yours } from "./overview-needs";
+import { paneOwner, yours } from "./needs";
 import { StaffMove, StaffRestart, StaffStart } from "./panel-staff";
 import type { AppSession } from "./session";
 

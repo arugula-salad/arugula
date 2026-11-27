@@ -178,6 +178,9 @@ export interface PlatformApi {
    * shown only where there is no Overview (the page doesn't reach
    * machines, #1088). A page without it shows those alone. */
   Overview?: ComponentType<{ project: string; board?: string; card?: string; zoom?: OverviewZoom; children?: ComponentChildren }>;
+  /** The Inbox (Lift 6d, #1486): every project's items, answered in place,
+   * a pane's ask through its machine where the page reaches machines. */
+  Inbox?: ComponentType;
   /** The agent panel (Lift 4, #1480): the project's chief of staff first,
    * then agents, rooms and reply threads as tabs (kit/panel.tsx's
    * `usePanel`). Where the page reaches machines itself (the app); a page
