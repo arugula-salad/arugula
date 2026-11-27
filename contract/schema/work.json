@@ -3593,7 +3593,12 @@
         },
         {
           "const": "checks_failed",
-          "description": "A check on its head commit failed: once, however often it flips.",
+          "description": "A check on its head commit failed: once, however often it flips. A\nmerge-group run's failure counts for a queued PR.",
+          "type": "string"
+        },
+        {
+          "const": "dequeued",
+          "description": "It left the merge queue without merging.",
           "type": "string"
         },
         {
