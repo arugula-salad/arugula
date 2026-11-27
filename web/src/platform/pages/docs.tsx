@@ -190,7 +190,7 @@ function DocList({ p, shared }: { p: PlatformProject; shared?: boolean }) {
   return (
     <div class="docs-place" data-docs-page data-docs-mode={mode.kind} data-work>
       <header class="docs-head">
-        <div>
+        <div class="docs-head-words">
           <h1 class="docs-title">Docs</h1>
           {docs !== null && (
             <p class="docs-sub m-meta" data-docs-count={rows.length}>

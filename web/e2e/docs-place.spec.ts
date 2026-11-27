@@ -44,7 +44,7 @@ async function open(page: Page, path: string, docs: Record<string, Doc[]>) {
     if (!d) return json(r, { error: "not here" }, 404);
     return json(r, { doc: d, sections: [{ id: "s1", heading: "Why", intent: "", body: `What ${d.title} is for.`, rev: 1 }], assets: [], writer: true, deleter: true, link: null });
   });
-  if (SHOTS) await page.addInitScript(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "system" })));
+  if (SHOTS) await page.addInitScript(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "system", preset: "arugula", light: null, warmth: 0, depth: 0 })));
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/(p\/prj_|docs)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto(path);
@@ -62,13 +62,17 @@ const team = () => ({
 const rows = (page: Page) => page.locator("[data-docs] [data-doc]");
 const titles = (page: Page) => rows(page).locator("[data-doc-title]");
 
-/** Pictures of the page as it is, light and dark, when asked for. */
+/** Pictures of the page as it is, dark and light, when asked for. The
+ * fixture page paints on a change of the system's scheme, not at load. */
 async function shoot(page: Page, name: string) {
   if (!SHOTS) return;
-  for (const colorScheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme });
-    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-    await page.screenshot({ path: `${SHOTS}/${name}-${colorScheme}.png` });
+  const frame = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await page.emulateMedia({ colorScheme: "light" });
+  await frame();
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await frame();
+    await page.screenshot({ path: `${SHOTS}/${name}-${scheme}.png` });
   }
 }
 

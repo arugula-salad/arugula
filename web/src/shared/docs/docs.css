@@ -41,7 +41,7 @@
   gap: 12px;
 }
 
-.docs-head > div {
+.docs-head-words {
   flex: 1;
   min-width: 0;
 }
