@@ -105,3 +105,61 @@ if people miss it. Newest at the bottom.
 ## #2954 (Lift 6d: no bell)
 
 - **The bell on a machine's page** (`[data-open-attention]`, its count of what needs you on every machine): the rail's Inbox badge is the one count; the attention drawer still opens from Go to… and the sidebar until Lift 6a (Lift 6d, Arugula #1486).
+
+## #2961 (Lift 5b: the lead arranges the board)
+
+- **5a's fixed board tabs** (each linked Doc and each PR opened from the fold, `[data-board-tab-doc]`/`[data-board-tab-pr]`): the board's tab is its own, and Docs and PRs open as panes beside it, from `+ pane` or the fold (Lift 5b, Arugula #1497).
+- **The panes' keys** (v7's `5` `6` for tabs, `[` `]` pane focus, `w` close a pane, `W` close a tab, `f` maximise, `g 0` Reset): no new keys until Aaron's list (#1534). The panes' buttons, the tab's ×, Reset in the header and ⋯ do each; `1`–`4` and Esc stay (Lift 5b, Arugula #1497).
+- **A preview drawn inline**: a preview pane is a link to it, until previews have a source to frame (Lift 5b, Arugula #1497).
+- **Dragging a pane onto the tab strip**: the pane's move button puts it in a tab of its own (v7's weak spot; Lift 5b, Arugula #1497).
+- **Which pane is maximised, across pages**: maximise marks the pane yours on the platform, but which one fills the board is this page's (Lift 5b, Arugula #1497).
+
+## #2968 (#1520: the board's right third on the agent panel)
+
+- **The lead head's Terminal button** (`[data-board-lead-open]`, which went to the lead's pane on its machine's page): the Lead 🔒 tab has Transcript and Terminal (`v`) in the panel, and the panel's ⤢ (#1520).
+- **The board's thread as the right third's only content**: it's the board's channel, behind the board tab's ⇄ (#1520). A page without the agent panel keeps it as it was.
+
+## #2965 (Lift 6c: Chat on the kit)
+
+- **Chat's rooms head ("Arugula", with its ⋯):** the bar's crumb names the project and the room; ⋯ (Mark all as read, sections, unread only) sits beside search (Lift 6c, Arugula #1485).
+
+## #2970 (#1520: cards open their page, workers in the panel)
+
+- **A tile's body opening the drawer on the board's page**: it opens the card's page; ⋯ → Details opens the drawer (#1520). A PR's, a link's or a note's tile, and the board block's, still open the drawer.
+
+## #2966 (Lift 6c: Chat's Agents section)
+
+- **About's "What a lead reads":** the prototype's `board_read` excerpt beside #agents; it comes with the server's board_read and capabilities wording (Arugula #1522).
+- **A lead's active or idle state:** a board's dot says only whether it has a lead, until the server says which leads are active (Arugula #1522).
+
+## #2967 (Lift 6c: tags in the agents' rooms)
+
+- **Counts in the @ list** ("every agent here · 8", "the active ones · 4"): nothing on the wire says who's in a channel or active yet (Arugula #1536).
+- **Green tag pills:** tags are Chat's mention pills; a pill of their own would be a new chip (Arugula #1522).
+
+## #2973 (Lift 6c: rooms as panes on a board)
+
+- **#agents as a pane on the Overview:** it opens beside a board (+ pane, `g a`); the Overview's panes come with Lift 9 (Arugula #1498).
+- **Chat's link back to its rooms list in a pinned pane:** the pane is the room alone; Chat is a rail click away.
+
+## #2983 (Lift 6a: the Machines list)
+
+- **A session's card listing every tab and pane, "+N more tabs"**: a session is one row; only the panes that need you and the one you had open last show under it, and the session opens at its last tab (Lift 6a, Arugula #1483).
+- **Agents only** (`[data-machines-agents]`, `?agents`): every session shows; the old address lands on the list (Lift 6a, Arugula #1483).
+
+## #2987 (Lift 6a: no Swarm)
+
+- **Swarm** (`shell/swarm/`: the field, city, hive, flat, timeline and wall views, the follow view, the board views, the synthetic fleet, `window.__arugula.swarm`/`swarmFake`), its CSS and the three.js dependency: Machines and Running take its place; `#swarm` and `/p/:project/machines/swarm` land on Machines (Lift 6a, Arugula #1483).
+- **Swarm's rail cards for a gate or a decision**: the gate shows in its workspace block, on the phone's sheet and in Needs you, which answer it (Approve, Expire; a decision point's choices) (Lift 6a, Arugula #1483, #1546).
+- **Swarm's site screenshots** (`swarm.png`, `swarm-phone.png`): `web/screenshots/machines.spec.ts` makes Machines' instead; the site moves in #1544 (Lift 6a, Arugula #1483).
+- **The `swarm` view in usage counts**: an old `#swarm` isn't a view any more (Lift 6a, Arugula #1483).
+
+## #2990 (Lift 6a's last removals)
+
+- **The activity drawer** (`shell/ui/shell/activity.tsx`: a session's commands, answers, agent turns and system events under its tab, its filters, All sessions, its footer toggle and its first-open line): `arugula history` reads the same (Lift 6a, Arugula #1483).
+- **The shell's Agents page** (`#agents`, `#agents=team`: a machine's recipes with New, Edit, Run here, Offer and Delete; the team's catalog; tasks waiting for you; standing grants). An old link lands on the panes. A machine's agents and the recipes it offers stay in its agents block, and its grants stay in Access (Lift 6a, Arugula #1483).
+- **The places bars** (`places.tsx`'s Places: Panes · Chat · Boards · Docs · Agents; MachinePlaces: Machines · Runs · Recipes in a machine's bar): the rail and Go to… have the places. Off the rail, Settings keeps a Panes button; the helpers are `shell/ui/place-links.ts` (Lift 6a, Arugula #1483).
+- **Agents only** (`/p/:project/machines?agents`, `machine-list`'s `only`): an old address is the Machines page (Lift 6a, Arugula #1483).
+- **The attention drawer** (`shell/ui/shell/attention-drawer.tsx`: what waits on you on every machine, answered in the drawer; its empty state's Set up for Claude Code's hooks and the device's notifications; the sidebar's Needs you heading as its button). Running and Needs you cover it; Go to…'s Needs you opens the Overview's where there's an app, and its next pane that needs you stays. Set up stays in the agents nudge (Lift 6a, Arugula #1483).
+- **Columns, the "N panes" switcher and Focus in a tab's head line**: Tamed, Grid and + Pane stay. A pane's own Focus (its header, the key) stays, and Go to… lists the panes (Lift 6a, Arugula #1483).
+- **The Runs list** (`/p/:project/runs`: the runs newest first, narrowed by state, trigger and spec; their counts; the Runs tab under Machines and its thread count). What runs now is the Running drawer's, and the old address opens it (`?running`); a spec's (`?spec=`) opens Settings' Runs, where New run and the run specs with their triggers are now. A run keeps its page (Lift 6a, Arugula #1483).
