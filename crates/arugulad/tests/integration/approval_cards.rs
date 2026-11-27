@@ -65,7 +65,18 @@ async fn any(State(f): State<Fake>, req: Request) -> Response {
     match (method.as_str(), segs.as_slice()) {
         ("POST", ["api", "daemon", "projects", "prj_1", "proposals"]) => {
             let n = f.asked("POST /api/daemon/projects/prj_1/proposals").len() - 1;
-            Json(json!({ "ask": format!("prp_{n}"), "room": "dm_staff", "seq": 40 + n })).into_response()
+            // An older control refuses a field it doesn't know.
+            if b["supersedes"] == "prp_refused" {
+                let e = json!({ "error": "unknown field `supersedes`, expected one of `proposal`" });
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(e)).into_response();
+            }
+            let withdrew = b["supersedes"].as_str().map(|s| json!([s])).unwrap_or(json!([]));
+            Json(json!({ "ask": format!("prp_{n}"), "room": "dm_staff", "seq": 40 + n,
+                "link": format!("https://app.example/p/prj_1/chat/dm_staff?msg={}", 40 + n), "withdrew": withdrew }))
+            .into_response()
+        }
+        ("POST", ["api", "daemon", "projects", "prj_1", "proposals", "prp_done", "cancel"]) => {
+            (StatusCode::CONFLICT, Json(json!({ "error": "it's approved already" }))).into_response()
         }
         ("POST", ["api", "daemon", "projects", "prj_1", "proposals", ask, "cancel"]) => {
             Json(json!({ "ask": ask })).into_response()
@@ -435,6 +446,68 @@ fn a_cards_answer_wakes_the_conversation_that_asked_with_no_watch() {
     assert!(asked["summary"].as_str().unwrap().contains("Asked on #12."), "{asked}");
     let tries: Vec<Value> = f.asked("POST /api/daemon/boards/brd_1/rows/row_1/ask");
     assert_eq!(tries, [json!(false), json!(true)], "refused with its conversation, taken without");
+
+    drop(mcp);
+    drop(d);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn an_agent_supersedes_withdraws_and_reads_its_card_and_says_where_to_answer_it() {
+    let f = Fake::default();
+    let (_rt, url) = serve(f.clone());
+    let tmp = std::env::temp_dir().join(format!("arugula-withdraw-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let d = Daemon::child_in(&[], &[], |state| enroll(state, &url));
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+    let config = json!({ "agent": "acp", "command": [PYTHON, fake()], "cwd": tmp, "title": "Chief of staff",
+        "prompt": "hello" });
+    let chief = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(chief, "idle");
+    let mcp = Mcp::bridge(&d, Some(chief));
+    let propose = |extra: Value| {
+        let mut a = json!({ "action": "start", "issue": "#12", "why": "it's next", "project": "prj_1" });
+        for (k, v) in extra.as_object().unwrap() {
+            a[k] = v.clone();
+        }
+        mcp.call("ask_approval", a)
+    };
+
+    // A card says where to answer it.
+    let first = propose(json!({})).unwrap();
+    let said = first["summary"].as_str().unwrap();
+    assert!(said.contains("Approve or Deny it here: https://app.example/p/prj_1/chat/dm_staff?msg=40"), "{said}");
+    assert_eq!(first["link"], "https://app.example/p/prj_1/chat/dm_staff?msg=40", "{first}");
+    assert!(f.asked("POST /api/daemon/projects/prj_1/proposals")[0].get("supersedes").is_none());
+
+    // The next replaces it: sent as `supersedes`, and the answer names the withdrawn card.
+    let second = propose(json!({ "supersedes": "prp_0" })).unwrap();
+    assert_eq!((&second["ask"], &second["withdrew"]), (&json!("prp_1"), &json!(["prp_0"])), "{second}");
+    let said = second["summary"].as_str().unwrap();
+    assert!(said.contains("replaced prp_0, withdrawn") && said.contains("msg=41"), "{said}");
+    assert_eq!(f.asked("POST /api/daemon/projects/prj_1/proposals")[1]["supersedes"], "prp_0");
+    let bad = propose(json!({ "supersedes": "12" })).unwrap_err();
+    assert!(bad.contains("prp_"), "{bad}");
+
+    // A control from before `supersedes` refuses it: sent again without, and told the old one stands.
+    let old = propose(json!({ "supersedes": "prp_refused" })).unwrap();
+    let said = old["summary"].as_str().unwrap();
+    assert!(said.contains("prp_refused still stands"), "{said}");
+    let sent = f.asked("POST /api/daemon/projects/prj_1/proposals");
+    assert_eq!((sent.len(), sent[2]["supersedes"].as_str(), sent[3].get("supersedes")), (4, Some("prp_refused"), None));
+
+    // Withdrawn, as the agent that asked; a card already answered says why not.
+    let w = mcp.call("ask_approval", json!({ "action": "withdraw", "ask": "prp_1", "project": "prj_1" })).unwrap();
+    assert_eq!(w["state"], "cancelled", "{w}");
+    assert!(w["summary"].as_str().unwrap().contains("Withdrew card prp_1"), "{w}");
+    let cancel = &f.asked("POST /api/daemon/projects/prj_1/proposals/prp_1/cancel")[0];
+    assert_eq!(cancel, &json!({ "session": "Chief of staff" }));
+    let why =
+        mcp.call("ask_approval", json!({ "action": "withdraw", "ask": "prp_done", "project": "prj_1" })).unwrap_err();
+    assert!(why.contains("prp_done wasn't withdrawn: it's approved already"), "{why}");
+    let why = mcp.call("ask_approval", json!({ "action": "withdraw", "project": "prj_1" })).unwrap_err();
+    assert!(why.contains("withdraw needs ask"), "{why}");
 
     drop(mcp);
     drop(d);
