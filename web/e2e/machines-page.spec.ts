@@ -152,22 +152,21 @@ test.describe("on a computer", () => {
     await expect(suite.locator("[data-machines-here]")).toHaveText("this computer");
     await expect(list.locator('> [data-machines-group="b0b0000000000001"] .machines-head')).toContainText("Bob's");
 
-    // Grouped: amy's sessions are cards, each with its panes; two tabs name theirs.
+    // Grouped: amy's sessions are rows (Lift 6a), what each is and its panes' count; only a pane that needs you shows under it.
     const amy = list.locator('> [data-machines-group="a11a000000000001"]');
     await expect(amy.locator("[data-machines-session]")).toHaveCount(2);
     // What needs you first.
     await expect(amy.locator("[data-machines-session]").first()).toHaveAttribute("data-machines-session", "3");
     await expect(amy.locator("[data-machines-session]").first()).toContainText("Needs you");
     const two = amy.locator('[data-machines-session="1"]');
-    await expect(two.locator(".machines-session-meta")).toHaveText("2 tabs · 3 panes");
-    await expect(two.locator(".machines-tab")).toHaveText(["build", "logs"]);
-    await expect(two.locator("[data-panes-pane]")).toHaveCount(3);
-    await expect(amy.locator('[data-machines-session="3"] .machines-tab')).toHaveCount(0);
+    await expect(two).toContainText("3 panes");
+    await expect(two.locator("[data-panes-pane]")).toHaveCount(0);
+    await expect(amy.locator('[data-machines-session="3"] [data-panes-pane]')).toHaveCount(1);
     // Site's session isn't anywhere.
     await expect(list.locator('[data-panes-host="amy-laptop"][data-panes-pane="4"]')).toHaveCount(0);
     await expect(list).not.toContainText("amy-2");
 
-    // Pinned first, as a card; not again under its machine.
+    // Pinned first; not again under its machine.
     const pinned = list.locator("[data-machines-pinned]");
     const firsts = await list.locator("> [data-machines-pinned], > [data-machines-group]").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-machines-pinned") ? "pinned" : "machine")));
     expect(firsts[0]).toEqual("pinned");
@@ -200,7 +199,7 @@ test.describe("on a computer", () => {
 test.describe("on a laptop", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("a session of many tabs shows its first few and +N more, so the next machine's still on the first screen", async ({ page }) => {
+  test("a session of many tabs is one row, the pane that needs you under it, so the next machine's still on the first screen", async ({ page }) => {
     await stubPins(page, []);
     await openApp(page, () => `/p/${P}/machines`);
     // Fifteen tabs of one pane each, the tenth's asking; then a teammate's machine.
@@ -211,30 +210,16 @@ test.describe("on a laptop", () => {
     ]);
     const list = page.locator("[data-machines-list]");
     const busy = list.locator('> [data-machines-group="a11a000000000001"] [data-machines-session="1"]');
-    await expect(busy.locator(".machines-session-meta")).toHaveText("15 tabs · 15 panes");
-    // The first three, and the one that needs you.
-    await expect(busy.locator(".machines-tab")).toHaveText(["Tab 1", "Tab 2", "Tab 3", "Tab 10"]);
-    const more = busy.locator("[data-machines-more]");
-    await expect(more).toHaveText("+11 more tabs");
-    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await expect(busy).toContainText("15 panes");
+    await expect(busy).toContainText("Needs you");
+    await expect(busy.locator("[data-panes-pane]")).toHaveCount(1);
+    await expect(busy.locator("[data-panes-pane]")).toHaveAttribute("data-panes-pane", "10");
 
     // The next machine's heading is above the fold.
     const bob = list.locator('> [data-machines-group="b0b0000000000001"] [data-machines-machine-link]');
     await expect(bob).toBeVisible();
     const box = (await bob.boundingBox())!;
     expect(box.y + box.height).toBeLessThanOrEqual(800);
-
-    // +N more opens the rest in place, in order; Show fewer folds them again.
-    await more.click();
-    await expect(busy.locator("[data-machines-tab]")).toHaveCount(15);
-    await expect(busy.locator(".machines-tab").nth(9)).toHaveText("Tab 10");
-    await expect(more).toHaveText("Show fewer");
-    await expect(more).toHaveAttribute("aria-expanded", "true");
-    await more.click();
-    await expect(busy.locator("[data-machines-tab]")).toHaveCount(4);
-
-    // A session of three tabs or fewer has no +N more.
-    await expect(list.locator("[data-machines-more]")).toHaveCount(1);
   });
 });
 

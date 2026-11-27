@@ -302,7 +302,8 @@ test.describe("on a computer", () => {
     await expect(group).toHaveCount(1);
     await expect(group.locator("[data-machines-state]")).toHaveText(/online/i);
     await expect(group.locator("[data-machines-here]")).toHaveText("this computer");
-    const row = group.locator(`[data-machines-session] [data-panes-pane="${pane}"]`);
+    // A session is one row (Lift 6a): its link opens it at its last tab, this pane.
+    const row = group.locator("[data-machines-session] [data-machines-session-link]").first();
     await expect(row).toBeVisible();
     await expect(list.locator("[data-machines-stats]")).toHaveText(/^1 machine · \d+ sessions? · \d+ panes?/);
     // No machine filter; Runs and Workspaces are the bar's (#1345).
@@ -499,7 +500,7 @@ test.describe("on a phone", () => {
     const pane = await openApp(page, () => `/p/${P}/boards`);
     await page.locator("[data-phone-tabs] [data-tab-machines]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
-    const row = page.locator(`[data-machines-list] [data-panes-pane="${pane}"]`);
+    const row = page.locator("[data-machines-list] [data-machines-session-link]").first();
     await expect(row).toBeVisible();
     await page.screenshot({ path: info.outputPath("frame-phone-panes.png") });
     await row.click();

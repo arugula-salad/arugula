@@ -124,26 +124,11 @@ test("a session's state shows on its row as it moves, without a reload: its live
   await expect(mine).toContainText("done");
 });
 
-test("the Machines page has Agents only; it says when there are none (Arugula #1346)", async ({ page }, info) => {
-  const pane = await openApp(page, () => `/p/${P}/machines`);
+test("the Machines page has no Agents only (Lift 6a): its old address is the list, unfiltered (Arugula #1346)", async ({ page }) => {
+  await openApp(page, () => `/p/${P}/machines`);
   const list = page.locator("[data-machines-list]");
-  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
-  const filter = list.locator("[data-machines-agents]");
-  await expect(filter).toHaveAttribute("aria-pressed", "false");
-  // The suite's panes are terminals: no agent on any machine.
-  await filter.click();
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?agents$`));
-  await expect(filter).toHaveAttribute("aria-pressed", "true");
-  await expect(list.locator("[data-panes-pane]")).toHaveCount(0);
-  await expect(list.locator("[data-machines-no-agents]")).toContainText("No agents on your machines.");
-  await page.screenshot({ path: info.outputPath("machines-agents-only.png") });
-  await filter.click();
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
-  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
-  // Every session, from the empty list, is the list unfiltered; the old address keeps the filter.
+  await expect(list.locator("[data-machines-session]").first()).toBeVisible();
+  await expect(list.locator("[data-machines-agents]")).toHaveCount(0);
   await page.goto(`/p/${P}/machines/panes?agents`);
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?agents$`));
-  await page.locator("[data-machines-no-agents]").getByRole("link", { name: "Every session" }).click();
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
-  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
+  await expect(list.locator("[data-machines-session]").first()).toBeVisible();
 });

@@ -114,27 +114,27 @@ test.describe("on a computer", () => {
     expect(kept.pins).toEqual([]);
   });
 
-  test("the Machines page has pinned sessions first, as cards, not again under their machine (Arugula #1346)", async ({ page }, info) => {
+  test("the Machines page has pinned sessions first, not again under their machine (Arugula #1346)", async ({ page }, info) => {
     const [a, b] = await sessions(page, 2);
     const kept = await stubPins(page, [{ machine: SUITE, session: b.id }]);
     await openApp(page, `/p/${P}/machines`);
     const list = page.locator("[data-machines-list]");
     const pinned = list.locator("[data-machines-pinned]");
-    await expect(pinned.locator(`[data-panes-pane="${b.pane}"]`)).toBeVisible();
+    await expect(pinned.locator(`[data-machines-pinned-session="${SUITE}/${b.id}"] [data-machines-session-link]`)).toBeVisible();
     // First, above the machines.
     const order = await list.locator("[data-machines-pinned], [data-machines-group]").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-machines-pinned") ? "pinned" : "machine")));
     expect(order).toEqual(["pinned", "machine"]);
     const session = pinned.locator(`[data-machines-pinned-session="${SUITE}/${b.id}"]`);
     await expect(session).toContainText(/on /);
     const machine = list.locator("[data-machines-group]");
-    await expect(machine.locator(`[data-panes-pane="${a.pane}"]`)).toBeVisible();
-    await expect(machine.locator(`[data-panes-pane="${b.pane}"]`)).toHaveCount(0);
+    await expect(machine.locator(`[data-machines-session="${a.id}"]`)).toBeVisible();
+    await expect(machine.locator(`[data-machines-session="${b.id}"]`)).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("pins-machines-after.png") });
 
     // Unpinned: back under its machine, and no Pinned section.
     await session.locator("[data-machines-unpin]").click();
     await expect(pinned).toHaveCount(0);
-    await expect(machine.locator(`[data-panes-pane="${b.pane}"]`)).toBeVisible();
+    await expect(machine.locator(`[data-machines-session="${b.id}"]`)).toBeVisible();
     expect(kept.pins).toEqual([]);
   });
 

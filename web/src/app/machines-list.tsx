@@ -11,11 +11,10 @@
 // palette, its mark and its session crumb open it.
 
 import "./machines-list.css";
-import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useLayoutEffect, useRef } from "preact/hooks";
 import { parseMachines, type MachineAt } from "../shared/machine-paths";
 import { needsYou, NEEDS_YOU } from "../shared/needs-you";
 import { EmptyState } from "../shared/ui/block-states";
-import { Card } from "../shared/ui/card";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Caret, IconButton, PinIcon } from "../shared/ui/icons";
 import { PINNED, unpin } from "../shared/session-pins";
@@ -23,7 +22,8 @@ import { sessionPins } from "../shared/session-pins-store";
 import { machineOfHost } from "../shell/pins";
 import { menuBelow, openMenu } from "../shared/ui/menu";
 import { PageHeader } from "../shared/ui/page-header";
-import { Chip, StateChip } from "../shared/ui/state-chip";
+import { Row } from "../shared/kit/row";
+import { StateMark, type State } from "../shared/kit/state-mark";
 import { directory } from "../shell/hosts";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { KIND_LABEL, kindOf, shortHost, whatItDoes } from "../shell/swarm/model";
@@ -79,11 +79,6 @@ function sessionPane(m: MachineSection, s: SessionCard, last: Last): number {
   return (tab ?? s.tabs[0]).panes[0].id;
 }
 
-const isAgent = (p: FleetPane) => kindOf(p) === "agent";
-
-/** A card shows this many tabs, and "+N more" for the rest, so one busy
- * session doesn't push the next machine off a laptop's first screen. */
-const TABS = 3;
 
 type To = (at: MachineAt) => string;
 
@@ -123,7 +118,6 @@ export function MachinesList({
     shows: (p, yours) => inShown(p, yours),
     here: directory.home,
     recent: last?.machine ?? null,
-    only: agents ? isAgent : undefined,
     // With nothing of the project: your machines, and the project's cloud workspaces.
     keep: (h) => (h.hosted ? hosted(h.id)?.project === project : !h.owner),
   });
@@ -160,9 +154,6 @@ export function MachinesList({
         }
         actions={
           <>
-            <button class="secondary" aria-pressed={agents} data-machines-agents onClick={() => go(here(!agents), true)}>
-              Agents only
-            </button>
             {p && (
               <button class="secondary" data-machines-add onClick={() => go(here(agents, true))}>
                 Add a machine
@@ -177,18 +168,6 @@ export function MachinesList({
         <p class="dim">Loading…</p>
       ) : !fleet.list.length ? (
         <EmptyState where="page" title="No machines yet." why="A machine shows here once it has joined your team. Its sessions and who may steer them come with it." data-machines-empty />
-      ) : !machines.length && agents ? (
-        <EmptyState
-          where="page"
-          title="No agents on your machines."
-          why="A session with an agent in it shows here."
-          action={
-            <a class="secondary" href={here(false)} data-machines-all onClick={(e) => follow(e, here(false))}>
-              Every session
-            </a>
-          }
-          data-machines-no-agents
-        />
       ) : (
         <>
           {!machines.length && <EmptyState where="page" title={`No ${name} sessions yet.`} why="Start one with New session." data-machines-empty data-project-empty />}
@@ -235,18 +214,14 @@ function Head({ m, to, count }: { m: MachineSection; to: To; count?: number }) {
       <a class="machines-name" href={page} title={`${m.name}: its page`} data-machines-machine-link onClick={(e) => follow(e, page)}>
         {shortHost(m.name)}
       </a>
-      <StateChip tone={m.online ? "ok" : "muted"} data-machines-state>
-        {m.online ? "online" : "offline"}
-      </StateChip>
-      {m.cloud && <Chip kind="tag">Cloud</Chip>}
-      {m.here && (
-        <Chip kind="tag" data-machines-here>
-          this computer
-        </Chip>
-      )}
-      <span class="dim">{m.owner ? `${m.owner}'s` : "Yours"}</span>
+      <span data-machines-state>
+        <StateMark state={m.online ? "working" : "idle"} word={m.online ? "online" : "offline"} />
+      </span>
+      <span class="m-meta" data-machines-here={m.here || undefined}>
+        {m.cloud ? "cloud workspace" : m.here ? "this computer" : m.owner ? `${m.owner}'s` : "yours"}
+      </span>
       {count !== undefined && (
-        <span class="dim machines-count">
+        <span class="m-meta machines-count">
           {count} {count === 1 ? "session" : "sessions"}
         </span>
       )}
@@ -271,54 +246,47 @@ function Machine({ m, count, to, last, phone, picked, card }: { m: MachineSectio
   );
 }
 
-/** A session's card: its state, its name (it opens at its last tab), its
- * counts, and its panes, under their tab's name when it has more than one.
- * Its first few tabs, and any with a pane that needs you or the one you had
- * open last; "+N more" opens the rest in place. A pinned one says so, and
- * unpins (`pinned`), and names its machine. */
+/** A session as one row (Lift 6a, v6's Machines): its state, its name (it
+ * opens at its last tab), what it is (lead, worker, server, shell) or that
+ * it asks you, and its panes' count. Under it, only the panes that need you
+ * and the one you had open last. A pinned one says so, unpins (`pinned`),
+ * and names its machine. */
 function Session({ m, s, to, last, phone, picked, pinned, ...data }: { m: MachineSection; s: SessionCard; to: To; last: Last; phone: boolean; picked?: boolean; pinned?: () => void; [k: `data-${string}`]: unknown }) {
-  const [all, setAll] = useState(false);
   const open = to(machineAt(m, sessionPane(m, s, last)));
-  const tabs = s.tabs.length;
-  const few = s.tabs.filter((t, i) => i < TABS || t.panes.some((p) => needsYou(p.info) || isLast(last, m, p)));
-  const more = tabs - few.length;
+  const panes = s.tabs.flatMap((t) => t.panes);
+  const asks = panes.filter((p) => needsYou(p.info));
+  const shown = [...asks, ...panes.filter((p) => isLast(last, m, p) && !asks.includes(p))];
+  const first = panes.find((p) => kindOf(p) === "agent") ?? panes[0];
+  const word = asks.length ? NEEDS_YOU : first ? KIND_LABEL[kindOf(first)] : "";
   return (
-    <li class="machines-session-item">
-      <Card as="article" class="machines-session" selected={picked} data-machines-session={s.id} data-machines-picked={picked || undefined} data-attention={s.state} {...data}>
-        <header class="machines-session-head">
-          <span class={`ws-dot ${s.state}`} aria-hidden="true" />
-          <a class="machines-session-name" href={open} title={`Open ${s.name} at its last tab`} data-machines-session-link onClick={(e) => follow(e, open)}>
-            {s.name}
-          </a>
-          {pinned && (
-            <IconButton label={`Unpin ${s.name}`} title="Unpin session" class="machines-unpin" data-machines-unpin onClick={pinned}>
-              <PinIcon size="sm" />
-            </IconButton>
-          )}
-        </header>
-        <p class="machines-session-meta dim">
-          {pinned && `on ${shortHost(m.name)} · `}
-          {tabs} {tabs === 1 ? "tab" : "tabs"} · {s.panes} {s.panes === 1 ? "pane" : "panes"}
-        </p>
-        {(all ? s.tabs : few).map((t) => (
-          <div key={t.id} data-machines-tab={t.id}>
-            {tabs > 1 && <h4 class="machines-tab dim">{t.name ?? `Tab ${s.tabs.indexOf(t) + 1}`}</h4>}
-            <ul class="panes-rows">
-              {t.panes.map((p) => (
-                <PaneLine key={p.key} p={p} to={to(machineAt(m, p.id))} last={isLast(last, m, p)} phone={phone} />
-              ))}
-            </ul>
-          </div>
-        ))}
-        {more > 0 && (
-          <button type="button" class="link small machines-more" aria-expanded={all} data-machines-more onClick={() => setAll(!all)}>
-            {all ? "Show fewer" : `+${more} more ${more === 1 ? "tab" : "tabs"}`}
-          </button>
-        )}
-      </Card>
+    <li class="machines-session-item" data-machines-session={s.id} data-machines-picked={picked || undefined} aria-current={picked ? "true" : undefined} data-attention={s.state} {...data}>
+      <Row
+        kind={picked ? "selected" : asks.length ? "need" : "plain"}
+        mark={MARK[s.state] ?? "idle"}
+        title={s.name}
+        meta={[pinned ? `on ${shortHost(m.name)}` : "", word, `${s.panes} ${s.panes === 1 ? "pane" : "panes"}`].filter(Boolean)}
+        href={open}
+        onClick={(e) => follow(e, open)}
+        line={{ title: `Open ${s.name} at its last tab`, "data-machines-session-link": "" } as Parameters<typeof Row>[0]["line"]}
+        open={shown.length > 0}
+      >
+        <ul class="panes-rows">
+          {shown.map((p) => (
+            <PaneLine key={p.key} p={p} to={to(machineAt(m, p.id))} last={isLast(last, m, p)} phone={phone} />
+          ))}
+        </ul>
+      </Row>
+      {pinned && (
+        <IconButton label={`Unpin ${s.name}`} title="Unpin session" class="machines-unpin" data-machines-unpin onClick={pinned}>
+          <PinIcon size="sm" />
+        </IconButton>
+      )}
     </li>
   );
 }
+
+/** A session's state as its mark. */
+const MARK: Record<string, State> = { needs_input: "asks", working: "working", done: "done", idle: "idle" };
 
 function PaneLine({ p, to, last, phone }: { p: FleetPane; to: string; last: boolean; phone: boolean }) {
   const asks = needsYou(p.info);
@@ -331,7 +299,7 @@ function PaneLine({ p, to, last, phone }: { p: FleetPane; to: string; last: bool
       <a class={`panes-row${p.stale ? " stale" : ""}${last ? " last" : ""}`} href={to} title={last ? "The pane you had open last" : undefined} data-panes-pane={p.id} data-panes-host={p.host} data-panes-last={last || undefined} onClick={(e) => follow(e, to)}>
         <span class="panes-row-what">{what}</span>
         {last && <span class="panes-row-where dim">where you were</span>}
-        {asks && <StateChip tone="warn">{NEEDS_YOU}</StateChip>}
+        {asks && <StateMark state="asks" word={NEEDS_YOU} />}
         {meta && <span class="panes-row-meta dim">{meta}</span>}
       </a>
     </li>
