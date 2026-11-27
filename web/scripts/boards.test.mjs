@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -294,7 +294,7 @@ test("a row's marks: not finished, after a PR, and earlier agents folded", () =>
   assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);
 });
 
-test("a board counts the asks that wait on the reader, raised ones included, and says who an ask waits on", () => {
+test("a board counts the asks that wait on the reader, raised ones included", () => {
   const ask = (over) => ({ id: "ask_1", question: "Ship?", options: [], mine: false, raised: false, can_answer: false, who: "a", who_name: "Sam", asked_by: "an agent on m1", ...over });
   const zones = [
     { rows: [{ id: "row_1", ask: ask({ mine: true }) }, { id: "row_2" }, { id: "row_3", ask: ask({ id: "" , raised: true, mine: true }) }] },
@@ -303,8 +303,6 @@ test("a board counts the asks that wait on the reader, raised ones included, and
   assert.deepEqual(needsYou({ zones }).map((r) => r.id), ["row_1", "row_3"]);
   assert.deepEqual(needsYou({ zones: [{ rows: [] }] }), []);
   assert.equal(needsYouLine(2), "Needs you (2)");
-  assert.equal(askWaitingLine(ask()), "Waiting for Sam, asked by an agent on m1.");
-  assert.deepEqual([answerReady(""), answerReady("  "), answerReady(" yes ")], [false, false, true]);
 });
 
 test("an agent's issue is a chip on a session row and a swarm card, the first and how many more (#372)", () => {

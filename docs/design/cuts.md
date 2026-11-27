@@ -56,3 +56,4 @@ if people miss it. Newest at the bottom.
 - **A Claude Code terminal's raw lines in the panel's transcript:** its tool calls fold to a line each; its banner, prompt box, spinners and timings are left out (the Terminal, `v`, still shows them) (Lift 4, Arugula #1480).
 - **`AskCard`, `QuestionCard` and `FormCard`** (`shared/ask.tsx`) and their CSS: an agent's question, form or sign-in link is the kit's NeedRow, with the same answers (Lift 4, Arugula #1480).
 - **Swarm's rail cards** (their kind colours, pop-in, uppercase titles and tinted frames): the rail is a list of NeedRows, as Needs you's (Lift 4, Arugula #1480).
+- **A board block's ask card** (its amber fill, "Asks" chip, folded Why and "Waiting for Sam, asked by …" line): the tile's ask is the kit's NeedRow, as on the desk and the card page, whose buttons are the asked person's (part of Arugula #1523).
