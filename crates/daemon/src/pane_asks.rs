@@ -38,7 +38,7 @@ use tracing::{debug, warn};
 use crate::{
     board_state::{TROUBLE, Wait, wait_of},
     control::CloudRefused,
-    machine_sessions::LOOK,
+    machine_sessions::{LOOK, Pane},
 };
 
 /// What pane `p` waits for now, if anything.
@@ -81,6 +81,7 @@ fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
         since: r.since_ms,
         for_person: kind == PaneAskKind::Gate || i.kind.owner_answers(),
         parent,
+        project: Pane::of(p).place.project,
     })
 }
 
@@ -295,6 +296,14 @@ mod tests {
         assert_eq!(report(&[started_by(ask(), 1)]).asks[0].parent, None, "its lead closed");
         let text = serde_json::to_string(&r).unwrap();
         assert_eq!(text, r#"{"asks":[{"pane":2,"kind":"question","since":100,"parent":1}]}"#);
+        // One in a project says it, after the rest; one in none is the
+        // same JSON as before (an older control refuses a field it doesn't
+        // know).
+        let mut placed = ask();
+        placed.info.session_project =
+            serde_json::from_value(serde_json::json!({ "id": "prj_7", "name": "Seven" })).unwrap();
+        let text = serde_json::to_string(&report(&[placed])).unwrap();
+        assert_eq!(text, r#"{"asks":[{"pane":2,"kind":"question","since":100,"project":"prj_7"}]}"#);
         assert!(!text.contains("asked"), "no text");
         serde_json::from_str::<PaneAsksReport>(&text).unwrap();
     }

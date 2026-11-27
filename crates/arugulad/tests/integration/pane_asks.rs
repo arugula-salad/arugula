@@ -42,6 +42,14 @@ async fn fake_control(f: FakeControl) -> String {
         .route("/api/daemon/peers", get(ok))
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
         .route("/api/daemon/access", post(ok))
+        // Every session is in the owner's default project (Arugula #1163).
+        .route(
+            "/api/daemon/issue-home",
+            get(|| async {
+                Json(json!({ "project": "prj_1", "name": "One", "home": "native",
+                    "owner": { "kind": "personal", "account": "a1" } }))
+            }),
+        )
         .route(arugula_control_wire::boards::AGENT_BLOCK_STATE, put(ok))
         .route(arugula_control_wire::boards::AGENT_MACHINE_SESSIONS, put(ok))
         .route(arugula_control_wire::boards::AGENT_PANE_ASKS, put(told))
@@ -127,12 +135,20 @@ async fn a_hooked_terminal_s_permission_prompt_is_a_permission_ask() {
     let fake = FakeControl::default();
     let d = joined(fake_control(fake.clone()).await);
     let pane = terminal(&d);
+    d.wait_for("its session's project", || {
+        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && !p["session_project"].is_null())
+    });
     hook(&d, pane, notification(Some("permission_prompt")));
     let ask = ask_of(&fake, pane).await;
     assert_eq!(ask["kind"], "permission", "{ask}");
+    assert_eq!(ask["project"], "prj_1", "its session's project, as a block state's: {ask}");
     let mut keys: Vec<_> = ask.as_object().unwrap().keys().map(String::as_str).collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["kind", "pane", "since"], "no parent, and a person isn't the only one who may answer: {ask}");
+    assert_eq!(
+        keys,
+        ["kind", "pane", "project", "since"],
+        "no parent, and a person isn't the only one who may answer: {ask}"
+    );
     assert!(ask["since"].as_u64().is_some_and(|s| s > 0), "{ask}");
 }
 

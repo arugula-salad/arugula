@@ -1593,6 +1593,10 @@ pub struct PaneAsk {
     /// it's there: it answers first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<u32>,
+    /// The project it's in (`prj_…`): its card's, else its session's, as a
+    /// block state's is. Control's `session.needs_input` is under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 /// What a pane waits for ([`PaneAsk::kind`]).
