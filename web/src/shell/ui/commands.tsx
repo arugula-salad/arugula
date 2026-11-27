@@ -454,7 +454,7 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "palette.open": () => openGoTo(),
   /** Send feedback (Arugula #1217). */
   "feedback.open": (client) => openFeedback(client),
-  /** Getting started at its Agents step: Use Claude Code with Arugula. */
+  /** Getting started with Claude Code's one click under it: Use Claude Code with Arugula. */
   "getting-started.agents": (client) => openGettingStarted("agents", client),
   /** Board… beside the shown tab's pane. */
   "board.pin": (client) => {

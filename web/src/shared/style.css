@@ -4053,7 +4053,7 @@ button.agent-image {
 
 /* ---- the swarm (M26): the prototype's look (archive/spikes:spikes/s16-swarm/canvas.html) */
 
-:where(.swarm, .start, .start-toast) {
+:where(.swarm, .start) {
   /* The swarm's names for the palette's colors (#729): the swarm, the
      getting started overlay and its toast, so Latte reaches them. The
      canvases read them from the page (swarm/field.ts's readColors). An ask
@@ -6367,28 +6367,15 @@ html[data-scheme="light"] .doc {
 
 /* ---- getting started (#110) */
 
-/* ---- Getting started (#110): five steps in the swarm's own look */
-
-/* Heavier than the other dialogs': a second --backdrop over the first. */
-.prompt-backdrop:has(> .start) {
-  padding-top: 6vh;
-  background-image: linear-gradient(var(--backdrop), var(--backdrop));
-  backdrop-filter: blur(3px);
-}
+/* ---- Getting started (#110; Lift 7): one screen, Add a machine, in the
+   kit's Sheet. */
 
 .start {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  width: min(720px, calc(100vw - 24px));
-  height: min(640px, 86vh);
-  background: radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--s-ask) 8%, transparent), transparent 60%), var(--void);
+  gap: var(--gap);
+  width: min(560px, calc(100vw - 48px));
   color: var(--ink);
   font: var(--text-body)/1.45 var(--font-sans);
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  outline: none;
 }
 
 .start * {
@@ -6406,91 +6393,6 @@ html[data-scheme="light"] .doc {
   color: var(--s-ask);
 }
 
-.start-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px 0;
-}
-
-.start-brand {
-  font: 700 var(--text-xl)/1 var(--font-title);
-  text-transform: uppercase;
-  letter-spacing: var(--track-display);
-}
-
-.start-brand span {
-  color: var(--mute);
-  font-weight: 500;
-}
-
-.start-x {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: var(--chip-radius);
-  width: 30px;
-  height: 30px;
-  color: var(--mute) !important;
-}
-
-.start-x:hover {
-  color: var(--ink) !important;
-}
-
-.start-rail {
-  display: flex;
-  gap: 4px;
-  margin: 14px 20px 0;
-  padding: 3px;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  background: var(--panel);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.start-rail li {
-  flex: 1;
-}
-
-.start-seg {
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: var(--space-2) 10px;
-  border-radius: var(--chip-radius);
-  font: 500 var(--text-label)/1 var(--font-mono) !important;
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
-  color: var(--mute) !important;
-  white-space: nowrap;
-}
-
-.start-seg b {
-  font-weight: 700;
-  opacity: 0.6;
-}
-
-.start-seg.done {
-  color: var(--s-done) !important;
-}
-
-.start-seg.done::after {
-  content: " ●";
-}
-
-.start-seg.now {
-  background: var(--ink);
-  color: var(--void) !important;
-}
-
-.start-body {
-  overflow-y: auto;
-  min-height: 0;
-  padding: 18px 24px 8px;
-}
-
 .start-kicker {
   font: 500 var(--text-label)/1 var(--font-mono);
   text-transform: uppercase;
@@ -6501,9 +6403,7 @@ html[data-scheme="light"] .doc {
 
 .start-step h2 {
   margin: 0 0 8px;
-  font: 700 var(--text-hero)/0.95 var(--font-title);
-  text-transform: uppercase;
-  letter-spacing: var(--track-display);
+  font: 700 var(--text-title)/1.3 var(--font-title);
 }
 
 .start-step h3 {
@@ -6522,35 +6422,6 @@ html[data-scheme="light"] .doc {
 
 .start-dim {
   color: var(--mute);
-  font-size: var(--text-body);
-}
-
-.start-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-  margin: 14px 0;
-  padding: 0;
-  list-style: none;
-}
-
-.start-cards > li {
-  display: flex;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--s-plain);
-  border-radius: var(--radius);
-  background: var(--panel);
-}
-
-.start-cards > li:has(.agent) {
-  border-left-color: var(--s-ask);
-}
-
-.start-cards p {
-  margin: 0 0 6px;
-  color: var(--ink-dim);
   font-size: var(--text-body);
 }
 
@@ -6595,17 +6466,6 @@ html[data-scheme="light"] .doc {
 .agent-can-lines .agent-can-example {
   font-style: italic;
   text-align: left;
-}
-
-.start-glyph {
-  flex: none;
-  width: 30px;
-  font: 600 var(--text-title)/1.4 var(--font-mono);
-  color: var(--s-plain);
-}
-
-.start-glyph.agent {
-  color: var(--s-ask);
 }
 
 .start kbd {
@@ -6686,45 +6546,6 @@ html[data-scheme="light"] .doc {
   margin-top: 0;
 }
 
-/* Joined: a team to share with, a session to share. */
-.start-together {
-  margin: 14px 0;
-}
-
-.start-together p {
-  margin: 0 0 10px;
-  color: var(--ink-dim);
-  font-size: var(--text-body);
-}
-
-.start-together .start-confirm {
-  justify-content: flex-start;
-}
-
-/* Things to try: a button each, and what it does beside it. */
-.start-tries {
-  display: grid;
-  gap: 8px;
-  margin: 14px 0;
-  padding: 0;
-  list-style: none;
-}
-
-.start-try {
-  display: grid;
-  grid-template-columns: minmax(170px, auto) 1fr;
-  align-items: center;
-  gap: 12px;
-}
-
-.start-try .start-dim {
-  margin: 0;
-}
-
-.start-try-mark {
-  color: var(--s-done);
-}
-
 /* #335: Claude Code is here and not set up: the first screen offers it. */
 .start-offer {
   margin: 14px 0;
@@ -6801,13 +6622,6 @@ html[data-scheme="light"] .doc {
   overflow-wrap: anywhere;
 }
 
-.start-confirm {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-}
-
 .start-pulse {
   display: inline-block;
   width: 8px;
@@ -6823,37 +6637,6 @@ html[data-scheme="light"] .doc {
     opacity: 0.25;
   }
 }
-
-.start-foot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.start-hint {
-  flex: 1;
-  text-align: center;
-  font: 500 var(--text-label)/1.3 var(--font-mono);
-  color: var(--mute);
-}
-
-.start-toast {
-  position: fixed;
-  z-index: 70;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  padding: 10px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--chip-radius);
-  background: var(--void);
-  color: var(--ink);
-  font: 500 var(--text-meta)/1 var(--font-mono);
-  box-shadow: var(--shadow-lg);
-}
-
 @media (max-width: 600px) {
   .prompt-backdrop:has(> .start) {
     padding: 0;
@@ -6865,18 +6648,6 @@ html[data-scheme="light"] .doc {
   }
   .start-step h2 {
     font-size: var(--text-hero);
-  }
-  .start-seg {
-    padding: var(--space-2) 8px;
-  }
-  .start-seg:not(.now) span {
-    display: none;
-  }
-  .start-hint {
-    display: none;
-  }
-  .start-foot .primary {
-    margin-left: auto;
   }
   .start-reach {
     flex-direction: column;
@@ -9224,17 +8995,6 @@ button.thread-quote:hover {
 .app.phone .agents-nudge {
   flex-direction: column;
   align-items: stretch;
-}
-
-/* Claude Code's plugin, where the hooks are offered (Getting started's Agents step): a line each. */
-.claude-plugin {
-  display: grid;
-  gap: 6px;
-  justify-items: start;
-}
-
-.claude-plugin p {
-  margin: 0;
 }
 
 /* #551: someone else's machine, new in the list. */

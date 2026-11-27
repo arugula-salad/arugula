@@ -325,7 +325,7 @@ screen that hasn't moved keeps today's pieces
 | `/design` | the kit | Lift 2 (#1478) |
 | a board's page, its tiles and an issue on a board (its card); Add row | the kit | Lift 5a (#1481) |
 | the Overview, with its agent panel | the kit | Lift 4 (#1480) |
-| Settings (You, Project, Team, a machine's, and a daemon's own `#settings`); Machines' Add a machine | the kit | Lift 7 (#1487) |
+| Settings (You, Project, Team, a machine's, and a daemon's own `#settings`); Machines' Add a machine; Getting started (one Sheet, Add a machine) | the kit | Lift 7 (#1487) |
 | Docs: the list and a Doc's page (its contents, comments and author) | the kit | Lift 6b (#1484) |
 | the Inbox | the kit | Lift 6d (#1486) |
 | everything else | today's pieces | |

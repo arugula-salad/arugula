@@ -88,7 +88,7 @@ test("on a first visit it waits: nothing stacks on the first screen, and the nex
   await load(page);
   await page.waitForTimeout(1000);
   await expect(card(page)).toHaveCount(0);
-  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add a machine" })).toHaveCount(0);
   // The next visit (this browser has been here): it asks.
   await load(page);
   await expect(card(page)).toBeVisible();

@@ -51,14 +51,13 @@ test("dropped by control: a banner, the host menu's line, and Join again", async
   await expect(page.getByText("Join again…")).toBeVisible();
   await page.keyboard.press("Escape");
 
-  // Join again: Getting started's cloud step, which joins the same control again.
+  // Join again: Getting started's Add a machine, which joins the same control again.
   await banner.locator("[data-control-rejoin]").click();
-  const start = page.getByRole("dialog", { name: "Getting started" });
-  await expect(start).toHaveAttribute("data-step", "cloud");
+  const start = page.getByRole("dialog", { name: "Add a machine" });
   await expect(start.locator("[data-start-dropped]")).toContainText("Arugula cloud dropped it");
   await expect(start.locator("[data-start-connect]")).toHaveText("Join control.arugula.io again");
   await expect(start.locator("[data-start-joined]")).toBeHidden();
-  await start.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
 
   // Not now: gone for this tab.
   await banner.locator("[data-control-dropped-hide]").click();
@@ -84,23 +83,22 @@ test("a removed key: the join it asked for, in the banner and Getting started", 
   await expect(banner).toContainText("This machine is no longer in lex00's account on control.arugula.io");
   await expect(banner.locator("[data-control-dropped-code]")).toContainText(code);
   await banner.locator("[data-control-rejoin]").click();
-  const start = page.getByRole("dialog", { name: "Getting started" });
+  const start = page.getByRole("dialog", { name: "Add a machine" });
   await expect(start.locator("[data-start-pending] [data-start-code]")).toHaveText(code);
   await expect(start.locator("[data-start-approve]")).toHaveAttribute("href", approve);
   await expect(start.locator("[data-start-dropped]")).toContainText("it made a new one (3333-4444)");
-  await start.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
 });
 
 test("in the app, a drop opens the join itself, once, leading with the machine (#326)", async ({ page }) => {
   await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" } }));
   await standing(page, dropped);
   await reset(page);
-  const start = page.getByRole("dialog", { name: "Getting started" });
-  await expect(start).toHaveAttribute("data-step", "cloud");
+  const start = page.getByRole("dialog", { name: "Add a machine" });
   await expect(start.locator("[data-start-cloud-title]")).toContainText("back in your account or team");
   // One click, in Arugula cloud (#1003).
   await expect(start.locator("[data-start-join-how]")).toContainText("Click Add there");
-  await start.getByRole("button", { name: "Close" }).click();
+  await page.keyboard.press("Escape");
   // Once per drop: not again on a reload.
   await page.reload();
   await expect(page.locator("[data-control-dropped]")).toBeVisible();
