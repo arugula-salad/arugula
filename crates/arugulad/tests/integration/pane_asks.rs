@@ -11,7 +11,10 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -23,6 +26,10 @@ use serde_json::{Value, json};
 #[derive(Clone, Default)]
 struct FakeControl {
     asks: Arc<Mutex<Vec<Value>>>,
+    /// A control from before a pane ask had a project: a list that has one
+    /// is refused with a 422, and counted here.
+    old: Arc<AtomicBool>,
+    refused: Arc<AtomicUsize>,
 }
 
 async fn fake_control(f: FakeControl) -> String {
@@ -31,9 +38,15 @@ async fn fake_control(f: FakeControl) -> String {
         extract::State,
         routing::{get, post, put},
     };
-    async fn told(State(f): State<FakeControl>, Json(b): Json<Value>) -> Json<Value> {
+    async fn told(State(f): State<FakeControl>, Json(b): Json<Value>) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let has = b["asks"].as_array().is_some_and(|a| a.iter().any(|a| a.get("project").is_some()));
+        if f.old.load(Ordering::SeqCst) && has {
+            f.refused.fetch_add(1, Ordering::SeqCst);
+            return axum::http::StatusCode::UNPROCESSABLE_ENTITY.into_response();
+        }
         f.asks.lock().unwrap().push(b);
-        Json(json!({}))
+        Json(json!({})).into_response()
     }
     let ok = || async { Json(json!({})) };
     let app = Router::new()
@@ -187,4 +200,29 @@ async fn a_hook_after_a_plain_need_says_what_it_asks() {
     d.post(&format!("/api/panes/{pane}/attention"), json!({ "state": "needs_input", "why": "waiting" }));
     hook(&d, pane, notification(Some("permission_prompt")));
     assert_eq!(ask_of(&fake, pane).await["kind"], "permission");
+}
+
+/// A control from before a pane ask had a project refuses a list that has
+/// one: the daemon sends it again without, and goes on without until it
+/// restarts, so the asks still land.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_control_that_refuses_the_project_is_told_without_it() {
+    let fake = FakeControl::default();
+    fake.old.store(true, Ordering::SeqCst);
+    let d = joined(fake_control(fake.clone()).await);
+    let first = terminal(&d);
+    d.wait_for("its session's project", || {
+        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == first && !p["session_project"].is_null())
+    });
+    hook(&d, first, notification(Some("permission_prompt")));
+    let ask = ask_of(&fake, first).await;
+    assert_eq!(ask["kind"], "permission", "{ask}");
+    assert_eq!(ask.get("project"), None, "{ask}");
+    assert_eq!(fake.refused.load(Ordering::SeqCst), 1, "tried with the project once");
+
+    // The next one isn't tried with it again.
+    let second = terminal(&d);
+    hook(&d, second, notification(Some("elicitation_dialog")));
+    assert_eq!(ask_of(&fake, second).await["kind"], "question");
+    assert_eq!(fake.refused.load(Ordering::SeqCst), 1, "and goes without it from now on");
 }

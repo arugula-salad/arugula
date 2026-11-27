@@ -106,6 +106,9 @@ pub(crate) struct Asks {
     quiet_until: Option<Instant>,
     /// Control has no route for it: nothing more is sent until restart.
     off: bool,
+    /// Control refused a list with projects and took the same one without
+    /// (it is from before Arugula #1514): they go without until restart.
+    bare: bool,
 }
 
 impl Asks {
@@ -179,20 +182,45 @@ pub(crate) async fn tell(app: &crate::server::App, asks: &mut Asks) {
     }
     let Some(panes) = app.mux.api(crate::mux::Api::Panes).await else { return };
     let Some(report) = asks.worth_sending(report(&panes), now) else { return };
-    let body = match serde_json::to_value(&report) {
-        Ok(b) => b,
-        Err(e) => return warn!("this machine's asks: {e}"),
-    };
-    let call = app.control.cloud_now(reqwest::Method::PUT, AGENT_PANE_ASKS, Some(&body));
-    match tokio::time::timeout(crate::board_state::REQUEST, call).await {
-        Ok(answer) => {
+    let mut sent = put(app, &report, asks.bare).await;
+    // A control from before projects refuses the field it doesn't know
+    // (a 400, 413 or 422, as for a block state's): if the same list without
+    // them goes through, it's them.
+    if !asks.bare
+        && report.asks.iter().any(|a| a.project.is_some())
+        && matches!(sent, Some(Err(ref e)) if matches!(wait_of(e.clone()), Wait::Dropped(_)))
+    {
+        let again = put(app, &report, true).await;
+        if matches!(again, Some(Ok(()))) {
+            asks.bare = true;
+            debug!("control takes a machine's asks without their projects");
+        }
+        sent = again;
+    }
+    match sent {
+        Some(answer) => {
             if answer.is_ok() {
                 debug!(asks = report.asks.len(), "told control this machine's asks");
             }
-            asks.answered(report, answer.map(|_| ()), Instant::now());
+            asks.answered(report, answer, Instant::now());
         }
-        Err(_) => asks.timed_out_or(Wait::For(TROUBLE, "control didn't answer".into()), report, Instant::now()),
+        None => asks.timed_out_or(Wait::For(TROUBLE, "control didn't answer".into()), report, Instant::now()),
     }
+}
+
+/// `report` put to control, without its projects if `bare`; none if control
+/// didn't answer in time.
+async fn put(app: &crate::server::App, report: &PaneAsksReport, bare: bool) -> Option<Result<(), CloudRefused>> {
+    let mut report = report.clone();
+    if bare {
+        report.asks.iter_mut().for_each(|a| a.project = None);
+    }
+    let body = match serde_json::to_value(&report) {
+        Ok(b) => b,
+        Err(e) => return Some(Err(CloudRefused::Said { status: 400, said: e.to_string(), reason: None })),
+    };
+    let call = app.control.cloud_now(reqwest::Method::PUT, AGENT_PANE_ASKS, Some(&body));
+    tokio::time::timeout(crate::board_state::REQUEST, call).await.ok().map(|a| a.map(|_| ()))
 }
 
 #[cfg(test)]
