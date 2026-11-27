@@ -147,6 +147,17 @@ impl Daemon {
         self.set_attention_with(pane, state, why, reason);
     }
 
+    /// A hook says the pane waits on you for an approval or a question
+    /// (Arugula #1514): its reason says which, though there is no card to
+    /// answer (`actions` stay Dismiss, and the ask has no id). It is the one
+    /// `Input` reason that carries an `ask`.
+    pub(super) fn set_attention_asking(&mut self, pane: PaneId, why: &str, what: AskWhat) {
+        let mut reason = plain_reason(ReasonKind::Input, why);
+        let agent = self.agent_name(pane).unwrap_or_else(|| "claude".into());
+        reason.ask = Some(AskRef { id: String::new(), what, agent, tool: None, questions: None });
+        self.set_attention_with(pane, Attention::NeedsInput, why, Some(reason));
+    }
+
     /// Set a pane's attention, and why (M24). An open ask overrides the
     /// stored reason while it's open (see [`Self::live_reason`]).
     pub(super) fn set_attention_with(&mut self, pane: PaneId, state: Attention, why: &str, reason: Option<Reason>) {
@@ -169,7 +180,11 @@ impl Daemon {
             // Another reason for the same state (a second command done, or a
             // failure after a bell): keep the newer one if it says more.
             let newer = match (&reason, self.reasons.get(&pane)) {
-                (Some(r), Some(o)) => r.kind != o.kind && r.kind != ReasonKind::Input,
+                // A hook's `Input` that says what it waits for (#1514) is
+                // more than one that doesn't.
+                (Some(r), Some(o)) => {
+                    (r.kind != o.kind && r.kind != ReasonKind::Input) || (r.ask.is_some() && o.ask.is_none())
+                }
                 (Some(_), None) => true,
                 _ => false,
             };

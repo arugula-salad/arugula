@@ -51,14 +51,18 @@ fn ask_of(p: &PaneSummary, panes: &[PaneSummary]) -> Option<PaneAsk> {
         return None;
     }
     let agent = i.kind == BlockType::Agent;
-    if !(agent || i.ask.is_some() || r.kind == ReasonKind::Gate) {
+    // A hooked terminal's `Notification` (Arugula #1514): the one `Input`
+    // reason that says what it asks. Another `Input` (a screen's, a held
+    // follow-up's) has no ask and isn't a pane ask.
+    let hooked = r.kind == ReasonKind::Input && r.ask.is_some();
+    if !(agent || i.ask.is_some() || hooked || r.kind == ReasonKind::Gate) {
         return None;
     }
     let needs = i.attention == Attention::NeedsInput;
     let kind = match r.kind {
         ReasonKind::Gate => PaneAskKind::Gate,
         ReasonKind::Diff if needs => PaneAskKind::Permission,
-        ReasonKind::Ask if needs && r.ask.as_ref().is_some_and(|a| a.what == AskWhat::Approve) => {
+        ReasonKind::Ask | ReasonKind::Input if needs && r.ask.as_ref().is_some_and(|a| a.what == AskWhat::Approve) => {
             PaneAskKind::Permission
         }
         ReasonKind::Ask | ReasonKind::Input if needs => PaneAskKind::Question,

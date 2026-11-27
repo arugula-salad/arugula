@@ -444,7 +444,7 @@ async fn act_one(
             app.mux.api(|r| Api::HeldDrop(pane, r)).await;
             return Ok(());
         }
-        return match app.mux.api(|r| Api::Attention(pane, Attention::Idle, None, r)).await {
+        return match app.mux.api(|r| Api::Attention(pane, Attention::Idle, None, None, r)).await {
             Some(true) => Ok(()),
             _ => Err(format!("no pane %{pane}")),
         };
@@ -491,7 +491,8 @@ async fn act_one(
         let method = if expire { "expire" } else { "approve" };
         return block_call(app, pane, &b, method, args, by).await.map(|_| ());
     }
-    let ask = reason.ask.ok_or_else(|| format!("%{pane} isn't asking anything: dismiss it"))?;
+    let ask =
+        reason.ask.filter(|a| !a.id.is_empty()).ok_or_else(|| format!("%{pane} isn't asking anything: dismiss it"))?;
     let id = req.id.clone().unwrap_or(ask.id.clone());
     if id != ask.id {
         return Err(format!("%{pane} now asks something else (it was answered)"));
