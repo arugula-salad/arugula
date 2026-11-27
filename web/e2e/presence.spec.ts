@@ -91,11 +91,11 @@ test("three people in one session see each other", async ({ browser }) => {
   for (const p of [owner, friend]) await p.locator(`[data-pane="${pane}"]`).click({ position: { x: 40, y: 40 } });
   // The owner sees the friend (once, for two clients), focused on the pane,
   // in the workspace's header (M113) and on the tab they're on.
-  await expect(owner.locator(`.ws-head .people [data-who="tailnet:${FRIEND}"]`)).toHaveCount(1);
+  await expect(owner.locator(`[data-top] .people [data-who="tailnet:${FRIEND}"]`)).toHaveCount(1);
   await expect(owner.locator(".ws-tabs .tab.selected .tab-people .tab-dot")).toHaveCount(1);
   await expect(owner.locator(`[data-pane="${pane}"] .pane-person`)).toContainText("friend");
   // The friend sees the owner.
-  await expect(friend.locator(`.ws-head .people [data-who="owner"]`)).toHaveCount(1);
+  await expect(friend.locator(`[data-top] .people [data-who="owner"]`)).toHaveCount(1);
   const seen = await phone.evaluate(() => window.__arugula.client.others().map((p) => p.who));
   expect(seen).toContain("owner");
 });

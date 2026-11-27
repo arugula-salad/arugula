@@ -16,7 +16,8 @@ import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { go, pathOf, popCount, useRoute, type Route } from "./router";
+import { current, go, onRoute, pathOf, popCount, pushCount, useRoute, type Route } from "./router";
+import { installStack } from "../shared/kit/frame/stack";
 import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -58,6 +59,8 @@ import { NewProjectLayer } from "./new-project";
 export function PlatformPage() {
   // Go to…: your projects, their places, boards and Docs.
   useEffect(() => addGoSource(platformGoTo), []);
+  // One back stack across projects; Escape's last use and flip back.
+  useEffect(() => installStack({ here: () => ({ path: location.pathname + location.search, project: barProject(current()) ?? null }), go: (path) => go(path), onRoute, pops: popCount }), []);
   // The design reference needs no one signed in and no project, so nothing of
   // the session is loaded for it (#693).
   return (
@@ -372,12 +375,13 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(movedPage(r), known));
-  // Not after a Back: the effect runs after the paint, and a Back before
-  // then would have it replace the entry Back went to with this page's
-  // (Arugula #1074).
+  // Not after a Back, nor after a step to elsewhere: the effect runs after
+  // the paint, and a Back (or Escape's step to the Overview) before then
+  // would have it replace the entry gone to with this page's (Arugula #1074).
   const pops = popCount();
+  const pushes = pushCount();
   useEffect(() => {
     // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
-    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
+    if (want && want !== location.pathname + location.search && popCount() === pops && pushCount() === pushes && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }

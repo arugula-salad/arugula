@@ -404,6 +404,8 @@ export function RoomBody({
       if ((e.target as Element | null)?.closest(".msg-edit")) return;
       const c = chat.room(room.id);
       if (!c || (c.unread === 0 && c.read >= last && anchor.bottom())) return;
+      // Taken: not a step back too (shared/kit/frame/stack.ts).
+      e.preventDefault();
       void chat.read(room.id, last).catch(() => {});
       toNewest();
     };

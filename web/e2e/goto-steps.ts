@@ -115,7 +115,7 @@ export async function desktop(page: Page, chord = "Control+Shift+KeyK") {
   await page.keyboard.press("p");
   await expect(goTo(page)).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.locator(".ws-head [data-open-palette]").click();
+  await page.locator("[data-top] [data-open-palette]").click();
   await expect(goTo(page)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(goTo(page)).toBeHidden();

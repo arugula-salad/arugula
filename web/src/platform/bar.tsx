@@ -11,7 +11,7 @@ import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { currentProject } from "./current-project";
-import { follow, go, pathOf, useRoute, type Route } from "./router";
+import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
@@ -20,7 +20,9 @@ import { names } from "./links";
 import { Avatar } from "../shared/kit/avatar";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
-import { Caret, ChevronIcon } from "../shared/ui/icons";
+import { Caret } from "../shared/ui/icons";
+import type { Step } from "../shared/kit/crumb";
+import { TopBar } from "../shared/kit/frame/top";
 import { openGoTo } from "../shared/kit/frame/goto";
 import { boards } from "../shared/boards/store";
 import { PhoneInbox } from "./rail";
@@ -112,67 +114,42 @@ function sectionPath(s: Section, project: string): string | null {
   }
 }
 
-/** Where you are, as a path you can climb (Arugula #989, the prototype's
- * zoom path): the team, the project, the place; each a level up. */
-function Path({ r, project }: { r: Route; project: string | undefined }) {
+/** Where you are, as steps you can climb (Arugula #989; v6's crumb, Lift
+ * 3): the project (it opens Go to…'s projects), then the place and what's
+ * in it, each a level up. */
+function pathSteps(r: Route, project: string | undefined): Step[] {
   const p = session.project(project);
   const section = sectionOf(r);
-  const crumbs: { label: string; to?: string; data: string }[] = [];
-  if (project && p) {
-    crumbs.push({ label: p.team?.name ?? "Just you", data: "owner" });
-    crumbs.push({ label: p.name, to: pathOf({ page: "project", project }, names), data: "project" });
-    if (r.page === "project" && r.board && r.card) {
-      // A card open on the Overview: each level a step up (the prototype's zoom path).
-      crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
-      crumbs.push({ label: boards.title(r.board) ?? "Board", to: pathOf({ page: "board", project, board: r.board }, names), data: "board" });
-      crumbs.push({ label: where.cardLabel(r.card) ?? "Card", data: "card" });
-    } else if (r.page === "project" && r.zoom) {
-      // The Overview zoomed in (Arugula #1287): Overview › Board › #N title, each a level up.
-      const z = r.zoom;
-      crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
-      if ("board" in z) crumbs.push({ label: boards.title(z.board) ?? "Board", to: pathOf({ page: "project", project, zoom: { board: z.board } }, names), data: "board" });
-      if ("board" in z && z.card) crumbs.push({ label: where.cardLabel(z.card) ?? "Card", data: "card" });
-      if ("session" in z) crumbs.push({ label: where.cardLabel(z.session) ?? "Session", data: "session" });
-    } else if (r.page === "machines" && r.at.at === "swarm") {
-      // Swarm is the Overview's view (Arugula #1348): Overview › Swarm.
-      crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
-      crumbs.push({ label: "Swarm", data: "swarm" });
-    } else if (r.page === "issues" || r.page === "issue" || r.page === "new-issue") {
-      // The issues are Boards' (#656): Boards › Issues, each a level up (Arugula #1387).
-      crumbs.push({ label: SECTION_LABEL.boards, to: sectionPath("boards", project) ?? undefined, data: "boards" });
-      crumbs.push({ label: "Issues", to: pathOf({ page: "issues", project }, names), data: "issues" });
-    } else if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
-    else if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], to: sectionPath(section, project) ?? undefined, data: section });
-  } else {
-    crumbs.push({ label: project ? (session.state === "ready" ? "Unknown project" : "…") : "All projects", to: project ? undefined : "/", data: "all" });
-    if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], data: section });
+  const link = (label: string, to: string | null | undefined, hook: string): Step => (to ? { label, href: to, go: () => go(to), hook } : { label, hook });
+  if (!project || !p) {
+    const steps: Step[] = [{ label: project ? (session.state === "ready" ? "Unknown project" : "…") : "All projects", go: () => openGoTo("projects"), hook: "all" }];
+    if (section && section !== "home") steps.push({ label: SECTION_LABEL[section], hook: section });
+    return steps;
   }
-  const here = location.pathname;
-  return (
-    <nav class="ws-crumbs app-path" aria-label="Where you are" data-app-path data-tauri-drag-region>
-      {crumbs.map((c, i) => {
-        const last = i === crumbs.length - 1;
-        return (
-          <span key={c.data} class="app-path-step">
-            {i > 0 && (
-              <span class="app-path-sep" aria-hidden="true">
-                <ChevronIcon dir="right" />
-              </span>
-            )}
-            {c.to && !(last && c.to.split("?")[0] === here) ? (
-              <a href={c.to} data-path={c.data} onClick={(e) => follow(e, c.to!)}>
-                {c.label}
-              </a>
-            ) : (
-              <span class={last ? "app-path-here" : "dim"} aria-current={last ? "page" : undefined} data-path={c.data}>
-                {c.label}
-              </span>
-            )}
-          </span>
-        );
-      })}
-    </nav>
-  );
+  const steps: Step[] = [{ label: `${p.name} ▾`, go: () => openGoTo("projects"), hook: "project" }];
+  const home = pathOf({ page: "project", project }, names);
+  if (r.page === "project" && r.board && r.card) {
+    // A card open on the Overview: each level a step up (the prototype's zoom path).
+    steps.push(link(SECTION_LABEL.home, home, "home"), link(boards.title(r.board) ?? "Board", pathOf({ page: "board", project, board: r.board }, names), "board"), { label: where.cardLabel(r.card) ?? "Card", hook: "card" });
+  } else if (r.page === "project" && r.zoom) {
+    // The Overview zoomed in (Arugula #1287): Overview › Board › #N title, each a level up.
+    const z = r.zoom;
+    steps.push(link(SECTION_LABEL.home, home, "home"));
+    if ("board" in z) steps.push(link(boards.title(z.board) ?? "Board", pathOf({ page: "project", project, zoom: { board: z.board } }, names), "board"));
+    if ("board" in z && z.card) steps.push({ label: where.cardLabel(z.card) ?? "Card", hook: "card" });
+    if ("session" in z) steps.push({ label: where.cardLabel(z.session) ?? "Session", hook: "session" });
+  } else if (r.page === "machines" && r.at.at === "swarm") {
+    // Swarm is the Overview's view (Arugula #1348): Overview › Swarm.
+    steps.push(link(SECTION_LABEL.home, home, "home"), { label: "Swarm", hook: "swarm" });
+  } else if (r.page === "issues" || r.page === "issue" || r.page === "new-issue") {
+    // The issues are Boards' (#656): Boards › Issues, each a level up (Arugula #1387).
+    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), link("Issues", pathOf({ page: "issues", project }, names), "issues"));
+  } else if (r.page === "machines") steps.push(link("Machines", pathOf({ page: "machines", project, at: { at: "machines" } }, names), "machines"));
+  else if (section) steps.push(link(SECTION_LABEL[section], sectionPath(section, project), section));
+  // The last step is where you are: a link only when you're below it (an issue, under Issues).
+  const last = steps.at(-1)!;
+  if (last.href?.split("?")[0] === location.pathname) steps[steps.length - 1] = { label: last.label, hook: last.hook };
+  return steps;
 }
 
 /** You, and your account's menu: the status page on hosted Arugula
@@ -229,13 +206,14 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
   const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
+  if (rail) return <TopBar steps={pathSteps(r, project)} views={children} data-platform-bar />;
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
-      {rail ? <Path r={r} project={project} /> : <PhoneTop name={project ? (p?.name ?? "…") : "All projects"} />}
+      <PhoneTop name={project ? (p?.name ?? "…") : "All projects"} />
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      {!rail && <PhoneInbox />}
-      {!rail && <AccountButton />}
+      <PhoneInbox />
+      <AccountButton />
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}
       <WindowButtons />
     </header>

@@ -26,6 +26,7 @@ import { names } from "./links";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { openGoTo } from "../shared/kit/frame/goto";
+import { surfacesFor } from "../shared/surfaces";
 import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
@@ -142,7 +143,8 @@ export function PlatformRail() {
       <Mark />
     </a>
   );
-  return <Rail brand={brand} marks={marks} onProjects={() => openGoTo("projects")} places={places.map(railPlace)} foot={foot.map(railPlace)} me={<AccountButton />} />;
+  const shows = surfacesFor(session.me?.account, shown).rail;
+  return <Rail brand={brand} marks={marks} onProjects={() => openGoTo("projects")} places={places.filter((p) => shows.includes(p.key)).map(railPlace)} foot={foot.map(railPlace)} me={<AccountButton />} />;
 }
 
 /** The place you're in's views, in the bar (Arugula #1345): the Overview's

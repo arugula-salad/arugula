@@ -1498,41 +1498,6 @@ span.untri-title {
   margin-bottom: 16px;
 }
 
-/* The bar's path to where you are: each step a level up. */
-.app-path {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-}
-
-.app-path-step {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  white-space: nowrap;
-}
-
-.app-path a {
-  color: var(--dim);
-  text-decoration: none;
-}
-
-.app-path a:hover {
-  color: var(--fg);
-}
-
-.app-path-sep {
-  color: var(--dim);
-}
-
-.app-path-here {
-  color: var(--fg);
-  font-weight: 600;
-}
-
 /* A phone's places, in a bar along the bottom (decision 15, Arugula #1345). */
 .app-tabs {
   display: none;

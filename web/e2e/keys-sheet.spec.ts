@@ -55,3 +55,37 @@ test("`g m` goes back to Machines from Settings", async ({ page }) => {
   await page.keyboard.press("m");
   await expect(settings).toHaveCount(0);
 });
+
+test("Look: `s`, or the top bar's Look, opens this device's Look; `s` again shuts it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await reset(page);
+  const look = page.getByRole("dialog", { name: "Appearance" });
+  await page.locator("[data-top] [data-open-look]").click();
+  await expect(look).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(look).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("s");
+  await expect(look).toBeVisible();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("s");
+  await expect(look).toHaveCount(0);
+});
+
+test("Look's steps: `t` flips light and dark, `d` goes a step deeper", async ({ page }) => {
+  await reset(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  const html = page.locator("html");
+  const was = await html.getAttribute("data-scheme");
+  await page.keyboard.press("t");
+  await expect(html).not.toHaveAttribute("data-scheme", was ?? "");
+  await page.keyboard.press("t");
+  await expect(html).toHaveAttribute("data-scheme", was ?? "");
+  const depth = () => page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "{}").depth as number | undefined);
+  // From wherever the preset puts it: each `d` a quarter deeper, flat past deep.
+  await page.keyboard.press("d");
+  await expect.poll(depth).not.toBeUndefined();
+  const first = (await depth())!;
+  await page.keyboard.press("d");
+  await expect.poll(depth).toBe(first >= 1 ? 0 : Math.min(1, Math.round(first * 4 + 1) / 4));
+});

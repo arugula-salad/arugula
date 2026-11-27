@@ -5,6 +5,7 @@
 // go to: the phone's settings menu and the command palette.
 
 import { useEffect, useState } from "preact/hooks";
+import { both, useBindings } from "../keys";
 import { useSubscribe } from "./hooks";
 import { Modal } from "./modal";
 import { appearance, isDefaultAppearance, lookSliders, onAppearance, resetAppearance, setAppearance, setPreset, THEMES } from "../appearance";
@@ -20,6 +21,19 @@ export function openAppearance() {
 }
 
 export function AppearanceLayer() {
+  // Look (Lift 3, #1479): `s` from anywhere but a field or a terminal; the
+  // top bar's Look too. The design reference keeps its own `s` (its Look,
+  // that page only).
+  const away = () => location.pathname !== "/design";
+  useBindings(
+    [
+      { id: "look", label: "Look", group: "app", keys: both("key:s"), when: away, run: () => (shown ? close() : openAppearance()) },
+      // A step of the theme (light ↔ dark) and of depth (flat → deep, round again).
+      { id: "look.theme", label: "Light or dark", group: "app", keys: both("key:t"), when: away, run: () => setAppearance({ theme: themeNow() === "light" ? "dark" : "light" }) },
+      { id: "look.depth", label: "Depth, a step deeper", group: "app", keys: both("key:d"), when: away, run: () => setAppearance({ depth: nextDepth(appearance().depth) }) },
+    ],
+    [],
+  );
   const [, tick] = useState(0);
   useEffect(() => {
     const fn = () => tick((t) => t + 1);
@@ -31,11 +45,21 @@ export function AppearanceLayer() {
     };
   }, []);
   if (!shown) return null;
-  const close = () => {
-    shown = false;
-    changed();
-  };
   return <AppearanceDialog close={close} />;
+}
+
+/** The theme as it shows now: System's is the system's. */
+const themeNow = () => {
+  const t = appearance().theme;
+  return t === "system" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : t;
+};
+
+/** Depth's next step of a quarter, back to flat past deep. */
+const nextDepth = (d: number) => (d >= 1 ? 0 : Math.min(1, Math.round(d * 4 + 1) / 4));
+
+function close() {
+  shown = false;
+  changed();
 }
 
 /** Back to nothing picked: Dark, Arugula and its sliders. */

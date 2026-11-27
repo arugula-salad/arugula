@@ -685,7 +685,8 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   useLayoutEffect(() => {
     if (!confirming) return;
     const timer = setTimeout(() => setConfirming(null), CONFIRM_MS);
-    const key = (e: KeyboardEvent) => e.key === "Escape" && setConfirming(null);
+    // Taken: not a step back too (shared/kit/frame/stack.ts).
+    const key = (e: KeyboardEvent) => e.key === "Escape" && (e.preventDefault(), setConfirming(null));
     const away = (e: Event) => {
       if (!(e.target as Element | null)?.closest?.("[data-merge-confirm]")) setConfirming(null);
     };

@@ -75,9 +75,12 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-rail] [data-open-plan], [data-rail] [data-open-build], [data-rail] [data-open-talk]")).toHaveCount(0);
     await onlyLit(page, "boards");
     await expect(page.locator("[data-rail] [data-signed-in-as]")).toBeVisible();
-    // The path: the team, the project (a link up), the place.
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
-    await expect(page.locator("[data-app-path] [data-path=project]")).toHaveAttribute("href", new RegExp(`^/p/${P}`));
+    // The path: the project, then the place.
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards/);
+    // The project, first, opens Go to…'s projects (v6).
+    await page.locator("[data-app-path] [data-path=project]").click();
+    await expect(page.locator("[data-goto=projects]")).toBeVisible();
+    await page.keyboard.press("Escape");
     // Boards has no views; Sessions folded into the boards' rows (#1082).
     await expect(page.locator("[data-place-views]")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("frame-boards.png") });
@@ -153,7 +156,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-rail]")).toBeVisible();
     await onlyLit(page, "overview");
     await here(page, "swarm");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula\s*Overview\s*Swarm/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Overview\s*Swarm/);
     // Under the bar, beside the rail; the bar's Overview is its way back, so it has none of its own.
     const bar = (await page.locator("[data-platform-bar]").boundingBox())!;
     const box = (await swarm.boundingBox())!;
@@ -193,16 +196,16 @@ test.describe("on a computer", () => {
   test("the Issues page's path is Boards › Issues, Boards a link up; an issue's, Issues a link up too (Arugula #1387)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/issues`);
     await onlyLit(page, "boards");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards\s*Issues$/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*Issues$/);
     await expect(page.locator("[data-app-path] [data-path=boards]")).toHaveAttribute("href", new RegExp(`^/p/${P}[^/]*/boards$`));
     await expect(page.locator("[data-app-path] [data-path=issues]")).toHaveAttribute("aria-current", "page");
     await page.goto(`/p/${P}/issues/iss_0001`);
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards\s*Issues$/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*Issues$/);
     await page.locator("[data-app-path] [data-path=issues]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues$`));
     await page.locator("[data-app-path] [data-path=boards]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards$/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards$/);
   });
 
   test("a team's defaults are a click from a project's setting that follows them (Arugula #1323)", async ({ page }) => {
@@ -229,7 +232,7 @@ test.describe("on a computer", () => {
 
   test("the project tile opens Go to…'s projects, each with what wants you there", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards/);
     await page.screenshot({ path: info.outputPath("match-desktop-closed.png") });
     await page.locator("[data-rail] [data-project-switcher]").click();
     const sw = page.getByRole("dialog", { name: "Switch project" });
@@ -239,6 +242,8 @@ test.describe("on a computer", () => {
     await expect(sw.locator(`[data-command="project/${P}"]`)).toContainText("3 for you");
     await expect(sw.locator('[data-command="project/prj_aaaa0003"]')).not.toContainText("for you");
     await expect(sw.locator('[data-command="project/new"]')).toHaveText(/New project/);
+    // Every project's list, which a phone has no rail mark for.
+    await expect(sw.locator('[data-command="project/all"]')).toContainText("All projects");
     // Only projects: no places or boards.
     await expect(sw.locator('[data-command^="place/"], [data-command^="board/"]')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("match-desktop-open.png") });
@@ -287,7 +292,7 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await onlyLit(page, "machines");
     await here(page, "machines");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Machines/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Machines/);
     const list = page.locator("[data-machines-list]");
     // No machine's page leads: a section per machine, a card per session.
     await expect(page.locator("[data-platform-machines] .app.ws")).toHaveCount(0);
@@ -313,9 +318,9 @@ test.describe("on a computer", () => {
   test("on macOS a machine's page has one window-button strip: its bar is 28px down, not 56px (Arugula #1089)", async ({ page }) => {
     await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     const frame = page.locator("[data-platform-machines]");
-    await expect(frame.locator(".app.ws .ws-head")).toBeVisible();
+    await expect(frame.locator(".app.ws [data-top]")).toBeVisible();
     await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
-    expect((await frame.locator(".app.ws .ws-head").boundingBox())!.y).toBe(28);
+    expect((await frame.locator(".app.ws [data-top]").boundingBox())!.y).toBe(28);
     expect(await frame.locator(".app.ws").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   });
 
@@ -323,7 +328,7 @@ test.describe("on a computer", () => {
     await openApp(page, () => `/p/${P}/machines`);
     const list = page.locator("[data-machines-list]");
     await expect(list.locator("[data-machines-machine-link]")).toHaveCount(1);
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Machines/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Machines/);
     await onlyLit(page, "machines");
     await here(page, "machines");
     // The Overview's Swarm, beside the rail.
