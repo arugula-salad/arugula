@@ -147,6 +147,24 @@ test.describe("on a computer", () => {
     await expect(live.locator(`[data-live-slot="${pane}"] .xterm`)).toBeVisible();
   });
 
+  test("watching, the session's question says who answers it, with no answers of yours", async ({ page }) => {
+    const pane = await openDrawer(page, "r_live");
+    // Its live pane is up (its client is held) before it's told the role.
+    await expect(page.locator('[data-board-drawer="r_live"] [data-board-drawer-live] [data-live-hand-off]')).toBeVisible();
+    // As the daemon tells a guest who only watches the session.
+    await page.evaluate((p) => {
+      const c = (window as unknown as { __live: { client(m: string): { state: { roles?: unknown }; sessionOfPane(p: number): number | null; emit(): void } } }).__live.client("m_suite");
+      c.state.roles = [[c.sessionOfPane(p), "viewer"]];
+      c.emit();
+    }, pane);
+    await send(page, pane, `${cli} ask < ${hookInput} > /dev/null`);
+    const need = page.locator('[data-board-drawer="r_live"] [data-board-drawer-ask] [data-need]');
+    // Its machine's owner: by name where the hub's directory says it (not this page, a daemon's own).
+    await expect(need).toContainText("asks its owner");
+    await expect(need).toContainText("an editor answers it");
+    await expect(need.getByRole("button", { name: "Submit" })).toHaveCount(0);
+  });
+
   test("a card with no session says so, and starts none", async ({ page }) => {
     await openDrawer(page, "r_none");
     const live = page.locator('[data-board-drawer="r_none"] [data-board-drawer-live]');
