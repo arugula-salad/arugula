@@ -19,3 +19,4 @@ if people miss it. Newest at the bottom.
 - **The Machines rail count:** it counted unread run threads; Runs' own view still does (Lift 3, Arugula #1479).
 - **Your picture on the rail:** the kit's Avatar draws your initials, on the rail and a phone's bar (Lift 3, Arugula #1479).
 - **The team as the crumb's first step:** the crumb starts at the project; a team's pages are under Settings and Chat (Lift 3, Arugula #1479).
+- **A board's Steps view:** the board is its lanes, on a phone too; an agent still orders a group's rows for `board_read`'s Steps block (Lift 5a, Arugula #1481).

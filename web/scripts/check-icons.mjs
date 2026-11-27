@@ -32,7 +32,6 @@ export const ALLOWED_SVG = {
   "shell/ui/welcome.tsx": "a QR code, drawn from the code's modules",
   "shell/trust/common.tsx": "a QR code, drawn from the code's modules",
   "shell/ui/shell/pane-toolbar.tsx": "the layout presets' thumbnails: rectangles of the layout, not an icon",
-  "shared/boards/steps-view.tsx": "the lines between a board's steps: a graph, sized by what it joins",
 };
 
 /** A path as the rules name it: forward slashes, as on every platform. */
