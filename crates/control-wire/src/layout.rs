@@ -83,9 +83,8 @@ impl Place {
     pub fn parse(s: &str) -> Option<Place> {
         let (kind, id) = s.split_once(':')?;
         let ok = |prefix: &str| {
-            id.strip_prefix(prefix).is_some_and(|r| {
-                !r.is_empty() && r.len() <= 60 && r.bytes().all(|b| b.is_ascii_alphanumeric())
-            })
+            id.strip_prefix(prefix)
+                .is_some_and(|r| !r.is_empty() && r.len() <= 60 && r.bytes().all(|b| b.is_ascii_alphanumeric()))
         };
         match kind {
             "board" if ok("brd_") => Some(Place::Board(id.into())),

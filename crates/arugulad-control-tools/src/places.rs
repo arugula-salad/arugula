@@ -131,13 +131,18 @@ pub(crate) async fn show_place(c: &Call<'_>, a: ShowPlaceArgs) -> Out {
     let mut text = match intent {
         Intent::Beside => format!("Showing {title} beside {place}'s own panes"),
         Intent::ForYou => {
-            format!("Put {title} in a tab of its own on {place}, with a Needs you row pointing at it; they aren't switched there")
+            format!(
+                "Put {title} in a tab of its own on {place}, with a Needs you row pointing at it; they aren't switched there"
+            )
         }
     };
     for p in &got.closed {
         text.push_str(&format!("; closed {} (your oldest) to make room", p.title));
     }
-    done(text, json!({ "place": place, "pane": got.pane, "tab": got.tab, "closed": got.closed.iter().map(|p| &p.title).collect::<Vec<_>>() }))
+    done(
+        text,
+        json!({ "place": place, "pane": got.pane, "tab": got.tab, "closed": got.closed.iter().map(|p| &p.title).collect::<Vec<_>>() }),
+    )
 }
 
 #[cfg(test)]
