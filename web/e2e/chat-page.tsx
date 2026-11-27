@@ -121,7 +121,7 @@ const msg = (seq: number, name: string, text: string, more: Partial<ChatMessage>
 const agent = (session: string) => ({ machine: "m_dust", machine_name: "dust", session });
 
 const messages: Record<string, ChatMessage[]> = {
-  ch_00000001: [msg(1, "Jake", "Morning. The pin goes out at noon."), msg(2, "Sam", "Thanks. I'll watch the cloud specs."), msg(3, "Mira", "Docs are ready for review.")],
+  ch_00000001: [msg(1, "Jake", "Morning. The pin goes out at noon.", { thread: { replies: 1, last: T0 + 20 * 60_000, repliers: [], following: false, read: 0, unread: 0, mentions: 0 } }), msg(2, "Sam", "Thanks. I'll watch the cloud specs."), msg(3, "Mira", "Docs are ready for review.")],
   ob_00000001: [
     msg(1, "Chief of staff", "**Holding merges** 10:00–12:00 for CI lab maintenance. Keep queueing PRs; I'll lift the hold at 12.", { agent: agent("Chief of staff") }),
     msg(2, "Launch: engineering", "@Design lift @A2P the cloud pin waits on `cloud#305`. Merge order once the hold lifts: #2920, then #2929.", {
@@ -163,7 +163,7 @@ window.fetch = async (input, init) => {
     let r = rooms.find((x) => x.kind === "object" && x.target === target);
     if (!r) {
       const b = boardList.find((x) => x.id === target);
-      r = room(`ob_${target.slice(-8)}`, b?.title ?? target, { kind: "object", team: null, target, project: P, last: 0, read: 0 });
+      r = room(`ob_${(rooms.length + 100).toString().padStart(8, "0")}`, b?.title ?? target, { kind: "object", team: null, target, project: P, last: 0, read: 0 });
       rooms.push(r);
     }
     return json(r);
@@ -212,6 +212,7 @@ declare global {
 }
 // The replies to Launch: engineering's post in #agents.
 const replies: Record<string, ChatMessage[]> = {
+  "ch_00000001/1": [msg(4, "Sam", "I'll watch it.", { parent: 1 })],
   "ob_00000001/2": [
     msg(7, "Design lift", "Ack. #2920 is green; it goes first.", { agent: agent("Design lift"), parent: 2 }),
     msg(8, "A2P", "#2929 rebases after it.", { agent: agent("A2P"), parent: 2 }),

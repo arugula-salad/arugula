@@ -18,6 +18,9 @@ import { savedAnchor, useAnchor } from "./use-anchor";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 import { WatchesOn } from "../watches-on";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
+import { Kbd } from "../kit/kbd";
+import { both, useBinding } from "../keys";
+import { isAgentRoom } from "./agent-rooms";
 
 /** The head's width under which Follow goes into ⋯ (Close stays). Measured:
  * the title (52px), Follow (75), Close (25), the gaps and padding fit in
@@ -26,7 +29,9 @@ const THREAD_FOLD = 300;
 
 /** `inPanel`: drawn in the agent panel (Lift 4, #1480), whose head says
  * where you are and whose one Back (and Esc) closes it, with Follow in its
- * ⋯ (`followThread`): no head of its own. */
+ * ⋯ (`followThread`): no head of its own. `inPlace`: in the room's own
+ * column (#agents and a board's channel, Arugula #1522): "‹ #room" and Esc
+ * go back to it. */
 export function ThreadPanel({
   store,
   room,
@@ -35,6 +40,7 @@ export function ThreadPanel({
   focus,
   close,
   inPanel,
+  inPlace,
 }: {
   store: ChatStore;
   room: ChatRoom;
@@ -43,9 +49,13 @@ export function ThreadPanel({
   focus?: number;
   close: () => void;
   inPanel?: boolean;
+  inPlace?: boolean;
 }) {
   useSubscribe((fn) => store.subscribe(fn));
   const api = usePlatformApi();
+  // In place, Esc goes back to the room from anywhere on the page (from the
+  // reply box too, below).
+  useBinding(inPlace ? { id: "chat.thread-back", label: "Back to the room", chip: "back", keys: both("key:escape"), when: () => !document.querySelector(".menu, .prompt, [data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick"), run: close } : null, [inPlace, close]);
   const tokens = useRoomTokens(room.id);
   const t = store.threads.get(room.id, parent);
   const first = t?.parent ?? null;
@@ -118,14 +128,15 @@ export function ThreadPanel({
 
   const following = !!first?.thread?.following;
   const lastOwn = replies.findLast((m) => m.deleted === null && !!m.author && m.author === chat.me && !m.agent);
-  const label = room.kind === "channel" ? `#${room.name}` : roomLabel(room, api);
+  const label = room.kind === "channel" || isAgentRoom(room) ? `#${room.name}` : roomLabel(room, api);
   const newest = last ?? first?.seq;
   const agents = useThreadAgents(room.id, parent, newest);
   const follow = () => followThread(store, room.id, parent).catch((e: Error) => setError(e.message));
   const toNewest = () => anchor.toBottom();
   return (
     <aside
-      class="chat-details chat-thread-panel"
+      class={inPlace ? "chat-thread chat-thread-panel" : "chat-details chat-thread-panel"}
+      data-thread-in-place={inPlace ? "" : undefined}
       aria-label="Thread"
       data-thread-panel={parent}
       onKeyDown={(e) => {
@@ -138,14 +149,18 @@ export function ThreadPanel({
       {!inPanel && <Bar
         class="chat-head"
         lead={
-          phone ? (
+          inPlace && !phone ? (
+            <button type="button" class="chat-go" title={`Back to ${label} (Esc)`} data-thread-back onClick={close}>
+              <ChevronIcon dir="left" /> {label}
+            </button>
+          ) : phone ? (
             <IconButton label={`Back to ${label}`} class="chat-back" data-thread-back onClick={close}>
               <ChevronIcon dir="left" size="md" />
             </IconButton>
           ) : undefined
         }
         title={<BarTitle class="chat-title">Thread</BarTitle>}
-        where={<BarWhere>{label}</BarWhere>}
+        where={<BarWhere>{inPlace ? (first ? `replies to ${first.name}` : "") : label}</BarWhere>}
         foldBelow={THREAD_FOLD}
         fold={
           first?.thread
@@ -169,7 +184,9 @@ export function ThreadPanel({
             : []
         }
         actions={
-          !phone ? (
+          inPlace ? (
+            <Kbd keys="esc" />
+          ) : !phone ? (
             <IconButton label="Close the thread" class="thread-close" data-thread-close onClick={close}>
               <CloseIcon size="sm" />
             </IconButton>

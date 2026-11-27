@@ -55,9 +55,9 @@ test.describe("computer", () => {
     // The kit's composer: a glow and a round send.
     await expect(page.locator(`[data-room-view="${GENERAL}"] [data-kit="composer"]`)).toBeVisible();
 
-    await page.goto(`/p/${P}/chat/${AGENTS}?thread=2`);
-    const thread = page.locator('[data-thread-panel="2"]');
-    await expect(thread.locator("[data-msg]")).toHaveCount(4);
+    await page.goto(`/p/${P}/chat/${GENERAL}?thread=1`);
+    const thread = page.locator('[data-thread-panel="1"]');
+    await expect(thread.locator("[data-msg]")).toHaveCount(2);
     expect((await thread.boundingBox())!.x).toBeGreaterThan(stream.x + 100);
     await expect(thread.locator('[data-kit="composer"]')).toBeVisible();
     await thread.getByRole("textbox", { name: "Reply in thread" }).press("Escape");
@@ -71,6 +71,86 @@ test.describe("computer", () => {
     await expect(page.locator(".menu", { hasText: "Your presence" })).toBeVisible();
     await expect(page.getByRole("menuitemradio", { name: "Automatic" })).toHaveAttribute("aria-checked", "true");
     await expect(page.getByRole("menuitemradio", { name: "Appear offline" })).toBeVisible();
+  });
+});
+
+test.describe("Agents (Arugula #1522)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the section: the chief of staff, #agents, a channel per open board, closed ones archived; no issue's comments", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    const section = page.locator('[data-chat-group="agents"]');
+    await expect(section.locator("[data-kit=row] .k-row-title")).toHaveText(["Chief of staff · Arugula", "agents", "Design lift", "A2P", "Product improvements", "Rail and Machines", "archived · 2"]);
+    // The chief of staff is here, not under Direct messages.
+    await expect(page.locator('[data-chat-group="tm_1/dms"] [data-chat-room="dm_00000003"]')).toHaveCount(0);
+    // An issue's comments are listed nowhere.
+    await expect(page.locator('[data-chat-room="ob_00000009"]')).toHaveCount(0);
+    // A board's lead is its dot.
+    await expect(section.locator('[data-agents-board="brd_00000000000000000000000000000001"] [data-board-lead]')).toHaveCount(1);
+    await expect(section.locator('[data-agents-board="brd_00000000000000000000000000000003"] [data-board-lead]')).toHaveCount(0);
+    // Archived folds.
+    await section.locator("[data-agents-archived] > .k-row-line").click();
+    await expect(section.locator('[data-agents-board="brd_00000000000000000000000000000005"]')).toBeVisible();
+    // It collapses as the others do.
+    await section.locator("h2 button").click();
+    await expect(section.locator("[data-kit=row]")).toHaveCount(0);
+    await section.locator("h2 button").click();
+    await expect(section.locator('[data-agents-room]')).toBeVisible();
+  });
+
+  test("#agents: its name, its About beside it, and a thread in place that Esc leaves", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    await page.locator("[data-agents-room] > .k-row-line").click();
+    const view = page.locator(`[data-room-view="${AGENTS}"]`);
+    await expect(view.locator(".chat-title")).toHaveText("#agents");
+    await expect(page.locator("[data-app-path]")).toHaveText(/Chat\s*#agents/);
+    await expect(view.getByRole("textbox", { name: "Message #agents" })).toBeVisible();
+    const about = page.locator('[data-agents-about="agents"]');
+    await expect(about).toContainText("Chief of staff");
+    await expect(about.locator("[data-reach-rules]")).toContainText("every lead, no tag needed");
+    await expect(view.locator("[data-chat-details]")).toHaveCount(0);
+    // A thread opens in the room's own column, the About still beside it.
+    await view.locator('[data-thread-footer="2"]').click();
+    const thread = page.locator('[data-thread-panel="2"][data-thread-in-place]');
+    await expect(thread).toBeVisible();
+    await expect(view).toHaveCount(0);
+    await expect(about).toBeVisible();
+    await expect(thread.locator("[data-thread-back]")).toHaveText("#agents");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("Escape");
+    await expect(thread).toHaveCount(0);
+    await expect(view).toBeVisible();
+  });
+
+  test("a board's channel is made on its first click, and opens on the board", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    const a2p = page.locator('[data-agents-board="brd_00000000000000000000000000000002"]');
+    await expect(a2p).not.toHaveAttribute("data-chat-room");
+    await a2p.locator("> .k-row-line").click();
+    await expect(page.locator("[data-app-path]")).toHaveText(/Chat\s*#A2P/);
+    await expect(a2p).toHaveAttribute("data-chat-room", /^ob_/);
+    await expect(page.locator("[data-agents-open-board]")).toHaveAttribute("href", /\/boards?\/brd_00000000000000000000000000000002|A2P/);
+  });
+
+  test("j and k move through the agents' rooms; g a is #agents", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    await expect(page.locator(`[data-room-view="${GENERAL}"]`)).toBeVisible();
+    await page.locator("[data-app-path]").click();
+    await page.keyboard.press("g");
+    await page.keyboard.press("a");
+    await expect(page.getByRole("textbox", { name: "Message #agents" })).toBeFocused();
+    // Never from the box you write in.
+    await page.keyboard.press("j");
+    await expect(page.locator("[data-app-path]")).toHaveText(/#agents/);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("j");
+    await expect(page.locator("[data-app-path]")).toHaveText(/#Design lift/);
+    // A room opened by a key leaves the keys with the page.
+    await expect(page.getByRole("textbox", { name: "Message #Design lift" })).not.toBeFocused();
+    await page.keyboard.press("k");
+    await expect(page.locator("[data-app-path]")).toHaveText(/#agents/);
+    await page.keyboard.press("k");
+    await expect(page.locator("[data-app-path]")).toHaveText(/Chief of staff/);
   });
 });
 

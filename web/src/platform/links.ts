@@ -5,6 +5,7 @@ import { chat } from "../shared/chat-store";
 import { boards } from "../shared/boards/store";
 import { projectDocs } from "../shared/docs/store";
 import { listedInChat } from "../shared/chat/unread";
+import { isAgentRoom } from "../shared/chat/agent-rooms";
 import { issues } from "../shared/issues/store";
 import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { ownerNamed, PERSONAL } from "./owners";
@@ -29,7 +30,7 @@ export function projectOfRoom(room: string): string | undefined {
 export function roomTitle(id: string): string | null {
   const x = chat.room(id);
   if (!x) return null;
-  if (x.kind === "channel") return `#${x.name}`;
+  if (x.kind === "channel" || isAgentRoom(x)) return `#${x.name}`;
   if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name || null;
   return x.name;
 }

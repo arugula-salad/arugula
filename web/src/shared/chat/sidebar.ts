@@ -104,6 +104,8 @@ export function placed(s: ChatSidebar): Set<string> {
 export interface ChatScope {
   team: string | null;
   name: string;
+  /** The project's id: its Agents section (Arugula #1522). */
+  project?: string;
 }
 
 /** Whether `r` is one `scope` lists; every room is, with none. */

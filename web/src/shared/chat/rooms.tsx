@@ -41,6 +41,9 @@ import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
 import { Row } from "../kit/row";
+import { AGENTS_GROUP, AgentsSection, agentOrder, movedByKey, useAgentRooms } from "./agents-section";
+import { isAgentRoom, isAgentsRoom, isBoardChannel, isStaffRoom } from "./agent-rooms";
+import { AgentAbout } from "./agent-about";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
 import { sessionLabel } from "../chief-of-staff";
@@ -143,7 +146,8 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean, scope?:
     const name = t?.roster.name ?? teamName(api, team);
     const mayMake = t?.role === "owner" || t?.role === "editor";
     const channels = all.filter((r) => r.kind === "channel" && r.team === team);
-    const dms = all.filter((r) => r.kind === "dm" && r.team === team);
+    // A project's chief of staff is in its Agents section (Arugula #1522).
+    const dms = all.filter((r) => r.kind === "dm" && r.team === team && !(scope?.project && isStaffRoom(r, scope.project)));
     out.push({
       key: `${team}/channels`,
       title: many ? `${name} · Channels` : "Channels",
@@ -342,7 +346,8 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   });
   useEffect(() => () => document.documentElement.style.removeProperty("--chat-side"), []);
 
-  const order = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms));
+  const agents = useAgentRooms(store, scope?.project);
+  const order = [...groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms)), ...(collapsed.has(AGENTS_GROUP) ? [] : agentOrder(agents))];
   useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, readAll, nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
   const savedTodo = store.savedTodo();
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
@@ -513,6 +518,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
           </section>
         );
       })}
+      {agents && scope && <AgentsSection store={store} rooms={agents} picked={picked?.id} projectName={scope.name} />}
       <ChatDialogs />
     </nav>
   );
@@ -692,6 +698,8 @@ function topicOf(r: ChatRoom, api: PlatformApi): string {
       return `${r.kind === "pane" ? "A pane's thread" : "A session's thread"} · ${name}${machineUp(api, r.machine) ? "" : " is asleep"}`;
     }
     case "object":
+      if (isAgentsRoom(r)) return "work across boards: deploys, merge order, holds";
+      if (isBoardChannel(r)) return "its lead, its workers and its people";
       return "A thread on an object · its project's members read it";
     default:
       return "Archive";
@@ -714,6 +722,8 @@ function RoomView({
   thread?: number;
 }) {
   const [details, setDetails] = useState(detailsOpen && !phone);
+  // Opened by j or k: its box to write in leaves the keys where they are.
+  const [still] = useState(movedByKey);
   const api = usePlatformApi();
   const { nav, toast } = api;
   // The bell's moon follows a snooze, here or in Settings.
@@ -721,7 +731,7 @@ function RoomView({
   useEffect(() => void loadNotify(), []);
   const people = store.people(room.id);
   const label = roomLabel(room, api);
-  const name = room.kind === "channel" ? `#${room.name}` : label;
+  const name = room.kind === "channel" || isAgentRoom(room) ? `#${room.name}` : label;
   const toggleDetails = () => {
     detailsOpen = !details;
     remember("chat.details", detailsOpen ? 1 : 0);
@@ -749,8 +759,15 @@ function RoomView({
       </div>
     );
   }
+  // #agents and a board's channel (Arugula #1522): a thread opens in the
+  // room's own column, "‹ #room" and Esc go back, and the room's About is
+  // always beside it.
+  const inPlace = isAgentRoom(room) && !pinned && !phone;
   return (
     <div class="chat-main">
+      {inPlace && thread !== undefined ? (
+        <ThreadPanel key={thread} store={store} room={room} parent={thread} phone={false} focus={focus} close={closeThread} inPlace />
+      ) : (
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
         <HeadBar
           class="chat-head"
@@ -834,7 +851,7 @@ function RoomView({
               {phone && <AboutButton room={room} toast={toast} />}
               <AgentsChip room={room.id} />
               <RoomOptionsButton store={store} room={room} toast={toast} more={leave ? [leave] : []} />
-              {!phone && (
+              {!phone && !isAgentRoom(room) && (
                 <button class={details ? "chat-info bar-btn sq on" : "chat-info bar-btn sq"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>
                   ⓘ
                 </button>
@@ -847,9 +864,12 @@ function RoomView({
             </>
           }
         />
-        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip target="" />
+        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip target="" still={still} />
       </section>
-      {thread !== undefined ? (
+      )}
+      {inPlace ? (
+        <AgentAbout store={store} room={room} />
+      ) : thread !== undefined ? (
         <ThreadPanel key={thread} store={store} room={room} parent={thread} phone={false} focus={focus} close={closeThread} />
       ) : (
         details && <RoomDetails store={store} room={room} close={toggleDetails} />
