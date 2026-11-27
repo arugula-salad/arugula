@@ -5,9 +5,11 @@
 // options, a permission's Allow/Deny, a folder's trust, an approval's
 // Start/Not now, a to-do's Done/Can't with a note, or (a question with no
 // options) a typed answer, sent as an option with no id. Answered, it is a dim
-// receipt. A teammate's row is neutral: no tick, and its mark is dim, not
-// amber (Arugula #1469). It holds at a third of a wide screen or a phone (360–480px):
-// put rows in a `NeedList`, and the meta wraps under the title.
+// receipt. A to-do's note is checked as it's typed: one that looks like a
+// secret says so, and isn't sent until it's gone. A teammate's row is
+// neutral: no tick, and its mark is dim, not amber (Arugula #1469). It holds
+// at a third of a wide screen or a phone (360–480px): put rows in a
+// `NeedList`, and the meta wraps under the title.
 //
 // The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
 // table binds them, and presses a row's answer by its `data-answer` (the
@@ -16,6 +18,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { looksSecret } from "../secret-like";
 import { Button } from "./button";
 import { TextField } from "./field";
 import { Row } from "./row";
@@ -116,6 +119,8 @@ export function NeedRow({
   if (need.subject) meta.push(<span class="m-id">{need.subject.id}</span>);
   meta.push(<span class="m-id">{need.age}</span>);
 
+  // The note's check, as it's typed: what it looks like, if a secret.
+  const secret = todo ? looksSecret(note) : null;
   const options = need.answer?.options?.length ? need.answer.options : (DEFAULTS[need.kind] ?? []);
   const copy = () => {
     void navigator.clipboard?.writeText(need.how ?? "");
@@ -152,7 +157,16 @@ export function NeedRow({
           </div>
         </Well>
       ) : null}
-      {todo ? <TextField label="Note" hint="no secrets" value={note} onInput={setNote} onEnter={() => onAnswer?.(options[0]!, note)} /> : null}
+      {todo ? (
+        <TextField
+          label="Note"
+          hint="no secrets"
+          warn={secret ? `That looks like ${secret}: leave it out` : undefined}
+          value={note}
+          onInput={setNote}
+          onEnter={() => !secret && onAnswer?.(options[0]!, note)}
+        />
+      ) : null}
       {mine && !todo && !options.length ? (
         <>
           <TextField label="Your answer" value={note} onInput={setNote} onEnter={() => note.trim() && onAnswer?.({ id: "", label: note.trim() })} />
@@ -167,7 +181,14 @@ export function NeedRow({
         <div class="k-row-actions">
           {mine
             ? options.map((o, i) => (
-                <Button key={o.id} kind={i === 0 ? "primary" : "plain"} keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]} data-answer={i} onClick={() => onAnswer?.(o, todo ? note : undefined)}>
+                <Button
+                  key={o.id}
+                  kind={i === 0 ? "primary" : "plain"}
+                  keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]}
+                  data-answer={i}
+                  disabled={!!secret}
+                  onClick={() => onAnswer?.(o, todo ? note : undefined)}
+                >
                   {o.label}
                 </Button>
               ))
