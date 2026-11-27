@@ -175,8 +175,10 @@ test("the share page's chunks are the Doc renderer and nothing of the app", asyn
   direct.forEach(walk);
   const names = [...seen].map((f) => f.replace(/^assets\//, "").replace(/-[\w-]{8}\.js$/, ""));
   console.log(`doc.html loads: ${[...seen].join(", ")}`);
-  // The entry and the renderer (and the modulepreload polyfill Vite adds).
-  expect(names.sort()).toEqual(["doc", "doc-render", "modulepreload-polyfill"]);
+  // The entry and the renderer (and the modulepreload polyfill Vite adds),
+  // and the chunk it shares with the app: Preact and shared/ui's icons, time
+  // and block states (named for the last, since Lift 6a left fewer importers).
+  expect(names.sort()).toEqual(["block-states", "doc", "doc-render", "modulepreload-polyfill"]);
   // Styles only: the page's own, with the app's stylesheet inside it (a
   // chunk of its own would be shared with the app and reorder its cascade).
   expect([...html.matchAll(/rel="stylesheet"[^>]*href="([^"]+)"/g)].map((m) => m[1]!.replace(/-[\w-]{8}\.css$/, ""))).toEqual(["/assets/doc"]);

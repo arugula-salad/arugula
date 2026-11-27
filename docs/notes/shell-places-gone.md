@@ -1,6 +1,6 @@
 ---
 section: Removed
-title: The activity drawer, the machine's Agents page and the places bar are gone
+title: A machine's activity drawer, Agents page and places bar go
 line: A machine's page loses its activity drawer, its Agents page and the Panes · Runs · Recipes bar; the rail and Go to… have the places.
 ---
 Three parts of a machine's own page are gone:
