@@ -1,27 +1,30 @@
-// The Docs page's route (#1494), in the main bundle so a menu and the
-// palette can open it, or a Doc, without loading the page: `#docs`. The
-// page itself is a chunk of its own (ui/docs-page.tsx).
+// A machine's Docs, opened in a pane (#1494). The shell's Docs page went
+// with Lift 6b (Arugula #1484): Docs are the app's, and a machine's own are
+// in Go to… by title. An old `#docs` link still lands: on the app's Docs,
+// or Go to… on a machine with no app.
 
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import type { DocOpenRequest, DocOpened, DocRow, PaneId } from "../../shared/proto";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
+import { openGoTo } from "../../shared/kit/frame/goto";
+import { landOnPlatform, platformHref } from "../platform-links";
 
-export function docsRoute(): boolean {
-  return location.hash === "#docs";
-}
+/** The app's Docs, which the shell hands over (`/?to=docs`): the current project's. */
+export const DOCS_TO = "/?to=docs";
 
-export function openDocsPage() {
-  if (location.hash !== "#docs") location.hash = "docs";
-}
-
-export function closeDocsPage() {
+/** An old `#docs` (the shell's Docs page, retired): the app's Docs, or,
+ * with no app, Go to…, where this machine's Docs are. */
+export function landOldDocs() {
+  if (location.hash !== "#docs") return;
+  if (platformHref(DOCS_TO)) return landOnPlatform(DOCS_TO);
   history.replaceState(null, "", location.pathname + location.search);
   window.dispatchEvent(new HashChangeEvent("hashchange"));
+  openGoTo();
 }
 
 /** Show a Doc from the library in this session (one that is open already
- * comes forward), and leave the Docs page for it. With `split` a new block
+ * comes forward). With `split` a new block
  * opens beside that pane. The block, or the reason it didn't open. */
 export async function openDocPane(client: Client, id: string, split?: PaneId): Promise<{ pane: PaneId } | { why: string }> {
   try {
@@ -29,7 +32,6 @@ export async function openDocPane(client: Client, id: string, split?: PaneId): P
     const res = await client.request(OPS["doc.open"].method, opPath("doc.open"), body);
     const v = await res.json<Partial<DocOpened> & { error?: string }>().catch(() => null);
     if (!res.ok || typeof v?.pane !== "number") return { why: v?.error ?? `HTTP ${res.status}` };
-    if (docsRoute()) closeDocsPage();
     client.showWhenKnown(v.pane);
     return { pane: v.pane };
   } catch (e) {

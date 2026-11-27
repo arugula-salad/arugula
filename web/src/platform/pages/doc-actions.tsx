@@ -1,12 +1,10 @@
 // A Doc's actions on the platform (Arugula #820): the same Copy link, Share
 // and Open in browser the machine's Doc bar has (shared/docs/doc-actions.tsx),
-// in the Docs list's preview, in a row's ⋯ menu and in the Doc page's header,
-// each without opening the Doc first. Here it's Move to <team>, the
+// in the Doc page's header and its ⋯. Here it's Move to <team>, the
 // opposite of the machine's Share with a link, so the words say so:
 //
 // - On a Doc in the person's own project (Mine), Move to <team>… gives it to
-//   the team they write Docs in (`moveDocsToTeam`, as the list's selection
-//   does), or asks which when there are several, and confirms first
+//   the team they write Docs in (`moveDocsToTeam`), or asks which when there are several, and confirms first
 //   (`MoveConfirm`, Arugula #863): the team owns it, and nobody keeps a copy.
 // - A team's Doc has nowhere to go: no Share.
 //
@@ -14,8 +12,8 @@
 // the Doc as Markdown, built here (shared/docs/download.ts). Delete is last
 // in ⋯ for those who may (Arugula #864): a team's Doc goes to the project's
 // trash (#866), and the toast that says so has Undo (#1133); after that it's
-// under Deleted at the Docs list's foot. Rename is first in ⋯ for owners and editors (#979): a row's asks for
-// the new title in a dialog, the Doc page's edits the title where it stands.
+// under Deleted at the Docs list's foot. Rename is first in ⋯ for owners and editors (#979): it edits the
+// title where it stands, or asks for the new one in a dialog.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
@@ -255,17 +253,6 @@ export function PlatformDocActions({ p, doc, reload, menu, more, deleter, gone, 
   );
 }
 
-/** A row's ⋯: the same actions as a menu. It reads whether the Doc has a public link when it's pressed, not for every row. */
-export function RowMenu({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void }) {
-  const a = useDocActions(p, doc, false, reload, { deleter: mayWrite(p), gone: reload }, { writer: mayWrite(p) });
-  return (
-    <>
-      <MoreButton doc={doc} items={a.items} load={a.load} row />
-      {a.dialogs}
-    </>
-  );
-}
-
 /** Rename from a menu that has no title in front of it (#979): the new title, then the Doc's own. */
 function RenameDialog({ p, doc, done, renamed }: { p: PlatformProject; doc: ProjectDoc; done: () => void; renamed: () => void }) {
   const [title, setTitle] = useState(doc.title);
@@ -305,25 +292,16 @@ function RenameDialog({ p, doc, done, renamed }: { p: PlatformProject; doc: Proj
   );
 }
 
-/** The ⋯ button. A press is the button's own: it doesn't select or open the row it's on.
- * In a row it's a mouse target only, not a button: a row is one option, and a
- * button in it is a nested control. The keys reach the menu as the list's
- * ContextMenu key (or Shift+F10), and a right click, on the row. */
-function MoreButton({ doc, items, load, row }: { doc: ProjectDoc; items: (from: HTMLElement) => MenuItem[]; load?: () => Promise<void>; row?: boolean }) {
+/** The ⋯ button. */
+function MoreButton({ doc, items, load }: { doc: ProjectDoc; items: (from: HTMLElement) => MenuItem[]; load?: () => Promise<void> }) {
   const press = async (e: MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     const from = e.currentTarget as HTMLElement;
     // The public link's items show only once it's known.
     await load?.();
-    openMenu(menuBelow(from, true), items(from), { from: row ? undefined : from, end: true, label: `More for ${doc.title}` });
+    openMenu(menuBelow(from, true), items(from), { from, end: true, label: `More for ${doc.title}` });
   };
-  if (row)
-    return (
-      <span class="bar-btn sq row-more" aria-hidden="true" data-doc-more data-row-more onClick={(e) => void press(e)} onDblClick={(e) => e.stopPropagation()}>
-        <MoreIcon size="sm" />
-      </span>
-    );
   return (
     <IconButton label={`More for ${doc.title}`} title="More" class="bar-btn sq" aria-haspopup="menu" data-doc-more onClick={(e) => void press(e)}>
       <MoreIcon size="sm" />
@@ -333,7 +311,7 @@ function MoreButton({ doc, items, load, row }: { doc: ProjectDoc; items: (from: 
 
 /** Move to <team>…, asked first (Arugula #863): the team owns it, its link
  * keeps working, and nobody keeps a copy. `title` is one Doc's, or how many. */
-export function MoveConfirm({ title, team, n = 1, go, cancel }: { title: string; team: string; n?: number; go: () => void; cancel: () => void }) {
+function MoveConfirm({ title, team, n = 1, go, cancel }: { title: string; team: string; n?: number; go: () => void; cancel: () => void }) {
   const what = n === 1 ? "it" : "them";
   return (
     <ConfirmRemove title={n === 1 ? `Move “${title}” to ${team}?` : `Move ${n} Docs to ${team}?`} label="Move" go={go} cancel={cancel}>

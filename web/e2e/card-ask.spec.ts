@@ -42,10 +42,13 @@ const VIEW = {
   docs: [],
 };
 
-/** The cloud's answers, then the issue's page. `answers` hears each answer to an ask. */
-async function openCard(page: Page, id: string, answers: unknown[] = []) {
+/** The view once an ask or a to-do is answered: its line in the row's history, as the cloud keeps it (a to-do's note from its record). */
+const answeredView = (line: Record<string, unknown>) => ({ ...VIEW, zones: [{ ...VIEW.zones[0]!, rows: [{ ...ROW, ask: null, asked: [{ asked_by: "claude@geek", answered_by: "sam", answered_at: Date.now(), ...line }, ...ROW.asked] }] }] });
+
+/** The cloud's answers, then the issue's page. `answers` hears each answer to an ask; `after` is the view once one is in. */
+async function openCard(page: Page, id: string, answers: unknown[] = [], after?: (page: Page) => Promise<unknown | null>) {
   await reset(page);
-  await page.route(`**/api/projects/${P}/boards/views`, (r) => r.fulfill({ json: [VIEW] }));
+  await page.route(`**/api/projects/${P}/boards/views`, async (r) => r.fulfill({ json: [(after && (await after(page))) || VIEW] }));
   await page.route(`**/api/boards/${B}/asks/*/answer`, (r) => (answers.push(r.request().postDataJSON()), r.fulfill({ json: VIEW })));
   await page.route(/\/api\/issues\/iss_[0-9]+$/, (r) => r.fulfill({ json: r.request().url().endsWith(ISSUE) ? issue(ISSUE, 1443, "Sidebar caret beside the crumb") : issue(LOOSE, 77, "On no board") }));
   await page.route(/\/api\/issues\/iss_[0-9]+\/events$/, (r) => r.fulfill({ json: { events: [] } }));
@@ -74,7 +77,7 @@ test("an issue on a board is its card: the row's properties, the crumb through t
 
 test("the open ask is above Activity, answered in place; an answer is a line in Activity", async ({ page }) => {
   const answers: unknown[] = [];
-  await openCard(page, ISSUE, answers);
+  await openCard(page, ISSUE, answers, async () => (answers.length ? answeredView({ id: "ask_1", question: "Crumb at 900px?", answer: "Truncate middle" }) : null));
   const ask = page.locator('[data-card-ask="ask_1"]');
   await expect(ask).toContainText("Open ask asks you");
   await expect(ask).toContainText("Crumb at 900px: truncate the middle, or hide the project?");
@@ -83,6 +86,42 @@ test("the open ask is above Activity, answered in place; an answer is a line in 
   await ask.getByRole("button", { name: "Truncate middle" }).click();
   await expect.poll(() => answers).toEqual([{ option: "Truncate middle", text: null }]);
   await expect(page.locator('[data-card-answer="ask_0"]')).toContainText("aaron answered Squash");
+  // Its own line, once the board says it's answered; the open ask goes.
+  await expect(page.locator('[data-card-answer="ask_1"]')).toContainText("sam answered Truncate middle");
+  await expect(page.locator("[data-card-ask]")).toHaveCount(0);
+});
+
+// An agent's to-do on the issue (Arugula #1469), from the project's Inbox: answered on the card, and Activity says what was done with the note its record keeps.
+const TODO = { id: "prp_t1", kind: "todo", group: "decide", counts: true, title: "Rotate the CI deploy key", lines: ["Why: the deploy key expired", "Open the vault\nRotate deploy-ci"], from: { agent: "claude@geek", machine: "m_geek" }, subject: { type: "proposal", id: "prp_t1", url: "/inbox", project: P, issue: ISSUE }, answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 3 * 60_000 };
+const JOS = { id: "ses_j:1", kind: "agent_ask", group: "decide", counts: false, for: "acct_b", title: "Which crumb width?", from: { agent: "ses_j" }, subject: { type: "session", id: "ses_j", url: `/p/${P}/chat/room_j?msg=1`, project: P, issue: ISSUE }, answer: { via: "session_action", options: [] }, since: Date.now() - 60_000 };
+
+test("an agent's to-do on the card is answered there; Activity says what was done, with the record's note", async ({ page }, info) => {
+  await page.addInitScript((items) => ((window as unknown as { __inbox: unknown }).__inbox = items), [TODO, JOS]);
+  const posted = (p: Page) => p.evaluate(() => (window as unknown as { __inboxPosted?: unknown[] }).__inboxPosted ?? []);
+  // The record keeps its own words for the note: the line shows those, never what was typed.
+  await openCard(page, ISSUE, [], async (p) => ((await posted(p)).length ? answeredView({ id: "prp_t1", kind: "todo", question: "Rotate the CI deploy key", answer: "Done", note: "rotated in the vault (record)" }) : null));
+  const todo = page.locator('[data-card-item="prp_t1"]');
+  await expect(todo).toContainText("Rotate the CI deploy key");
+  await expect(todo).toContainText("waits on you");
+  await expect(todo).toContainText("Open the vault");
+  // A teammate's is there too: neutral, naming them, not answerable here.
+  const jo = page.locator('[data-card-item="ses_j:1"] [data-need]');
+  await expect(jo).toContainText("asks Jo");
+  await expect(jo).toHaveClass(/is-plain/);
+  const top = async (sel: string) => (await page.locator(sel).first().boundingBox())!.y;
+  expect(await top('[data-card-item="prp_t1"]')).toBeLessThan(await top(".issue-activity-head"));
+  await page.screenshot({ path: info.outputPath("card-todo-1440.png") });
+  // On a phone, answered there too.
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.locator(".card-ask").screenshot({ path: info.outputPath("card-todo-360.png") });
+  await todo.getByLabel("Note").fill("rotated in the vault");
+  await todo.getByRole("button", { name: "Done" }).click();
+  await expect.poll(() => posted(page)).toEqual([{ id: "prp_t1", choice: "Done", note: "rotated in the vault" }]);
+  const line = page.locator('[data-card-answer="prp_t1"]');
+  await expect(line).toContainText("sam did Rotate the CI deploy key · rotated in the vault (record)");
+  await expect(line).toHaveAttribute("data-card-answer-kind", "todo");
+  await expect(page.locator('[data-card-item="prp_t1"]')).toHaveCount(0);
+  await line.screenshot({ path: info.outputPath("card-activity-360.png") });
 });
 
 test("an issue on no board is the issue, with no card parts", async ({ page }) => {

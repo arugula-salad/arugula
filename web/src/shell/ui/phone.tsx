@@ -5,7 +5,8 @@
 import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openSettings } from "./settings-route";
 import { openAgentsPage } from "./agents-route";
-import { openDocsPage } from "./docs-route";
+import { DOCS_TO } from "./docs-route";
+import { openPlatform, platformHref } from "../platform-links";
 import { useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import { EXPIRE_TITLE, gateKey } from "../../shared/proto";
@@ -410,8 +411,8 @@ function PhoneSheet({ client, close }: { client: Client; close: () => void }) {
                       Boards
                     </button>
                   )}
-                  {owner && (
-                    <button data-open-docs onClick={act(() => openDocsPage())}>
+                  {owner && platformHref(DOCS_TO) && (
+                    <button data-open-docs onClick={act(() => openPlatform(DOCS_TO))}>
                       Docs
                     </button>
                   )}

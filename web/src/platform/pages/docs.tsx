@@ -1,29 +1,31 @@
-// `/docs`, `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118, #418): a
-// project's Docs, on the one Docs list (Arugula #864, shared/docs/docs-list.tsx),
-// and one Doc. A personal project's list is My Docs; a team's has My Docs and
-// Team Docs. `/docs` is the current project's. A project Doc is the
-// platform's (crates/platform/src/project_docs.rs): a title and sections of
-// Markdown, in the machine Doc's shape, so it's drawn with the Doc block's
-// renderer (charts and drawings included). Its members read it; owners and
-// editors make, write and delete Docs (a viewer's page has no New Doc, writer
-// or Delete); an agent session on a Cloud workspace makes them too, as
-// itself. A write anywhere reaches an open page live, through the Doc's
-// thread (as a board's does).
+// `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118, #418): a
+// project's Docs, and one Doc. The list (Lift 6b, #1484) is one list of kit
+// Rows, the latest changed first, each its title, who made it and when; a
+// team's has a Mine filter (the reader's and their agents'). `j`/`k` move,
+// ↵ opens, `m` is Mine. `/docs` goes to the current project's (Go to…
+// reaches the others). A project Doc is the platform's
+// (crates/platform/src/project_docs.rs): a title and sections of Markdown,
+// in the machine Doc's shape, so it's drawn with the Doc block's renderer
+// (charts and drawings included). Its members read it; owners and editors
+// make, write and delete Docs (a viewer's page has no New Doc, writer or
+// Delete); an agent session on a Cloud workspace makes them too, as itself.
+// A write anywhere reaches an open page live, through the Doc's thread (as
+// a board's does).
 //
 // A personal project's Docs are kept in the reader's cloud, not on a
-// machine (Arugula #865): a line above the list says so, and offers Move to
-// a team (the selection, and each row's ⋯) or Download (the row's ⋯).
-// At its foot, Shared by you: the Docs the reader shared with a link from a
-// machine (Arugula #1315, ./shared-by-you.tsx).
+// machine (Arugula #865): a line above the list says so; a Doc's ⋯ moves it
+// to a team or downloads it. At its foot, Shared by you: the Docs the
+// reader shared with a link from a machine (Arugula #1315,
+// ./shared-by-you.tsx).
 //
 // A team's deleted Docs wait in its trash for `TRASH_DAYS` (Arugula #866):
-// a folded Deleted group at the list's foot, there only when there are any
-// (#1133). One opens in the preview with who deleted it, when, the days it
-// has left, and Restore for those who may.
+// a folded Deleted row at the list's foot, there only when there are any
+// (#1133). Each opens in place with who deleted it, when, the days it has
+// left, and Restore for those who may.
 
 import type { ComponentChildren } from "preact";
 import { Card } from "../../shared/ui/card";
-import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
+import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { BoardOfDoc, ProjectDoc, ProjectDocTrash, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
@@ -33,16 +35,19 @@ import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { ListPreview, type ListRowParts, type ListTicked } from "../../shared/ui/list-page";
 import { Modal } from "../../shared/ui/modal";
 import { Time } from "../../shared/ui/time";
 import { DocBlock } from "../../shared/docs/doc-render";
 import { DocComments } from "../../shared/docs/doc-comments";
 import { reachOf } from "../../shared/docs/doc-reach";
-import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
-import { modeOf } from "../../shared/docs/docs-mode";
-import { projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
-import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
+import { LayoutMark } from "../../shared/docs/layout-mark";
+import { madeBy, modeOf } from "../../shared/docs/docs-mode";
+import { stateOf, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
+import { both, useBindings } from "../../shared/keys";
+import { Button } from "../../shared/kit/button";
+import { Choice } from "../../shared/kit/field";
+import { Row } from "../../shared/kit/row";
+import { Surface } from "../../shared/kit/surface";
 import "../../shared/docs/docs.css";
 import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
@@ -53,7 +58,7 @@ import { mayWrite } from "./issues";
 import { currentProject, onCurrentProject } from "../current-project";
 import { scopeOf } from "../scope";
 import { Missing } from "./project";
-import { MoveConfirm, PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
+import { PlatformDocActions, TRASH_DAYS } from "./doc-actions";
 import type { MenuItem } from "../../shared/ui/menu";
 import { PublicLinkBar } from "./doc-public";
 import { SharedByYou } from "./shared-by-you";
@@ -99,19 +104,25 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
   );
 }
 
-/** `/docs` is the current project's Docs, else the reader's own: one
- * project's, as `/p/:project/docs` is (Arugula #864). A team's project has
- * My Docs and Team Docs; a personal one, My Docs alone. */
+/** Where `/docs` goes (`movedPage`, ../page, as the address is put right):
+ * the current project's Docs, else the reader's own, else their first
+ * project's (Lift 6b: one project's, never all of them). */
+export function docsHome(): PlatformProject | undefined {
+  const at = scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
+  return (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
+}
+
+/** A project's Docs. `/docs` goes to `docsHome()`'s (`movedPage`, not an
+ * effect here, which raced the slug's rewrite, Arugula #1155);
+ * `?shared=1`, control's Shared Docs… (Arugula #1315), is the reader's
+ * own, at Shared by you. */
 export function DocsPage({ project, shared }: { project?: string; all?: boolean; shared?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
-  // `?shared=1` is control's Shared Docs… (Arugula #1315): My Docs, at
-  // Shared by you.
   const one = project ? session.project(project) : undefined;
+  const p = one ?? (shared ? docsHome() : undefined);
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const at = project || shared ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
-  const p = one ?? (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
-  if (!p) return <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />;
+  if (!p) return session.state === "ready" && !docsHome() ? <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." /> : null;
   return <DocList key={p.id} p={p} shared={shared} />;
 }
 
@@ -132,69 +143,127 @@ function useTrash(p: PlatformProject, docs: ProjectDoc[] | null): ProjectDocTras
   return p.team ? trash : null;
 }
 
+type Show = "all" | "mine";
+
 function DocList({ p, shared }: { p: PlatformProject; shared?: boolean }) {
   const mode = modeOf(p);
+  const team = mode.kind === "team";
   const me = session.me?.account;
   const { docs, reload } = useProjectDocs(p.id);
   const trash = useTrash(p, docs);
-  const deleted = useMemo(() => new Map(trash?.docs.map((t) => [t.doc.id, t])), [trash]);
   const [making, setMaking] = useState(false);
+  const [show, setShow] = useState<Show>("all");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(null);
+  const [folded, setFolded] = useState(true);
   const writable = mayWrite(p);
-  // A personal project's Docs can be put in a team (Arugula #818); a team's are there already.
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
   // Said only when there's somewhere to move them: with no team, Download is all there is.
   const cloud = mode.kind === "personal" && teams.length > 0 && !!docs?.length;
+  const who = nameOf(p);
+  const rows = [...(docs ?? [])].filter((d) => !team || show === "all" || madeBy(d, me)).sort((a, b) => b.updated_at - a.updated_at);
+  const gone = trash?.docs ?? [];
+  const now = useRef({ rows, picked });
+  now.current = { rows, picked };
+  const step = (by: number) => {
+    const { rows, picked } = now.current;
+    if (!rows.length) return;
+    const i = rows.findIndex((d) => d.id === picked);
+    const next = rows[i === -1 ? (by > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, i + by))];
+    setPicked(next.id);
+    document.querySelector<HTMLElement>(`[data-doc="${next.id}"] > .k-row-line`)?.focus();
+  };
+  useBindings(
+    [
+      { id: "docs.next", label: "The next Doc", chip: "move", keys: both("key:j", "ArrowDown"), hint: { mac: "j k", other: "j k" }, run: () => step(1) },
+      { id: "docs.prev", label: "The Doc before", keys: both("key:k", "ArrowUp"), run: () => step(-1) },
+      {
+        id: "docs.open",
+        label: "Open the Doc",
+        chip: "open",
+        keys: both("Enter"),
+        when: () => !!now.current.picked && !document.activeElement?.closest("button:not(.k-row-line), a, input, textarea, select"),
+        run: () => {
+          const d = now.current.rows.find((x) => x.id === now.current.picked);
+          if (d) go(docPath(p, d));
+        },
+      },
+      ...(team ? [{ id: "docs.mine", label: "Mine or all", chip: "mine", keys: both("key:m"), run: () => setShow((s) => (s === "mine" ? "all" : "mine")) }] : []),
+    ],
+    [p.id, team],
+  );
+  const empty = <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />;
   return (
-    <div class="docs-list docs-page" data-docs-page data-docs-mode={mode.kind}>
-      <DocsList<ProjectDoc>
-        mode={mode}
-        docs={docs}
-        item={(d) => projectItem(d, me)}
-        splitKey="platform-docs"
-        actions={
-          writable && (
-            <button type="button" class="secondary small" data-doc-new-open onClick={() => setMaking(true)}>
-              New Doc
-            </button>
-          )
-        }
-        under={
-          <>
-            {cloud && (
-              <p class="dim docs-cloud-line" data-docs-cloud-line>
-                These Docs are kept in your cloud. Move them to a team, or download them.
-              </p>
-            )}
-            {making && <NewDoc p={p} done={() => setMaking(false)} />}
-          </>
-        }
-        deleted={trash?.docs.map((t) => t.doc)}
-        // The links are the account's, not a team's: under its own Docs.
-        below={mode.kind === "personal" && <SharedByYou focus={shared} />}
-        loading={<BlockLoading inline data-docs-loading what="the Docs" />}
-        empty={<EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
-        selectable={() => mode.kind === "personal" && teams.length > 0}
-        selection={(ticked) => <ShareBar p={p} ticked={ticked} teams={teams} reload={reload} />}
-        // A deleted Doc has no page to open.
-        onOpen={(d) => !deleted.has(d.id) && go(docPath(p, d))}
-        row={(d): Partial<ListRowParts> => {
-          const t = deleted.get(d.id);
-          if (t) return { age: <Time at={t.trashed_at} />, attrs: { "data-trashed-doc": d.id } };
-          return {
-            actions: <RowMenu p={p} doc={d} reload={reload} />,
-            attrs: { "data-private": String(mode.kind === "personal") },
-          };
-        }}
-        preview={(d) => {
-          const t = deleted.get(d.id);
-          return t ? <Deleted key={d.id} p={p} t={t} days={trash?.days ?? TRASH_DAYS} restored={reload} /> : <Preview key={d.id} p={p} doc={d} reload={reload} />;
-        }}
-      />
+    <div class="docs-place" data-docs-page data-docs-mode={mode.kind} data-work>
+      <header class="docs-head">
+        <div class="docs-head-words">
+          <h1 class="docs-title">Docs</h1>
+          {docs !== null && (
+            <p class="docs-sub m-meta" data-docs-count={rows.length}>
+              {rows.length} in {p.name}
+            </p>
+          )}
+        </div>
+        {team && <Choice label="Whose Docs" value={show} onChange={setShow} options={SHOW} />}
+        {writable && (
+          <Button kind="primary" data-doc-new-open onClick={() => setMaking(true)}>
+            New Doc
+          </Button>
+        )}
+      </header>
+      {cloud && (
+        <p class="docs-cloud-line" data-docs-cloud-line>
+          These Docs are kept in your cloud. A Doc's ⋯ moves it to a team, or downloads it.
+        </p>
+      )}
+      {making && <NewDoc p={p} done={() => setMaking(false)} />}
+      {docs === null ? (
+        <BlockLoading inline data-docs-loading what="the Docs" />
+      ) : docs.length === 0 && gone.length === 0 ? (
+        empty
+      ) : (
+        <Surface kind="section" class="docs-rows" data-docs>
+          {rows.length === 0 && docs.length > 0 && <EmptyLine data-docs-none>{`None of ${p.name}'s Docs is yours or your agents' yet.`}</EmptyLine>}
+          {rows.map((d) => (
+            <Row
+              key={d.id}
+              kind={picked === d.id ? "selected" : "plain"}
+              title={
+                <>
+                  <LayoutMark layout={d.layout} />
+                  <span data-doc-title>{d.title}</span>
+                </>
+              }
+              meta={[whoLabel(d.author, d.agent, who), <Time key="t" at={d.updated_at} />]}
+              onClick={() => (setPicked(d.id), go(docPath(p, d)))}
+              data-doc={d.id}
+              data-mine={String(madeBy(d, me))}
+              data-private={String(mode.kind === "personal")}
+            />
+          ))}
+          {gone.length > 0 && (
+            <Row title={`Deleted · ${gone.length}`} kind="done" open={!folded} onClick={() => setFolded(!folded)} data-docs-deleted="">
+              {gone.map((t) => (
+                <Row key={t.doc.id} kind="done" title={t.doc.title} meta={[<Time key="t" at={t.trashed_at} />]} open={opened === t.doc.id} onClick={() => setOpened(opened === t.doc.id ? null : t.doc.id)} data-trashed-doc={t.doc.id}>
+                  <Deleted p={p} t={t} days={trash?.days ?? TRASH_DAYS} restored={reload} />
+                </Row>
+              ))}
+            </Row>
+          )}
+        </Surface>
+      )}
+      {/* The links are the account's, not a team's: under its own Docs. */}
+      {mode.kind === "personal" && <SharedByYou focus={shared} />}
     </div>
   );
 }
 
-/** A deleted Doc, in the preview (Arugula #1133): who deleted it, when, the days it has left, and Restore for those who may. */
+const SHOW = [
+  { id: "all", label: "All" },
+  { id: "mine", label: "Mine" },
+] as const;
+
+/** A deleted Doc, opened in its row (Arugula #1133): who deleted it, when, the days it has left, and Restore for those who may. */
 function Deleted({ p, t, days, restored }: { p: PlatformProject; t: ProjectDocTrashed; days: number; restored: () => void }) {
   const [busy, setBusy] = useState(false);
   const left = Math.max(0, Math.ceil(days - (Date.now() - t.trashed_at) / 86_400_000));
@@ -210,102 +279,17 @@ function Deleted({ p, t, days, restored }: { p: PlatformProject; t: ProjectDocTr
     }
   };
   return (
-    <ListPreview
-      title={t.doc.title}
-      facts={
-        <>
-          Deleted by {by} · <Time at={t.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
-        </>
-      }
-      actions={
-        t.restorable && (
-          <button type="button" class="primary small" disabled={busy} data-doc-restore onClick={() => void restore()}>
-            Restore
-          </button>
-        )
-      }
-      data-doc-deleted={t.doc.id}
-    >
-      <p class="dim" data-doc-deleted-why>
+    <div class="docs-deleted" data-doc-deleted={t.doc.id}>
+      <p class="m-meta">
+        Deleted by {by} · <Time at={t.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
+      </p>
+      <p data-doc-deleted-why>
         {left === 0 ? "It goes for good today." : `It goes for good in ${left} ${left === 1 ? "day" : "days"}.`} {t.restorable ? "Restore brings it back whole, where it was." : "An owner, an editor or its maker can restore it."}
       </p>
-    </ListPreview>
-  );
-}
-
-/** The bar over a personal project's rows while any is ticked: move them to a team, once asked, and what became of each. */
-function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: ListTicked<ProjectDoc>; teams: PlatformProject[]; reload: () => void }) {
-  const [team, setTeam] = useState(teams[0]?.id ?? "");
-  const [run, setRun] = useState<{ done: number; of: number } | null>(null);
-  const [results, setResults] = useState<{ team: PlatformProject; list: MoveResult[] } | null>(null);
-  const to = teams.find((t) => t.id === team) ?? teams[0];
-  const n = ticked.items.length;
-  const [asking, setAsking] = useState(false);
-  const share = async () => {
-    setAsking(false);
-    if (run) return;
-    const docs = ticked.items;
-    setResults(null);
-    setRun({ done: 0, of: docs.length });
-    const list = await moveDocsToTeam(p.id, to.id, docs, (_, done, of) => setRun({ done, of }));
-    setRun(null);
-    setResults({ team: to, list });
-    ticked.clear();
-    reload();
-  };
-  if (!run && !results && n === 0) return null;
-  return (
-    <div class="docs-share-bar" data-docs-share-bar>
-      {run ? (
-        <span data-docs-share-progress role="status">
-          Moving {run.done} of {run.of}…
-        </span>
-      ) : (
-        n > 0 && (
-          <>
-            <b data-docs-selected>{n} selected</b>
-            {teams.length > 1 && (
-              <select class="field small" value={to.id} aria-label="Move to which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button type="button" class="primary small" data-docs-share onClick={() => setAsking(true)}>
-              {`Move to ${to.name}…`}
-            </button>
-            <button type="button" class="link" data-docs-clear onClick={ticked.clear}>
-              Clear
-            </button>
-          </>
-        )
-      )}
-      {asking && <MoveConfirm title={ticked.items[0]?.title ?? ""} team={to.name} n={n} go={() => void share()} cancel={() => setAsking(false)} />}
-      {results && !run && (
-        <ul class="docs-share-results" data-docs-share-results>
-          {results.list.map((r) => {
-            const link = r.teamDoc && pathOf({ page: "doc", project: results.team.id, doc: r.teamDoc }, names);
-            return (
-              <li key={r.id} data-move-result={r.outcome}>
-                <span class="docs-share-title">{r.title}</span>
-                {r.outcome === "refused" ? (
-                  <span class="dim">Refused: {r.why}</span>
-                ) : (
-                  <a href={link!} data-move-link onClick={(e) => follow(e, link!)}>
-                    {resultWords(r, results.team.name)}
-                  </a>
-                )}
-              </li>
-            );
-          })}
-          <li>
-            <button type="button" class="link" data-docs-share-done onClick={() => setResults(null)}>
-              Done
-            </button>
-          </li>
-        </ul>
+      {t.restorable && (
+        <Button kind="primary" disabled={busy} data-doc-restore onClick={() => void restore()}>
+          Restore
+        </Button>
       )}
     </div>
   );
@@ -349,36 +333,6 @@ function NewDoc({ p, done }: { p: PlatformProject; done: () => void }) {
     </Modal>
   );
 }
-
-/** The selected Doc, whole, kept live through its thread: Open and the actions above it, its outline beside it. */
-function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload: () => void }) {
-  const view = useProjectDoc(p.id, doc.id);
-  const state = useMemo(() => (view ? stateOf(view) : null), [view]);
-  const images = useProjectImages(p.id, doc.id);
-  const reader = useRef<HTMLDivElement>(null);
-  const team = modeOf(p).kind === "team";
-  return (
-    <ListPreview
-      data-doc-preview={doc.id}
-      facts={view && docFacts(shapeOf(view.sections))}
-      factsTip={`${team ? p.name : "Yours, private"} · ${doc.written} of ${doc.sections} written · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}
-      actions={
-        <>
-          <button type="button" class="primary small" data-open-doc onClick={() => go(docPath(p, doc))}>
-            Open
-          </button>
-          <PlatformDocActions p={p} doc={doc} reload={reload} menu deleter={mayWrite(p)} gone={reload} writer={mayWrite(p)} />
-        </>
-      }
-      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} reader={reader} />}
-    >
-      <div ref={reader} class="docs-reader" data-doc-reader>
-        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={images.load} cached={images.cached} />
-      </div>
-    </ListPreview>
-  );
-}
-const NO_FRESH = new Map<string, number>();
 
 /** `more`: the ⋯'s items where the page is shown in a place (a board's tab: Take off this board). */
 export function DocPage({ project, doc, more }: { project: string; doc: string; more?: MenuItem[] }) {

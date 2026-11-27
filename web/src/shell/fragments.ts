@@ -45,7 +45,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#swarm", why: "The swarm (M41): the shell's.", where: ["shell/swarm/route.ts", "shell/main.tsx"] },
   { route: "#overview", why: "A machine's sessions at a glance (M111), retired for the Machines page (Arugula #1349): an old link lands there, at the machine shown.", where: ["shell/ui/places.tsx", "shell/ui/app.tsx"] },
   { route: "#agents", why: "The machine's agents (#403): the shell's.", where: ["shell/ui/agents-route.ts", "shell/ui/agents-page.tsx", "shell/ui/shell/rail.tsx"] },
-  { route: "#docs", why: "The Docs this machine keeps (#1494): the shell's.", where: ["shell/ui/docs-route.ts", "shell/ui/docs-page.tsx", "shell/ui/shell/rail.tsx"] },
+  { route: "#docs", why: "The Docs this machine keeps (#1494), retired with the shell's Docs page (Lift 6b, Arugula #1484): an old link lands on the app's Docs, or, on a machine with no app, Go to…, where its Docs are.", where: ["shell/ui/docs-route.ts", "shell/ui/app.tsx"] },
   { route: "#pane=", why: "A pane to show, from a notification or the swarm.", where: ["shell/main.tsx"] },
   { route: "#pop=", why: "A pane popped out into a window of its own (#497): the page shows only it.", where: ["shell/main.tsx", "shell/ui/panes/pop-out.tsx"] },
   { route: "#machine=", why: "A machine to show (M184: a hosted workspace's, from the platform page), and with `&agent` Start an agent on it.", where: ["shell/main.tsx"] },
@@ -69,6 +69,7 @@ export const FRAGMENTS: Fragment[] = [
 /** The listeners that aren't a route of their own: they redraw on any
  * route, or note it. */
 export const HASH_LISTENERS: { where: string; why: string }[] = [
+  { where: "shared/docs/doc-render.tsx", why: "A tabs Doc on its own page follows `#s2` (Arugula #829), the tab it names." },
   { where: "shared/telemetry.ts", why: "Notes which view is open (M103), never the fragment itself." },
   { where: "shell/main.tsx", why: "Reads `#pane=`, `#machine=` and `#link=`, and redirects the platform's old routes." },
   { where: "shell/swarm/route.ts", why: "`#swarm`." },
@@ -76,8 +77,7 @@ export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shell/trust/overlay.tsx", why: "The overlay's prompts follow the secret fragments above." },
   { where: "shell/ui/agents-page.tsx", why: "`#agents`." },
   { where: "shell/ui/app.tsx", why: "Redraws on the shell's places." },
-  { where: "shell/ui/docs-page.tsx", why: "`#docs`." },
-  { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#agents`, `#docs`." },
+  { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#agents`." },
   { where: "shell/ui/shell/rail.tsx", why: "The rail follows the shell's places." },
 ];
 

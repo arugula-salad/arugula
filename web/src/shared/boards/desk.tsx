@@ -3,15 +3,17 @@
 // left two thirds, the tabs (`1`–`4`: the board, its Docs, a PR opened from
 // the fold), the red alert strip, the open PRs folded one row each, and the
 // title block with its lead, machine and progress. On the right third, the
-// board's Needs you as NeedRows (asks for a teammate folded under one row),
+// board's Needs you as NeedRows (its asks, and the agents' asks and to-dos
+// on its issues from the project's Inbox, Arugula #1469; a teammate's
+// folded under one neutral row each),
 // then the lead's panel: the board's thread, which its lead reads.
 //
 // The lead's panel is a seam: Lift 4's Panel (#1480) takes it over, with
 // the chief of staff's and a worker's tabs and `j`/`k`'s peek.
 
-import type { ComponentChildren } from "preact";
+import { createContext, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { BoardAsk, BoardRow, BoardView, ChatRoom, CiAlerts } from "../proto";
+import type { BoardAsk, BoardRow, BoardView, ChatRoom, CiAlerts, InboxItem } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
@@ -19,13 +21,13 @@ import { sessionLabel } from "../chief-of-staff";
 import { RoomBody } from "../chat/room";
 import { useSubscribe } from "../ui/hooks";
 import { Avatar } from "../kit/avatar";
-import { NeedList, NeedRow, type Need } from "../kit/need-row";
+import { NeedList, NeedRow, type Need, type NeedOption } from "../kit/need-row";
 import { Panel } from "../kit/panel";
 import { Row } from "../kit/row";
 import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
 import { boards } from "./store";
-import { prWord, redLine, stalledFor, type OpenPr } from "./text";
+import { boardItems, forTeammateFold, itemFor, itemNeed, itemWord, prWord, redLine, stalledFor, type OpenPr } from "./text";
 
 /** The tabs a board's number keys reach: Board, then three more. */
 export const DESK_KEYS = 4;
@@ -115,43 +117,145 @@ export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
   };
 }
 
-/** The board's Needs you, at the top of the right third: the asks for you as NeedRows, the first open; the asks for teammates folded under one row (`1 for Jake`). */
-export function BoardNeeds({ view, answer }: { view: BoardView; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean> }) {
-  const asked = view.zones.flatMap((z) => z.rows).filter((r) => r.ask && !r.ask.raised);
-  const mine = asked.filter((r) => r.ask!.mine);
-  const others = asked.filter((r) => !r.ask!.mine);
+/** The project's Inbox, for a board: the agents' items on its rows' issues (Arugula #1469), who reads, and how they answer. Null where the page has no Inbox (the shell's block: board asks alone). Read again when the stream says the Inbox changed, and after an answer. */
+export interface BoardInbox {
+  byRow: Map<string, InboxItem[]>;
+  me: string | null;
+  name: (account: string) => string;
+  answer: (i: InboxItem, choice: string, note?: string) => Promise<boolean>;
+}
+
+export function useBoardInbox(view: BoardView | null): BoardInbox | null {
+  const api = usePlatformApi();
+  useSubscribe((fn) => chat.subscribe(fn));
+  const said = chat.inbox?.heard ?? 0;
+  const project = view?.board.project;
+  const [read, setRead] = useState<{ project: string; items: InboxItem[] } | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!api.inbox || !project) return;
+    let live = true;
+    api.inbox.read(project).then(
+      (v) => live && setRead({ project, items: v.items ?? [] }),
+      () => {},
+    );
+    return () => void (live = false);
+  }, [project, said, tick]);
+  const inbox = api.inbox;
+  if (!inbox || !view || !read || read.project !== project) return null;
+  return {
+    byRow: boardItems(
+      view.zones.flatMap((z) => z.rows),
+      read.items,
+    ),
+    me: inbox.me(),
+    name: inbox.name,
+    answer: (i, choice, note) =>
+      inbox.answer(i.id, choice, note).then(
+        () => (setTick((n) => n + 1), true),
+        (e: Error) => (api.toast(`Couldn't answer it: ${e.message}`), false),
+      ),
+  };
+}
+
+/** Each row's word for the agents' items on it, for its tile: the reader's first ("asks you", "waits on you"), else a teammate's ("asks Jake"). */
+export const RowItems = createContext<Map<string, { word: string; mine: boolean }>>(new Map());
+
+export function rowItemWords(inbox: BoardInbox | null): Map<string, { word: string; mine: boolean }> {
+  const out = new Map<string, { word: string; mine: boolean }>();
+  if (!inbox) return out;
+  for (const [row, items] of inbox.byRow) {
+    const whos = items.map((i) => ({ i, who: itemFor(i, inbox.me, inbox.name) }));
+    const pick = whos.find((x) => x.who === "you") ?? whos[0];
+    if (pick) out.set(row, { word: itemWord(pick.i, pick.who), mine: pick.who === "you" });
+  }
+  return out;
+}
+
+/** One row of the board's Needs you: a board ask or an agent's item, and who it waits on. */
+interface Asked {
+  key: string;
+  who: string;
+  since: number;
+  need: Need;
+  answer?: (o: NeedOption, note?: string) => void;
+  /** Where it's answered, when not here: its card, its session. */
+  open?: string;
+  data: Record<string, string>;
+}
+
+/** The board's Needs you, at the top of the right third: what waits on you as NeedRows (its asks, and the agents' asks and to-dos on its issues, oldest first), the first open; a teammate's folded under one neutral row each (`· 1 for Jake ›`). */
+export function BoardNeeds({ view, answer, inbox, platform }: { view: BoardView; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean>; inbox: BoardInbox | null; platform: (path: string) => string | undefined }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [folded, setFolded] = useState(true);
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
-  const shown = open ?? mine[0]?.id ?? null;
-  const names = [...new Set(others.map((r) => r.ask!.who_name || "someone"))];
-  const row = (r: BoardRow) => (
-    <div key={r.id} data-board-ask={r.ask!.id} data-board-ask-row={r.id}>
+  const all: Asked[] = [];
+  for (const r of view.zones.flatMap((z) => z.rows)) {
+    const a = r.ask;
+    if (a && !a.raised)
+      all.push({
+        key: a.id,
+        who: a.mine ? "you" : a.who_name || "someone",
+        since: a.created_at,
+        need: askNeed(r, a, now),
+        answer: (o) => void answer(r, o.id ? { option: o.id } : { text: o.label }),
+        data: { "data-board-ask": a.id, "data-board-ask-row": r.id },
+      });
+    for (const i of inbox?.byRow.get(r.id) ?? []) {
+      const who = itemFor(i, inbox!.me, inbox!.name);
+      const need = itemNeed(i, who, r.live?.number, now);
+      all.push({
+        key: i.id,
+        who,
+        since: i.since,
+        need,
+        answer: need.answer ? (o, note) => void inbox!.answer(i, o.id, note) : undefined,
+        open: need.answer ? undefined : i.subject.url.startsWith("/") ? platform(i.subject.url) : i.subject.url,
+        data: { "data-board-item": i.id, "data-board-ask-row": r.id },
+      });
+    }
+  }
+  all.sort((a, b) => a.since - b.since);
+  const mine = all.filter((x) => x.who === "you");
+  const theirs = new Map<string, Asked[]>();
+  for (const x of all) if (x.who !== "you") theirs.set(x.who, [...(theirs.get(x.who) ?? []), x]);
+  const shown = open ?? mine[0]?.key ?? null;
+  const row = (x: Asked) => (
+    <div key={x.key} {...x.data}>
       <NeedRow
-        need={askNeed(r, r.ask!, now)}
-        open={shown === r.id}
-        onToggle={() => setOpen(shown === r.id ? "" : r.id)}
-        onAnswer={(o) => void answer(r, o.id ? { option: o.id } : { text: o.label })}
+        need={x.need}
+        item={x.key}
+        open={shown === x.key}
+        onToggle={() => setOpen(shown === x.key ? "" : x.key)}
+        onAnswer={x.answer}
+        extra={
+          x.open ? (
+            <a class="k-button is-plain" href={x.open} data-board-item-open>
+              Open
+            </a>
+          ) : undefined
+        }
       />
     </div>
   );
+  const toggle = (who: string) => setUnfolded((s) => (s.has(who) ? new Set([...s].filter((w) => w !== who)) : new Set([...s, who])));
   return (
     <section class="board-needs" aria-label="Needs you" data-board-needs={mine.length}>
       <h2 class="board-needs-head">
         Needs you <span class="m-meta">{mine.length}</span>
       </h2>
-      {mine.length === 0 && others.length === 0 ? (
+      {all.length === 0 ? (
         <p class="m-meta board-needs-none" data-board-needs-none>
           Nothing here needs you.
         </p>
       ) : (
         <NeedList label="Needs you on this board">
           {mine.map(row)}
-          {others.length > 0 && (
-            <Row title={`${others.length} ${others.length === 1 ? "ask" : "asks"} for ${names.length === 1 ? names[0] : "others"}`} mark="waits" open={!folded} onClick={() => setFolded(!folded)} data-board-needs-others={others.length}>
-              {others.map(row)}
+          {[...theirs].map(([who, list]) => (
+            <Row key={who} title={forTeammateFold(list.length, who)} open={unfolded.has(who)} onClick={() => toggle(who)} data-board-needs-others={list.length} data-board-needs-for={who}>
+              {list.map(row)}
             </Row>
-          )}
+          ))}
         </NeedList>
       )}
     </section>

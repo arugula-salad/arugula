@@ -312,7 +312,17 @@ attached: number, board: BoardView, };
 /**
  * An ask that was answered, kept in the row's history.
  */
-export type BoardAnsweredAsk = { id: string, question: string, answer: string, asked_by: string, answered_by: string, answered_at: number, };
+export type BoardAnsweredAsk = { id: string, question: string, answer: string, asked_by: string, answered_by: string, answered_at: number, 
+/**
+ * An agent's card on the row's issue (Arugula #1469): `todo` (its
+ * `question` is what it asked to be done, its `answer` Done or
+ * Can't) or `approval` (Approve or Deny). None: a board ask.
+ */
+kind?: string, 
+/**
+ * A to-do's note, as its record keeps it, for its person alone.
+ */
+note?: string, };
 
 /**
  * A question on a row that a person answers on the board (Arugula #367):
@@ -3871,7 +3881,13 @@ seq?: number,
 /**
  * A board ask's board.
  */
-board?: string, };
+board?: string, 
+/**
+ * The native issue it's about (`iss_…`, Arugula #1469): an agent's
+ * card's, a hosted session's work item. A board and its card draw it
+ * on that issue's row.
+ */
+issue?: string, };
 
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, project?: ProjectRef, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
