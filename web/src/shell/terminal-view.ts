@@ -6,10 +6,10 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import { legible, onAppearance, palette, terminalTheme } from "../shared/appearance";
+import { onAppearance, palette, TERMINAL_FONT, terminalTheme } from "../shared/appearance";
 import type { Chip } from "./upload";
 
-export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace';
+export const FONT_FAMILY = TERMINAL_FONT;
 export const FONT_SIZE = 14;
 /** Rows of scrollback a pane keeps; snapshots bring no more than this. */
 export const SCROLLBACK = 10000;
@@ -489,7 +489,7 @@ export class TerminalView {
     mark.deco?.dispose();
     const rows = Math.max(1, mark.end.line - mark.start.line);
     const failed = mark.exit !== null && mark.exit !== 0;
-    const u = legible(palette());
+    const u = palette().ui;
     const deco = this.term.registerDecoration({
       marker: mark.start,
       x: 0,

@@ -1,12 +1,13 @@
 // #699: a prototype starts from the kit in the runner page (`runner.html`):
 // `--ar-` colors that follow the Doc's scheme, and `ar-` classes drawn in the
 // house look. A prototype that uses none of them is untouched. Colors are
-// compared with appearance.ts's Slate and Latte by `scripts/prototype-kit.test.mjs`;
+// compared with kit/look.ts's paperUi by `scripts/prototype-kit.test.mjs`;
 // here the frame's own computed styles say they reach it, in both schemes.
 
 import { expect, test, type Page } from "@playwright/test";
 import { fill, kitPrototype, newDoc, plainPrototype, type Post } from "./doc-steps";
 import { panes, reset } from "./helpers";
+import { paperUi } from "../src/shared/kit/look";
 
 const post = (page: Page): Post => async (path, data) => {
   const r = await page.request.post(path, { data });
@@ -30,16 +31,16 @@ test("a prototype gets the kit's colors and classes in the Doc's scheme, and one
   await expect(kit.locator(".ar-dialog")).toBeVisible({ timeout: 15_000 });
   await expect(plain.locator("#p")).toHaveText("Plain");
 
-  // Slate, the dark default: bg and accent from appearance.ts.
+  // Dark, the default: bg and accent from kit/look.ts.
   const bg = () => kit.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
-  await expect.poll(bg).toBe(rgb("#0c1118"));
+  await expect.poll(bg).toBe(rgb(paperUi(true).bg));
   const primary = kit.locator(".ar-btn-primary").first();
-  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb("#56c8dc"));
+  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb(paperUi(true).accent));
 
   // The scheme moving while it is open moves the kit with it, no reload.
   await page.evaluate(() => (document.documentElement.dataset.scheme = "light"));
-  await expect.poll(bg).toBe(rgb("#eff1f5"));
-  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb("#702fc6"));
+  await expect.poll(bg).toBe(rgb(paperUi(false).bg));
+  expect(await primary.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(rgb(paperUi(false).accent));
 
   // Opt-in: a page with no ar- class has no kit rule on it.
   const p = await plain.locator("#b").evaluate((el) => {

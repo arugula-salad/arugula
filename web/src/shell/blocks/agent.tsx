@@ -12,7 +12,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { palette, terminalTheme } from "../../shared/appearance";
+import { palette, TERMINAL_FONT, terminalTheme } from "../../shared/appearance";
 import { AdapterHelp, installAdapter, type Adapter } from "../ui/adapter";
 import { askText } from "../../shared/ui/menu";
 import { answeredLine, mayAnswer } from "../ui/term-ask";
@@ -236,7 +236,7 @@ function Output({ data }: { data: string }) {
       cursorStyle: "underline",
       cursorInactiveStyle: "none",
       fontSize: 12,
-      fontFamily: "ui-monospace, 'JetBrains Mono', Menlo, monospace",
+      fontFamily: TERMINAL_FONT,
       rows: lines,
       cols: 80,
       scrollback: 2000,

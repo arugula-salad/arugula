@@ -5532,12 +5532,12 @@ label.edit-in-nvim {
 
 /* Doc blocks (#963): one scrolling column, title and sections.
 
-   A Doc wears the house pair (#729): Slate in dark, Latte in light, whatever
-   palette the reader picked, so a shared Doc reads the same for everyone.
-   Its tokens, `--doc-*`, are set on the root, as the palette's are: by
-   appearance.ts's apply() in the app (houseColours), and for the share
-   viewer by the build, into doc-view.css. The hues (leaf, pepper, sky, plum)
-   are a chart's series, `--c1..c4`: the palette's ok, peach, info and merged.
+   A Doc wears the house pair (#729, #1511): Arugula at its own sliders, dark
+   or light, whatever look the reader picked, so a shared Doc reads the same
+   for everyone. Its tokens, `--doc-*`, are set on the root, as the look's
+   are: by appearance.ts's apply() in the app (kit/look.ts's house), and for
+   the share viewer by the build, into doc-view.css. The hues (leaf, pepper,
+   sky, plum) are a chart's series, `--c1..c4`.
    The named colours an agent writes (#256: leaf, pepper, sky, plum, sun,
    stone, each with a `-soft` fill, and ink and paper) are these tokens;
    shared/docs/colours.json holds the same, which a spec checks. */

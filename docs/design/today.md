@@ -46,8 +46,8 @@ other than 0, 0.01em and 0.08em.
 Colours are the palette's tokens (`--bg`, `--surface`, `--raised`, `--fg`,
 `--subtle`, `--dim`, `--line`, `--line-strong`, `--accent`, `--ok`, `--warn`,
 `--danger`, `--info`, `--merged`), never a hex or an `rgb()` in a rule.
-Latte is drawn as `legible()` paints it (`shared/appearance.ts`), so test
-contrast against that, not the palette as written.
+They're painted by `shared/kit/look.ts` from the theme, the preset and the
+sliders, so test contrast against what it paints.
 
 - **Roles (the design lift, #1477):** those names are now aliases of the role
   tokens in `shared/kit/tokens.css` (`--canvas`, `--section`, `--card`,
@@ -70,10 +70,10 @@ contrast against that, not the palette as written.
   not a surface.
 - **One backdrop**, `--backdrop` (#733's value, 40% black), under every
   dialog, picker, menu sheet and side sheet. Getting started keeps its heavier look as a modifier.
-- **The Doc wears the house pair** (Slate in dark, Latte in light, whatever
-  theme and sliders are picked), so a shared Doc reads the same for everyone. Its paper
-  is `--bg`, its reading ink a stronger text colour, and its named hues map
-  to palette colours (`houseColours` in `appearance.ts`; the share page gets the same from the build). The swarm's `--void`, `--ink`, `--mute` and state colours are palette tokens too.
+- **The Doc wears the house pair** (Arugula at its own sliders, dark or light,
+  whatever preset and sliders are picked), so a shared Doc reads the same for everyone. Its paper
+  is the look's `--paper`, its ink `--ink`, and its named hues are look.ts's
+  (`house()` in `kit/look.ts`; the share page gets the same from the build). The swarm's `--void`, `--ink`, `--mute` and state colours are palette tokens too.
 
 Don't add a palette (Look's sliders vary the theme), a `var(--x)33` hex suffix (it's invalid CSS and draws
 nothing; use `color-mix`), or a `var(--x, #fallback)`.
