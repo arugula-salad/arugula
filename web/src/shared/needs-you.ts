@@ -1,12 +1,11 @@
 // What "needs you" means for a pane, in one place (UI audit #154): the
-// Sessions sidebar's groups, Machines' marks, the Swarm and the attention
-// drawer read this, so they agree. Nothing counts with it across projects:
+// Sessions sidebar's groups, Machines' marks, the panel and the phone's
+// sheet read this, so they agree. Nothing counts with it across projects:
 // that's the Inbox's, the server's (Lift 6d, #1486). A pane needs you when it asks (a question, a
 // permission, input) or when it failed (a command, a PR's checks, a
-// program that ended badly). A plain finish is done, not needs-you: the
-// Swarm keeps its card a while, counted as finished. Every list of them
-// (the Swarm's rail, the phone's sheet, the attention drawer, a session's
-// top pane) is in one order, `byNeedsYou` (#451).
+// program that ended badly). A plain finish is done, not needs-you. Every
+// list of them (the phone's sheet, a session's top pane) is in one order,
+// `byNeedsYou` (#451).
 
 import type { PaneInfo, Reason } from "./proto";
 
@@ -53,9 +52,8 @@ export interface Placed {
   key: string | number;
 }
 
-/** The one order of every list of what wants you (#451): the swarm's
- * rail, the phone's sheet, the attention drawer (the bell's and the
- * footer's) and a session's top pane in the sidebar. By rank, then oldest
+/** The one order of every list of what wants you (#451): the phone's
+ * sheet and a session's top pane in the sidebar. By rank, then oldest
  * first, so a new one goes to the end of its group and the cards above it
  * don't jump. */
 export function byNeedsYou(a: Placed, b: Placed): number {

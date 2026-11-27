@@ -17,7 +17,6 @@ import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/need
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, machinesAt, openMachinesAt } from "../place-links";
-import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
 import { BranchIcon, Caret, MoreIcon, PanesIcon, PinIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";
 import { PINNED, sessionGroups, type Group as ListGroup } from "../../../shared/session-pins";
@@ -245,19 +244,9 @@ export function SessionSidebar({
           return (
             <Fragment key={g.id}>
               <h3 class={`ws-group ${g.id}`} id={`ws-group-${g.id}`} data-session-group={g.id}>
-                {g.id === "needs" ? (
-                  // M111: what each one asks, in the attention drawer.
-                  <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
-                    {LABELS[g.id]} <span class="ws-group-count">{rows.length}</span>
-                    {offline && <span class="ws-group-stale"> · last known</span>}
-                  </button>
-                ) : (
-                  <>
-                    {g.id === "pinned" && <PinIcon size="xs" />}
-                    {LABELS[g.id]} <span class="ws-group-count">{rows.length}</span>
-                    {offline && <span class="ws-group-stale"> · last known</span>}
-                  </>
-                )}
+                {g.id === "pinned" && <PinIcon size="xs" />}
+                {LABELS[g.id]} <span class="ws-group-count">{rows.length}</span>
+                {offline && <span class="ws-group-stale"> · last known</span>}
               </h3>
               <div role="list" aria-labelledby={`ws-group-${g.id}`}>
               {rows.map((r) => (

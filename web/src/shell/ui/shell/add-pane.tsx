@@ -20,7 +20,6 @@ import { EditInNvim } from "../edit-in-nvim";
 import { pickConversation } from "../conversations";
 import { SideSheet } from "../../../shared/ui/side-sheet";
 import { openPicker } from "../picker";
-import { closeAttention } from "./attention-drawer";
 import { ordinal } from "../panes/layout";
 import { KindIcon } from "../../../shared/ui/icons";
 
@@ -36,7 +35,6 @@ const changed = () => listeners.forEach((fn) => fn());
 export const addPane = {
   toggle() {
     if (open) return addPane.close();
-    closeAttention(false);
     back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     open = true;
     changed();

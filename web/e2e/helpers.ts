@@ -352,10 +352,3 @@ export async function closeSettingsPage(page: Page) {
   await expect(page.locator("[data-settings-page]")).toHaveCount(0);
 }
 
-/** The attention drawer, from Go to… (its bell is gone: the rail's Inbox is
- * the one count, Lift 6d #1486). */
-export async function openAttentionDrawer(page: Page) {
-  await page.locator("[data-open-palette]").first().click();
-  await page.keyboard.type("Needs you");
-  await page.locator('[data-goto] [data-command="Places/attention"]').click();
-}

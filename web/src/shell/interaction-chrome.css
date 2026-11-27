@@ -22,17 +22,3 @@
 .add-pane-preview-cell.active { border-color: var(--accent); }
 .add-pane-preview-cell.new { border: 1px dashed var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent-fill) 8%, var(--canvas)); }
 .add-pane-dest { margin: 0; border: 0; padding: 0; line-height: 1.6; color: var(--ink-dim); }
-
-/* The display heading, as the swarm's rail and the app set theirs; the
-   detail's heading under it is the lighter one (UI audit #172). */
-.ws-att-list { padding: 10px 12px; }
-.ws-att-item { padding: 12px; border: 1px solid transparent; border-radius: var(--radius-control); margin-bottom: 6px; }
-.ws-att-item.selected { border-color: color-mix(in srgb, var(--needs) 50%, var(--line)); background: color-mix(in srgb, var(--needs) 7%, var(--section)); margin-bottom: 0; }
-.ws-att-item-title { font-size: var(--text-body); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-att-item-sub { margin-top: 6px; line-height: 1.5; }
-.ws-att-detail { padding: 20px; border-color: color-mix(in srgb, var(--needs) 50%, var(--line)); border-radius: 0 0 var(--radius-control) var(--radius-control); margin-bottom: 6px; }
-.ws-att-detail h3 { font-size: var(--text-body); font-weight: 600; line-height: 1.5; }
-.ws-att-facts { padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--canvas); }
-.ws-att-facts > div { padding: 6px 0; }
-.ws-att-facts dd { line-height: 1.5; }
-

@@ -22,9 +22,9 @@ import { openDoc } from "./docs-route";
 import { getFleet } from "./hosts";
 import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
 import { paneName } from "./pane-name";
-import { hasChat, machinesAt, openChat, openMachinesAt } from "./place-links";
+import { PROJECTS_TO, hasChat, machinesAt, openChat, openMachinesAt } from "./place-links";
+import { openPlatform, platformHref } from "../platform-links";
 import { openSettings } from "./settings-route";
-import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
 import { showSession } from "./shell/session-sidebar";
 
@@ -156,7 +156,8 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
   const place = (key: string, title: string, run: () => void) => out.push({ key: `Places/${key}`, kind: "place", title, machine, run });
   if (!state.roles) place("your-work", "Your work", () => openYourWork(client));
   if (machinesAt(client)) place("machines", `${machine ?? "This machine"} on Machines`, () => openMachinesAt(client));
-  if (!phone) place("attention", "Needs you, every machine", () => openAttention());
+  // Needs you is the Overview's, where there's an app (the attention drawer went in Lift 6a, #1483).
+  if (platformHref(PROJECTS_TO)) place("needs-you", "Needs you", () => openPlatform(PROJECTS_TO));
   if (hasChat()) place("chat", "Chat", () => openChat());
   // M113: a way out of a terminal (which keeps Tab) to the chrome, from
   // the keyboard; Tab and the arrows go on from there.

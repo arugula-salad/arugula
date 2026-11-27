@@ -56,7 +56,6 @@ import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar, showSession } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
-import { AttentionDrawer } from "./shell/attention-drawer";
 import { TabArea } from "./panes/tab-area";
 import { TabAsks } from "./term-ask";
 import { DragGhost } from "./panes/drop-overlay";
@@ -224,9 +223,6 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
               {tab && <TabAsks client={client} tab={tab} phone={phone} />}
               {main}
             </div>
-            {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
-            {/* M111: between the header and the footer, over the panes. */}
-            <AttentionDrawer client={client} />
           </div>
           {state && <WorkFooter client={client} />}
         </div>
