@@ -24,7 +24,7 @@ import { AppearanceLayer } from "../src/shared/ui/appearance";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { go } from "../src/platform/router";
-import { appAgentPanel, appMachines, appOverview, appOwnPane } from "../src/app/machines";
+import { appAgentPanel, appInbox, appMachines, appOverview, appOwnPane } from "../src/app/machines";
 import { appLive } from "../src/app/live";
 import { appMachineSettings } from "../src/app/settings";
 import { chat } from "../src/shared/chat-store";
@@ -141,7 +141,7 @@ root.classList.add("frame");
 render(
   // A board card's session (board-live.spec.ts, overview.spec.ts): the machine `m_suite` is the suite's daemon, this page's origin.
   <PlatformApiContext.Provider
-    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), AgentPanel: appAgentPanel(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
+    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), Inbox: appInbox(() => null), AgentPanel: appAgentPanel(() => null), ownPane: appOwnPane(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
   >
     <PlatformPage />
     <MenuLayer />

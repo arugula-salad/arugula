@@ -191,10 +191,6 @@
   border-radius: 0;
 }
 
-.platform .sw-page .platform-inbox-ref {
-  font: 500 var(--text-meta)/1.3 var(--font-mono);
-}
-
 /* A run is a Card laid out as a line (the Runs page keeps today's look until its lift). */
 .run-row.card {
   flex-direction: row;
@@ -232,7 +228,6 @@
 }
 
 /* Titles take two lines before they're cut. */
-.platform .sw-page .platform-inbox-item,
 .platform .sw-page a.run-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -270,16 +265,6 @@
 @media (max-width: 700px) {
   .platform .sw-stats b {
     font-size: var(--text-xl);
-  }
-  /* A phone's width: what sat beside the title gets a line of its own,
-     so the title isn't squeezed and the side isn't cut. */
-  .platform .platform-inbox-list > li.card {
-    grid-template-columns: 1fr;
-  }
-  .platform .sw-page .platform-inbox-actions {
-    grid-column: 1;
-    grid-row: auto;
-    justify-self: start;
   }
   .platform .run-row.card {
     flex-wrap: wrap;

@@ -161,7 +161,7 @@ function body(r: Route, lost: string | null) {
       // M184: a hosted workspace is a machine of the project.
       return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
-      return <InboxPage all={r.all} />;
+      return <InboxPage />;
     case "all-boards":
       return <AllBoardsPage board={r.board} />;
     case "settings":

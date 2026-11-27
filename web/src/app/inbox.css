@@ -1,0 +1,36 @@
+/* The Inbox (./inbox.tsx, Lift 6d): one section down the page, each
+   project a heading (its mark, name and count) over its rows. Kit parts
+   draw the section and the rows; this lays them out. */
+
+.inbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  max-width: 1120px;
+}
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.inbox-project {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.inbox-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inbox .inbox-head h2 {
+  margin: 0;
+  font: 600 var(--text-title) var(--font-title);
+  color: var(--ink);
+}
+.inbox-head .m-meta,
+.inbox-quiet {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}

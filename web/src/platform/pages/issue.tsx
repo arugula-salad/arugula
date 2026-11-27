@@ -30,7 +30,7 @@ import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { where } from "../where";
 import { mayWrite, membersOf, useIssuesOn } from "./issues";
-import { answerItem, memberName, useProjectInbox } from "../inbox-count";
+import { answerItem, memberName, useProjectInbox } from "../inbox";
 import { session } from "../session";
 import { Missing } from "./project";
 

@@ -35,46 +35,6 @@ export function workspaceTone(state: string, asked: string | null): Tone {
   return "muted";
 }
 
-/** An inbox entry (M171): why it wants the reader, as the swarm colors a
- * card by why its pane wants them. A review asked of them is the swarm's
- * ask, changes asked of their PR wait on them, a failed check or run is a
- * failure, a mention or an assignment is news, and done is done. */
-const REASON: Record<string, Tone> = {
-  review_requested: "warn",
-  changes_requested: "warn",
-  checks_failed: "danger",
-  run_failed: "danger",
-  mentioned: "info",
-  thread_mention: "info",
-  assigned: "teal",
-  done: "ok",
-};
-
-export const reasonTone = (reason: string): Tone => REASON[reason] ?? "muted";
-
-/** An Inbox item (Arugula #1430), by its kind, in the same colors: what
- * waits on the reader is the swarm's ask, a permission or a deploy waits
- * on them, a failure fails, and news is news. A kind this doesn't know
- * (a to-do, an approval) is muted. */
-const KIND: Record<string, Tone> = {
-  agent_ask: "warn",
-  permission: "warn",
-  agent_failed: "danger",
-  proposal: "warn",
-  board_ask: "warn",
-  deploy_approval: "warn",
-  checks_failed: "danger",
-  run_failed: "danger",
-  changes_requested: "warn",
-  review_request: "warn",
-  mention: "info",
-  assigned: "teal",
-  dm: "accent",
-  thread_news: "accent",
-};
-
-export const itemTone = (kind: string): Tone => KIND[kind] ?? "muted";
-
 /** A chat room: a mention, unread messages, or nothing to say (the same
  * colors as its count's, `.count`). */
 export function roomTone(unread: number, mentions: number): Tone | null {
