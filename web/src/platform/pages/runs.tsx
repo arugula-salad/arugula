@@ -229,13 +229,13 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           return (
             // A card in the swarm's language (../swarm.css): its bar is the
             // run's state, which the meta line says in words.
-            <Card as="li" class="issue-row run-row" tone={runTone(r.state)} key={r.id} data-run-row={r.id} data-run-state={r.state}>
-              <div class="issue-row-main">
-                <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
+            <Card as="li" class="run-row" tone={runTone(r.state)} key={r.id} data-run-row={r.id} data-run-state={r.state}>
+              <div class="run-row-main">
+                <a href={path} class="run-row-title run-title" onClick={(e) => follow(e, path)}>
                   {runTitle(r.op, specName(r.source.spec), r.deploy)}
                 </a>
                 <ThreadUnread target={r.id} />
-                <span class="issue-row-meta dim">
+                <span class="run-row-meta dim">
                   <StateChip tone={runTone(r.state)}>{STATES[r.state] ?? r.state}</StateChip> · {triggerLine(r, nameOf)} · <Time at={r.created_at} long />
                   {r.started_at && end ? ` · ${took(r.started_at, end)}` : ""}
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
