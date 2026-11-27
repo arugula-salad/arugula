@@ -16,9 +16,11 @@ import { controlOrigin, session } from "./session";
 import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
 import { openPlatformFeedback } from "./feedback";
-import { names } from "./links";
+import { names, roomTitle } from "./links";
 import { settingsPlaces } from "./settings/scopes";
 import { Avatar } from "../shared/kit/avatar";
+import { chat } from "../shared/chat-store";
+import { presence, presenceItems } from "../shared/chat/presence";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
 import { Caret } from "../shared/ui/icons";
@@ -153,6 +155,8 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
     steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), { label: boards.title(r.board) ?? "Board", hook: "board" });
   } else if (r.page === "machines") steps.push(link("Machines", pathOf({ page: "machines", project, at: { at: "machines" } }, names), "machines"));
   else if (section) steps.push(link(SECTION_LABEL[section], sectionPath(section, project), section));
+  // A room (Lift 6c): Chat › #general.
+  if ((r.page === "chat" || r.page === "dm") && r.room) steps.push({ label: roomTitle(r.room) ?? "…", hook: "room" });
   // The last step is where you are: a link only when you're below it (an issue, under Issues).
   const last = steps.at(-1)!;
   if (last.href?.split("?")[0] === location.pathname) steps[steps.length - 1] = { label: last.label, hook: last.hook };
@@ -161,10 +165,11 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
 
 /** You, and your account's menu: the status page on hosted Arugula
  * (Arugula #1176), each of Settings' scopes (Lift 7), feedback and signing
- * out; your presence is Chat's (Arugula #1079). Your initials (the kit's
+ * out; your presence while chat is on (Arugula #1079). Your initials (the kit's
  * Avatar), on the rail's foot or a phone's bar. */
 export function AccountButton() {
   useSubscribe((fn) => session.subscribe(fn));
+  useSubscribe((fn) => presence.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
   const open = useMenuFrom(button);
   const phone = usePhone();
@@ -176,6 +181,9 @@ export function AccountButton() {
     const status = statusPage(controlOrigin());
     const items: MenuItem[] = [
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
+      // Your presence (Arugula #1079), behind you since Chat's lift (#1485).
+      ...presenceItems(),
+      ...(presence.on ? ["separator" as const] : []),
       // Each of Settings' scopes (Lift 7), the rail's Settings being the project's.
       ...settingsPlaces().map((sp) => ({ label: sp.title, attrs: { [`data-settings-${sp.key}`]: "" }, run: () => go(pathOf(sp.to, names)) })),
       ...(status ? [{ label: "Status", external: true, hint: "Whether hosted Arugula is up", attrs: { "data-status-page": "" }, run: () => openStatusPage(status) }] : []),
@@ -206,6 +214,8 @@ export function AccountButton() {
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
+  // A room's name, once chat has read it.
+  useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   // A card's crumb names it by its number once it's read.
   useSubscribe((fn) => issues.subscribe(fn));

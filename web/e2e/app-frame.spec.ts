@@ -222,7 +222,7 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-owner-settings="tm_1"] [data-settings-scopes] [data-tab="team"]')).toHaveAttribute("aria-selected", "true");
   });
 
-  test("your picture's menu is your name, each of Settings' scopes, Send feedback… and Sign out; presence is Chat's (Arugula #1079, Lift 7)", async ({ page }) => {
+  test("your picture's menu is your name, each of Settings' scopes, Send feedback… and Sign out; presence only while chat is on (Arugula #1079, Lift 7, Lift 6c)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     await page.locator("[data-rail] [data-signed-in-as]").click();
     const items = page.locator(".menu-item");

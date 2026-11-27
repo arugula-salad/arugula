@@ -6,9 +6,10 @@
 // UI audit #169: a project's chat is its own rooms, a team's channels and
 // DMs, or (Personal) the reader's machines' threads; a room of another
 // project's opens in that one (../page's useSlug). It sits in the page's
-// frame, as every other page does: the bar, then the rooms in a panel
-// inset from the window's edges (platform.css, `.platform-chat`). A
-// phone's chat is the whole screen, as it is in the shell.
+// frame, as every other page does: the bar, then (Lift 6c, #1485) the rooms
+// and the stream as one kit section and a thread or Details as another
+// (platform.css, `.platform-chat`). A phone's chat is the whole screen, as
+// it is in the shell.
 
 import type { ComponentChildren } from "preact";
 import type { ChatRoute } from "../../shared/chat/route";

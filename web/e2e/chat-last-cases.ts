@@ -182,7 +182,7 @@ export function chatLastTests(device: Record<string, unknown>, phone: boolean) {
       await open(page);
       await pick(page, BETA);
       await page.evaluate(() => window.__fx.unread("ch_aaaa0003"));
-      await expect(row(page, GAMMA)).toHaveClass(/unread/);
+      await expect(row(page, GAMMA)).toHaveAttribute("data-bold", "true");
       await expect(view(page, BETA)).toBeVisible();
       await awayAndBack(page);
       await expect(view(page, BETA)).toBeVisible();

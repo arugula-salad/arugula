@@ -7,9 +7,11 @@
 // not a button that does nothing. `lead` goes before the mark: a list's
 // select box. One that `keep`s its body draws it while closed, hidden, so
 // what the body reads stays current (a Settings row's summary, read off
-// its controls).
+// its controls). A row that's a place (a chat room) is a link, `href`, so a
+// middle click opens it elsewhere; `line` adds to the line itself (its
+// title, a drag, a menu), and `bold` says it has something unread.
 
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, JSX } from "preact";
 import { Mark, type State } from "./state-mark";
 import "./kit.css";
 
@@ -25,6 +27,9 @@ export function Row({
   open,
   keep,
   onClick,
+  href,
+  line: lineAttrs,
+  bold,
   inert,
   id,
   children,
@@ -45,7 +50,13 @@ export function Row({
   meta?: ComponentChildren[];
   /** Expanded: `children` show under the line. Undefined: it doesn't expand. */
   open?: boolean;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent) => void;
+  /** A link: the line is an `<a>`; `onClick` takes a plain click. */
+  href?: string;
+  /** More on the line: its title, a drag, a menu. */
+  line?: Pick<JSX.IntrinsicElements["a"], "title" | "draggable" | "onDragStart" | "onDragEnd" | "onContextMenu">;
+  /** Something unread: its title is heavier. */
+  bold?: boolean;
   children?: ComponentChildren;
   [data: `data-${string}`]: unknown;
 }) {
@@ -65,9 +76,13 @@ export function Row({
     </>
   );
   return (
-    <div id={id} class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} inert={inert} {...data}>
-      {onClick ? (
-        <button type="button" class="k-row-line" aria-expanded={open} aria-current={kind === "selected" ? "true" : undefined} onClick={onClick}>
+    <div id={id} class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} data-bold={bold || undefined} inert={inert} {...data}>
+      {href !== undefined ? (
+        <a {...lineAttrs} href={href} class="k-row-line" aria-current={kind === "selected" ? "page" : undefined} onClick={onClick}>
+          {line}
+        </a>
+      ) : onClick ? (
+        <button {...(lineAttrs as JSX.IntrinsicElements["button"])} type="button" class="k-row-line" aria-expanded={open} aria-current={kind === "selected" ? "true" : undefined} onClick={onClick}>
           {line}
         </button>
       ) : (

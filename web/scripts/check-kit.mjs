@@ -20,7 +20,6 @@ export const ALLOWED = new Set([
   "board-doc-row",
   "board-row",
   "browser-card",
-  "chat-row",
   "deploy-card",
   "deploy-row",
   "diff-card",
