@@ -225,6 +225,20 @@ test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds a
   for (const hook of ["[data-board-add-existing]", "[data-board-doc-add]", "[data-board-add-group]", "[data-board-workers]", "[data-copy-link]"]) await expect(page.locator(`[role=menu] ${hook}`)).toBeVisible();
 });
 
+test("one key, one action (#1535): `l` writes to the lead without the panel's `l`, `f` filters without flooring the panel", async ({ page }) => {
+  await openDesk(page);
+  // Here the lead's machine is out of reach, so there's no box to write in: `l` is the board's all the same.
+  const panel = page.locator(".board-desk-side [data-kit=panel]").first();
+  await expect(panel.getByRole("button", { name: "Full screen" })).toBeVisible();
+  await page.keyboard.press("l");
+  // The panel's `l` would focus the panel itself, a frame later.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await expect(panel).not.toBeFocused();
+  await page.keyboard.press("f");
+  await expect(page.locator("[data-board-find-input] input, input[data-board-find-input]").first()).toBeFocused();
+  await expect(page.locator("[data-panel-floor]")).toHaveCount(0);
+});
+
 test("every project's old Boards addresses still land, untouched: /boards (and ?all=1) on a project's Boards, /boards/:board on its page", async ({ page }) => {
   await openDesk(page, [], `/boards/${B}?all=1`);
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards/${B}`));

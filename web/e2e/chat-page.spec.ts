@@ -43,6 +43,19 @@ test.describe("computer", () => {
     await expect(page.locator("[data-app-path]")).toHaveText(/Chat\s*#design/);
   });
 
+  test("one key, one action (#1535): ⌘K on Chat is the room switcher alone; Ctrl+Shift+K still opens Go to…", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    await expect(page.locator(`[data-room-view="${GENERAL}"]`)).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+k");
+    await expect(page.locator("[data-chat-switcher]")).toBeVisible();
+    await expect(page.locator("[data-goto]")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-chat-switcher]")).toHaveCount(0);
+    await page.keyboard.press("Control+Shift+k");
+    await expect(page.locator("[data-goto]")).toBeVisible();
+    await expect(page.locator("[data-chat-switcher]")).toHaveCount(0);
+  });
+
   test("Details and a thread are a column of their own, beside the stream", async ({ page }) => {
     await open(page, `/p/${P}/chat/${GENERAL}`);
     await page.locator("[data-chat-details]").click();

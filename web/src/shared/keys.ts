@@ -15,6 +15,11 @@
 // A plain key (no Ctrl, Meta or Alt) is never taken from a field, an
 // editable or a terminal: the table checks that once, here, so a screen's
 // `j` never eats the j someone types.
+//
+// One key runs one binding (#1535): the most specific that takes it, by its
+// `context` (a dialog's, then a screen's, then the agent panel's, then one
+// that's everywhere), and of two in one context, the newer. So the board's
+// `l` writes to the lead without the panel's `l` running too.
 
 import { useLayoutEffect } from "preact/hooks";
 
@@ -32,12 +37,23 @@ export const GROUPS: { id: Group; label: string }[] = [
   { id: "app", label: "The app" },
 ];
 
+/** How specific a binding is, least first: where two take a key, the
+ * later in this list wins. */
+export const CONTEXTS = ["everywhere", "panel", "screen", "dialog"] as const;
+export type Context = (typeof CONTEXTS)[number];
+
 export interface Binding {
   id: string;
   /** What it does, for lists of shortcuts. */
   label: string;
   /** Its heading on the `?` sheet (default: this screen's). */
   group?: Group;
+  /** Where it applies, for which binding a shared key runs (default: this
+   * screen's). */
+  context?: Context;
+  /** Off the `?` sheet and hints: a screen's own key the sheet doesn't list
+   * yet (#1534's list will). */
+  unlisted?: boolean;
   /** Its words as a footer chip ("move", "go to"); without, no chip. */
   chip?: string;
   /** Its chords on each OS; the first is the one hints show. */
@@ -89,35 +105,52 @@ function matches(chord: string, e: KeyboardEvent): boolean {
 /** The first chord of a sequence, while the page waits for its second. */
 let pending: { first: string; until: number } | null = null;
 
-function dispatch(e: KeyboardEvent) {
-  if (e.isComposing || ["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
-  const typing = typingIn(document.activeElement);
-  const wait = pending && pending.until > e.timeStamp ? pending.first : null;
-  pending = null;
-  let ran = false;
+const rank = (b: Binding) => CONTEXTS.indexOf(b.context ?? "screen");
+
+/** What a key does: the one binding it runs, else the sequence it starts.
+ * `wait` is a sequence's first chord, pressed just before. */
+export function resolve(list: readonly Binding[], e: KeyboardEvent, typing: boolean, wait: string | null): { run: Binding } | { starts: string } | null {
+  // The most specific first; of two as specific, the newer.
+  const order = list.map((b, i) => ({ b, i })).sort((x, y) => rank(y.b) - rank(x.b) || y.i - x.i);
   let starts: string | null = null;
-  // Every binding that takes the key runs, in the order they were added:
-  // two dialogs open each close on Escape, as their own listeners did.
-  for (const b of [...table]) {
+  for (const { b } of order) {
     if (b.here && !b.here()) continue;
     for (const k of b.keys[os]) {
       if (typing && plain(k)) continue;
       const [first, second] = k.split(" ");
       if (second) {
-        if (wait === first && matches(second, e) && (!b.when || b.when(e))) {
-          ran = true;
-          b.run(e);
-        } else if (!wait && matches(first!, e)) starts = first!;
+        if (wait === first && matches(second, e) && (!b.when || b.when(e))) return { run: b };
+        if (!wait && !starts && matches(first!, e)) starts = first!;
         continue;
       }
-      if (wait || !matches(k, e) || (b.when && !b.when(e))) continue;
-      ran = true;
-      b.run(e);
-      break;
+      if (!wait && matches(k, e) && (!b.when || b.when(e))) return { run: b };
     }
   }
-  if (!ran && starts) pending = { first: starts, until: e.timeStamp + 1500 };
-  if (!ran && !starts && !wait) return;
+  return starts ? { starts } : null;
+}
+
+/** A key pressed, `typing` when focus takes typing: runs its one binding.
+ * Whether the page took the key (a sequence's first chord, or its second,
+ * counts). */
+export function press(e: KeyboardEvent, typing: boolean): boolean {
+  if (e.isComposing || ["Shift", "Control", "Alt", "Meta"].includes(e.key)) return false;
+  // In a field, a sequence never goes on: its next key is typed.
+  const wait = !typing && pending && pending.until > e.timeStamp ? pending.first : null;
+  pending = null;
+  const got = resolve(table, e, typing, wait);
+  if (got && "run" in got) got.run.run(e);
+  else if (got) pending = { first: got.starts, until: e.timeStamp + 1500 };
+  return !!got || !!wait;
+}
+
+/** Focus moved: into a field, a sequence's first chord lets go, so the
+ * next key is typed, not eaten. */
+export function focusMoved(typing: boolean) {
+  if (typing) pending = null;
+}
+
+function dispatch(e: KeyboardEvent) {
+  if (!press(e, typingIn(document.activeElement))) return;
   e.preventDefault();
   e.stopPropagation();
 }
@@ -127,6 +160,7 @@ function install() {
   if (installed) return;
   installed = true;
   window.addEventListener("keydown", dispatch, true);
+  window.addEventListener("focusin", (e) => focusMoved(e.target instanceof Element && typingIn(e.target)), true);
   // For the e2e specs: the ids the `?` sheet must list.
   (window as unknown as { __arugulaKeys: () => string[] }).__arugulaKeys = () => bindings().map((b) => b.id);
 }
@@ -159,12 +193,12 @@ export function useBinding(b: Binding | null, deps: unknown[]) {
 
 /** Escape closes a dialog, before anything under it hears the key. */
 export function useEscape(id: string, close: (() => void) | null, deps: unknown[] = []) {
-  useBinding(close && { id, label: "Close", group: "app", keys: both("*+key:escape"), run: close }, deps);
+  useBinding(close && { id, label: "Close", group: "app", context: "dialog", keys: both("*+key:escape"), run: close }, deps);
 }
 
 /** Every binding this page has, for lists of shortcuts. */
 export function bindings(): readonly Binding[] {
-  return table.filter((b) => !b.here || b.here());
+  return table.filter((b) => !b.unlisted && (!b.here || b.here()));
 }
 
 /** Told when bindings come or go (a screen's keys). */
@@ -177,7 +211,7 @@ export function subscribeKeys(fn: () => void): () => void {
  * it ("Ctrl+Shift+P", "⌘U", "g o"); undefined when it has none on this OS. */
 export function keyHint(id: string): string | undefined {
   const b = table.find((x) => x.id === id);
-  if (!b || (b.here && !b.here())) return undefined;
+  if (!b || b.unlisted || (b.here && !b.here())) return undefined;
   return hintOf(b);
 }
 

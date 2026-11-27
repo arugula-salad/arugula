@@ -57,6 +57,7 @@ function useGoKeys(places: RailPlace[]) {
       id: `go.${key}`,
       label: places.find((p) => p.key === key)!.label,
       group: "go" as const,
+      context: "everywhere" as const,
       keys: both(`key:g key:${GO[key]}`),
       run: () => {
         const p = latest.current.find((x) => x.key === key);
