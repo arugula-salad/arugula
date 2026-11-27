@@ -981,6 +981,12 @@ pub struct InboxSubject {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub board: Option<String>,
+    /// The native issue it's about (`iss_…`, Arugula #1469): an agent's
+    /// card's, a hosted session's work item. A board and its card draw it
+    /// on that issue's row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub issue: Option<String>,
 }
 
 /// How to answer an item in place. `via` is `attention_act`,
