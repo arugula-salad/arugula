@@ -20,12 +20,11 @@ import type { ChatRoom } from "../proto";
 import { MaintenanceNote } from "../ui/maintenance-note";
 import { Modal } from "../ui/modal";
 import { usePhone, useSubscribe } from "../ui/hooks";
-import { askText, openMenu, useMenuFrom, type MenuItem } from "../ui/menu";
+import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
 import { SavedView } from "./saved";
 import { ChatSearch, RoomActivityView, RoomSearchView } from "./find";
 import { MsgAvatar } from "./avatar";
-import { presence, presenceItems } from "./presence";
 import { WebPreviewsSwitch } from "./previews";
 import { AboutButton, editDescription, editTopic, PinsButton, pinsItem, TopicLine } from "./pins-ui";
 import { ThreadPanel } from "./thread-panel";
@@ -37,10 +36,11 @@ import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
 import { BookmarkIcon, ChevronIcon, CloseIcon, IconButton, MoreIcon, SearchIcon, ThreadIcon } from "../ui/icons";
-import type { ChatSort, PresenceMode } from "../proto";
+import type { ChatSort } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
+import { Row } from "../kit/row";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
 import { sessionLabel } from "../chief-of-staff";
@@ -361,77 +361,97 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
     // A link to the room (UI audit #185), so a middle click and "Copy
     // link" work; a plain click stays on the page.
     return (
-      <a
+      <Row
         key={r.id}
+        kind={r.id === picked?.id ? "selected" : "plain"}
+        bold={bold(r)}
         href={nav.roomHref(r.id)}
-        class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.staff ? `You and your agents${r.lead ? `: ${sessionLabel(r.lead.session, api.projectName)} on ${r.lead.machine_name || "a machine"} leads it` : ""}` : r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
-        draggable={!phone}
-        onDragStart={(e) => {
-          e.dataTransfer?.setData("text/x-arugula-room", r.id);
-          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-          // After the browser has taken its drag image: drawing the drop
-          // targets first would cancel the drag on some of them.
-          setTimeout(() => setDragging(r.id));
+        data-quiet={r.last ? undefined : ""}
+        data-muted={r.archived || r.level === "nothing" ? "" : undefined}
+        data-dragging={dragging === r.id ? "" : undefined}
+        lead={
+          r.kind === "dm" && r.with && r.others.length < 2 ? (
+            <span class="chat-sigil chat-dm-pic">
+              <MsgAvatar who={r.with.account} name={r.with.name} account={r.with.account} dot />
+            </span>
+          ) : (
+            <span class="chat-sigil">{roomSigil(r)}</span>
+          )
+        }
+        title={roomLabel(r, api)}
+        meta={[
+          r.with?.dnd && (
+            <span class="chat-dnd" title={`${r.with.name} has paused notifications`} aria-label="Paused notifications" data-dnd>
+              🌙
+            </span>
+          ),
+          n > 0 && <Count for={r.mentions ? "mention" : "you"}>{r.mentions ? `@${n}` : n}</Count>,
+        ].filter(Boolean)}
+        line={{
+          title: r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.staff ? `You and your agents${r.lead ? `: ${sessionLabel(r.lead.session, api.projectName)} on ${r.lead.machine_name || "a machine"} leads it` : ""}` : r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`,
+          draggable: !phone,
+          onDragStart: (e: DragEvent) => {
+            e.dataTransfer?.setData("text/x-arugula-room", r.id);
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+            // After the browser has taken its drag image: drawing the drop
+            // targets first would cancel the drag on some of them.
+            setTimeout(() => setDragging(r.id));
+          },
+          onDragEnd: () => {
+            setDragging(null);
+            setOver(null);
+          },
+          onContextMenu: (e: MouseEvent) => openRoomMenu(e, store, r, api.toast, [leaveItem(store, r, api)].filter((x) => x !== null)),
         }}
-        onDragEnd={() => {
-          setDragging(null);
-          setOver(null);
-        }}
-        onContextMenu={(e) => openRoomMenu(e, store, r, api.toast, [leaveItem(store, r, api)].filter((x) => x !== null))}
         onClick={(e) => {
           if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           nav.openRoom(r.id);
         }}
-      >
-        {r.kind === "dm" && r.with && r.others.length < 2 ? (
-          <span class="chat-sigil chat-dm-pic">
-            <MsgAvatar who={r.with.account} name={r.with.name} account={r.with.account} dot />
-          </span>
-        ) : (
-          <span class="chat-sigil">{roomSigil(r)}</span>
-        )}
-        <span class="chat-label">{roomLabel(r, api)}</span>
-        {r.with?.dnd && (
-          <span class="chat-dnd" title={`${r.with.name} has paused notifications`} aria-label="Paused notifications" data-dnd>
-            🌙
-          </span>
-        )}
-        {n > 0 && <Count for={r.mentions ? "mention" : "you"} class="count-after">{r.mentions ? `@${n}` : n}</Count>}
-      </a>
+      />
     );
   };
 
   const list = (
     <nav class="chat-list" aria-label="Rooms">
       <div class="chat-top">
-        <button class={`chat-row chat-activity${route.view === "activity" ? " selected" : ""}${mentions ? " unread" : ""}`} data-chat-activity onClick={() => nav.openChatView("activity")}>
-          <span class="chat-sigil">@</span>
-          <span class="chat-label">Activity</span>
-          {mentions > 0 && <Count for="mention" class="count-after">{mentions}</Count>}
-        </button>
-        <button class={`chat-row chat-saved${route.view === "saved" ? " selected" : ""}`} data-chat-saved onClick={() => nav.openChatView("saved")}>
-          {/* A bookmark: ★ is Starred's (UI audit #169). */}
-          <span class="chat-sigil">
-            <BookmarkIcon size="xs" />
-          </span>
-          <span class="chat-label">Saved</span>
-          {savedTodo > 0 && <Count class="count-after">{savedTodo}</Count>}
-        </button>
-        <button
-          class={`chat-row chat-activity${route.view === "threads" ? " selected" : ""}${store.threadsUnread.n ? " unread" : ""}`}
+        <Row
+          kind={route.view === "activity" ? "selected" : "plain"}
+          bold={mentions > 0}
+          data-chat-activity
+          lead={<span class="chat-sigil">@</span>}
+          title="Activity"
+          meta={mentions > 0 ? [<Count for="mention">{mentions}</Count>] : undefined}
+          onClick={() => nav.openChatView("activity")}
+        />
+        <Row
+          kind={route.view === "saved" ? "selected" : "plain"}
+          data-chat-saved
+          lead={
+            // A bookmark: ★ is Starred's (UI audit #169).
+            <span class="chat-sigil">
+              <BookmarkIcon size="xs" />
+            </span>
+          }
+          title="Saved"
+          meta={savedTodo > 0 ? [<Count>{savedTodo}</Count>] : undefined}
+          onClick={() => nav.openChatView("saved")}
+        />
+        <Row
+          kind={route.view === "threads" ? "selected" : "plain"}
+          bold={store.threadsUnread.n > 0}
           data-chat-threads
+          lead={
+            <span class="chat-sigil">
+              <ThreadIcon size="sm" />
+            </span>
+          }
+          title="Threads"
+          meta={store.threadsUnread.n > 0 ? [<Count for={store.threadsUnread.mentions ? "mention" : "you"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</Count>] : undefined}
           onClick={() => nav.openChatView("threads")}
-        >
-          <span class="chat-sigil">
-            <ThreadIcon size="sm" />
-          </span>
-          <span class="chat-label">Threads</span>
-          {store.threadsUnread.n > 0 && <Count for={store.threadsUnread.mentions ? "mention" : "you"} class="count-after">{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</Count>}
-        </button>
+        />
       </div>
       {groups.length === 0 && (
         <p class="chat-none" data-chat-no-team>
@@ -562,7 +582,6 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
           }
         />
         {list}
-        <YouRow />
       </>
     );
     const card = (
@@ -607,31 +626,21 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
     addEventListener("pointerup", up);
   };
 
-  // The sidebar's head: whose rooms these are, and a ⋯ for the view's menu
-  // (UI audit #169: a "Team ▾" here read as the bar's project switcher).
-  const ts = teams(api);
-  const head = scope?.name ?? (ts.length === 1 ? ts[0].roster.name : "Chat");
+  // No head of its own (Lift 6c, #1485): the bar says whose rooms these
+  // are, and ⋯ (the view's menu) sits beside search there.
   return (
     <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
         <ChatSearch route={route} scope={scope} slash={!phone && !fit.scoped} />
+        <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-workspace bar-btn sq" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
+          <MoreIcon size="sm" />
+        </IconButton>
       </Bar>
       <MaintenanceNote />
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
-        <aside class="chat-side">
-          <HeadBar
-            class="chat-side-head"
-            onContextMenu={workspaceMenu}
-            title={<BarTitle class="chat-side-name" title={head}>{head}</BarTitle>}
-            actions={
-              <IconButton label="Chat options" title="Mark all as read, sections, unread only" class="chat-new chat-workspace bar-btn sq" aria-haspopup="menu" data-chat-workspace onClick={workspaceMenu}>
-                    <MoreIcon size="sm" />
-                  </IconButton>
-            }
-          />
+        <aside class="chat-side" aria-label="Rooms" onContextMenu={(e) => e.target === e.currentTarget && workspaceMenu(e)}>
           {list}
-          <YouRow />
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
         {view ?? (
@@ -645,44 +654,6 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         )}
       </div>
     </div>
-  );
-}
-
-const MODE: Record<PresenceMode, string> = { auto: "Automatic", away: "Away", offline: "Appear offline" };
-
-/** You, at the rooms' foot (Arugula #1079): your picture, your dot and
- * your presence's mode, which a click changes. While presence runs (chat
- * is on). */
-function YouRow() {
-  useSubscribe((fn) => presence.subscribe(fn));
-  const button = useRef<HTMLButtonElement>(null);
-  const open = useMenuFrom(button);
-  if (!presence.on || !chat.me) return null;
-  const state = presence.mode === "auto" ? (presence.of(chat.me) ?? "active") : presence.mode;
-  const mode = MODE[presence.mode];
-  const pick = (e: MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    openMenu({ clientX: r.left, clientY: r.top, preventDefault: () => e.preventDefault() }, presenceItems(), e.currentTarget as HTMLElement);
-  };
-  return (
-    <button
-      ref={button}
-      class="chat-row chat-you"
-      title="Your presence: click to change it"
-      aria-haspopup="menu"
-      aria-expanded={open}
-      data-chat-you={presence.mode}
-      onClick={pick}
-    >
-      <span class="avatar-wrap" aria-hidden="true">
-        <MsgAvatar who={chat.me} name={chat.myNames[0] ?? "?"} account={chat.me} />
-        <span class={`presence-dot presence-${state}`} data-presence={state} aria-hidden="true" />
-      </span>
-      <span class="chat-label">
-        <span class="chat-you-said">Your presence: </span>
-        {mode}
-      </span>
-    </button>
   );
 }
 
@@ -876,7 +847,7 @@ function RoomView({
             </>
           }
         />
-        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip />
+        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip target="" />
       </section>
       {thread !== undefined ? (
         <ThreadPanel key={thread} store={store} room={room} parent={thread} phone={false} focus={focus} close={closeThread} />

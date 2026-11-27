@@ -24,6 +24,16 @@ export function projectOfRoom(room: string): string | undefined {
   return routeProject() ?? session.personal()?.id;
 }
 
+/** A room's title, as the tab and the bar's last step say it: `#general`,
+ * a DM's people (or its new name), else its name; null until it's read. */
+export function roomTitle(id: string): string | null {
+  const x = chat.room(id);
+  if (!x) return null;
+  if (x.kind === "channel") return `#${x.name}`;
+  if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name || null;
+  return x.name;
+}
+
 /** The project a team's rooms open in (a team has many, aru-140): the
  * route's, else the current one, when it's the team's; else the team's
  * first. Chat goes by a project's `team` (./pages/chat), and so does this. */

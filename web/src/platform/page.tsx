@@ -12,7 +12,7 @@ import { PageGuard } from "../shared/ui/guard";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { PlaceViews, WithRail } from "./rail";
-import { homes, movedHome, names, resolve, roomElsewhere, teamProject } from "./links";
+import { homes, movedHome, names, resolve, roomElsewhere, roomTitle, teamProject } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
@@ -331,14 +331,7 @@ function useTitle(r: Route) {
       const x = runs.known(id);
       return x ? runTitle(x.op) : null;
     },
-    room: (id) => {
-      const x = chat.room(id);
-      if (!x) return null;
-      if (x.kind === "channel") return `#${x.name}`;
-      // A DM by its people, unless it was renamed.
-      if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
-      return x.name;
-    },
+    room: roomTitle,
     team: names,
     shown: barProject(r),
   });

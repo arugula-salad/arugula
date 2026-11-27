@@ -328,6 +328,7 @@ screen that hasn't moved keeps today's pieces
 | Settings (You, Project, Team, a machine's, and a daemon's own `#settings`); Machines' Add a machine; Getting started (one Sheet, Add a machine) | the kit | Lift 7 (#1487) |
 | Docs: the list and a Doc's page (its contents, comments and author) | the kit | Lift 6b (#1484) |
 | the Inbox | the kit | Lift 6d (#1486) |
+| Chat: its rooms, a room's messages, a thread and Details | the kit | Lift 6c (#1485) |
 | everything else | today's pieces | |
 
 The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase

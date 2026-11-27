@@ -7949,10 +7949,6 @@ button.thread-quote:hover {
   font-size: var(--text-label);
 }
 
-.chat-row.muted .chat-label {
-  opacity: 0.6;
-}
-
 /* The moon on a DM whose other person paused notifications (#115). */
 .chat-dnd {
   flex: none;
@@ -8414,12 +8410,6 @@ button.thread-quote:hover {
   border-right: 1px solid var(--line);
 }
 
-/* Whose rooms these are, then ⋯ for the view's menu (UI audit #169): a
-   bar (shared/ui/bar.css, #686). */
-.chat-side-head {
-  border-bottom-color: var(--line);
-}
-
 /* Drawn icons (shared/ui/icons.tsx) sit on the text's line. */
 .chat-sigil svg,
 .chat-section .chat-new svg {
@@ -8491,85 +8481,6 @@ button.thread-quote:hover {
 .chat-none {
   margin: 4px 14px;
   color: var(--ink-dim);
-}
-
-.chat-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
-  min-height: 26px;
-  width: calc(100% - 12px);
-  margin: 0 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-control);
-  text-align: left;
-  color: var(--ink);
-  /* A room's row is a link (UI audit #185), drawn as the others. */
-  text-decoration: none;
-}
-
-.chat.phone .chat-row {
-  width: 100%;
-  min-height: 44px;
-  margin: 0;
-  padding: 0 16px;
-  border-radius: 0;
-  font-size: var(--t-body);
-}
-
-.chat-row.sub {
-  padding-left: 26px;
-}
-
-.chat.phone .chat-row.sub {
-  padding-left: 34px;
-}
-
-.chat-row.quiet {
-  color: var(--ink-dim);
-}
-
-.chat-row.unread .chat-label {
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.chat-row:hover {
-  background: var(--card-raised);
-}
-
-.chat-row.selected {
-  background: var(--selected);
-  box-shadow: var(--selected-mark);
-}
-
-/* You, at the rooms' foot (Arugula #1079): your picture, dot and
-   presence; a click changes it. */
-.chat-row.chat-you {
-  flex: none;
-  gap: 8px;
-  margin-block: 4px 8px;
-  color: var(--ink-dim);
-}
-
-/* Its name is its words ("Your presence: Away"), not an aria-label: the
-   picture's initials are visible text, which a label would leave out
-   (axe's label-content-name-mismatch). */
-.chat-you-said {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.chat-you .msg-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  font-size: 9px; /* off-scale: avatar initials */
 }
 
 .chat-sigil {
@@ -8761,10 +8672,6 @@ button.thread-quote:hover {
   outline: 1px dashed var(--accent);
   outline-offset: -2px;
   background: color-mix(in srgb, var(--accent-fill) 12%, transparent);
-}
-
-.chat-row.dragging {
-  opacity: 0.5;
 }
 
 .chat-inline-link {

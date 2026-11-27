@@ -183,9 +183,12 @@ html[data-native-tabs] .platform {
   font-size: var(--text-label);
 }
 
-/* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
-   panel inset as a page's section is, not drawn over the window as the
-   shell's chat is. A phone's chat keeps the whole screen. */
+/* Chat in the page's frame (UI audit #169), on the kit (Lift 6c, #1485):
+   the bar, then three columns on the canvas. The rooms and the stream are
+   one section, a hairline between them; the thread or Details beside it is
+   a section of its own. The room view's own wrapper (.chat-main) gives way
+   so its two parts are the grid's columns. A phone's chat keeps the whole
+   screen. */
 .platform-chat > .platform-body > .chat:not(.phone) {
   position: relative;
   inset: auto;
@@ -196,11 +199,100 @@ html[data-native-tabs] .platform {
 }
 
 .platform-chat > .platform-body > .chat:not(.phone) > .chat-body {
-  margin: 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--canvas);
+  display: grid;
+  grid-template-columns: var(--chat-side, 260px) minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--gap);
+}
+
+.platform-chat .chat:not(.phone) > .chat-body > .chat-main {
+  display: contents;
+}
+
+.platform-chat .chat:not(.phone) > .chat-body > .chat-side,
+.platform-chat .chat:not(.phone) > .chat-body .chat-thread,
+.platform-chat .chat:not(.phone) > .chat-body .chat-details {
+  min-height: 0;
+  border: 1px solid var(--line);
+  background: var(--sheen), var(--section);
+  box-shadow: var(--highlight), var(--shadow-card);
+}
+
+.platform-chat .chat:not(.phone) > .chat-body > .chat-side {
+  width: auto;
+  border-right-color: var(--line);
+  border-radius: calc(var(--radius) + 4px) 0 0 calc(var(--radius) + 4px);
+  clip-path: inset(-24px 0 -24px -24px);
+}
+
+.platform-chat .chat:not(.phone) > .chat-body .chat-thread {
+  border-left: 0;
+  border-radius: 0 calc(var(--radius) + 4px) calc(var(--radius) + 4px) 0;
+}
+
+.platform-chat .chat:not(.phone) > .chat-body .chat-details {
+  margin-left: var(--gap);
+  border-radius: calc(var(--radius) + 4px);
   overflow: hidden;
+}
+
+/* The rooms are kit rows on the section, in the side's own padding. */
+.chat-side .chat-list {
+  padding: 8px 6px 16px;
+}
+.chat-list .k-row {
+  --row: 30px;
+}
+.chat-list .k-row-line {
+  gap: 8px;
+  padding: 0 8px;
+}
+/* A phone's rows are a finger's height, edge to edge. */
+.chat.phone .chat-list .k-row {
+  --row: 44px;
+  border-radius: 0;
+}
+.chat.phone .chat-list .k-row-line {
+  padding: 0 16px;
+  font-size: var(--t-body);
+}
+.chat-list .k-row[data-quiet] .k-row-title,
+.chat-list .k-row[data-muted] .k-row-title {
+  color: var(--ink-dim);
+}
+.chat-list .k-row[data-dragging] {
+  opacity: 0.5;
+}
+.chat-top {
+  margin-bottom: 6px;
+}
+/* A group's head is a quiet label over its rows, as the prototype's. */
+.chat-side .chat-section {
+  margin: 14px 0 2px;
+  font: 500 var(--text-label) var(--font-meta);
+  letter-spacing: var(--track-section);
+}
+.chat-side .chat-section button {
+  padding: 3px 8px;
+}
+
+/* The stream's head: the room's name as a title, its topic beside it. */
+.platform-chat .chat:not(.phone) .chat-head {
+  min-height: 52px;
+  background: none;
+  padding-inline: 20px 12px;
+  border-bottom: 0;
+}
+.platform-chat .chat:not(.phone) .chat-head .chat-title {
+  font: 600 var(--text-title) var(--font-title);
+}
+.platform-chat .chat:not(.phone) .chat-head .chat-topic-line {
+  color: var(--ink-dim);
+  font: var(--text-meta) var(--font-meta);
+}
+/* The composer is the kit's, inset as the stream is. */
+.platform-chat .chat:not(.phone) .chat-thread .k-composer {
+  margin: 0 20px 16px;
 }
 
 /* A page that's one panel fills the frame, as a lone pane does. */

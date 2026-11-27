@@ -234,7 +234,7 @@ export function ThreadPanel({
         )}
       </div>
       {room.writable && first ? (
-        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} target={inPanel ? `thread · ${label}` : undefined} />
+        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} target={inPanel ? `thread · ${label}` : phone ? undefined : ""} />
       ) : null}
     </aside>
   );
