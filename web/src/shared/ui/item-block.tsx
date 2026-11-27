@@ -12,6 +12,7 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { CheckIcon, CloseIcon, ExternalIcon, IconButton, IssueIcon, MergeIcon, PrIcon, ReloadIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
 import { Card } from "./card";
+import { Avatar } from "../kit/avatar";
 import "./item-block.css";
 
 export type ItemKind = "pr" | "issue";
@@ -79,7 +80,7 @@ function SourceIcon({ source }: { source: ItemSource }) {
 function ReviewerFace({ role, name, badge, ring, dim, title }: { role: "reviewer" | "assignee"; name: string; badge?: "ok" | "danger" | "info"; ring?: boolean; dim?: boolean; title: string }) {
   return (
     <span class="item-avatar" data-item-avatar={role} data-name={name} data-ring={ring ? "asked" : undefined} data-dim={dim ? "" : undefined} title={title}>
-      {name.charAt(0).toUpperCase()}
+      <Avatar name={name} />
       {badge && <span class={`avatar-mark item-avatar-${badge}`}>{badge === "ok" ? <CheckIcon size="xs" /> : badge === "danger" ? <CloseIcon size="xs" /> : "•"}</span>}
     </span>
   );

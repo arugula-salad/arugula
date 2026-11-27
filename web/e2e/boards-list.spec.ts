@@ -44,6 +44,7 @@ const view = (b: (typeof BOARDS)[number]) => {
   };
 };
 
+const issue = (number: number, title: string) => ({ id: `iss_${String(number).padStart(32, "0")}`, project: P, number, title, body: "", state: "open", close_reason: null, author: "acct_a", agent: null, labels: [], assignees: [], github: null, created_at: 1, updated_at: 1, closed_at: null });
 const loose = (number: number, title: string) => ({ pointer: { kind: "issue", id: `iss_${number}` }, source: "native", kind: "issue", number, title, state: "open", assignees: [], labels: ["ui"], updated_at: 1 });
 
 /** The cloud's answers, then the app at `path`. `added` hears each add to a board. */
@@ -60,6 +61,8 @@ async function openApp(page: Page, path: string, added: string[] = []) {
   });
   await page.route(new RegExp(`/api/projects/${P}/work\\?`), (r) => r.fulfill({ json: { project: P, items: [loose(41, "Flaky login"), loose(42, "Dark mode")], next: null, total: 2, labels: [{ name: "ui", count: 2 }] } }));
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: { project: P, groups: [] } }));
+  await page.route(`**/api/projects/${P}/issue-home`, (r) => r.fulfill({ json: { project: P, name: "Arugula", home: "native", chosen: true, repos: [], native_issues: 3, both: false, labels: [], team: true } }));
+  await page.route(new RegExp(`/api/projects/${P}/issues\\?`), (r) => r.fulfill({ json: { project: P, issues: [issue(41, "Flaky login"), issue(42, "Dark mode"), issue(43, "On a board")], more: false } }));
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(path);
@@ -153,6 +156,36 @@ test.describe("on a computer", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/triage$/);
     await expect(loose).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("All issues is a row; the project's issues fill the middle, and the Issues page's address selects it (Lift 5a)", async ({ page }) => {
+    await openApp(page, `/p/${P}/boards`);
+    const all = page.locator("[data-list-rows] [data-boards-all]");
+    await expect(all.locator("[data-boards-all-n]")).toHaveText("3");
+    await all.click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues$`));
+    await expect(all).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-list-preview] [data-issues-list] [data-issue-row]")).toHaveCount(3);
+    await expect(page.locator('[data-path="issues"]')).toHaveText("All issues");
+    await page.goto(`/p/${P}/issues?state=closed`);
+    await expect(page.locator("[data-list-rows] [data-boards-all]")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-list-preview] [data-issues-closed]")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("New issue's old address opens All issues with the New issue sheet (Lift 5a)", async ({ page }) => {
+    await openApp(page, `/p/${P}/issues/new`);
+    await expect(page.locator("[data-list-rows] [data-boards-all]")).toHaveAttribute("aria-selected", "true");
+    const sheet = page.getByRole("dialog", { name: "New issue" });
+    await expect(sheet.locator("[data-add-row-title]")).toBeFocused();
+    await expect(sheet.locator("[data-add-row-add]")).toHaveText("Open issue");
+  });
+
+  test("Not on a board shows only while it has issues", async ({ page }) => {
+    await openApp(page, `/p/${P}/boards`);
+    await page.route(new RegExp(`/api/projects/${P}/work\\?`), (r) => r.fulfill({ json: { project: P, items: [], next: null, total: 0, labels: [] } }));
+    await page.reload();
+    await expect(page.locator("[data-list-rows] [data-boards-all]")).toBeVisible();
+    await expect(page.locator("[data-list-rows] [data-boards-loose]")).toHaveCount(0);
   });
 
   test("the triage link selects Not on a board's row", async ({ page }) => {

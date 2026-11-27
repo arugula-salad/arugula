@@ -213,25 +213,22 @@
   gap: var(--space-1);
 }
 
+/* A reviewer or assignee: the kit's Avatar (Lift 5a), its state mark on the corner; dashed while asked and not answered. */
 .item-avatar {
   position: relative;
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
+}
+
+.item-avatar > .k-avatar {
   width: 20px;
   height: 20px;
   border: 1.5px solid transparent;
-  border-radius: 50%;
-  background: var(--raised-hover);
-  color: var(--fg);
-  font: 600 10px/1 var(--font-mono); /* off-scale: avatar initials */
 }
 
-.item-avatar[data-ring="asked"] {
-  border: 1.5px dashed var(--warn);
+.item-avatar[data-ring="asked"] > .k-avatar {
+  border: 1.5px dashed var(--needs);
   background: none;
-  color: var(--warn);
+  color: var(--needs);
 }
 
 .item-avatar[data-dim] {

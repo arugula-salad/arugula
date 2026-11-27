@@ -22,12 +22,13 @@ import { escapeTaken } from "../ui/menu";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { useSubscribe } from "../ui/hooks";
+import { Avatar } from "../kit/avatar";
 import { day } from "../time";
 import { boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { rowSessions, type RowSession } from "./row-sessions";
 import type { SessionsByCard } from "../project-sessions";
-import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
+import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore } from "./text";
 
 export type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
@@ -144,14 +145,12 @@ export function Owners({ who, all }: { who: string[]; all?: boolean }) {
   if (!list.length) return null;
   const { top, more } = topAndMore(list, all ? list.length : 2);
   return (
-    <span class="board-who" role="img" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
+    <span class="board-who" role="group" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
       {top.map((w) => (
-        <span key={w} class="board-avatar" aria-hidden="true" data-board-avatar>
-          {initialsOf(w)}
-        </span>
+        <Avatar key={w} name={w} />
       ))}
       {more > 0 && (
-        <span class="board-avatar more" aria-hidden="true" data-board-avatar-more>
+        <span class="m-meta" data-board-avatar-more>
           +{more}
         </span>
       )}

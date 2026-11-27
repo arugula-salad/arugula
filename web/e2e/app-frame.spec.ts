@@ -193,14 +193,14 @@ test.describe("on a computer", () => {
     await expect(rail(page, "chat").locator("[data-count]")).toHaveText("2");
   });
 
-  test("the Issues page's path is Boards › Issues, Boards a link up; an issue's, Issues a link up too (Arugula #1387)", async ({ page }) => {
+  test("All issues' path is Boards › All issues, Boards a link up; an issue's, All issues a link up too (Arugula #1387, Lift 5a)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/issues`);
     await onlyLit(page, "boards");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*Issues$/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*All issues$/);
     await expect(page.locator("[data-app-path] [data-path=boards]")).toHaveAttribute("href", new RegExp(`^/p/${P}[^/]*/boards$`));
     await expect(page.locator("[data-app-path] [data-path=issues]")).toHaveAttribute("aria-current", "page");
     await page.goto(`/p/${P}/issues/iss_0001`);
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*Issues$/);
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Boards\s*All issues$/);
     await page.locator("[data-app-path] [data-path=issues]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues$`));
     await page.locator("[data-app-path] [data-path=boards]").click();

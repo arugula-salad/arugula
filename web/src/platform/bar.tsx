@@ -25,6 +25,7 @@ import type { Step } from "../shared/kit/crumb";
 import { TopBar } from "../shared/kit/frame/top";
 import { openGoTo } from "../shared/kit/frame/goto";
 import { boards } from "../shared/boards/store";
+import { issues } from "../shared/issues/store";
 import { PhoneInbox } from "./rail";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
@@ -141,9 +142,16 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
   } else if (r.page === "machines" && r.at.at === "swarm") {
     // Swarm is the Overview's view (Arugula #1348): Overview › Swarm.
     steps.push(link(SECTION_LABEL.home, home, "home"), { label: "Swarm", hook: "swarm" });
+  } else if (r.page === "issue" && where.boardOf(r.issue)) {
+    // A card (Lift 5a): Boards › its board › #N.
+    const on = where.boardOf(r.issue)!;
+    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), link(on.title, pathOf({ page: "board", project, board: on.board }, names), "board"), { label: issues.known(r.issue) ? `#${issues.known(r.issue)!.number}` : "Card", hook: "card" });
   } else if (r.page === "issues" || r.page === "issue" || r.page === "new-issue") {
-    // The issues are Boards' (#656): Boards › Issues, each a level up (Arugula #1387).
-    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), link("Issues", pathOf({ page: "issues", project }, names), "issues"));
+    // The issues are Boards' (#656): Boards › All issues, each a level up (Arugula #1387, Lift 5a).
+    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), link("All issues", pathOf({ page: "issues", project }, names), "issues"));
+  } else if (r.page === "triage") {
+    // Not on a board is a row of Boards (Lift 5a).
+    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), { label: "Not on a board", hook: "triage" });
   } else if (r.page === "board") {
     // A board's own page (Lift 5a): Boards › its title.
     steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), { label: boards.title(r.board) ?? "Board", hook: "board" });
@@ -203,6 +211,8 @@ export function AccountButton() {
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
+  // A card's crumb names it by its number once it's read.
+  useSubscribe((fn) => issues.subscribe(fn));
   const r = useRoute();
   // A phone has no rail (#377): the bar keeps the switcher and the Inbox's bell (Arugula #1345).
   const rail = !usePhone();

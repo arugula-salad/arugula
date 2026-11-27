@@ -48,6 +48,7 @@ import { issues } from "../issues/store";
 import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
+import { AddRowSheet } from "./add-row";
 import { AlertStrip, BoardNeeds, DeskTabs, LeadPanel, PrFold, deskTabs } from "./desk";
 import { both, useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
@@ -180,6 +181,8 @@ export function BoardPanel({
   const [filterOpen, setFilterOpen] = useState(false);
   /** Link a Doc's picker is open (the desk's ⋯). */
   const [picking, setPicking] = useState(false);
+  /** Add row's Sheet is open (the desk's Add row, `a`). */
+  const [adding, setAdding] = useState(false);
   const prs = view ? openPrs(view) : [];
   const tabs = view ? deskTabs(view, prs.filter((p) => prTabs.includes(p.id))) : [];
   // The desk's keys (Lift 5a): its tabs by number, a row at a time, Filter, Add row and the lead.
@@ -196,7 +199,7 @@ export function BoardPanel({
           { id: "board.next", label: "The next row", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => tile(1) },
           { id: "board.prev", label: "The row before", keys: both("key:k"), run: () => tile(-1) },
           { id: "board.find", label: "Filter the rows", keys: both("key:f", "key:/"), run: openFind },
-          { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab("board"), setEditing("new")) },
+          { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab("board"), setAdding(true)) },
           { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea")?.focus() },
         ]
       : [],
@@ -347,9 +350,9 @@ export function BoardPanel({
   // The desk's ⋯: the sidebar's adds and Docs, then the board's own, then the page's.
   const deskMore: MenuItem[] = [
     ...(shareLink ? [{ label: "Copy link", run: () => void copyLink(), attrs: { "data-copy-link": "", "data-link": shareLink } }] : []),
+    { label: "Add an existing item…", run: () => setEditing("new"), attrs: { "data-board-add-existing": "" } },
     ...(write ? [{ label: "Link a Doc…", run: () => setPicking(true), attrs: { "data-board-doc-add": "" } }] : []),
     ...(write ? [{ label: "Add a group…", run: () => void addGroup(), attrs: { "data-board-add-group": "" } }] : []),
-    { label: "New issue…", run: () => void newIssue(), attrs: { "data-board-new-issue": "" } },
     ...plane.map((c) => ({ label: `New issue in Plane (${c.identifier})…`, run: () => void newPlaneIssue(c), attrs: { "data-board-new-plane-issue": c.identifier } })),
     ...(more.length ? ["separator" as const, ...more] : []),
     ...(extra.length ? ["separator" as const, ...extra] : []),
@@ -446,7 +449,7 @@ export function BoardPanel({
                 <button type="button" class="secondary small" aria-pressed={filterOpen || narrows} aria-keyshortcuts="f" data-board-filter onClick={() => (filterOpen && !narrows ? setFilterOpen(false) : openFind())}>
                   Filter
                 </button>
-                <button type="button" class="secondary small" aria-keyshortcuts="a" data-board-add-row onClick={() => setEditing("new")}>
+                <button type="button" class="secondary small" aria-keyshortcuts="a" data-board-add-row onClick={() => setAdding(true)}>
                   <PlusIcon size="xs" />
                   Add row
                 </button>
@@ -460,6 +463,7 @@ export function BoardPanel({
           {picking && <DocPicker project={view.board.project} taken={new Set((view.docs ?? []).flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])))} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
           {(filterOpen || narrows) && findBar}
           {editing === "new" && rowForm}
+          {adding && <AddRowSheet project={view.board.project} board={id} close={() => setAdding(false)} done={() => (setAdding(false), again())} />}
         </>
       ) : (
         <>
@@ -484,7 +488,7 @@ export function BoardPanel({
           why={`A row is one piece of work: an issue or a PR. Its lane follows that work, so nobody sets it.${write ? "" : " Its writers add rows."}`}
           action={
             write && (
-              <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+              <button type="button" class="secondary small" data-board-add-row onClick={() => (desk ? setAdding(true) : setEditing("new"))}>
                 <PlusIcon size="xs" />
                 Add row
               </button>

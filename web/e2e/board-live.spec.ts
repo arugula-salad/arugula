@@ -109,7 +109,8 @@ test.describe("on a computer", () => {
 
     // Open on its machine: the pane, on its machine's page in the app.
     await live.locator("[data-board-live-open]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${pane}`));
+    // Its machine's page, in the project of the pane's session (the page moves there once it knows, #1161).
+    await expect(page).toHaveURL(new RegExp(`/p/prj_[^/]+/machines.*pane=${pane}`));
   });
 
   test("the session's question is at the top of the drawer, answered in place", async ({ page }) => {

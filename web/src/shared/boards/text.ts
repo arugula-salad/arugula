@@ -748,18 +748,6 @@ export function topAndMore<T>(list: T[], max: number): { top: T[]; more: number 
   return { top: list.slice(0, max), more: Math.max(0, list.length - max) };
 }
 
-/** A name's initials, up to two: `Ana Diaz` is `AD`, `alice` is `A`. */
-export function initialsOf(name: string): string {
-  return (
-    name
-      .split(/[\s._-]+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => [...w][0].toUpperCase())
-      .join("") || "?"
-  );
-}
-
 /** The find box's count: `7 of 89 rows`. */
 export function findLine(shown: number, all: number): string {
   return `${shown} of ${all} ${all === 1 ? "row" : "rows"}`;

@@ -102,7 +102,7 @@ export function PrFold({ prs, open }: { prs: OpenPr[]; open: (pr: OpenPr) => voi
 }
 
 /** An ask on a row, as the A2P row draws it. */
-function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
+export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
   return {
     kind: "ask",
     title: a.question,
