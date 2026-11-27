@@ -67,6 +67,20 @@ export async function markItem(id: string, what: { seen?: boolean; done?: boolea
   void load();
 }
 
+/** Answer an approval or a to-do (`POST /api/inbox/{id}` with its
+ * `choice`, and a to-do's note), as its staff card's buttons do; throws
+ * the server's words. Then read the bar's count again. */
+export async function answerItem(id: string, choice: string, note?: string): Promise<void> {
+  const r = await platformFetch(`/api/inbox/${encodeURIComponent(id)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(note?.trim() ? { choice, note: note.trim() } : { choice }),
+  });
+  if (!r.ok) throw new Error(refusalOf(r.status, (await r.json().catch(() => ({}))) as { error?: string }));
+  void load();
+}
+
 let loading: Promise<void> | null = null;
 function load(): Promise<void> {
   loading ??= readInbox()

@@ -3,7 +3,8 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardSource, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue, InboxItem, BoardAnsweredAsk } from "../proto";
+import type { Need } from "../kit/need-row";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -570,11 +571,14 @@ export interface TileState {
   needs?: boolean;
 }
 
-export function tileState(r: Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">, now: number = Date.now(), sessionNeeds = false): TileState {
+export function tileState(r: Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">, now: number = Date.now(), sessionNeeds = false, item?: { word: string; mine: boolean }): TileState {
   const a = r.ask && !r.ask.raised ? r.ask : null;
   if (a?.mine) return { mark: "asks", word: "asks you", needs: true };
+  // An agent's item on its issue (Arugula #1469): "asks you", "waits on you".
+  if (item?.mine) return { mark: "asks", word: item.word, needs: true };
   if (sessionNeeds || r.attachments.some((x) => holdsRow(x) && x.block?.state === "needs_input")) return { mark: "asks", word: "needs you", needs: true };
   if (a) return { mark: "waits", word: `asks ${a.who_name || "someone"}` };
+  if (item) return { mark: "waits", word: item.word };
   const failing = (l: BoardLive | null | undefined) => l?.state === "checks_failed" || l?.state === "run_failed" || (!!l?.left_queue && isOpenPr(l));
   if (failing(r.live) || r.attachments.some((x) => x.role === "work" && failing(x.live))) return { mark: "failing", word: "failing" };
   const m = marksOf(r, now);
@@ -599,8 +603,9 @@ export function tileMeta(r: Pick<BoardRow, "lane" | "pointer" | "live" | "attach
 }
 
 /** A lane's rows with those that wait on the reader first, the rest in the board's order. */
-export function needsFirst<R extends Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">>(rows: R[]): R[] {
-  return [...rows.filter((r) => tileState(r).needs), ...rows.filter((r) => !tileState(r).needs)];
+export function needsFirst<R extends Pick<BoardRow, "lane" | "ask" | "live" | "attachments" | "marks">>(rows: R[], mine: (r: R) => boolean = () => false): R[] {
+  const needs = (r: R) => mine(r) || !!tileState(r).needs;
+  return [...rows.filter(needs), ...rows.filter((r) => !needs(r))];
 }
 
 /** How many of Done's rows show before "N more". */
@@ -748,4 +753,68 @@ export function boardMatches(b: Pick<ProjectBoard, "title" | "goal" | "source">,
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const text = [b.title, b.source?.key ?? "", b.goal].join("\n").toLowerCase();
   return words.every((w) => text.includes(w));
+}
+
+/** Kinds that aren't Needs you: an alert is the board's red strip and Running's (Arugula #1393). */
+const ALERT_KINDS = new Set(["checks_failed", "run_failed", "agent_failed"]);
+
+/** The word a NeedRow says of an item's kind. */
+export const NEED_KIND: Record<string, string> = {
+  agent_ask: "ask",
+  board_ask: "ask",
+  permission: "permission",
+  approval: "approval",
+  deploy_approval: "approval",
+  changes_requested: "changes",
+  todo: "todo",
+};
+
+/** The agents' items on a board's issues (Arugula #1469), by the row each is on: the Inbox's open decisions whose `subject.issue` is a row's native issue, oldest first. A board ask isn't one: the view has it as the row's `ask`. */
+export function boardItems(rows: Pick<BoardRow, "id" | "pointer">[], items: InboxItem[]): Map<string, InboxItem[]> {
+  const rowOf = new Map(rows.flatMap((r) => (r.pointer.kind === "issue" ? [[r.pointer.id, r.id] as const] : [])));
+  const out = new Map<string, InboxItem[]>();
+  for (const i of items) {
+    const row = i.subject.issue && rowOf.get(i.subject.issue);
+    if (!row || i.group !== "decide" || i.done_at || i.kind === "board_ask" || ALERT_KINDS.has(i.kind)) continue;
+    out.set(row, [...(out.get(row) ?? []), i]);
+  }
+  for (const list of out.values()) list.sort((a, b) => a.since - b.since);
+  return out;
+}
+
+/** Who an item waits on, as a NeedRow says it: "you", or the teammate's name. */
+export const itemFor = (i: Pick<InboxItem, "for">, me: string | null, name: (account: string) => string): string => (i.for && me && i.for !== me ? name(i.for) : "you");
+
+/** An agent's item on a row as a NeedRow draws it: answered in place when it's an approval or a to-do (its options), else opened where it lives. */
+export function itemNeed(i: InboxItem, who: string, number: number | undefined, now: number = Date.now()): Need {
+  const lines = i.lines ?? [];
+  // A to-do's how is its line with newlines in it (Arugula #1467): the well's.
+  const how = i.kind === "todo" ? lines.find((l) => l.includes("\n")) : undefined;
+  const answers = i.answer && (i.answer.via === "card" || i.answer.via === "todo") && i.answer.options.length ? i.answer.options : null;
+  return {
+    kind: NEED_KIND[i.kind] ?? i.kind,
+    title: i.title,
+    from: i.from,
+    for: who,
+    subject: number ? { kind: "issue", id: `#${number}` } : undefined,
+    lines: lines.filter((l) => l !== how),
+    answer: answers ? { via: i.kind === "todo" ? "todo" : "card", options: answers.map((o) => ({ id: o, label: o })) } : undefined,
+    escalated: i.escalated,
+    how,
+    age: i.since ? stalledFor(i.since, now) : "",
+  };
+}
+
+/** A tile's word for an agent's item on it: "asks you", "waits on you" (a to-do), "asks Jake". */
+export function itemWord(i: Pick<InboxItem, "kind">, who: string): string {
+  return `${i.kind === "todo" ? "waits on" : "asks"} ${who}`;
+}
+
+/** The fold of a teammate's rows in a board's Needs you: "· 1 for Jake ›". */
+export const forTeammateFold = (n: number, name: string): string => `· ${n} for ${name} ›`;
+
+/** An answer's words in a card's Activity, after who: a board ask's or an approval's `answered Squash`; a to-do's `did Rotate the key` (`couldn't do …` for Can't), with the note its record keeps. */
+export function answeredWords(a: Pick<BoardAnsweredAsk, "kind" | "question" | "answer" | "note">): { verb: string; what: string; note?: string } {
+  if (a.kind === "todo") return { verb: a.answer === "Can't" ? "couldn't do" : "did", what: a.question, note: a.note || undefined };
+  return { verb: "answered", what: a.answer };
 }
