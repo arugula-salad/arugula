@@ -103,7 +103,8 @@ for (const [name, use] of Object.entries(viewports)) {
             },
             [term, `${cli} hook < ${dir}/pre.json; ${cli} hook < ${dir}/perm.json; echo hook-done-$((6*7))`] as const,
           );
-          const card = paneEl(page, term).locator(".ask.perm");
+          // Over the tab's panes on a computer (Lift 6a); in its pane on a phone.
+          const card = page.locator(`[data-tab-asks] [data-pane-ask="${term}"] .ask.perm`).or(paneEl(page, term).locator(".ask.perm"));
           await expect(card).toBeVisible({ timeout: 15_000 });
           const allow = card.getByRole("button", { name: "Allow", exact: true });
           await inView(page, allow);
