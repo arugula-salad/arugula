@@ -27,7 +27,7 @@ import type { ComponentChildren } from "preact";
 import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { BoardOfDoc, ProjectDoc, ProjectDocTrash, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ChatAgent, ProjectDoc, ProjectDocTrash, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { TITLE_MAX, titleRefusal } from "../../shared/docs/doc-title.ts";
@@ -41,6 +41,9 @@ import { DocBlock } from "../../shared/docs/doc-render";
 import { DocComments } from "../../shared/docs/doc-comments";
 import { reachOf } from "../../shared/docs/doc-reach";
 import { LayoutMark } from "../../shared/docs/layout-mark";
+import { docLayout } from "../../shared/docs/layout";
+import { DocToc, tocOf } from "../../shared/docs/toc";
+import { panelKey, usePanel, type PanelTarget } from "../../shared/kit/panel";
 import { madeBy, modeOf } from "../../shared/docs/docs-mode";
 import { stateOf, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
 import { both, useBindings } from "../../shared/keys";
@@ -390,61 +393,67 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
 
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   const images = useProjectImages(project, doc);
+  const reader = useRef<HTMLElement>(null);
+  const AgentPanel = usePanel();
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const writer = !!view?.writer;
   // An older platform sends no `deleter`, and then its `writer` says.
   // Delete is in ⋯.
   const deleter = !!view && (view.deleter ?? view.writer);
+  const linked = onBoards.map((b) => {
+    const to = pathOf({ page: "board", project, board: b.board }, names);
+    return (
+      <li key={b.board}>
+        <a href={to} class="doc-toc-go" onClick={(e) => follow(e, to)} data-doc-board={b.board}>
+          <span>{b.title}</span>
+          <span class="m-meta">{onBoardWords(b)}</span>
+        </a>
+      </li>
+    );
+  });
+  // A Doc an agent wrote has it in the agent panel, folded (`\` opens it).
+  const author = view?.doc.agent ? authorOf(view.doc.agent) : null;
   return (
-    <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
-      {missing && !view && (
-        <p class="dim" data-doc-missing>
-          That Doc can't be read: {missing}.
-        </p>
-      )}
-      {!missing || view ? (
-        <Commented project={project} view={view}>
-        <DocBlock
-          id={0}
-          docKey={doc}
-          s={state}
-          fresh={fresh}
-          load={images.load}
-          cached={images.cached}
-          link="page"
-          titleView={view && writer ? <TitleEdit project={project} view={view} opener={rename} wrote={show} /> : undefined}
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu more={more} deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
-          byline={
-            view && (
-              <>
-                <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span>
-              </>
-            )
-          }
-        />
-        </Commented>
-      ) : null}
-      {view && <PublicLinkBar project={project} view={view} reload={again} />}
-      {onBoards.length > 0 && (
-        <p class="dim doc-lead" data-doc-boards>
-          On boards:{" "}
-          {onBoards.map((b, i) => {
-            const to = pathOf({ page: "board", project, board: b.board }, names);
-            return (
-              <span key={b.board}>
-                {i > 0 && ", "}
-                <a href={to} onClick={(e) => follow(e, to)} data-doc-board={b.board}>
-                  {b.title}
-                </a>{" "}
-                ({onBoardWords(b)})
-              </span>
-            );
-          })}
-        </p>
-      )}
-      {view && writer && <DocWriter project={project} view={view} wrote={show} />}
-    </section>
+    <div class="doc-place" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
+      <div class="doc-place-work" data-work tabIndex={-1}>
+        <section class="project-doc" ref={reader}>
+          {missing && !view && (
+            <p class="dim" data-doc-missing>
+              That Doc can't be read: {missing}.
+            </p>
+          )}
+          {!missing || view ? (
+            <Commented project={project} view={view}>
+              <DocBlock
+                id={0}
+                docKey={doc}
+                s={state}
+                fresh={fresh}
+                load={images.load}
+                cached={images.cached}
+                link="page"
+                titleView={view && writer ? <TitleEdit project={project} view={view} opener={rename} wrote={show} /> : undefined}
+                share={view && <PlatformDocActions p={p} doc={view.doc} menu more={more} deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
+                byline={view && <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span>}
+              />
+            </Commented>
+          ) : null}
+          {view && <PublicLinkBar project={project} view={view} reload={again} />}
+          {view && writer && <DocWriter project={project} view={view} wrote={show} />}
+        </section>
+        {view && <DocToc sections={docLayout(view.doc.layout) === "doc" ? tocOf(view.sections) : []} reader={reader} linked={linked} />}
+      </div>
+      {AgentPanel && author && <AgentPanel project={project} targets={[author]} current={panelKey(author)} folded />}
+    </div>
   );
+}
+
+/** The agent that wrote a Doc, as the panel's tab: its session on its
+ * machine, or an agent session on a Cloud workspace (`ses_…`, as itself);
+ * none when it's unknown which session it was. */
+function authorOf(a: ChatAgent): PanelTarget | null {
+  const session = a.session ?? (a.machine.startsWith("ses_") ? a.machine : undefined);
+  return session ? { kind: "agent", role: "agent", machine: a.machine, session } : null;
 }
 
 /** The Doc with its comments in the margin (#1258), once it's read. */

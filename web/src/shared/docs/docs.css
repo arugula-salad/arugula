@@ -3,24 +3,150 @@
    Doc block's renderer, with its styles (../style.css's .doc); this is the
    page around it and the writer's form. It fits a phone. */
 
+/* A Doc's page (Lift 6b): the work column (its paper, the comments' margin
+   beside it, and the contents), then the agent panel with its author,
+   folded. The work column scrolls; the contents stay in view. */
+.platform-main:has(> .doc-place) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.doc-place {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--gap);
+  flex: 1;
+  min-height: 0;
+  padding: var(--gap);
+  box-sizing: border-box;
+}
+
+.doc-place-work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 230px;
+  align-items: start;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.doc-place-work:focus {
+  outline: none;
+}
+
+/* A project Doc, on its page and in the app's embed (#1258). */
 .project-doc {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  /* A Doc's page is as wide as the frame, not the section's usual 880px
-     column: the Doc centres its own measure (#783), and the container it is
-     measured in is this, so the wider tiers can be reached. */
   padding-inline: 24px;
+  /* The Doc centres its own measure (#783), in this container, so the
+     wider tiers can be reached. */
   container: doc / inline-size;
 }
 
-/* The block fills its pane; on the page it's as tall as what it says, a
-   sheet of the Doc's own paper (#253). */
+/* The Doc is a sheet of its own paper (#253), as tall as what it says. */
 .project-doc .doc {
   flex: none;
   overflow: visible;
-  border-radius: 10px;
+  border-radius: var(--radius);
+}
+
+.doc-place .project-doc {
+  padding-block: 20px 40px;
+}
+
+.doc-place .project-doc .doc {
+  border: 1px solid var(--line);
+  box-shadow: var(--highlight), var(--shadow-card);
+}
+
+/* The contents: On this page, then Linked. */
+.doc-toc {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  padding: 22px 16px;
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.doc-toc-head {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 6px;
+  font: 600 var(--text-label) var(--font-sans);
+}
+
+.doc-toc-list + .doc-toc-head {
+  margin-top: 22px;
+}
+
+.doc-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-toc-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.doc-toc-go {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--text-meta) var(--font-sans);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.doc-toc-go > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-toc-go .m-meta {
+  color: var(--ink-dim);
+}
+
+.doc-toc-go:hover {
+  background: var(--hover);
+}
+
+.doc-toc-go[aria-current] {
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+
+/* Narrow: the contents fold away; the panel goes under the work. */
+@media (max-width: 1100px) {
+  .doc-place-work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .doc-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .doc-place {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* The list (Lift 6b): the title and its count, the Mine filter and New
@@ -145,6 +271,6 @@
 .doc-title-why {
   display: block;
   margin-top: 4px;
-  font: var(--text-md) var(--f-body, inherit);
+  font: var(--text-body) var(--f-body, inherit);
   letter-spacing: normal;
 }
