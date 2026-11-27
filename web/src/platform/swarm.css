@@ -195,6 +195,36 @@
   font: 500 var(--text-sm)/1.3 var(--font-mono);
 }
 
+/* A run is a Card laid out as a line (the Runs page keeps today's look until its lift). */
+.run-row.card {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.run-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.platform-section a.run-row-title {
+  margin-right: 6px;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.platform-section a.run-row-title:hover {
+  color: var(--accent);
+}
+
+.run-row-meta {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--text-sm);
+}
+
 .platform .run-row .card-id {
   flex: 0 1 auto;
   max-width: 40%;

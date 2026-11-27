@@ -353,11 +353,18 @@ function useTitle(r: Route) {
 }
 
 /** Where a page that moved is now: the Sessions page folded into Boards
- * (Arugula #1082), Build's panes into Machines (#1346). Here, not in an effect of its own, which raced this one:
+ * (Arugula #1082), Build's panes into Machines (#1346), every project's
+ * Boards into a project's (Lift 5a). Here, not in an effect of its own, which raced this one:
  * the slug's rewrite ran after it and put the old address back (Arugula
  * #1155). */
 function movedPage(r: Route): Route {
   if (r.page === "sessions") return { page: "boards", project: r.project };
+  // Every project's Boards (`/boards`, `?all=1`) is the current project's, else your first's (Lift 5a, Arugula #1525).
+  if (r.page === "all-boards" && !r.board) {
+    const here = currentProject();
+    const project = here && session.project(here) ? here : session.projects[0]?.id;
+    if (project) return { page: "boards", project };
+  }
   // Build's list of panes (#1083) is the Machines page (Arugula #1346).
   if (r.page === "machines" && r.at.at === "panes") return { ...r, at: { at: "machines", ...(r.at.agents ? { agents: true } : {}) } };
   return r;

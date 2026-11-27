@@ -56,6 +56,8 @@ if people miss it. Newest at the bottom.
 - **A Claude Code terminal's raw lines in the panel's transcript:** its tool calls fold to a line each; its banner, prompt box, spinners and timings are left out (the Terminal, `v`, still shows them) (Lift 4, Arugula #1480).
 - **`AskCard`, `QuestionCard` and `FormCard`** (`shared/ask.tsx`) and their CSS: an agent's question, form or sign-in link is the kit's NeedRow, with the same answers (Lift 4, Arugula #1480).
 - **Swarm's rail cards** (their kind colours, pop-in, uppercase titles and tinted frames): the rail is a list of NeedRows, as Needs you's (Lift 4, Arugula #1480).
+- **All issues' issue cards** (their state-coloured bars, the bold title, the "Closed" chip and the 20px avatars): each issue is a kit Row, ○ open or ✓ closed, #N, title, labels, who and when (Arugula #1521).
+- **Not on a board's own row look** (the dimmed select box until hovered, the accent-tinted selection, labels hidden on a phone): the kit Row, with its select box before it (Arugula #1521).
 - **The terminals' and editors' Slate and Latte colors:** a terminal, an editor block and nvim are drawn from the look, on the well; a Doc from Arugula's own pair, whatever the look (Arugula #1511).
 - **The shell's Docs page (`#docs`):** a machine's Docs are in Go to… by title, and the app's Docs are the rail's; an old `#docs` lands on one of them (Lift 6b, Arugula #1484).
 - **My Docs and Team Docs tabs:** one list, with a Mine filter in a team (Lift 6b, Arugula #1484).
