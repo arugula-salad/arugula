@@ -6,11 +6,10 @@
 // opened yet is made on its first click. Which rooms these are is
 // ./agent-rooms.
 
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { both, useBindings } from "../keys";
 import type { ChatStore } from "../chat-store";
-import type { ChatRoom, ProjectBoard } from "../proto";
-import { boards as boardStore } from "../boards/store";
+import type { ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
 import { Row } from "../kit/row";
 import { Count } from "../ui/state-chip";
@@ -19,6 +18,7 @@ import { agentName } from "../agent-name";
 import { counted, bold } from "./unread";
 import { agentRooms, type AgentRooms, type BoardChannel } from "./agent-rooms";
 import { toggleGroup } from "./sections";
+import { useProjectBoards } from "./project-boards";
 
 export const AGENTS_GROUP = "agents";
 
@@ -27,26 +27,9 @@ export const AGENTS_GROUP = "agents";
 let movedAt = 0;
 export const movedByKey = () => Date.now() - movedAt < 1500;
 
-/** The project's boards, read once a project's Chat opens (and again when
- * it opens another). Null until they're read. */
-export function useProjectBoards(project: string | undefined): ProjectBoard[] | null {
-  const [list, setList] = useState<ProjectBoard[] | null>(null);
-  useEffect(() => {
-    setList(null);
-    if (!project) return;
-    let live = true;
-    boardStore.list(project).then(
-      (l) => live && setList(l.boards),
-      () => live && setList([]),
-    );
-    return () => void (live = false);
-  }, [project]);
-  return list;
-}
-
 /** The section's rooms, for the keys that move through the rooms. */
 export function useAgentRooms(store: ChatStore, project: string | undefined): AgentRooms | null {
-  const list = useProjectBoards(project);
+  const list = useProjectBoards(project, true);
   return project ? agentRooms(store.rooms, list ?? [], project) : null;
 }
 

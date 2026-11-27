@@ -21,6 +21,7 @@ import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 import { Kbd } from "../kit/kbd";
 import { both, useBinding } from "../keys";
 import { isAgentRoom } from "./agent-rooms";
+import { composerLine } from "./tags";
 
 /** The head's width under which Follow goes into ⋯ (Close stays). Measured:
  * the title (52px), Follow (75), Close (25), the gaps and padding fit in
@@ -251,7 +252,7 @@ export function ThreadPanel({
         )}
       </div>
       {room.writable && first ? (
-        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} target={inPanel ? `thread · ${label}` : phone ? undefined : ""} />
+        <RoomCompose room={room} phone={phone} setQuote={() => {}} setError={setError} name="Reply" thread={{ parent }} threadAgents={agents} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} target={inPanel ? `thread · ${label}` : inPlace ? composerLine("agents", true) : phone ? undefined : ""} />
       ) : null}
     </aside>
   );

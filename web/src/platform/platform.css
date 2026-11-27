@@ -241,6 +241,17 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
 }
 
+/* Who a post in an agents' room reached (Arugula #1522); its tags are
+   mention pills. */
+.chat-reached {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0;
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
 /* Beside #agents or a board's channel: who's in it and who a post reaches. */
 .chat-about-list {
   display: grid;

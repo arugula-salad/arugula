@@ -20,7 +20,6 @@ import type {
   ChatPerson,
   ChatPin,
   ChatPins,
-  ChatPost,
   ChatPostTarget,
   ChatPosted,
   ChatRoom,
@@ -41,6 +40,7 @@ import { presence } from "./chat/presence";
 import { emptySidebar } from "./chat/sidebar";
 import { sessionPins } from "./session-pins-store";
 import { ThreadState } from "./chat/thread-state";
+import type { ChatTag, TaggedPost } from "./chat/tags";
 import { burstOf, typingBody, Warming } from "./chat/warm";
 
 /** A refusal from control's chat API: its status, and `reason`
@@ -857,8 +857,12 @@ export class ChatStore {
     quote?: PaneQuote,
     files?: string[] | null,
     notifyAnyway?: boolean,
+    tags?: ChatTag[],
   ): Promise<ChatPosted> {
-    const body: ChatPost = { text };
+    const body: TaggedPost = { text };
+    // An agents' room's tags, by id (Arugula #1522): an older control
+    // leaves the field alone.
+    if (tags?.length) body.tags = tags;
     if (files?.length) body.files = files;
     if (notifyAnyway) body.notify_anyway = true;
     if (quote) {

@@ -21,6 +21,7 @@ import { PlatformPage } from "../src/platform/page";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
 import type { ChatMessage, ChatRoom, ProjectBoard } from "../src/shared/proto.gen";
+import type { ChatReached, ChatTag } from "../src/shared/chat/tags";
 
 const P = "prj_aaaa0002";
 const TEAM = "tm_1";
@@ -119,19 +120,38 @@ const msg = (seq: number, name: string, text: string, more: Partial<ChatMessage>
   ...more,
 });
 const agent = (session: string) => ({ machine: "m_dust", machine_name: "dust", session });
+const B1 = boardList[0]!.id;
+const B2 = boardList[1]!.id;
+/** The leads of the open boards. */
+const LEADS = boardList.filter((b) => !b.closed_at && b.lead).map((b) => b.id);
+/** A message's tags and who it reached (#1522's wire, shared/chat/tags). */
+const said = (tags: ChatTag[], reached: ChatReached) => ({ tags, reached }) as Partial<ChatMessage>;
+
+/** #1522's delivery rules, for a post of the reader's (a person's): in
+ * #agents every lead, and the chief of staff when tagged; in a board's
+ * channel its lead, and its workers for @here or @channel. */
+function reachedBy(r: ChatRoom, tags: ChatTag[]): ChatReached {
+  const cos = tags.some((t) => t.kind === "cos");
+  if (r.target === P) return { leads: LEADS, all: true, ...(cos ? { cos } : {}) };
+  const own = boardList.find((b) => b.id === r.target);
+  const others = tags.flatMap((t) => (t.kind === "board" ? [t.board] : []));
+  const workers = tags.some((t) => t.kind === "channel") ? 3 : tags.some((t) => t.kind === "here") ? 2 : 0;
+  return { leads: [...(own?.lead ? [own.id] : []), ...others], ...(workers ? { workers } : {}), ...(cos ? { cos } : {}) };
+}
 
 const messages: Record<string, ChatMessage[]> = {
   ch_00000001: [msg(1, "Jake", "Morning. The pin goes out at noon.", { thread: { replies: 1, last: T0 + 20 * 60_000, repliers: [], following: false, read: 0, unread: 0, mentions: 0 } }), msg(2, "Sam", "Thanks. I'll watch the cloud specs."), msg(3, "Mira", "Docs are ready for review.")],
   ob_00000001: [
-    msg(1, "Chief of staff", "**Holding merges** 10:00–12:00 for CI lab maintenance. Keep queueing PRs; I'll lift the hold at 12.", { agent: agent("Chief of staff") }),
+    msg(1, "Chief of staff", "**Holding merges** 10:00–12:00 for CI lab maintenance. Keep queueing PRs; I'll lift the hold at 12.", { agent: agent("Chief of staff"), ...said([], { leads: LEADS, all: true }) }),
     msg(2, "Launch: engineering", "@Design lift @A2P the cloud pin waits on `cloud#305`. Merge order once the hold lifts: #2920, then #2929.", {
       agent: agent("Launch: engineering"),
       thread: { replies: 3, last: T0 + 46 * 60_000, repliers: [], following: true, read: 0, unread: 0, mentions: 0 },
+      ...said([{ kind: "board", board: B1, text: "Design lift" }, { kind: "board", board: B2, text: "A2P" }], { leads: [B1, B2] }),
     }),
-    msg(3, "Onboarding", "@here is anyone touching `onboarding.spec.ts` today? #1412 changes its copy.", { agent: agent("Onboarding") }),
-    msg(4, "Rail and Machines", "#2418 merged: the rail caret sits under the project mark.", { agent: agent("Rail and Machines") }),
-    msg(5, "Sam", "@cos let docs-only PRs through the hold."),
-    msg(6, "Chief of staff", "Done. Docs-only PRs merge now; the rest wait for 12:30.", { agent: agent("Chief of staff") }),
+    msg(3, "Onboarding", "@here is anyone touching `onboarding.spec.ts` today? #1412 changes its copy.", { agent: agent("Onboarding"), ...said([{ kind: "here", text: "here" }], { leads: [B1], active: true }) }),
+    msg(4, "Rail and Machines", "#2418 merged: the rail caret sits under the project mark.", { agent: agent("Rail and Machines"), ...said([], { leads: [] }) }),
+    msg(5, "Sam", "@cos let docs-only PRs through the hold.", said([{ kind: "cos", text: "cos" }], { leads: LEADS, all: true, cos: true })),
+    msg(6, "Chief of staff", "Done. Docs-only PRs merge now; the rest wait for 12:30.", { agent: agent("Chief of staff"), ...said([], { leads: LEADS, all: true }) }),
   ],
 };
 
@@ -175,9 +195,11 @@ window.fetch = async (input, init) => {
     if (!r) return json({ error: "not found" }, 404);
     const list = (messages[r.id] ??= []);
     if (m[2] === "messages" && method === "POST") {
-      const body = JSON.parse(String(init!.body)) as { text: string };
+      const body = JSON.parse(String(init!.body)) as { text: string; tags?: ChatTag[] };
       const seq = (list.at(-1)?.seq ?? 0) + 1;
-      list.push(msg(seq, "Sam", body.text));
+      window.__fx.posted.push(body);
+      const tags = body.tags ?? [];
+      list.push(msg(seq, "Sam", body.text, r.kind === "object" && /^(prj|brd)_/.test(r.target ?? "") ? said(tags, reachedBy(r, tags)) : {}));
       r.last = r.read = seq;
       return json({ seq, mentions: [], unreached: [], pushed: [] });
     }
@@ -207,7 +229,7 @@ window.fetch = async (input, init) => {
 
 declare global {
   interface Window {
-    __fx: { chat: typeof chat; rooms: ChatRoom[]; boards: ProjectBoard[]; replies: Record<string, ChatMessage[]> };
+    __fx: { chat: typeof chat; rooms: ChatRoom[]; boards: ProjectBoard[]; replies: Record<string, ChatMessage[]>; posted: { text: string; tags?: ChatTag[] }[] };
   }
 }
 // The replies to Launch: engineering's post in #agents.
@@ -219,7 +241,7 @@ const replies: Record<string, ChatMessage[]> = {
     msg(9, "Jake", "Thanks both.", { parent: 2 }),
   ],
 };
-window.__fx = { chat, rooms, boards: boardList, replies };
+window.__fx = { chat, rooms, boards: boardList, replies, posted: [] };
 
 setSeenBackend(localBackend());
 applyAppearance();

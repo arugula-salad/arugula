@@ -44,6 +44,7 @@ import { Row } from "../kit/row";
 import { AGENTS_GROUP, AgentsSection, agentOrder, movedByKey, useAgentRooms } from "./agents-section";
 import { isAgentRoom, isAgentsRoom, isBoardChannel, isStaffRoom } from "./agent-rooms";
 import { AgentAbout } from "./agent-about";
+import { composerLine } from "./tags";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
 import { sessionLabel } from "../chief-of-staff";
@@ -864,7 +865,7 @@ function RoomView({
             </>
           }
         />
-        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip target="" still={still} />
+        <RoomBody room={room} phone={phone} focus={thread === undefined ? focus : undefined} name={name} chip target={isAgentRoom(room) ? composerLine(isAgentsRoom(room) ? "agents" : "board", false) : ""} still={still} />
       </section>
       )}
       {inPlace ? (

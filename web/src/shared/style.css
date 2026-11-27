@@ -7956,6 +7956,35 @@ button.thread-quote:hover {
   font-size: 9px; /* off-scale: avatar initials */
 }
 
+/* The list's box; in an agents' room it holds the delivery rule too
+   (Arugula #1522). */
+.mention-pop.plain {
+  display: contents;
+}
+.mention-pop:not(.plain) {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(100% + 4px);
+  z-index: 2;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--section);
+  box-shadow: var(--shadow-raised);
+}
+.mention-pop:not(.plain) .mention-pick {
+  position: static;
+  border: 0;
+  box-shadow: none;
+}
+.mention-rule {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+
 .mention-pick {
   position: absolute;
   left: 12px;

@@ -167,6 +167,54 @@ test.describe("Agents (Arugula #1522)", () => {
   });
 });
 
+test.describe("Tags (Arugula #1522)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("@ in #agents lists channel, here, cos and each board's lead, with the rule; a pick goes by id and draws as a pill with its receipt", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${AGENTS}`);
+    const view = page.locator(`[data-room-view="${AGENTS}"]`);
+    // Tags already said: pills, and who each post reached.
+    await expect(view.locator('[data-msg="2"] [data-tag="board"]')).toHaveText(["@Design lift", "@A2P"]);
+    await expect(view.locator('[data-msg="2"] [data-reached]')).toHaveText(/reached: Design lift, A2P/);
+    await expect(view.locator('[data-msg="4"] [data-reached]')).toHaveText(/reached: no lead · it tagged none/);
+    await expect(view.locator('[data-msg="5"] [data-reached]')).toHaveText(/reached: 2 leads, chief of staff/);
+    // The composer says who a post here reaches.
+    await expect(view.locator(".k-composer-to")).toHaveText("Every lead gets this, no tag needed");
+    const box = view.getByRole("textbox", { name: "Message #agents" });
+    await box.fill("Deploying web at 12:30. @");
+    const list = page.locator("[data-tag-list=agents]");
+    await expect(list.locator("[data-tag-option]")).toHaveCount(7);
+    await expect(list.locator("[data-tag-option] b").first()).toHaveText("@channel");
+    await expect(list.locator("[data-tag-rule]")).toContainText("A lead's post reaches only the leads it tags.");
+    await box.press("A");
+    await box.press("2");
+    await expect(list.locator("[data-tag-option]")).toHaveCount(1);
+    await box.press("Enter");
+    await expect(box).toHaveValue("Deploying web at 12:30. @A2P ");
+    await box.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.__fx.posted.at(-1))).toEqual({ text: "Deploying web at 12:30. @A2P ", tags: [{ kind: "board", board: "brd_00000000000000000000000000000002", text: "A2P" }] });
+    const sent = view.locator('[data-msg="7"]');
+    await expect(sent.locator('[data-tag="board"]')).toHaveText("@A2P");
+    await expect(sent.locator("[data-reached]")).toHaveText(/reached: 2 leads/);
+    // No "nobody called" for a tag's first word.
+    await box.fill("@Design lift, rebase please");
+    await box.press("Escape");
+    await box.press("Enter");
+    await expect(view.locator('[data-msg="8"]')).toBeVisible();
+    await expect(page.getByText(/Nobody here called/)).toHaveCount(0);
+  });
+
+  test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {
+    await open(page, `/p/${P}/chat/ob_00000003`);
+    await expect(page.locator('[data-room-view="ob_00000003"] .k-composer-to')).toHaveText("Its lead gets this · @here adds active workers");
+    await page.goto(`/p/${P}/chat/${GENERAL}`);
+    const box = page.getByRole("textbox", { name: "Message #general" });
+    await box.fill("@");
+    await expect(page.locator("[data-tag-list]")).toHaveCount(0);
+    await expect(page.locator("[data-tag-option]")).toHaveCount(0);
+  });
+});
+
 test.describe("phone", () => {
   test.use(pixel7);
 
