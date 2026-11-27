@@ -389,6 +389,20 @@ pub const CATALOG: &[EventType] = &[
         power: Some("cloud.drive"),
     },
     EventType {
+        name: "github.merge_queue.added",
+        meaning: "A pull request joined a linked repo's merge queue.",
+        matches: &[REPO, PR, m("position", "its place in the queue, when GitHub says")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.merge_queue.removed",
+        meaning: "A pull request left a linked repo's merge queue without merging, with GitHub's reason.",
+        matches: &[REPO, PR, m("reason", "GitHub's own word for why, such as failed_checks, merge_conflict or manual")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
         name: "github.pr.ready",
         meaning: "A pull request's checks are green and GitHub says it can merge cleanly (once per head).",
         matches: GITHUB_CHECKS,
@@ -397,9 +411,10 @@ pub const CATALOG: &[EventType] = &[
     },
     EventType {
         name: "github.check.failed",
-        meaning: "A check run or commit status failed on a linked repo's commit, on any branch.",
+        meaning: "A check run or commit status failed on a linked repo's commit, on any branch. A merge-group run's failure is one too, with the queued PR(s) in prs.",
         matches: &[
             REPO,
+            m("prs", "a pull request a merge-group run was for: its number"),
             m("sha", "the commit it ran on"),
             m("branches", "a branch it's on: its head's, or one of its PRs' bases"),
             m("heads", "a branch whose own head it ran on (a PR's head, never its base): main, for main's red"),
@@ -826,6 +841,11 @@ mod tests {
         }
         let failed = lookup("github.check.failed").unwrap();
         assert!(["branches", "heads"].iter().all(|f| failed.matches.iter().any(|m| m.name == *f)), "#1291");
+        assert!(failed.matches.iter().any(|m| m.name == "prs"), "#1537");
+        let removed = lookup("github.merge_queue.removed").unwrap();
+        assert_eq!((removed.home, removed.power), (Home::Cloud, Some("cloud.drive")));
+        assert!(["repo", "pr", "reason"].iter().all(|f| removed.matches.iter().any(|m| m.name == *f)), "#1537");
+        assert!(lookup("github.merge_queue.added").unwrap().matches.iter().any(|f| f.name == "position"));
         assert!(lookup("github.pr.opened").unwrap().matches.iter().any(|f| f.name == "base"));
         let release = lookup("github.release.published").unwrap();
         assert_eq!((release.home, release.power), (Home::Cloud, Some("cloud.drive")));

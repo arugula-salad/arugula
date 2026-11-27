@@ -249,7 +249,8 @@ pub struct WatchArgs {
     #[serde(default)]
     pub pr: Option<Ids>,
     /// create, with pr: merged (the default), closed, checks_done,
-    /// checks_failed or ready.
+    /// checks_failed (a merge-group run's failure counts for a queued PR),
+    /// dequeued (left the merge queue without merging) or ready.
     #[serde(default)]
     pub until: Option<String>,
     /// create: another agent session (ses_…), or several: until it settles.
@@ -470,7 +471,7 @@ pub(crate) fn tools() -> Vec<Tool> {
         .with_annotations(ask_approval),
         Tool::new(
             WATCH,
-            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12). note (any target: why you watch, at most 200 characters) comes back when it fires or expires. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
+            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed (a merge-group run's failure counts for a queued PR), dequeued (left the merge queue without merging) or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12). note (any target: why you watch, at most 200 characters) comes back when it fires or expires. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
             schema_for_type::<WatchArgs>(),
         )
         .with_title("Watch for something to happen")

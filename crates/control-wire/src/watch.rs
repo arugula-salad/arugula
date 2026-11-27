@@ -86,8 +86,11 @@ pub enum PrUntil {
     Closed,
     /// No check on its head commit is queued or running (Arugula #1033).
     ChecksDone,
-    /// A check on its head commit failed: once, however often it flips.
+    /// A check on its head commit failed: once, however often it flips. A
+    /// merge-group run's failure counts for a queued PR.
     ChecksFailed,
+    /// It left the merge queue without merging.
+    Dequeued,
     /// Its checks passed and GitHub says it can merge cleanly.
     Ready,
 }
@@ -358,8 +361,11 @@ pub fn until_word_parse(word: Option<&str>) -> Result<PrUntil, String> {
         "closed" => Ok(PrUntil::Closed),
         "checks_done" => Ok(PrUntil::ChecksDone),
         "checks_failed" => Ok(PrUntil::ChecksFailed),
+        "dequeued" => Ok(PrUntil::Dequeued),
         "ready" => Ok(PrUntil::Ready),
-        w => Err(format!("until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed or ready")),
+        w => Err(format!(
+            "until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed, dequeued or ready"
+        )),
     }
 }
 

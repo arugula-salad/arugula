@@ -60,7 +60,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it). When it fires, you get a follow-up saying what happened (ids and states only). It fires once, unless standing: an event watch that stays live, firing at most once per every (5m) with every event since; exclude_self skips your own block's. It expires after 24h (expires, at most 7d), saying so. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (green and mergeable), in a repo linked to Arugula's GitHub App (else wait with pr); session (ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of its match fields, like {\"issue\": \"#12\"}). note (why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new lines) need no account. If it already happened, create says so and makes no watch. A watch belongs to this Claude Code session, not its pane. Works from a terminal with Arugula's hooks, or an agent block.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it). When it fires, you get a follow-up saying what happened. It fires once, unless standing: an event watch that stays live, firing at most once per every (5m) with every event since; exclude_self skips your own block's. It expires after 24h (expires, at most 7d). Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed, dequeued (left the merge queue unmerged) or ready (green, mergeable), in a repo linked to Arugula's GitHub App (else wait with pr); session (ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of its match fields, like {\"issue\": \"#12\"}). note (why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new lines) need no account. If it already happened, create says so and makes no watch. A watch belongs to this Claude Code session, not its pane. Works from a terminal with Arugula's hooks, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -120,8 +120,9 @@ pub struct CreateArgs {
     #[serde(default)]
     pub from: Option<String>,
     /// merged (the default), closed (merged or not), checks_done (none
-    /// queued or running), checks_failed, or ready (checks green and it can
-    /// merge cleanly).
+    /// queued or running), checks_failed (a merge-group run's failure counts
+    /// for a queued PR), dequeued (left the merge queue without merging), or
+    /// ready (checks green and it can merge cleanly).
     #[serde(default)]
     pub until: Option<String>,
     /// An event type (types lists them): fires when an event of it happens
@@ -920,6 +921,7 @@ mod tests {
         assert_eq!(until(Some("closed")), Ok(PrUntil::Closed));
         assert_eq!(until(Some("ready")), Ok(PrUntil::Ready));
         assert_eq!(until(Some("checks_failed")), Ok(PrUntil::ChecksFailed));
+        assert_eq!(until(Some("dequeued")), Ok(PrUntil::Dequeued));
         assert!(until(Some("green")).is_err());
     }
 
