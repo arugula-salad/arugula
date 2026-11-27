@@ -16,7 +16,7 @@ import { needAge } from "../shared/needs-you";
 import { usePhone } from "../shared/ui/hooks";
 import { StateChip } from "../shared/ui/state-chip";
 import { PermissionBody, PermissionButtons, VIEWER_NOTE } from "../shell/ui/answer-card";
-import { drawsItsOwn, mayAnswer } from "../shell/ui/term-ask";
+import { askedOf, drawsItsOwn, mayAnswer } from "../shell/ui/term-ask";
 import { KeyBar } from "../shell/ui/phone";
 import { pickCard } from "../shell/ui/pane-card";
 import { usePlatformApi } from "../shared/platform-api";
@@ -195,7 +195,7 @@ export function LiveAsk({ machine, pane, reach }: { machine: string; pane: strin
           {can ? <PermissionButtons ask={ask} act={(action, extra) => void act(action, extra)} /> : <p class="ask-viewer">{VIEWER_NOTE}</p>}
         </>
       ) : !can ? (
-        <NeedRow key={ask.id} need={{ ...askNeed(ask, needAge(ask.at_ms)), for: "an editor", lines: [VIEWER_NOTE] }} open data-ask={ask.id} />
+        <NeedRow key={ask.id} need={{ ...askNeed(ask, needAge(ask.at_ms)), for: askedOf(client, reach.session?.daemons.find((d) => d.id === machine)?.owner_name), lines: [VIEWER_NOTE] }} open data-ask={ask.id} />
       ) : (
         <NeedRow key={ask.id} need={askNeed(ask, needAge(ask.at_ms))} open ask={ask} actions={{ answer: (content) => void act("answer", { content }), decline: () => void act("deny") }} />
       )}
