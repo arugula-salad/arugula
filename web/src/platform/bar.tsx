@@ -12,6 +12,7 @@ import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { currentProject } from "./current-project";
 import { go, pathOf, useRoute, type Route } from "./router";
+import { usePlatformApi } from "../shared/platform-api";
 import { controlOrigin, session } from "./session";
 import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
@@ -225,7 +226,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
   const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
-  if (rail) return <TopBar steps={pathSteps(r, project)} views={children} data-platform-bar />;
+  const api = usePlatformApi();
+  const place = r.page === "board" ? `board:${r.board}` : null;
+  if (rail) return <TopBar steps={pathSteps(r, project)} views={children} tools={api.Running && <api.Running project={project ?? null} place={place} />} data-platform-bar />;
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       <PhoneTop name={project ? (p?.name ?? "…") : "All projects"} />
