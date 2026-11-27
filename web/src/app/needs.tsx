@@ -21,13 +21,13 @@ import { Button } from "../shared/kit/button";
 import { NeedRow, type Need, type NeedOption, type Receipt } from "../shared/kit/need-row";
 import type { State } from "../shared/kit/state-mark";
 import { both, useBindings, type Binding } from "../shared/keys";
-import { platformFetch, refusalOf } from "../shared/maintenance";
+import { platformFetch } from "../shared/maintenance";
 import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { act } from "../shell/swarm/view";
 import { permissionTarget } from "../shell/ui/answer-card";
-import { forTeammate, markItem, memberName } from "../platform/inbox";
+import { answerItem, forTeammate, markItem, memberName } from "../platform/inbox";
 import { go } from "../platform/router";
 
 /** Kinds that are alerts, not asks (#1393): the Inbox lists them, uncounted; Needs you doesn't. */
@@ -107,17 +107,6 @@ function paneAnswer(fleet: Fleet, p: FleetPane, ask: Ask): Answering | null {
   return { options: q.options.map((o) => ({ id: o.label, label: o.label })), send: (o) => run("answer", { content: { question_0: o.id } }) };
 }
 
-/** `POST /api/inbox/{id}` with a choice (and a to-do's note). */
-async function choose(id: string, choice: string, note?: string): Promise<void> {
-  const r = await platformFetch(`/api/inbox/${encodeURIComponent(id)}`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(note?.trim() ? { choice, note: note.trim() } : { choice }),
-  });
-  if (!r.ok) throw new Error(refusalOf(r.status, (await r.json().catch(() => ({}))) as { error?: string }));
-}
-
 /** "3:41 PM". */
 const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
@@ -146,7 +135,7 @@ async function todoRecord(i: InboxItem): Promise<Partial<Receipt> | null> {
 /** How an item answers here, if it can. */
 function answering(fleet: Fleet | null, i: InboxItem): Answering | null {
   if (i.answer && (i.answer.via === "card" || i.answer.via === "todo") && i.answer.options.length)
-    return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o, note) => choose(i.id, o.id, i.kind === "todo" ? note : undefined) };
+    return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o, note) => answerItem(i.id, o.id, i.kind === "todo" ? note : undefined) };
   const p = paneOfItem(fleet, i);
   const ask = p?.info.ask as Ask | null | undefined;
   return p && fleet && ask ? paneAnswer(fleet, p, ask) : null;

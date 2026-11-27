@@ -11,7 +11,7 @@ import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
-import { answerItem, memberName, readInbox } from "./inbox-count";
+import { answerItem, memberName, readInbox } from "./inbox";
 import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string, all?: boolean): Route | null => {
