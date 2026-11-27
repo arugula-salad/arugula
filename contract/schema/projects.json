@@ -1261,7 +1261,7 @@
       "type": "object"
     },
     "InboxSubject": {
-      "description": "What an item is about. `type` is `pane`, `session`, `proposal`,\n`board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is\nwhere Open goes (a path on the platform's page, or the item on GitHub).",
+      "description": "What an item is about. `type` is `pane`, `session`, `proposal`,\n`board_row`, `deploy`, `pr`, `issue`, `run`, `room`, `doc` or `tab`; `url` is\nwhere Open goes (a path on the platform's page, or the item on GitHub).",
       "properties": {
         "board": {
           "description": "A board ask's board.",
@@ -1294,6 +1294,13 @@
             "null"
           ]
         },
+        "place": {
+          "description": "The place an agent put it in front of the reader (`board:brd_…`,\n`overview:prj_…`; Arugula #1496), and its tab there: Open goes to\nthat tab. A `for_you` item's, and a pane's ask an agent showed there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "project": {
           "type": [
             "string",
@@ -1312,6 +1319,12 @@
           "format": "int64",
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "tab": {
+          "type": [
+            "string",
             "null"
           ]
         },

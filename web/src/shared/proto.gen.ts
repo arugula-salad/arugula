@@ -1343,7 +1343,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, by_project: { [key in string]: number }, changed: Array<string>, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "inbox", count: number, by_project: { [key in string]: number }, changed: Array<string>, } | { "type": "layout", place: string, rev: number, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -3862,7 +3862,7 @@ marked: number, };
 
 /**
  * What an item is about. `type` is `pane`, `session`, `proposal`,
- * `board_row`, `deploy`, `pr`, `issue`, `run`, `room` or `doc`; `url` is
+ * `board_row`, `deploy`, `pr`, `issue`, `run`, `room`, `doc` or `tab`; `url` is
  * where Open goes (a path on the platform's page, or the item on GitHub).
  */
 export type InboxSubject = { type: string, id: string, url: string, project?: string, 
@@ -3893,7 +3893,13 @@ board?: string,
  * card's, a hosted session's work item. A board and its card draw it
  * on that issue's row.
  */
-issue?: string, };
+issue?: string, 
+/**
+ * The place an agent put it in front of the reader (`board:brd_…`,
+ * `overview:prj_…`; Arugula #1496), and its tab there: Open goes to
+ * that tab. A `for_you` item's, and a pane's ask an agent showed there.
+ */
+place?: string, tab?: string, };
 
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, project?: ProjectRef, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
@@ -4220,6 +4226,128 @@ export type ItemKind = "pr" | "issue";
 export type ItemState = "open" | "closed" | "merged";
 
 export type Layout = { panes: Array<[number, Rect]>, splits: Array<SplitRect>, };
+
+/**
+ * Who opened or changed something: a person, or (with `machine`) an agent
+ * on that machine acting for them.
+ */
+export type LayoutBy = { account: string, 
+/**
+ * The agent's machine; `None` for the person.
+ */
+machine: string | null, };
+
+/**
+ * `POST` [`LAYOUT`] (or [`AGENT_LAYOUT`]): one change. An agent may only
+ * show, and close or move a pane an agent opened that the person hasn't
+ * touched; the rest is the person's (403).
+ */
+export type LayoutChange = { "op": "show", pane: LayoutNewPane, intent: LayoutIntent, tab: string | null, in_place_of: string | null, } | { "op": "move", pane: string, tab: string | null, index: number | null, } | { "op": "resize", pane: string, size: number, } | { "op": "maximise", pane: string, } | { "op": "close", pane: string, } | { "op": "close_tab", tab: string, } | { "op": "reopen", pane: string, } | { "op": "reset", };
+
+/**
+ * What a change answers.
+ */
+export type LayoutChanged = { layout: PlaceLayout, 
+/**
+ * The pane shown or reopened, and the tab it's in.
+ */
+pane: string | null, tab: string | null, 
+/**
+ * Panes the change closed to make room: the oldest untouched agent
+ * pane past [`AGENT_PANES`].
+ */
+closed: Array<LayoutPane>, };
+
+/**
+ * Who changed the home tab last, and when (ms).
+ */
+export type LayoutChangedBy = { by: LayoutBy, at: number, };
+
+/**
+ * Where a shown pane goes.
+ */
+export type LayoutIntent = "beside" | "for_you";
+
+/**
+ * A pane to show.
+ */
+export type LayoutNewPane = { kind: LayoutPaneKind, ref: string, title: string, machine: string | null, state: string | null, };
+
+/**
+ * One pane of a tab.
+ */
+export type LayoutPane = { 
+/**
+ * `pan_…`.
+ */
+id: string, kind: LayoutPaneKind, 
+/**
+ * What it shows, by its kind ([`PaneKind`]).
+ */
+ref: string, title: string, 
+/**
+ * The machine its source is on (a terminal, a preview, a prompt).
+ */
+machine: string | null, 
+/**
+ * Its last state, one line, as it was last shown: what a page shows
+ * while `machine` is offline.
+ */
+state: string | null, opened_by: LayoutBy, 
+/**
+ * When it was opened (ms).
+ */
+opened_at: number, 
+/**
+ * The person moved, resized or maximised it: it's theirs now, and no
+ * agent moves or closes it.
+ */
+touched: boolean, 
+/**
+ * The default pane it stands in place of (its name), for a while.
+ */
+in_place_of: string | null, 
+/**
+ * Its share of the tab's width, in thousandths; `None` for an even
+ * share.
+ */
+size: number | null, 
+/**
+ * Answered by a read, never kept: `machine` isn't connected, so this
+ * is its last state.
+ */
+offline: boolean, };
+
+/**
+ * What a pane shows.
+ */
+export type LayoutPaneKind = "doc" | "pr" | "preview" | "run" | "terminal" | "card" | "prompt" | "other";
+
+/**
+ * One tab of a place.
+ */
+export type LayoutTab = { 
+/**
+ * [`HOME_TAB`], or `tab_…`.
+ */
+id: string, 
+/**
+ * Empty for the home tab, which is the place's.
+ */
+title: string, 
+/**
+ * Who opened it; the person for the home tab.
+ */
+opened_by: LayoutBy, opened_at: number, 
+/**
+ * It waits on the person ([`Intent::ForYou`]): the Inbox has a row
+ * pointing at it until it closes.
+ */
+for_you: boolean, 
+/**
+ * Its opened panes, in order. The home tab's defaults aren't here.
+ */
+panes: Array<LayoutPane>, };
 
 /**
  * A work lease, from `status`'s `leases` (#618): who holds a work item.
@@ -5197,6 +5325,39 @@ export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" }
  * A pinned file against the tree read (chant's asset `state`).
  */
 export type PinState = "pinned" | "drifted" | "missing" | "stale";
+
+/**
+ * A person's layout of a place.
+ */
+export type PlaceLayout = { place: string, 
+/**
+ * Counts changes: a page drops a [`crate::chat::ChatLive::Layout`] at
+ * or below the rev it has.
+ */
+rev: number, 
+/**
+ * The home tab first.
+ */
+tabs: Array<LayoutTab>, 
+/**
+ * The home tab's default panes the person closed, by name, until
+ * Reset.
+ */
+closed_defaults: Array<string>, 
+/**
+ * The home tab's default panes the person sized, by name, in
+ * thousandths.
+ */
+default_sizes: { [key in string]: number }, 
+/**
+ * What was closed, newest first, at most [`CLOSED_MAX`]: the closed
+ * list, which Reopen takes from.
+ */
+closed: Array<LayoutPane>, 
+/**
+ * While the home tab differs from the default: who changed it last.
+ */
+changed: LayoutChangedBy | null, };
 
 /**
  * The signed-in person, as the hub knows them.

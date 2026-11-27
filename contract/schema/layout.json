@@ -1,0 +1,545 @@
+{
+  "$defs": {
+    "By": {
+      "description": "Who opened or changed something: a person, or (with `machine`) an agent\non that machine acting for them.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "machine": {
+          "default": null,
+          "description": "The agent's machine; `None` for the person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "type": "object"
+    },
+    "Changed": {
+      "description": "Who changed the home tab last, and when (ms).",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "$ref": "#/$defs/By"
+        }
+      },
+      "required": [
+        "by",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Intent": {
+      "description": "Where a shown pane goes.",
+      "oneOf": [
+        {
+          "const": "beside",
+          "description": "Beside the place's own panes: part of the conversation now.",
+          "type": "string"
+        },
+        {
+          "const": "for_you",
+          "description": "A tab of its own, waiting on the person, with an Inbox row pointing\nat it. Never switched to.",
+          "type": "string"
+        }
+      ]
+    },
+    "LayoutChange": {
+      "description": "`POST` [`LAYOUT`] (or [`AGENT_LAYOUT`]): one change. An agent may only\nshow, and close or move a pane an agent opened that the person hasn't\ntouched; the rest is the person's (403).",
+      "oneOf": [
+        {
+          "description": "Show a pane: beside the place's panes, or a tab for the person. A\npane of the same kind and `ref` that's open already is shown again\nwith the new title and state (and, for `for_you`, moved to a tab of\nits own if an agent's and untouched). `tab`: the person's choice of\ntab (`+ pane`); `in_place_of`: a default pane's name.",
+          "properties": {
+            "in_place_of": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "intent": {
+              "$ref": "#/$defs/Intent",
+              "default": "beside"
+            },
+            "op": {
+              "const": "show",
+              "type": "string"
+            },
+            "pane": {
+              "$ref": "#/$defs/NewPane"
+            },
+            "tab": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Move a pane to `tab` (`None`: a new tab of its own) at `index`\n(`None`: last).",
+          "properties": {
+            "index": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "move",
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            },
+            "tab": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Size a pane, or a default pane by name, in thousandths.",
+          "properties": {
+            "op": {
+              "const": "resize",
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            },
+            "size": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "op",
+            "pane",
+            "size"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The person maximised a pane: it's theirs now.",
+          "properties": {
+            "op": {
+              "const": "maximise",
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Close a pane, or a default pane by name.",
+          "properties": {
+            "op": {
+              "const": "close",
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Close a tab and its panes; never the home tab.",
+          "properties": {
+            "op": {
+              "const": "close_tab",
+              "type": "string"
+            },
+            "tab": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "tab"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Open a pane from the closed list again, where it was.",
+          "properties": {
+            "op": {
+              "const": "reopen",
+              "type": "string"
+            },
+            "pane": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "pane"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Put the home tab back to its default: its closed defaults open,\ntheir sizes even, and what was opened there to the closed list.",
+          "properties": {
+            "op": {
+              "const": "reset",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LayoutChanged": {
+      "description": "What a change answers.",
+      "properties": {
+        "closed": {
+          "default": [],
+          "description": "Panes the change closed to make room: the oldest untouched agent\npane past [`AGENT_PANES`].",
+          "items": {
+            "$ref": "#/$defs/Pane"
+          },
+          "type": "array"
+        },
+        "layout": {
+          "$ref": "#/$defs/PlaceLayout"
+        },
+        "pane": {
+          "default": null,
+          "description": "The pane shown or reopened, and the tab it's in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tab": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "layout"
+      ],
+      "type": "object"
+    },
+    "NewPane": {
+      "description": "A pane to show.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PaneKind"
+        },
+        "machine": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "state": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref",
+        "title"
+      ],
+      "type": "object"
+    },
+    "Pane": {
+      "description": "One pane of a tab.",
+      "properties": {
+        "id": {
+          "description": "`pan_…`.",
+          "type": "string"
+        },
+        "in_place_of": {
+          "default": null,
+          "description": "The default pane it stands in place of (its name), for a while.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/PaneKind"
+        },
+        "machine": {
+          "default": null,
+          "description": "The machine its source is on (a terminal, a preview, a prompt).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offline": {
+          "default": false,
+          "description": "Answered by a read, never kept: `machine` isn't connected, so this\nis its last state.",
+          "type": "boolean"
+        },
+        "opened_at": {
+          "description": "When it was opened (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opened_by": {
+          "$ref": "#/$defs/By"
+        },
+        "ref": {
+          "description": "What it shows, by its kind ([`PaneKind`]).",
+          "type": "string"
+        },
+        "size": {
+          "default": null,
+          "description": "Its share of the tab's width, in thousandths; `None` for an even\nshare.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "state": {
+          "default": null,
+          "description": "Its last state, one line, as it was last shown: what a page shows\nwhile `machine` is offline.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "touched": {
+          "default": false,
+          "description": "The person moved, resized or maximised it: it's theirs now, and no\nagent moves or closes it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "ref",
+        "title",
+        "opened_by",
+        "opened_at"
+      ],
+      "type": "object"
+    },
+    "PaneKind": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "const": "doc",
+              "description": "A Doc (`ref` its id).",
+              "type": "string"
+            },
+            {
+              "const": "pr",
+              "description": "A pull request (`ref` `owner/repo#N`).",
+              "type": "string"
+            },
+            {
+              "const": "preview",
+              "description": "A preview of something served (`ref` its URL or port).",
+              "type": "string"
+            },
+            {
+              "const": "run",
+              "description": "A run (`ref` `run_…`).",
+              "type": "string"
+            },
+            {
+              "const": "terminal",
+              "description": "A terminal or agent pane on a machine (`ref` `%N`).",
+              "type": "string"
+            },
+            {
+              "const": "card",
+              "description": "An issue's card (`ref` `iss_…`).",
+              "type": "string"
+            },
+            {
+              "const": "prompt",
+              "description": "A blocked agent's permission or question (`ref` its pane, `%N`).",
+              "type": "string"
+            },
+            {
+              "const": "other",
+              "description": "A kind this side doesn't know yet.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "What a pane shows."
+    },
+    "PlaceLayout": {
+      "description": "A person's layout of a place.",
+      "properties": {
+        "changed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Changed"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "While the home tab differs from the default: who changed it last."
+        },
+        "closed": {
+          "default": [],
+          "description": "What was closed, newest first, at most [`CLOSED_MAX`]: the closed\nlist, which Reopen takes from.",
+          "items": {
+            "$ref": "#/$defs/Pane"
+          },
+          "type": "array"
+        },
+        "closed_defaults": {
+          "default": [],
+          "description": "The home tab's default panes the person closed, by name, until\nReset.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "default_sizes": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "default": {},
+          "description": "The home tab's default panes the person sized, by name, in\nthousandths.",
+          "type": "object"
+        },
+        "place": {
+          "type": "string"
+        },
+        "rev": {
+          "description": "Counts changes: a page drops a [`crate::chat::ChatLive::Layout`] at\nor below the rev it has.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "tabs": {
+          "description": "The home tab first.",
+          "items": {
+            "$ref": "#/$defs/Tab"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "place",
+        "rev",
+        "tabs"
+      ],
+      "type": "object"
+    },
+    "Tab": {
+      "description": "One tab of a place.",
+      "properties": {
+        "for_you": {
+          "default": false,
+          "description": "It waits on the person ([`Intent::ForYou`]): the Inbox has a row\npointing at it until it closes.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "[`HOME_TAB`], or `tab_…`.",
+          "type": "string"
+        },
+        "opened_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opened_by": {
+          "$ref": "#/$defs/By",
+          "description": "Who opened it; the person for the home tab."
+        },
+        "panes": {
+          "description": "Its opened panes, in order. The home tab's defaults aren't here.",
+          "items": {
+            "$ref": "#/$defs/Pane"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "Empty for the home tab, which is the place's.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "opened_by",
+        "opened_at",
+        "panes"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::layout"
+}

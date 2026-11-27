@@ -23,7 +23,7 @@ use crate::{
 
 pub(crate) const SHOW: Kind = Kind {
     name: "place",
-    description: "A pane on a place your person looks at in the app, a board (place: board brd_...) or the Overview (place: overview, the current project's), not a block here: pane says what (doc, pr, preview, run, terminal, card, or prompt: a blocked agent's permission or question, ref its %N on machine, answered there). intent beside (default): next to the place's own panes, for what you're talking about now; for_you: a tab of its own for what waits on them (a review, a PR to approve, a prompt), with a Needs you row pointing at it. Neither takes their focus. You may only move what you opened and they haven't touched; a fourth pane of yours in a tab closes your oldest. Showing the same pane again updates it.",
+    description: "A pane on a board or the Overview in the app (place), not a block here; intent beside or for_you.",
     schema: schema_for_type::<ShowPlaceArgs>,
     flag: None,
 };
@@ -32,7 +32,7 @@ pub(crate) const SHOW: Kind = Kind {
 pub struct ShowPlaceArgs {
     /// board brd_... or overview (overview prj_... for another project).
     pub place: String,
-    /// What the pane shows: doc, pr, preview, run, terminal, card or prompt.
+    /// What the pane shows: doc, pr, preview, run, terminal, card, or prompt (a blocked agent's permission or question, answered there).
     pub pane: String,
     /// What it is, by pane: a Doc's id, OWNER/REPO#N, a URL or port, run_..., %N, iss_..., or the waiting pane's %N.
     #[serde(rename = "ref")]
@@ -42,7 +42,7 @@ pub struct ShowPlaceArgs {
     /// Its state now, one line ("running · 3m", "waits for Allow"): shown while its machine is offline.
     #[serde(default)]
     pub state: Option<String>,
-    /// beside (default) or for_you.
+    /// beside (default): next to the place's own panes, for what you're talking about now. for_you: a tab of its own for what waits on them (a review, a PR to approve, a prompt), with a Needs you row pointing at it. Neither takes their focus. You only move what you opened and they haven't touched; a fourth pane of yours in a tab closes your oldest. Shown again, a pane updates.
     #[serde(default)]
     pub intent: Option<String>,
     /// For a while, in place of one of the place's own panes (its name, such as boards); closing yours puts it back.

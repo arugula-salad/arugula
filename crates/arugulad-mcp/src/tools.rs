@@ -895,25 +895,25 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "pr",
-        description: "A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.",
+        description: "A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review, red checks) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.",
         schema: schema_for_type::<OpenPrArgs>,
         flag: None,
     },
     Kind {
         name: "issue",
-        description: "An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.",
+        description: "An issue on the user's Forgejo or GitHub: labels, assignees, linked PRs and timeline, read with their own tea or gh login; one assigned to or mentioning them is attention on the phone and the swarm. From the block they can start an agent on it in its own worktree. Returns the issue as text.",
         schema: schema_for_type::<OpenIssueArgs>,
         flag: None,
     },
     Kind {
         name: "chat",
-        description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+        description: "Team chat as a block: the user's channels, DMs, threads and Activity, as the chat page has them; pinned to a room (room, pinned), that room alone. It reads as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and post with read_thread and post_thread.",
         schema: schema_for_type::<ShowChatArgs>,
         flag: None,
     },
     Kind {
         name: "board",
-        description: "A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+        description: "A project's board as a block: its lanes and rows (issues, PRs, runs, agent blocks), live, as the user through Arugula cloud (nothing on a machine that hasn't joined). Read and write it with board_read and board_write.",
         schema: schema_for_type::<ShowBoardArgs>,
         flag: None,
     },
@@ -1343,7 +1343,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "show",
             title: "Show the user a block",
-            description: "Show the user something as a block beside a pane (beside; default the caller's own pane), or as a pane on a board or the Overview in the app (kind place), instead of describing it. kind says what.",
+            description: "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.",
             args: Args::Kinds { kinds: table(SHOW), default: None },
             read_only: false,
             destructive: false,
