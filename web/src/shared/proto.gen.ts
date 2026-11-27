@@ -2125,7 +2125,13 @@ waiting: number,
  * The agent a message goes to by default (#647): the thread's hosted
  * session, else the agent first in it.
  */
-lead: boolean, };
+lead: boolean, 
+/**
+ * A hosted session's ask that its own lead answers first (Arugula
+ * #1393, #1469): `state` is `needs_you`, and it waits on that agent,
+ * not on a person, until `until`.
+ */
+with_lead?: WithLead, };
 
 /**
  * What an agent in a thread is doing (#645).
@@ -6318,6 +6324,10 @@ turn: SessionTurn | null,
  */
 open: SessionOpen | null, 
 /**
+ * While `open` waits on its lead, not its person (Arugula #1469).
+ */
+with_lead?: WithLead, 
+/**
  * The answer to it that its box hasn't taken yet.
  */
 answered: SessionAnswered | null, 
@@ -7335,6 +7345,17 @@ yours: boolean, };
  * The live watches on a PR or a thread, the soonest to expire first.
  */
 export type WatchesOn = { watches: Array<WatchShown>, };
+
+/**
+ * An agent's ask that its lead answers first (Arugula #1393, #1469): the
+ * agent that started the session, live, has until `until` (ms) before the
+ * ask reaches its person. Never a question's words.
+ */
+export type WithLead = { 
+/**
+ * The lead, as its machine names it: "<session> on <machine>".
+ */
+name: string, until: number, };
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without

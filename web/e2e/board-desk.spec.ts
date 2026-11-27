@@ -100,6 +100,8 @@ test("Needs you: your ask is a row with its options, a teammate's folded under o
 // The agents' items on the board's issues, from the project's Inbox (Arugula #1469): a to-do for you, an agent's ask for Jo.
 const ITEMS = [
   { id: "prp_t1", kind: "todo", group: "decide", counts: true, title: "Rotate the CI deploy key", lines: ["Why: the deploy key expired"], from: { agent: "claude@geek", machine: "m_geek" }, subject: { type: "proposal", id: "prp_t1", url: "/inbox", project: P, issue: "iss_1622" }, answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 3 * 60_000 },
+  // Jo's to-do, as the cloud gives a teammate's card: what's asked is Jo's alone (no lines, no answer, no address).
+  { id: "prp_j2", kind: "todo", group: "decide", counts: false, for: "acct_b", title: "A to-do", from: { agent: "claude@jo" }, subject: { type: "proposal", id: "prp_j2", url: "", project: P, issue: "iss_1443" }, since: Date.now() - 30_000 },
   { id: "ses_j:1", kind: "agent_ask", group: "decide", counts: false, for: "acct_b", title: "Which crumb width?", from: { agent: "ses_j" }, subject: { type: "session", id: "ses_j", url: `/p/${P}/chat/room_j?msg=1`, project: P, issue: "iss_1443" }, answer: { via: "session_action", options: [] }, since: Date.now() - 60_000 },
 ];
 
@@ -114,7 +116,7 @@ test("Needs you takes the agents' items on its issues: yours answered there, a t
   await expect(todo).toContainText("#1622");
   // A teammate's: one neutral fold each, naming them, and no row of theirs until it opens.
   const jo = needs.locator('[data-board-needs-for="Jo"]');
-  await expect(jo).toContainText("· 1 for Jo ›");
+  await expect(jo).toContainText("· 2 for Jo ›");
   await expect(needs.locator('[data-board-needs-for="Jake"]')).toContainText("· 1 for Jake ›");
   await expect(jo.locator(".k-mark")).toHaveCount(0);
   await expect(jo).not.toHaveClass(/is-need/);
@@ -125,6 +127,13 @@ test("Needs you takes the agents' items on its issues: yours answered there, a t
   await expect(theirs).toHaveAttribute("data-need-for", "Jo");
   await expect(theirs).toHaveClass(/is-plain/);
   await expect(theirs.getByRole("button", { name: "Send" })).toHaveCount(0);
+  // Jo's to-do: neutral, naming Jo, nothing of what's asked, and nothing to press.
+  const card = needs.locator('[data-board-item="prp_j2"]');
+  await card.locator(".k-row-line").first().click();
+  await expect(card.locator("[data-need]")).toContainText("waits on Jo");
+  await expect(card.locator("[data-need]")).toHaveClass(/is-plain/);
+  await expect(card.locator(".k-row-body p, .k-row-body pre")).toHaveCount(0);
+  await expect(card.locator("button, a").filter({ hasNotText: /A to-do/ })).toHaveCount(0);
   // Its mark isn't amber: yours is.
   const colour = (l: ReturnType<Page["locator"]>) => l.locator(".k-mark").first().evaluate((e) => getComputedStyle(e).color);
   expect(await colour(theirs)).not.toBe(await colour(needs.locator('[data-board-ask="ask_1"] [data-need]')));

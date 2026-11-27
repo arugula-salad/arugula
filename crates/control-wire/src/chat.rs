@@ -1126,6 +1126,12 @@ pub struct ChatThreadAgent {
     /// The agent a message goes to by default (#647): the thread's hosted
     /// session, else the agent first in it.
     pub lead: bool,
+    /// A hosted session's ask that its own lead answers first (Arugula
+    /// #1393, #1469): `state` is `needs_you`, and it waits on that agent,
+    /// not on a person, until `until`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub with_lead: Option<crate::sessions::WithLead>,
 }
 
 /// `POST /api/chat/rooms/{id}/threads/{seq}/read`: read the thread up to

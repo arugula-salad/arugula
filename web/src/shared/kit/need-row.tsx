@@ -200,7 +200,7 @@ export function NeedRow({
           </div>
         </Well>
       ) : null}
-      {todo ? (
+      {todo && mine ? (
         <TextField
           label="Note"
           hint="no secrets"
