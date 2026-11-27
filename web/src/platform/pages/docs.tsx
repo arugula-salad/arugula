@@ -106,20 +106,25 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
   );
 }
 
-/** `/docs` goes to the current project's Docs, else the reader's own
- * (Lift 6b: one project's, never all of them); `?shared=1`, control's
- * Shared Docs… (Arugula #1315), to the reader's own, at Shared by you. */
+/** Where `/docs` goes (`movedPage`, ../page, as the address is put right):
+ * the current project's Docs, else the reader's own, else their first
+ * project's (Lift 6b: one project's, never all of them). */
+export function docsHome(): PlatformProject | undefined {
+  const at = scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
+  return (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
+}
+
+/** A project's Docs. `/docs` goes to `docsHome()`'s (`movedPage`, not an
+ * effect here, which raced the slug's rewrite, Arugula #1155);
+ * `?shared=1`, control's Shared Docs… (Arugula #1315), is the reader's
+ * own, at Shared by you. */
 export function DocsPage({ project, shared }: { project?: string; all?: boolean; shared?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
   const one = project ? session.project(project) : undefined;
-  const at = project || shared ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
-  const p = one ?? (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
-  const to = !project && !shared && p ? pathOf({ page: "docs", project: p.id }, names) : null;
-  useEffect(() => void (to && go(to, true)), [to]);
+  const p = one ?? (shared ? docsHome() : undefined);
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  if (!p) return <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />;
-  if (to) return null;
+  if (!p) return session.state === "ready" && !docsHome() ? <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." /> : null;
   return <DocList key={p.id} p={p} shared={shared} />;
 }
 
