@@ -27,7 +27,7 @@ import { boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { rowSessions, type RowSession } from "./row-sessions";
 import type { SessionsByCard } from "../project-sessions";
-import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
+import { LANES, closedWithLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
 
 export type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
@@ -230,13 +230,6 @@ async function readRow(r: BoardRow): Promise<Read> {
   await Promise.all(reads);
   out.checks = checks.flatMap((c) => (c ? [c] : []));
   return out;
-}
-
-/** What the card's chip says in full on hover: the words, and who marked it and when. */
-export function notFinishedTitle(n: NotFinished): string {
-  const who = n.by ? ` Marked by ${n.by}${n.at ? ` on ${day(n.at)}` : ""}.` : "";
-  const merged = n.merged ? " A PR of this row merged, and the issue stays open." : "";
-  return `${notFinishedLine(n)}.${merged}${who}`;
 }
 
 /** The drawer's Not finished section (#841), above the attachments: the reason, who marked it and when, with Clear the mark for those who may edit; with no mark, Mark not finished… opens a line for what is left. Only on a native issue or a Plane item that isn't done. */

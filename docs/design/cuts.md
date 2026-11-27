@@ -25,3 +25,5 @@ if people miss it. Newest at the bottom.
 - **A board's made and edited times, and Open in browser:** the title block has the lead, the machine and the progress (Lift 5a, Arugula #1481).
 - **Every project's Boards (`/boards`):** Go to… finds a board; `/boards` opens the current project's Boards, and a board's old address its page (Lift 5a, Arugula #1481).
 - **A board beside the Boards list:** a board opens on its own page (Lift 5a, Arugula #1481).
+- **A board tile's chips:** its labels, assignees' initials, attachments, sessions, Docs, earlier agents, note and marks as chips; a tile is its mark, number, state word, title and one meta line, and the drawer has the rest (Lift 5a, Arugula #1481).
+- **"no proof" on a Done tile, and a tile's fill by lane:** a proven one says "proven"; tiles are one card colour, with an amber edge when one waits on you (Lift 5a, Arugula #1481).

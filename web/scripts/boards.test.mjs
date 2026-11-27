@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -292,8 +292,6 @@ test("a row's marks: not finished, after a PR, and earlier agents folded", () =>
   assert.deepEqual(m.after, { words: "after #1859", repo: "acme/app" });
   assert.deepEqual([...m.earlier], ["att_1", "att_2"]);
   assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);
-  assert.equal(earlierLine(1), "earlier agent (1)");
-  assert.equal(earlierLine(2), "earlier agents (2)");
 });
 
 test("a board counts the asks that wait on the reader, raised ones included, and says who an ask waits on", () => {
@@ -334,10 +332,7 @@ test("the swarm's By board groups agents by their first board, and No board goes
   assert.deepEqual(names.sort(clusterOrder).map((n) => n[0]), ["Big", "Alpha", "Zed", NO_BOARD]);
 });
 
-test("a card's bar is its lane's tone, the progress bar's, and a row that waits on the reader keeps it", () => {
-  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane })), ["muted", "accent", "info", "ok"]);
-  assert.deepEqual(["next", "doing", "review", "done"].map((lane) => cardTone({ lane, ask: { mine: true } })), ["muted", "accent", "info", "ok"]);
-  assert.equal(cardTone({ lane: "review", ask: { mine: false, raised: true } }), "info");
+test("a live item's tone, and how long a stall has been", () => {
   assert.deepEqual(["open", "checks_running", "checks_failed", "merged", "closed", "other"].map(liveTone), ["info", "accent", "danger", "ok", "muted", "muted"]);
 });
 
@@ -395,8 +390,6 @@ test("a stalled row says how long, takes the danger tone, and a block holds its 
   assert.deepEqual(["0", "59", "60", "65", "1440", "3000"].map((m) => stalledFor(0, Number(m) * 60_000)), ["0m", "59m", "1h", "1h5m", "1d", "2d"]);
   const m = marksOf({ marks: [{ kind: "stalled", since: 1_000 }] }, 1_000 + 42 * 60_000);
   assert.deepEqual(m.stalled, { words: "stalled 42m", since: 1_000 });
-  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }] }), "danger");
-  assert.equal(cardTone({ lane: "doing", marks: [{ kind: "stalled", since: 1 }], ask: { mine: true } }), "danger");
   const block = (state) => ({ role: "work", block: { state }, released: false });
   assert.equal(holdsRow(block("idle")), true);
   assert.equal(holdsRow(block("closed")), false);
@@ -587,18 +580,6 @@ test("a host is this page's machine when its address is the client's, and one th
   assert.equal(isThisMachine("", () => { throw new Error("gone"); }), false);
 });
 
-test("a row says which session holds it, unless that session's own open agent is attached", () => {
-  const held = { machine: "m1", machine_name: "geek", session: "ux", at: 5 };
-  const block = (state) => ({ role: "work", released: false, block: { state } });
-  const chip = heldChip({ held, attachments: [] });
-  assert.equal(chip.text, "held by ux");
-  assert.match(chip.title, /on geek/);
-  assert.match(heldChip({ held: { ...held, machine_name: "" }, attachments: [] }).title, /on m1/);
-  assert.equal(heldChip({ attachments: [] }), null);
-  assert.equal(heldChip({ held, attachments: [block("working")] }), null, "the claimed chip says it");
-  assert.equal(heldChip({ held, attachments: [block("closed")] })?.text, "held by ux", "a closed block holds nothing");
-});
-
 test("a row waiting on a person says who, and a stall doesn't colour it (#764)", () => {
   const ask = { id: "ask_1", question: "Ship?", options: [], mine: false, raised: false, can_answer: true, who: "acc", who_name: "Sam", asked_by: "an agent on m1" };
   assert.deepEqual(waitingOf({ ask }), { words: "waiting on Sam", mine: false });
@@ -655,4 +636,23 @@ test("the desk's words: open PRs once each, a PR's queue, how long main is red, 
   assert.deepEqual(deskLine({ done: 0, total: 0 }, 1, []), ["1 asks you"]);
   assert.equal(progressWords({ done: 140, total: 191, proven: 105, review: 2 }), "73% · 140 of 191 done · 105 proven · 2 in review");
   assert.equal(progressWords({ done: 0, total: 0, proven: 0, review: 0 }), "No work yet");
+});
+
+test("a tile says its state in a word and who it waits on, no fill; those that wait on you sort first (Lift 5a)", () => {
+  const ask = (mine, who_name = "Jake") => ({ id: "a", mine, raised: false, who_name, question: "q", options: [] });
+  const row = (lane, more = {}) => ({ id: lane, lane, pointer: { kind: "issue", id: "iss_1" }, live: { state: "open", kind: "native", number: 1, title: "t" }, attachments: [], marks: [], ...more });
+  assert.deepEqual(tileState(row("doing", { ask: ask(true) })), { mark: "asks", word: "asks you", needs: true });
+  assert.deepEqual(tileState(row("review", { ask: ask(false) })), { mark: "waits", word: "asks Jake" });
+  assert.deepEqual(tileState(row("doing", { attachments: [{ role: "work", released: false, block: { state: "needs_input" }, pointer: { kind: "block" } }] })), { mark: "asks", word: "needs you", needs: true });
+  assert.deepEqual(tileState(row("review", { live: { state: "checks_failed", kind: "pr", number: 2, title: "t" } })), { mark: "failing", word: "failing" });
+  assert.deepEqual(tileState(row("doing", { marks: [{ kind: "stalled", since: 0 }] }), 42 * 60_000), { mark: "stuck", word: "stalled 42m" });
+  assert.deepEqual(["next", "doing", "review", "done"].map((l) => tileState(row(l)).mark), ["idle", "working", "waits", "done"]);
+  assert.equal(tileState(row("done")).word, undefined, "no word, and never no proof");
+  // The meta line: the open PR, else a done item's end; who works on it; else no agent yet.
+  const pr = { role: "work", pointer: { kind: "forge_item", id: "fi_9" }, live: { state: "open", kind: "pr", number: 9, title: "p", queued: true, queued_since: 1 } };
+  assert.deepEqual(tileMeta(row("review", { attachments: [pr] }), { name: "fix-crumb", word: "working" }, 120_001), ["PR #9 · queued 2m", "fix-crumb · working"]);
+  assert.deepEqual(tileMeta(row("done", { live: { state: "merged", kind: "pr", number: 3, title: "t" }, proof: { by: "ci" } }), undefined), ["merged · proven"]);
+  assert.deepEqual(tileMeta(row("done", { live: { state: "closed", kind: "native", number: 3, title: "t" } }), undefined), ["closed"]);
+  assert.deepEqual(tileMeta(row("next"), undefined), ["no agent yet"]);
+  assert.deepEqual(needsFirst([row("a"), row("b", { ask: ask(true) }), row("c")]).map((r) => r.id), ["b", "a", "c"]);
 });
