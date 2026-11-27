@@ -365,7 +365,7 @@
         "readOnlyHint": false,
         "title": "Ask your person to approve"
       },
-      "description": "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…). Their answer wakes you here with what they chose, no watch needed: end your turn or go on with other work.",
+      "description": "Ask your person to approve something only they may do: start an agent on one of the project's issues here (action start: issue #N, prompt), close agent blocks here (action close: blocks, by pane), or run a board (action run_board: board, machine for its lead (default this one), machines its issue agents may also use, cap at once (default 3), lapse_days (default: until the board closes), prompt for the lead). Say why. It puts a card with Approve and Deny in their staff room, under Needs you and on their phone; Approve does it as them (run_board: writes the board's grant and starts its lead on its machine), and Deny drops it. You never do it yourself, and nothing said in chat approves it. Call it from your agent block. Returns the card's id (prp_…) and the link to answer it: when they say approve in chat, give them the link. A newer card for the same ask: supersedes the old one's id, so two never stand. action withdraw (ask: the id) takes a card back that is no longer wanted; action status (ask) says where it stands and who answered. Their answer wakes you here with what they chose, no watch needed: end your turn or go on with other work.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -385,8 +385,16 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "action": {
-            "description": "start (an agent on an issue, on this machine), close (agent blocks\non this machine) or run_board (a board's lead, and a grant for its\nissue agents).",
+            "description": "start (an agent on an issue, on this machine), close (agent blocks\non this machine), run_board (a board's lead, and a grant for its\nissue agents), withdraw (one of your open cards, by `ask`) or status\n(where one stands, by `ask`).",
             "type": "string"
+          },
+          "ask": {
+            "default": null,
+            "description": "withdraw, status: the card (prp_…).",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "blocks": {
             "description": "close: the agent blocks to close, by pane (7 or \"%7\"), at most 10.",
@@ -463,14 +471,22 @@
               "null"
             ]
           },
+          "supersedes": {
+            "default": null,
+            "description": "start, close, run_board: an open card of yours (prp_…) this one\nreplaces: it's withdrawn, so two cards for one ask can't both run.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "why": {
-            "description": "Why, in a line or two (at most 500 characters): the card shows it.",
+            "default": "",
+            "description": "start, close, run_board: why, in a line or two (at most 500\ncharacters): the card shows it.",
             "type": "string"
           }
         },
         "required": [
-          "action",
-          "why"
+          "action"
         ],
         "title": "AskApprovalArgs",
         "type": "object"

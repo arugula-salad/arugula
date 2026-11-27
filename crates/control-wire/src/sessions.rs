@@ -669,6 +669,11 @@ pub struct MachinePropose {
     /// is `%N`, `title` the block's, `state` its agent's.
     #[serde(default)]
     pub blocks: Vec<ProposalSession>,
+    /// An open card of this agent's (`prp_…`) that this one replaces
+    /// (Arugula #1513): control withdraws it, so two cards for one ask
+    /// can't start two agents. An older control refuses the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
 }
 
 /// [`agent_proposals`]' answer: the card (`prp_…`, what `ask.answered`
@@ -677,8 +682,40 @@ pub struct MachinePropose {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct MachineProposed {
     pub ask: String,
+    /// A personal project has no staff room: `""`, and `seq` 0.
     pub room: String,
     pub seq: i64,
+    /// Where the person answers it: the card's page, or their Inbox for a
+    /// personal project (Arugula #1513). An older control sends none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// The cards [`MachinePropose::supersedes`] withdrew.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrew: Vec<String>,
+}
+
+/// The route a machine's agent reads one of its cards by (Arugula #1513),
+/// `GET` with `?session=` its session's name, answered a [`ProposalRead`].
+pub fn agent_proposal_read(project: &str, ask: &str) -> String {
+    format!("/api/daemon/projects/{project}/proposals/{ask}")
+}
+
+/// [`agent_proposal_read`]'s answer: where a card stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ProposalRead {
+    pub ask: String,
+    pub room: String,
+    pub seq: i64,
+    pub link: String,
+    /// `open`, `approved`, `denied`, `failed` or `cancelled` (withdrawn).
+    pub state: String,
+    /// Who answered it, by name.
+    #[serde(default)]
+    pub answered_by_name: Option<String>,
+    /// What answering it did, in a line.
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 /// A proposal as its card draws it ([`ChatAsk::proposal`]).
@@ -1441,6 +1478,11 @@ mod tests {
         let op = crate::work::SessionIssuesOp::ProposalCancel { ask: "prp_1".into() };
         assert_eq!(serde_json::to_value(&op).unwrap(), serde_json::json!({ "op": "proposal_cancel", "ask": "prp_1" }));
         assert_eq!(agent_proposal_cancel("prj_1", "prp_1"), "/api/daemon/projects/prj_1/proposals/prp_1/cancel");
+        assert_eq!(agent_proposal_read("prj_1", "prp_1"), "/api/daemon/projects/prj_1/proposals/prp_1");
+        // An older control's answer has no link and withdrew nothing.
+        let old: MachineProposed =
+            serde_json::from_value(serde_json::json!({ "ask": "prp_1", "room": "r", "seq": 3 })).unwrap();
+        assert_eq!((old.link, old.withdrew), (None, vec![]));
     }
 
     #[test]
