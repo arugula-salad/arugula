@@ -8,7 +8,7 @@
 //! hasn't touched, and a fourth agent pane in a tab closes the oldest.
 
 use arugula_control_wire::layout::{
-    Intent, LayoutChange, LayoutChanged, NewPane, PaneKind, Place, REF_MAX, TITLE_MAX, agent_layout,
+    Intent, LayoutChange, LayoutChanged, LayoutPrefs, NewPane, PaneKind, Place, REF_MAX, TITLE_MAX, agent_layout,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -139,7 +139,7 @@ pub(crate) async fn show_place(c: &Call<'_>, a: ShowPlaceArgs) -> Out {
     for p in &got.closed {
         text.push_str(&format!("; closed {} (your oldest) to make room", p.title));
     }
-    let prefs = got.prefs.on();
+    let prefs = got.prefs.as_ref().map(LayoutPrefs::on).unwrap_or_default();
     if !prefs.is_empty() {
         text.push_str(&format!(". Their layout says: {}; follow it", prefs.join("; ")));
     }

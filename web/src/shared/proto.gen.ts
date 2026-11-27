@@ -4264,9 +4264,9 @@ pane: string | null, tab: string | null,
 closed: Array<LayoutPane>, 
 /**
  * The person's layout prefs (Arugula #1531), for the agent to follow:
- * [`LayoutPrefs::on`]. Empty from a server before it.
+ * [`LayoutPrefs::on`]. `None` from a server before it.
  */
-prefs: LayoutPrefs, };
+prefs?: LayoutPrefs, };
 
 /**
  * Who changed the home tab last, and when (ms).

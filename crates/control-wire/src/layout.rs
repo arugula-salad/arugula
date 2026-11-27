@@ -366,9 +366,10 @@ pub struct LayoutChanged {
     #[serde(default)]
     pub closed: Vec<Pane>,
     /// The person's layout prefs (Arugula #1531), for the agent to follow:
-    /// [`LayoutPrefs::on`]. Empty from a server before it.
-    #[serde(default)]
-    pub prefs: LayoutPrefs,
+    /// [`LayoutPrefs::on`]. `None` from a server before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub prefs: Option<LayoutPrefs>,
 }
 
 #[cfg(test)]
@@ -397,7 +398,7 @@ mod tests {
             "layout": { "place": "board:brd_1", "rev": 1, "tabs": [] },
         }))
         .unwrap();
-        assert_eq!(old.prefs, LayoutPrefs::default(), "a server before prefs");
+        assert_eq!(old.prefs, None, "a server before prefs");
     }
 
     #[test]

@@ -253,11 +253,15 @@
           ]
         },
         "prefs": {
-          "$ref": "#/$defs/LayoutPrefs",
-          "default": {
-            "prefs": {}
-          },
-          "description": "The person's layout prefs (Arugula #1531), for the agent to follow:\n[`LayoutPrefs::on`]. Empty from a server before it."
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayoutPrefs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The person's layout prefs (Arugula #1531), for the agent to follow:\n[`LayoutPrefs::on`]. `None` from a server before it."
         },
         "tab": {
           "default": null,
