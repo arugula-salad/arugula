@@ -5,7 +5,8 @@
 // `layout` event keeps live. The lead never takes the focus, a busy person
 // gets its pane quietly with a dot, a fourth agent pane closes the oldest
 // untouched one, a closed default stays closed until Reset, and what waits on
-// you goes to a tab of its own with a Needs-you row pointing at it. On the
+// you goes to a tab of its own with a Needs-you row pointing at it. The
+// panes are worked by their buttons: no new keys until #1534's list. On the
 // app's frame fixture, with the cloud made up here (./place-layout-fake.ts).
 import { expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -132,9 +133,9 @@ test("a fourth agent pane closes the oldest the lead opened and you haven't touc
   await l.lead(doc(1));
   await l.lead(doc(2));
   await l.lead(doc(3));
-  // You maximise Doc 1 (f, then esc): it's yours now.
-  await pane(page, "Doc 1").click();
-  await page.keyboard.press("f");
+  // You maximise Doc 1 (⤢, then esc): it's yours now.
+  await pane(page, "Doc 1").hover();
+  await pane(page, "Doc 1").locator("[data-pane-max]").click();
   await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "1");
   await expect(page.locator('[data-board-default="zon_ux"]')).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -222,31 +223,31 @@ test("for_you: a prompt opens a tab of its own that never becomes current, with 
   await expect(page.locator("[data-board-for-you]")).toHaveCount(0);
 });
 
-test("keys: 1–6 tabs, [ ] focus panes, w closes one, f maximises and esc comes back, W closes the tab", async ({ page }) => {
+test("the panes' controls: ⤢ maximises and esc comes back, × closes a pane, a tab's × closes the tab; 1–4 pick a tab (no new keys until #1534)", async ({ page }) => {
   const l = await openBoard(page);
   await l.lead(DOC);
   await l.lead({ kind: "run", ref: "run_deploy", title: "Run · deploy-preview" }, "for_you");
-  await page.locator("body").click({ position: { x: 5, y: 5 } });
-  await page.keyboard.press("]");
-  await expect(page.locator('[data-board-default="zon_ux"]')).toHaveAttribute("data-pane-focused", "");
-  await page.keyboard.press("[");
-  await expect(pane(page, "Design pass")).toHaveAttribute("data-pane-focused", "");
-  await page.keyboard.press("f");
+  const d = pane(page, "Design pass");
+  await d.hover();
+  await d.locator("[data-pane-max]").click();
   await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "1");
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
-  await page.keyboard.press("w");
-  await expect(pane(page, "Design pass")).toHaveCount(0);
+  await d.hover();
+  await d.locator("[data-pane-close]").click();
+  await expect(d).toHaveCount(0);
   await expect.poll(() => l.posted.at(-1)).toMatchObject({ op: "close" });
   await page.keyboard.press("2");
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(pane(page, "Run · deploy-preview")).toBeVisible();
-  await page.keyboard.press("Shift+W");
+  await page.locator("[data-board-tabs] [data-tab-x]").click();
   await expect(tabs(page)).toHaveCount(1);
   await expect.poll(() => l.posted.at(-1)).toMatchObject({ op: "close_tab" });
-  // The keys are on the ? sheet.
+  // No key beyond main's: `w`, `[` and `]` do nothing to the panes.
   const ids = await page.evaluate(() => (window as unknown as { __arugulaKeys(): string[] }).__arugulaKeys());
-  for (const k of ["board.tab", "board.pane.next", "board.pane.prev", "board.pane.close", "board.tab.close", "board.pane.max", "board.pane.back"]) expect(ids).toContain(k);
+  for (const k of ["board.pane.next", "board.pane.prev", "board.pane.close", "board.tab.close", "board.pane.max", "board.reset"]) expect(ids).not.toContain(k);
+  expect(ids).toContain("board.tab");
 });
 
 test("the layout follows across reloads, and a moved pane is a tab of its own", async ({ page }) => {

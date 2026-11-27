@@ -185,7 +185,7 @@ export function BoardPanel({
   /** The desk's tab now: the board's own (home), or one opened beside it. Only you switch it (Lift 5b): an agent's tab never becomes current. */
   const [tab, setTabNow] = useState(HOME);
   const setTab = (t: string) => (busyNow(), setTabNow(t));
-  /** The pane you focused (`[` `]`, a click), and the one you maximised (`f`, esc back). */
+  /** The pane you focused (a click), and the one you maximised (⤢, esc back). */
   const [focused, setFocused] = useState<string | null>(null);
   const [max, setMax] = useState<string | null>(null);
   /** Tabs you've looked at since they opened: their dot goes. */
@@ -197,8 +197,6 @@ export function BoardPanel({
     if (tabNow.id !== tab) setTabNow(HOME);
     setLooked((s) => (s.has(tabNow.id) ? s : new Set([...s, tabNow.id])));
   }, [tabNow.id]);
-  /** What the keys do to the panes now: set as the panes are drawn. */
-  const paneKeys = useRef<{ order: string[]; close: (id: string) => void; max: (id: string) => void }>({ order: [], close: () => {}, max: () => {} });
   /** The desk's find bar is shown (Filter, `f`, `/`); a find in use keeps it. */
   const [filterOpen, setFilterOpen] = useState(false);
   /** Link a Doc's picker is open (the desk's ⋯). */
@@ -207,16 +205,6 @@ export function BoardPanel({
   const [adding, setAdding] = useState(false);
   const prs = view ? openPrs(view) : [];
   const tabs: TabItem[] = layout.tabs.map((t, i) => ({ id: t.id, title: tabTitle(t, view?.board.title ?? "Board"), count: i + 1, closes: t.id !== HOME, dot: t.id !== tab && ((t.for_you && !looked.has(t.id)) || t.panes.some((p) => arranged.quiet.has(p.id))) }));
-  /** Focus the pane `by` from the focused one, in the tab's order; it scrolls into view. */
-  const stepPane = (by: number) => {
-    const order = paneKeys.current.order;
-    if (!order.length) return;
-    const at = focused ? order.indexOf(focused) : -1;
-    const to = order[at < 0 ? (by > 0 ? 0 : order.length - 1) : (at + by + order.length) % order.length]!;
-    setFocused(to);
-    arranged.seen(to);
-    document.querySelector(`[data-pane-id="${to}"]`)?.scrollIntoView({ block: "nearest" });
-  };
   // The desk's keys (Lift 5a): its tabs by number, a row at a time, Filter, Add row and the lead.
   const tile = (by: number) => {
     const all = [...document.querySelectorAll<HTMLElement>(`[data-board="${id}"] [data-board-row]`)];
@@ -227,22 +215,17 @@ export function BoardPanel({
   useBindings(
     desk && shown && view
       ? [
-          { id: "board.tab", label: "A tab of the board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"), hint: { mac: "1–6", other: "1–6" }, run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
-          { id: "board.pane.next", label: "Focus the next pane", group: "panes", chip: "panes", keys: both("key:]"), hint: { mac: "[ ]", other: "[ ]" }, run: () => stepPane(1) },
-          { id: "board.pane.prev", label: "Focus the pane before", group: "panes", keys: both("key:["), run: () => stepPane(-1) },
-          { id: "board.pane.close", label: "Close the focused pane", group: "panes", chip: "close pane", keys: both("key:w"), when: () => !!focused, run: () => paneKeys.current.close(focused!) },
-          { id: "board.tab.close", label: "Close the tab", group: "panes", keys: both("Shift+key:w"), when: () => tab !== HOME, run: () => (void arranged.change({ op: "close_tab", tab }), setTab(HOME)) },
-          { id: "board.pane.max", label: "Maximise the focused pane, and back", group: "panes", chip: "maximise", keys: both("key:f"), when: () => !!(max ?? focused), run: () => paneKeys.current.max((max ?? focused)!) },
+          { id: "board.tab", label: "A tab of the board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4"), hint: { mac: "1–4", other: "1–4" }, run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
+          // Leaving a maximised pane is Esc's back; the panes' other actions are their buttons (no new keys until #1534's list).
           { id: "board.pane.back", label: "Back from a maximised pane", group: "panes", keys: both("key:escape"), hint: { mac: "esc", other: "esc" }, when: () => !!max, run: () => setMax(null) },
-          { id: "board.reset", label: "Reset the board's layout", group: "panes", keys: both("key:g key:0"), here: () => !!layout.changed, run: () => void arranged.change({ op: "reset" }) },
           { id: "board.next", label: "The next row", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => tile(1) },
           { id: "board.prev", label: "The row before", keys: both("key:k"), run: () => tile(-1) },
-          { id: "board.find", label: "Filter the rows", keys: both("key:/"), run: openFind },
+          { id: "board.find", label: "Filter the rows", keys: both("key:f", "key:/"), run: openFind },
           { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab(HOME), setAdding(true)) },
           { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea")?.focus() },
         ]
       : [],
-    [desk, shown, !!view, tabs.map((t) => t.id).join(), id, tab, focused, max, !!layout.changed],
+    [desk, shown, !!view, tabs.map((t) => t.id).join(), id, max],
   );
   // The agents' items on the board's issues, from the project's Inbox (Arugula #1469).
   const inbox = useBoardInbox(placement === "desk" ? view : null);
@@ -594,11 +577,6 @@ export function BoardPanel({
           return body ? [{ id: name, title: defaultTitle(name), default: true, size: layout.default_sizes[name], max: () => maxPane(name, false), close: () => closePane(name), body, data: { "data-board-default": name } }] : [];
         });
   const openedPanes = tabNow.panes.filter((p) => tabNow.id !== HOME || !p.in_place_of).map(item);
-  paneKeys.current = {
-    order: [...defaults, ...openedPanes].map((p) => p.id),
-    close: closePane,
-    max: (pane) => maxPane(pane, !defaults.some((d) => d.id === pane && d.default)),
-  };
   const panes = (
     <Panes
       label={tabNow.id === HOME ? view.board.title : tabTitle(tabNow, view.board.title)}
@@ -632,7 +610,7 @@ export function BoardPanel({
                     pane
                   </button>
                 )}
-                <button type="button" class="secondary small" aria-pressed={filterOpen || narrows} aria-keyshortcuts="/" data-board-filter onClick={() => (filterOpen && !narrows ? setFilterOpen(false) : openFind())}>
+                <button type="button" class="secondary small" aria-pressed={filterOpen || narrows} aria-keyshortcuts="f" data-board-filter onClick={() => (filterOpen && !narrows ? setFilterOpen(false) : openFind())}>
                   Filter
                 </button>
                 <button type="button" class="secondary small" aria-keyshortcuts="a" data-board-add-row onClick={() => setAdding(true)}>

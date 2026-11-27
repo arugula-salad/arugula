@@ -130,12 +130,12 @@ function PaneFrame({ p, focused, compact, onFocus }: { p: PaneItem; focused: boo
             </IconButton>
           )}
           {p.max && (
-            <IconButton label={`Maximise ${p.title}`} class="bar-btn sq" aria-keyshortcuts="f" data-pane-max onClick={p.max}>
+            <IconButton label={`Maximise ${p.title}`} class="bar-btn sq" data-pane-max onClick={p.max}>
               <ExpandIcon size="sm" />
             </IconButton>
           )}
           {p.close && (
-            <IconButton label={`Close ${p.title}`} class="bar-btn sq" aria-keyshortcuts="w" data-pane-close onClick={p.close}>
+            <IconButton label={`Close ${p.title}`} class="bar-btn sq" data-pane-close onClick={p.close}>
               <CloseIcon size="sm" />
             </IconButton>
           )}

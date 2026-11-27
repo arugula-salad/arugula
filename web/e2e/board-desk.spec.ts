@@ -175,10 +175,10 @@ test("before the platform keeps layouts (404), a PR from the fold still opens be
   await expect(pr).toHaveCount(0);
 });
 
-test("Filter (/) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
+test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
   await openDesk(page);
   await expect(page.locator("[data-board-find]")).toHaveCount(0);
-  await page.keyboard.press("/");
+  await page.keyboard.press("f");
   await expect(page.locator("[data-board-find-input] input, input[data-board-find-input]").first()).toBeFocused();
   await page.keyboard.press("Escape");
   await page.locator("body").click({ position: { x: 5, y: 5 } });

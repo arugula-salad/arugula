@@ -10,7 +10,7 @@ The lead never takes your focus or switches your tab. If you were typing, scroll
 
 The lead keeps at most three of its panes beside the board; a fourth closes the oldest one you haven't touched. A pane you open, move, resize or maximise is yours. A group you close stays closed until you Reset. While the layout differs from the default, the header says who changed it and when, with Reset beside it.
 
-Keys: `1`–`6` switch tabs, `[` and `]` move between panes, `w` closes a pane, `W` closes a tab, `f` maximises a pane and Esc comes back. Filter is now `/` only.
+Each pane's title row has its controls: move it to a tab of its own, ⤢ to maximise it (Esc comes back), and × to close it. `1`–`4` still pick a tab.
 
 Cuts:
 - Linked Docs and PRs are no longer fixed tabs. Open them from **+ pane**.

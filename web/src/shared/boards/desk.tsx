@@ -299,7 +299,7 @@ export function LeadPanel({ view, id, phone }: { view: BoardView; id: string; ph
     </div>
   );
   return (
-    <Panel label="The board's lead" head={head} placeKeys>
+    <Panel label="The board's lead" head={head}>
       <LeadThread id={id} phone={phone} name={lead ? "the lead" : "the board's thread"} />
     </Panel>
   );
