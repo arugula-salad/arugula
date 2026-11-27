@@ -521,6 +521,22 @@ pub const CATALOG: &[EventType] = &[
         home: Home::Cloud,
         power: Some("boards.read"),
     },
+    // Cloud emits it for a cross-board `blocks` link: ids, a state and a
+    // flag, never the PR's title. `unblocked` (true when that was the row's
+    // last open blocker) rides in data, not as a match field.
+    EventType {
+        name: "board.wait.changed",
+        meaning: "Work a board's row waits on, held by another board, moved: its PR merged, went red, or left the merge queue.",
+        matches: &[
+            BOARD,
+            m("item", "the waiting row's #N on the board"),
+            m("blocker", "the blocking issue's #N"),
+            m("pr", "the blocker's pull request, owner/repo#N"),
+            m("what", "what moved: merged, checks_failed or dequeued"),
+        ],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
     EventType {
         name: "agent.idle",
         meaning: "An agent on this machine finished its turn and waits for a prompt.",
@@ -756,6 +772,17 @@ mod tests {
         assert!(data_check(&fits).is_ok());
         let over = json!({ "s": "a".repeat(DATA_MAX_BYTES - 7) });
         assert!(data_check(&over).unwrap_err().contains("more than"));
+    }
+
+    #[test]
+    fn a_boards_wait_is_a_cloud_event_a_board_can_be_watched_on() {
+        let t = lookup("board.wait.changed").expect("in the catalog");
+        let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
+        assert_eq!(fields, ["board", "item", "blocker", "pr", "what"]);
+        assert_eq!((t.home, t.power), (Home::Cloud, Some("boards.read")));
+        // `unblocked` rides in data, which stays metadata only.
+        let data = json!({ "board": "brd_1", "item": "#7", "blocker": "#3", "pr": "o/r#9", "what": "merged", "unblocked": true });
+        assert!(data_check(&data).is_ok());
     }
 
     #[test]
