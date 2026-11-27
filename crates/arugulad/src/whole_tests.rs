@@ -107,7 +107,7 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
 }
 
 /// A board's lead that asks for a wider grant hears the answer in the
-/// board's thread, never in staff (Arugula #1461): the chief of staff leads
+/// board channel, never in staff (Arugula #1461, #1536): the chief of staff leads
 /// staff, so a post there reaches only itself. Both recipes say so.
 #[test]
 fn the_chief_of_staff_answers_a_leads_ask_in_the_boards_thread() {
@@ -120,10 +120,10 @@ fn the_chief_of_staff_answers_a_leads_ask_in_the_boards_thread() {
     assert!(section.contains("never in `staff`"), "{section}");
     for step in ["1. **Decide.**", "2. **Ask your person**", "3. **Tell the lead**"] {
         let line = section.lines().find(|l| l.trim_start().starts_with(step)).expect(step);
-        assert!(line.contains("the board's thread"), "{line}");
+        assert!(line.contains("the board channel"), "{line}");
     }
     let lead = arugulad_control_tools::board_lead_on_a_machine(None);
-    assert!(lead.contains("The chief of staff answers in the board's thread"), "{lead}");
+    assert!(lead.contains("The chief of staff answers in the board channel"), "{lead}");
 }
 
 /// A board's lead (Arugula #1440), rendered as its first prompt, names only

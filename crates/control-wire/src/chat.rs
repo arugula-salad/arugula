@@ -47,8 +47,55 @@ pub enum ChatKind {
     Archive,
     /// The thread on an object (M196), by its global id: a native issue
     /// (`iss_`), a mirrored GitHub PR or issue (`fi_`) or a hosted
-    /// workspace (`hw_`). Its people are its project's members.
+    /// workspace (`hw_`). Its people are its project's members. A board's
+    /// (`brd_`) is its channel, and a project's own (`prj_`) is its
+    /// #agents (Arugula #1536).
     Object,
+}
+
+/// A tag in a post in #agents or a board's channel (Arugula #1536), as
+/// written (`text`, without the `@`) and as meant: a board's is its id,
+/// so a rename keeps it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ChatTag {
+    /// `@channel`: every agent listed in the room.
+    Channel { text: String },
+    /// `@here`: the room's active agents.
+    Here { text: String },
+    /// `@cos`: the poster's chief of staff.
+    Cos { text: String },
+    /// `@<board>`: that board's lead, by the board's id.
+    Board { board: String, text: String },
+}
+
+/// Who a post in #agents or a board's channel reached (Arugula #1536), as
+/// the bus delivered it: the leads by their boards' ids (one wake for a
+/// lead of several, named under each), and the rest.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatReached {
+    /// The leads it reached, by their boards' ids.
+    pub leads: Vec<String>,
+    /// Every lead: a person's or the chief of staff's post in #agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub all: Option<bool>,
+    /// Only the active ones (`@here`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub active: Option<bool>,
+    /// The chief of staff (`@cos`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub cos: Option<bool>,
+    /// A board channel's workers it reached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub workers: Option<u32>,
 }
 
 /// What a daemon's thread is about.
@@ -361,6 +408,14 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub thread: Option<ChatThread>,
+    /// Its tags, in #agents or a board's channel (Arugula #1536).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatTag>>"))]
+    pub tags: Vec<ChatTag>,
+    /// Who it reached there, as the bus delivered it (Arugula #1536).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reached: Option<ChatReached>,
 }
 
 /// One attached file, as the reader sees it. `url` is control's, for the
@@ -861,6 +916,12 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub session: Option<String>,
+    /// Its tags, in #agents or a board's channel (Arugula #1536): who it's
+    /// for, by id. An agent's are read from its text instead (`@<board>`,
+    /// `@here`, `@channel`, `@cos`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatTag>>"))]
+    pub tags: Vec<ChatTag>,
 }
 
 /// Why control pushed someone.
@@ -934,6 +995,16 @@ pub struct ChatPosted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub nobody: Option<String>,
+    /// In #agents or a board's channel (Arugula #1536): who it's for, as its
+    /// tags resolved when it was posted; the message's own `reached` says
+    /// whom the bus delivered it to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reached: Option<ChatReached>,
+    /// Its tags as kept, by id: an agent's, read from its text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatTag>>"))]
+    pub tags: Vec<ChatTag>,
 }
 
 /// A comment on an exported native issue, on its way to GitHub (M205): a
@@ -1986,6 +2057,31 @@ pub struct AgentMessages {
 mod tests {
     use super::GrantScope;
     use serde_json::json;
+
+    /// Tags go as the web types them (Arugula #1536): `kind`, `text`, and a
+    /// board's id; a post and a message without them read as before, and a
+    /// receipt says only what it has.
+    #[test]
+    fn tags_and_a_receipt_on_the_wire() {
+        use super::{ChatPost, ChatReached, ChatTag};
+        let post: ChatPost = serde_json::from_value(json!({
+            "text": "@Design lift @here deploy at 5",
+            "tags": [{ "kind": "board", "board": "brd_1", "text": "Design lift" }, { "kind": "here", "text": "here" }],
+        }))
+        .unwrap();
+        assert_eq!(
+            post.tags,
+            [
+                ChatTag::Board { board: "brd_1".into(), text: "Design lift".into() },
+                ChatTag::Here { text: "here".into() }
+            ]
+        );
+        let bare: ChatPost = serde_json::from_value(json!({ "text": "hi" })).unwrap();
+        assert!(bare.tags.is_empty());
+        assert!(!serde_json::to_value(&bare).unwrap().as_object().unwrap().contains_key("tags"));
+        let r = ChatReached { leads: vec!["brd_1".into()], all: Some(true), ..Default::default() };
+        assert_eq!(serde_json::to_value(&r).unwrap(), json!({ "leads": ["brd_1"], "all": true }));
+    }
 
     /// A team scope goes and comes back as it went; the scopes before it
     /// parse as they always came, and a kind from a newer control is
