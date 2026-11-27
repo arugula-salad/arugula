@@ -24,7 +24,7 @@ import { lastLines } from "../shared/transcript";
 import { useSubscribe } from "../shared/ui/hooks";
 import { ago } from "../shared/time";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { kindOf } from "../shell/swarm/model";
+import { kindOf } from "../shell/fleet-model";
 import { runs } from "../platform/runs";
 import { boot } from "./machine-page";
 import "./overview.css";

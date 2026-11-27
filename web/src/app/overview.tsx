@@ -14,7 +14,7 @@
 // card in the board's drawer over this page, a session in the panel. A card
 // the address names (`?board=&card=`) opens the board's drawer over the
 // page, so the path and Esc climb back. The grouping is
-// ../shell/swarm/overview.ts; the machines are the machine page's
+// ../shell/fleet-overview.ts; the machines are the machine page's
 // (./machine-page), booted once.
 
 import "./overview.css";
@@ -33,8 +33,8 @@ import { Surface } from "../shared/kit/surface";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon } from "../shared/ui/icons";
 import type { Fleet } from "../shell/fleet";
-import { kindOf } from "../shell/swarm/model";
-import { boardSays, overviewOf, type OvBoard, type OvSession, type Standing } from "../shell/swarm/overview";
+import { kindOf } from "../shell/fleet-model";
+import { boardSays, overviewOf, type OvBoard, type OvSession, type Standing } from "../shell/fleet-overview";
 import { OverviewNeeds } from "./overview-needs";
 import { askerOf, paneOfItem, paneTarget } from "./needs";
 import { AgentPanel, CHIEF, ovPane } from "./panel";

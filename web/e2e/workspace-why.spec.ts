@@ -122,13 +122,6 @@ test("a waiting gate names the decision it enforces, its plan and the last relea
   await expect
     .poll(async () => (await reasonOf(page, block))?.gate?.why?.decisions?.map((d) => d.id) ?? null, { timeout: 15_000 })
     .toEqual(["toy-001", "toy-002", "toy-000"]);
-
-  // The swarm's card.
-  await page.goto("/#swarm");
-  const card = page.locator('[data-need][data-kind="gate"]');
-  await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: ship waits at gate approve-ship");
-  await expect(card.locator("[data-gate-decision]")).toHaveText(ENFORCES);
 });
 
 test("on a phone, the sheet's gate says what it enforces (#617)", async ({ browser }) => {

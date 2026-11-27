@@ -6,7 +6,7 @@
 // Arugula #1349; what it means everywhere is #849's) is above them,
 // the Inbox and Settings at the foot. The app's places are only where
 // control has a platform page.
-// It stays while the swarm or agents cover the panes, so the way back is
+// It stays while agents cover the panes, so the way back is
 // always in one place, and Machines goes back to the session's last tab and
 // pane (the routes never change the selection). The rail itself is the
 // kit's (shared/kit/frame/rail.tsx); this builds this page's items, and
@@ -16,7 +16,6 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
-import { onSwarmRoute } from "../../swarm/route";
 import { openSettings } from "../settings-route";
 import { Rail as KitRail, type RailPlace } from "../../../shared/kit/frame/rail";
 import { AccountButton } from "../app-bar";
@@ -26,19 +25,15 @@ import { countView } from "../../../shared/telemetry";
 import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, Mark, OverviewIcon, SettingsIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
 
-/** Re-render on any route change, the swarm's too (it closes without a
+/** Re-render on any route change (a place closes without a
  * hashchange). */
 export function usePlace(client: Client): Place {
   useChatTick(client);
   const [, tick] = useState(0);
   useEffect(() => {
     const fn = () => tick((t) => t + 1);
-    const off = onSwarmRoute(fn);
     addEventListener("hashchange", fn);
-    return () => {
-      off();
-      removeEventListener("hashchange", fn);
-    };
+    return () => removeEventListener("hashchange", fn);
   }, []);
   return currentPlace();
 }
@@ -67,8 +62,8 @@ export function Rail({ client }: { client: Client }) {
     app(PROJECTS_TO, "Overview", "Overview: your project's work", "overview", <OverviewIcon />),
     app(BOARDS_TO, "Boards", "Boards: your project's boards and tickets", "boards", <BoardsIcon />),
     app(DOCS_TO, "Docs", "Docs: your project's Docs", "docs", <DocsIcon />),
-    // This page: the panes, the swarm, this machine's Docs and recipes.
-    { key: "machines", label: "Machines", tip: "Machines: your panes, the swarm and your team's machines", here: at !== "settings", icon: <MachinesIcon />, onClick: machines },
+    // This page: the panes, this machine's Docs and recipes.
+    { key: "machines", label: "Machines", tip: "Machines: your panes and your team's machines", here: at !== "settings", icon: <MachinesIcon />, onClick: machines },
     threads && {
       key: "chat",
       label: "Chat",

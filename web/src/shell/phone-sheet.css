@@ -1,7 +1,7 @@
 /* The phone sheet (☰ in the phone bar): a panel that scrolls over a tab bar
    pinned at the bottom of the open sheet. Here is what it opens on; Machines
    is the hosts; More is the rest, grouped. The look is the swarm's: display
-   headings, mono labels, a segmented control (.swarm-seg). */
+   headings, mono labels, a segmented control. */
 
 .sheet {
   position: absolute;

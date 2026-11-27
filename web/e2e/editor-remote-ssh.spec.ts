@@ -139,26 +139,6 @@ test.afterAll(async () => {
   if (enabled && !process.env.ARUGULA_TESTNET_KEEP) await run(boxSh, ["down"], { env: process.env }).catch(() => {});
 });
 
-test("VS Code over Remote-SSH joins the box's swarm when asked", async ({ browser }) => {
-  test.setTimeout(120_000);
-  const item = vs.locator(".statusbar-item", { hasText: "arugula" }).first();
-  await expect(item).toBeVisible({ timeout: 60_000 });
-  expect(await editorsNow()).toEqual([]);
-  await command("arugula: Show this workspace in the swarm");
-  await expect.poll(async () => (await editorsNow()).length, { timeout: 20_000 }).toBe(1);
-  await openFile("src/prices.js", 20);
-  await expect.poll(async () => (await editorsNow())[0]?.file).toBe("src/prices.js");
-  const e = (await editorsNow())[0].editor;
-  expect(e.app).toBe("vscode");
-  expect(e.remote).toBe("ssh-remote");
-
-  const ctx = await browser.newContext({ ...devices["Pixel 7"], baseURL: APP });
-  phone = await ctx.newPage();
-  await phone.goto("/#swarm");
-  await expect(phone.locator(".swarm")).toBeVisible();
-  await expect.poll(() => tileKey(phone), { timeout: 20_000 }).not.toBeNull();
-});
-
 test("the phone follows the cursor", async () => {
   test.setTimeout(60_000);
   await phone.waitForTimeout(1500);

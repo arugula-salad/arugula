@@ -3,12 +3,12 @@
 // lands on. Pure functions over the fleet's merged panes (M25), so the field
 // and the rail agree and the tests can check them directly.
 
-import { cleanTitle } from "../../shared/titles";
-import type { FleetPane } from "../fleet";
-import type { Reason, WorkKind } from "../../shared/proto";
-import { NEEDS_YOU } from "../../shared/needs-you";
-import { boardGroup } from "../../shared/boards/text";
-import type { FlagName } from "../client";
+import { cleanTitle } from "../shared/titles";
+import type { Fleet, FleetPane } from "./fleet";
+import { gateKey, type Action, type ActRequest, type ActResponse, type Reason, type WorkKind } from "../shared/proto";
+import { NEEDS_YOU } from "../shared/needs-you";
+import { boardGroup } from "../shared/boards/text";
+import type { FlagName } from "./client";
 
 // "owner", not "person": it groups by whose a pane is, and a team owns
 // some (UI audit #172).
@@ -313,4 +313,28 @@ export function whatItDoes(p: FleetPane): string {
  * `.lan`, `.home`) adds nothing and pushes the rest off the card. */
 export function shortHost(name: string): string {
   return name.replace(/\.(local|lan|home)$/i, "");
+}
+
+/** Answer what `panes` ask, through each one's machine (`/api/attention/act`):
+ * one pane by its question's id or its gate's key, several at once. The
+ * first refusal's words, or null. */
+export async function act(fleet: Fleet, panes: FleetPane[], action: Action, extra: Partial<ActRequest> = {}): Promise<string | null> {
+  const hosts = new Map<string, FleetPane[]>();
+  for (const p of panes) hosts.set(p.host, [...(hosts.get(p.host) ?? []), p]);
+  let err: string | null = null;
+  await Promise.all(
+    [...hosts].map(async ([host, ps]) => {
+      const r = ps[0].info.reason;
+      // What it answers: a question or approval's id, or a gate's key (M34).
+      const id = r?.ask?.id ?? (r?.gate ? gateKey(r.gate) : undefined);
+      const body: ActRequest = ps.length === 1 ? { action, pane: ps[0].id, id, ...extra } : { action, panes: ps.map((p) => p.id), ...extra };
+      try {
+        const res = await fleet.request(host, "POST", "/api/attention/act", body);
+        if (!res.ok) err = (await res.json<Partial<ActResponse> & { error?: string }>().catch(() => null))?.error ?? `couldn't (${res.status})`;
+      } catch (e) {
+        err = String(e);
+      }
+    }),
+  );
+  return err;
 }

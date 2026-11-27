@@ -85,9 +85,8 @@ export function countError() {
   if (send) counts.web_errors++;
 }
 
-/** The view a route in the address (`#swarm`, `#chat…`, `#agents…`) is. */
+/** The view a route in the address (`#chat…`, `#agents…`) is. An old `#swarm` lands on the panes (Lift 6a): no view of its own. */
 function routeView(hash: string): View | null {
-  if (/^#swarm(=|$)/.test(hash)) return "swarm";
   if (/^#chat(=|$)/.test(hash)) return "chat";
   if (/^#agents(=|$)/.test(hash)) return "agents";
   return null;

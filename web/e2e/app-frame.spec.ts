@@ -93,8 +93,8 @@ test.describe("on a computer", () => {
     await rail(page, "overview").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     await onlyLit(page, "overview");
-    expect(await hooks(page, "[data-place-views=overview] > *", "view")).toEqual(["overview", "swarm"]);
-    await here(page, "overview");
+    // No views of the Overview's own: Swarm went in Lift 6a.
+    expect(await hooks(page, "[data-place-views=overview] > *", "view")).toEqual([]);
     await page.screenshot({ path: info.outputPath("frame-overview.png") });
     // An old link to Sessions goes on to Boards, in its place in the history.
     await page.goto(`/p/${P}/sessions?label=ui`);
@@ -136,50 +136,10 @@ test.describe("on a computer", () => {
     await page.goto(`/p/${P}/machines/panes`);
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await onlyLit(page, "machines");
-    // The Swarm is the Overview's view, at its route for now (Arugula #1348).
-    await rail(page, "overview").click();
-    await view(page, "swarm").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-    await onlyLit(page, "overview");
-  });
-
-  test("Swarm is the Overview's view under the bar, beside the rail; a card opens its pane, Back returns to the Swarm, Escape to the Overview (Arugula #1348)", async ({ page }, info) => {
-    // The pane asks for attention (OSC 9), so it's a card on the Swarm's rail.
-    const pane = await openApp(page, () => `/p/${P}`, "printf '\\033]9;%s\\007' look\n");
-    await expect.poll(() => hooks(page, "[data-place-views] > *", "view")).toEqual(["overview", "swarm"]);
-    await here(page, "overview");
-    await view(page, "swarm").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-    const swarm = page.locator("[data-app-swarm] .swarm");
-    await expect(swarm).toBeVisible();
-    // The rail and the bar stay, the Overview lit and its Swarm view.
-    await expect(page.locator("[data-rail]")).toBeVisible();
-    await onlyLit(page, "overview");
-    await here(page, "swarm");
-    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Overview\s*Swarm/);
-    // Under the bar, beside the rail; the bar's Overview is its way back, so it has none of its own.
-    const bar = (await page.locator("[data-platform-bar]").boundingBox())!;
-    const box = (await swarm.boundingBox())!;
-    expect(box.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
-    expect(box.x).toBeGreaterThan(0);
-    await expect(page.locator("[data-app-swarm] [data-swarm-back]")).toHaveCount(0);
-    await page.screenshot({ path: info.outputPath("frame-swarm.png") });
-    // A card opens its pane on its machine's page; Back returns to the Swarm.
-    const card = page.locator(`[data-app-swarm] [data-need][data-panes$=":${pane}"]`);
-    await expect(card).toBeVisible({ timeout: 20_000 });
-    await card.locator("[data-open-card]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}(&machine=[\\w.-]+)?$`));
-    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
-    await page.goBack();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-    await expect(swarm).toBeVisible();
-    await expect(page.locator("[data-rail]")).toBeVisible();
-    // Escape steps back to the Overview.
-    await page.keyboard.press("Escape");
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
-    await expect(page.locator("[data-app-swarm]")).toHaveCount(0);
-    await onlyLit(page, "overview");
-    await here(page, "overview");
+    // Swarm's old address lands on Machines (Lift 6a).
+    await page.goto(`/p/${P}/machines/swarm`);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    await onlyLit(page, "machines");
   });
 
   test("what's new in the issues' threads is a count on Boards; the runs', on Runs (not Machines, Lift 3); chat's, on Chat (Arugula #1345)", async ({ page }) => {
@@ -327,24 +287,14 @@ test.describe("on a computer", () => {
     expect(await frame.locator(".app.ws").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   });
 
-  test("the Machines page is Machines', and a machine's name opens its machine; Swarm sits beside the rail", async ({ page }, info) => {
+  test("the Machines page is Machines', and a machine's name opens its machine", async ({ page }) => {
     await openApp(page, () => `/p/${P}/machines`);
     const list = page.locator("[data-machines-list]");
     await expect(list.locator("[data-machines-machine-link]")).toHaveCount(1);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula ▾\s*Machines/);
     await onlyLit(page, "machines");
     await here(page, "machines");
-    // The Overview's Swarm, beside the rail.
-    await rail(page, "overview").click();
-    await view(page, "swarm").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-    await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
-    await onlyLit(page, "overview");
-    expect((await page.locator("[data-app-swarm] .swarm").boundingBox())!.x).toBeGreaterThan(0);
-    await page.screenshot({ path: info.outputPath("frame-swarm.png") });
-    // Back by the rail, to Machines; the machine from it.
-    await rail(page, "machines").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    // A machine, from its name.
     await list.locator("[data-machines-machine-link]").click();
     await expect(page.locator("[data-platform-machines] .app.ws")).toBeVisible();
     // The machine's bar has Machines, back to the Machines page.
@@ -535,18 +485,17 @@ test.describe("at 390px", () => {
   test("no page scrolls sideways", async ({ page }) => {
     const pane = await openApp(page, () => `/p/${P}`);
     const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    for (const path of ["", "/boards", "/docs", "/chat", "/machines", "/machines/swarm", "/runs", `/machines?pane=${pane}`]) {
+    for (const path of ["", "/boards", "/docs", "/chat", "/machines", "/runs", `/machines?pane=${pane}`]) {
       await page.goto(`/p/${P}${path}`);
-      await expect(page.locator(path.includes("pane=") ? `[data-pane="${pane}"]` : "[data-platform-bar], [data-app-swarm] .swarm").first()).toBeVisible();
+      await expect(page.locator(path.includes("pane=") ? `[data-pane="${pane}"]` : "[data-platform-bar]").first()).toBeVisible();
       expect(await sideways(), path || "/").toBeLessThanOrEqual(0);
     }
-    // The Overview has no views on a phone, and Swarm is a computer's: its address is the Overview here (Arugula #1348).
+    // The Overview has no views on a phone; Swarm's old address is Machines (Lift 6a).
     await page.goto(`/p/${P}`);
     await expect(page.locator("[data-platform-bar]")).toBeVisible();
     await expect(page.locator("[data-place-views]")).toHaveCount(0);
     await page.goto(`/p/${P}/machines/swarm`);
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
-    await expect(page.locator("[data-app-swarm]")).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     // The Inbox, by its bell; Settings, under your picture.
     await page.goto(`/p/${P}`);
     await page.locator("[data-phone-inbox]").click();

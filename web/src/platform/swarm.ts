@@ -1,7 +1,7 @@
 // The swarm's language on the platform's lists: which palette color a
 // card's state bar takes, for the one fact each list's bar says
 // (./swarm.css has the whole table). The swarm's own colors are fixed
-// (shell/swarm/model.ts's REASON_COL); these are the palette's, so the
+// (shell/fleet-model.ts's REASON_COL); these are the palette's, so the
 // chosen appearance holds.
 
 import type { Tone } from "../shared/ui/state-chip";

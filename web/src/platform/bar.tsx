@@ -138,9 +138,6 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
     if ("board" in z) steps.push(link(boards.title(z.board) ?? "Board", pathOf({ page: "project", project, zoom: { board: z.board } }, names), "board"));
     if ("board" in z && z.card) steps.push({ label: where.cardLabel(z.card) ?? "Card", hook: "card" });
     if ("session" in z) steps.push({ label: where.cardLabel(z.session) ?? "Session", hook: "session" });
-  } else if (r.page === "machines" && r.at.at === "swarm") {
-    // Swarm is the Overview's view (Arugula #1348): Overview › Swarm.
-    steps.push(link(SECTION_LABEL.home, home, "home"), { label: "Swarm", hook: "swarm" });
   } else if (r.page === "issue" && where.boardOf(r.issue)) {
     // A card (Lift 5a): Boards › its board › #N.
     const on = where.boardOf(r.issue)!;

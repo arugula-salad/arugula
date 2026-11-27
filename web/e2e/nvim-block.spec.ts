@@ -300,18 +300,6 @@ test("it survives a daemon restart, and a reboot, on its file and line, still an
   await back();
 });
 
-test("the swarm shows it as an editor, with the nvim mark", async ({ page }) => {
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
-  await expect.poll(() => page.evaluate((b) => window.__arugula.fleet.panes.find((p) => p.id === b && p.info.app === "nvim")?.info.kind ?? null, block)).toBe("editor");
-  const key = await page.evaluate((b) => window.__arugula.fleet.panes.find((p) => p.id === b && p.info.app === "nvim")!.key, block);
-  await page.waitForTimeout(1500);
-  const pos = (await page.evaluate((k) => (window.__arugula.swarm as { screenOf(k: string): { x: number; y: number } }).screenOf(k), key))!;
-  await page.mouse.move(pos.x, pos.y);
-  await expect(page.locator(".swarm-peek [data-swarm-nvim]")).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator(".swarm-peek .ph b")).toContainText("b.txt:45");
-});
-
 test("Open in editor with no nvim open, the preference nvim: an nvim block, the plugin joined", async ({ page }) => {
   const vscode = await noVsCode(page);
   await reset(page);

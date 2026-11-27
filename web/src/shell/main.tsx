@@ -36,7 +36,7 @@ import { Client } from "./client";
 import { directory } from "./hosts";
 import { followSource, Machines } from "./machines";
 import { appAddress, type PagesFlag } from "./app-redirect";
-import { Connecting, MachineView, Swarm } from "./views";
+import { Connecting, MachineView, SwarmLanding } from "./views";
 import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
@@ -53,7 +53,6 @@ import { setControlSession } from "./ui/people";
 import { unhex } from "./e2e/cert.ts";
 import { useSubscribe } from "../shared/ui/hooks";
 import { setAccount } from "./ui/app-bar";
-import { fakeSwarm } from "./swarm/fake";
 import { followChatBadge, setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { KeysSheetLayer } from "../shared/kit/frame/keys-sheet";
@@ -322,7 +321,7 @@ const draw = () => {
     // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : shell()}
-      {!popAt && <Swarm key={client.base} machines={machines} client={client} ready={() => !session || session.phase === "ready"} />}
+      {!popAt && <SwarmLanding key={client.base} client={client} />}
       <AgentDialogLayer />
       <AppearanceLayer />
       <FeedbackLayer />
@@ -489,12 +488,6 @@ Object.assign(window, {
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
     fleet: machines.fleet,
-    /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
-    swarmFake: (n: number) => fakeSwarm(machines.fleet, n),
-    /** M26: the swarm's field, when it's shown. */
-    get swarm() {
-      return (window as unknown as { __swarm?: unknown }).__swarm ?? null;
-    },
     /** M23: a second connection to the same daemon that only takes
      * summaries (what the swarm and the fleet use). */
     summaries: () => {

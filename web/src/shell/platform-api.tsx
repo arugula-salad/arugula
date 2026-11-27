@@ -9,7 +9,7 @@ import { useState } from "preact/hooks";
 import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
-import { whatItDoes } from "./swarm/model";
+import { whatItDoes } from "./fleet-model";
 import { isThisMachine } from "./this-machine";
 import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";

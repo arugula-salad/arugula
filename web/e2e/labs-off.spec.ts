@@ -115,8 +115,8 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
   expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
 
-  // Machines' bar: Panes and Swarm; no Chat on the rail.
-  await expect(page.locator("[data-machine-swarm]")).toBeVisible();
+  // Machines' bar: no Swarm (Lift 6a); no Chat on the rail.
+  await expect(page.locator("[data-machine-swarm]")).toHaveCount(0);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await noLabsItems(page, pane);
 
@@ -146,40 +146,11 @@ test("without labs the page never requests the Labs chunk", async ({ page }) => 
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
-  // Open the places a Labs session would load it for: the menus and the swarm.
+  // Open the places a Labs session would load it for: the menus.
   await noLabsItems(page, pane);
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
   // The page's own scripts did load, so the check looks at something.
   expect(asked.some((u) => /\/assets\/main-[\w-]+\.js/.test(u))).toBe(true);
   expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
-});
-
-test("without labs the swarm still offers its four views, and keeps what this browser saved", async ({ page }) => {
-  // The views left Labs (the swarm-themes flag is retired): Theme is a
-  // setting of the swarm's for everyone, kept in the browser.
-  await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "hive"));
-  await open(page);
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
-  await expect(page.locator(".swarm-bar")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
-  await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "hive");
-  await page.locator('[data-theme-pick="blocks"]').click();
-  await expect(page.locator(".swarm")).toHaveAttribute("data-theme", "blocks");
-  // Its tiles show no unread: chat is control's (M125), and there's none here.
-  // (The fleet reads its panes after the swarm draws: wait for them.)
-  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.length)).toBeGreaterThan(0);
-  expect(await page.evaluate(() => window.__arugula.fleet.panes.every((p) => !p.unread && !p.mention))).toBe(true);
-  // The rest of the bar is still there.
-  await expect(page.locator('[data-g="machine"]')).toBeVisible();
-  // Its legend lists only the kinds that can be here: no studio app, no
-  // Managoat (https://app.arugula.io/issues/iss_78ce975b330e471f9827d13cb22024bb).
-  // (Once the fleet's machine has said what it's set up for.)
-  await expect.poll(() => page.evaluate(() => [...(window.__arugula.fleet as unknown as { hosts: Map<string, { client: { features: unknown } | null }> }).hosts.values()].every((e) => e.client?.features))).toBe(true);
-  const legend = page.locator(".swarm-legend span");
-  await expect(legend).toHaveText(["Shell", "Build", "Test", "Agent", "Server", "Logs", "Editor", "Pull request", "Issue"]);
 });
 
 test("an older daemon's mention notification opens only the pane", async ({ page }) => {
@@ -207,7 +178,6 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-open-chat]")).toHaveCount(0);
     await sheetTab(page, "More");
     // What it does have.
-    await expect(page.locator("[data-open-swarm]")).toBeVisible();
     await expect(page.locator("[data-open-pr]")).toBeVisible();
     for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
@@ -293,9 +263,4 @@ test("setting the flag on the running daemon brings it all back, with no restart
   }
   await page.keyboard.press("Escape");
 
-  await page.goto("/#swarm");
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
-  // A studio app is in its legend now; Managoat, retired, still isn't.
-  await expect(page.locator(".swarm-legend")).toContainText("Studio app");
-  await expect(page.locator(".swarm-legend")).not.toContainText("Managoat");
 });

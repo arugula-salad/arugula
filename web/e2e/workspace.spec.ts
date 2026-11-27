@@ -209,7 +209,7 @@ test("a burst of edits in a member costs one full read, once it holds still (#31
   git("checkout", "-q", "--", "app/README.md");
 });
 
-test("Expire turns a gate down, from the card and the phone: the next run stops there again", async ({ browser, page }) => {
+test("Expire turns a gate down from the phone: the next run stops there again (Swarm's card went in Lift 6a)", async ({ browser, page }) => {
   test.setTimeout(90_000);
   await open(page);
   const pending = async () => {
@@ -221,19 +221,6 @@ test("Expire turns a gate down, from the card and the phone: the next run stops 
   expect(run("release")).toBe(3);
   await pending();
 
-  // The swarm's card: Approve, Expire, Dismiss.
-  await page.goto("/#swarm");
-  const card = page.locator('[data-need][data-kind="gate"]');
-  await expect(card.locator("[data-expire-gate]")).toHaveText("Expire", { timeout: 15_000 });
-  await card.locator("[data-expire-gate]").click();
-  await cleared();
-  // Not approved: chant's ledger has no approval for it, and the next run
-  // stops at the gate again.
-  expect(approvers()).toEqual([OWNER]);
-  expect(run("release")).toBe(3);
-  await pending();
-  const hist = await (await fetch(`${base()}/api/history?pane=${block}`)).json();
-  expect(hist.some((h: { text: string; by: string }) => h.text === "expired delivery: release at gate approve-release" && h.by === OWNER)).toBe(true);
 
   // On a phone, from the sheet.
   const ctx = await browser.newContext({ ...phone, baseURL: base() });
@@ -261,14 +248,6 @@ test("on a phone, an editor approves from the sheet, gates first; a viewer sees 
     return c.sessionOfTab(c.tabOfPane(b)!.id);
   }, block);
 
-  // On the swarm's rail: a gate card, with Approve.
-  await page.goto("/#swarm");
-  const card = page.locator('[data-need][data-kind="gate"]');
-  await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator("[data-row-title]")).toHaveText("Waits at a gate");
-  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: release waits at gate approve-release");
-  await expect(card.locator("[data-approve-gate]")).toHaveText("Approve");
-  expect(await card.getAttribute("data-bundle")).toBe(`gate:${ws}`);
 
   // A viewer: the gate, no Approve.
   expect((await post("/api/acl", { session, principal: `tailnet:${FRIEND}`, role: "viewer" })).ok).toBe(true);

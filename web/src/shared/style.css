@@ -325,22 +325,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 700;
 }
 
-/* The swarm under the shared bar: as wide as left and right leave it
-   (beside the rail), not .bar's 100%, which ran it 56px off the right
-   edge and hid half the account button (UI audit #153). */
-.swarm-shell > .k-top {
-  position: fixed;
-  z-index: 21;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: auto;
-}
-
-.swarm-shell > .swarm {
-  top: var(--bar-h);
-}
-
 /* Chat's search, in the shared bar after the places. */
 .app-bar .chat-search {
   align-self: center;
@@ -3993,13 +3977,9 @@ button.agent-image {
   color: var(--done);
 }
 
-/* ---- the swarm (M26): the prototype's look (archive/spikes:spikes/s16-swarm/canvas.html) */
-
-:where(.swarm, .start) {
-  /* The swarm's names for the palette's colors (#729): the swarm, the
-     getting started overlay and its toast, so Latte reaches them. The
-     canvases read them from the page (swarm/field.ts's readColors). An ask
-     is an agent live and waiting on you, so it takes the accent. */
+/* The getting started overlay's names for the palette's colors (#729;
+   Swarm's too, before Lift 6a), so Latte reaches them. */
+:where(.start) {
   --void: var(--well);
   --mute: var(--ink-dim);
   --panel: color-mix(in srgb, var(--canvas) 86%, transparent);
@@ -4007,388 +3987,7 @@ button.agent-image {
   --s-fail: var(--fail);
   --s-done: var(--done);
   --s-wait: var(--needs);
-  /* What the rail and the tour tint with: a tile's kind, and a plain card. */
   --s-plain: var(--ink-dim);
-}
-
-.swarm {
-  --swarm-rail: 330px;
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  background: var(--void);
-  color: var(--ink);
-  font: var(--text-body)/1.4 var(--font-sans);
-  overflow: hidden;
-}
-.swarm * {
-  box-sizing: border-box;
-}
-/* A swarm that threw while drawing: the note, centred where it was (#615). */
-.swarm > .block-error {
-  height: 100%;
-}
-.swarm button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.swarm-field {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  touch-action: none;
-  cursor: grab;
-}
-.swarm-field.panning {
-  cursor: grabbing;
-}
-.swarm-bar {
-  position: absolute;
-  z-index: 5;
-  top: 0;
-  left: 0;
-  right: var(--swarm-rail);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px 22px;
-  padding: 16px 20px 0;
-  pointer-events: none;
-}
-.swarm-bar > * {
-  pointer-events: auto;
-}
-.swarm-brand h1 {
-  margin: 0;
-  font: 700 var(--text-hero)/0.9 var(--font-title);
-  letter-spacing: var(--track-display);
-  text-transform: uppercase;
-}
-.swarm-brand h1 span {
-  color: var(--mute);
-  font-weight: 500;
-}
-.swarm-stats {
-  display: flex;
-  gap: 16px;
-  font: 500 var(--text-meta)/1.2 var(--font-mono);
-  color: var(--mute);
-  font-variant-numeric: tabular-nums;
-}
-.swarm-stats b {
-  display: block;
-  font: 700 var(--text-xl)/1 var(--font-title);
-  color: var(--ink);
-}
-.swarm-stats .needs b {
-  color: var(--s-fail);
-}
-.swarm-spacer {
-  flex: 1;
-}
-/* A segmented control (buttons.css's .seg), in words, like every other
-   (UI audit #172). */
-.swarm-seg {
-  display: flex;
-  /* The control's words are the swarm's dim, and its "on" is the accent's
-     tint over the page's bg, which legible() checks (not over the letterbox). */
-  --ink-dim: var(--mute);
-  --card-raised: color-mix(in srgb, var(--ink) 10%, transparent);
-}
-.swarm-seg-l {
-  font: 500 var(--text-label)/1 var(--font-mono);
-  color: var(--mute);
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
-  margin-bottom: 6px;
-}
-.swarm-tools {
-  display: flex;
-  gap: 6px;
-}
-.swarm-tools button {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: var(--space-2) 12px;
-  border-radius: var(--chip-radius);
-  font: 500 var(--text-meta)/1 var(--font-mono);
-}
-.swarm-notice {
-  position: absolute;
-  z-index: 5;
-  top: 96px;
-  left: 20px;
-  font: 500 var(--text-label)/1.4 var(--font-mono);
-  color: var(--s-wait);
-}
-/* The city's towers rise into the bar and the key: a backdrop behind
-   them, so its controls and the colour key stay readable. */
-.swarm[data-theme="city"] .swarm-bar {
-  padding-bottom: 12px;
-  background: linear-gradient(to bottom, var(--void) 75%, transparent);
-}
-.swarm[data-theme="city"] .swarm-foot {
-  padding-top: 18px;
-  bottom: 0;
-  padding-bottom: 16px;
-  background: linear-gradient(to top, var(--void) 70%, transparent);
-}
-
-.swarm-foot {
-  position: absolute;
-  z-index: 5;
-  left: 20px;
-  bottom: 16px;
-  right: calc(var(--swarm-rail) + 20px);
-  pointer-events: none;
-}
-.swarm-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  font: 500 var(--text-label)/1 var(--font-sans);
-  color: var(--mute);
-}
-.swarm-legend i {
-  display: inline-block;
-  width: 12px;
-  height: 8px;
-  border-radius: 2px;
-  margin-right: 6px;
-}
-/* A board's focus (#466): which board, the way back, and its lanes with their counts. */
-.swarm-board {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 6px;
-  font: 600 var(--text-body)/1.2 var(--font-sans);
-}
-.swarm-lanes {
-  flex-basis: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-}
-.swarm-lane {
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: var(--panel);
-  font: 500 var(--text-meta)/1.3 var(--font-mono);
-  color: var(--ink);
-}
-.swarm-lane[data-workers="0"] {
-  color: var(--mute);
-  border-style: dashed;
-}
-.swarm-hint {
-  font: 400 var(--text-label)/1.4 var(--font-mono);
-  color: var(--mute);
-  opacity: 0.7;
-  margin-top: 6px;
-}
-/* How to move around, under the bar, until put away. */
-.swarm-tip {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 720px;
-  padding: 8px 8px 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  background: var(--panel);
-  font: 500 var(--text-body)/1.4 var(--font-sans);
-  color: var(--ink);
-}
-.swarm-tip span {
-  flex: 1;
-}
-/* M41: how to read the city. */
-.swarm-key {
-  pointer-events: auto;
-  margin-top: 8px;
-  max-width: 380px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 8px 12px;
-}
-.swarm-key summary {
-  cursor: pointer;
-  font: 500 var(--text-label)/1.4 var(--font-mono);
-  color: var(--mute);
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
-}
-.swarm-key dl {
-  margin: 8px 0 2px;
-  display: grid;
-  grid-template-columns: 6.2em 1fr;
-  gap: 3px 10px;
-  font-size: var(--text-meta);
-  line-height: 1.35;
-}
-.swarm-key dt {
-  font: 700 var(--text-body)/1.25 var(--font-title);
-  text-transform: uppercase;
-  letter-spacing: var(--track-display);
-}
-.swarm-key dd {
-  margin: 0;
-  color: var(--ink-dim);
-  min-width: 0;
-}
-.swarm-rail {
-  position: absolute;
-  z-index: 6;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--swarm-rail);
-  border-left: 1px solid var(--line);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--section) 92%, transparent), color-mix(in srgb, var(--void) 96%, transparent));
-  display: flex;
-  flex-direction: column;
-}
-.swarm-rail header {
-  padding: 18px 18px 10px;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-.swarm-rail h2 {
-  margin: 0;
-  font: 600 var(--text-title)/20px var(--font-sans);
-}
-.swarm-rail header span {
-  font: 500 var(--text-label)/1 var(--font-mono);
-  color: var(--mute);
-}
-.swarm-cards {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px 14px 14px;
-  overflow-y: auto;
-}
-.swarm-waiting {
-  padding: 10px 18px 16px;
-  border-top: 1px solid var(--line);
-  font: 500 var(--text-meta)/1.4 var(--font-sans);
-  color: var(--mute);
-}
-.swarm-waiting b {
-  color: var(--s-wait);
-}
-.swarm-peek {
-  position: absolute;
-  z-index: 7;
-  width: 340px;
-  max-width: calc(100% - 32px);
-  pointer-events: none;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 8px 10px;
-  backdrop-filter: blur(6px);
-}
-.swarm-peek .ph {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font: 600 var(--text-label)/1.3 var(--font-mono);
-  margin-bottom: 4px;
-}
-.swarm-peek .ph span {
-  color: var(--mute);
-  font-weight: 400;
-}
-.swarm-peek pre {
-  margin: 0;
-  font: 400 var(--text-label)/1.45 var(--font-mono);
-  color: var(--ink-dim);
-  white-space: pre-wrap;
-  word-break: break-word;
-  min-height: 1em;
-}
-@media (max-width: 760px) {
-  .swarm {
-    --swarm-rail: 0px;
-  }
-  .swarm-bar {
-    right: 0;
-    padding: 12px 16px 0;
-    gap: 8px 14px;
-  }
-  .swarm-brand h1 {
-    font-size: var(--text-xl);
-  }
-  .swarm-stats {
-    gap: 10px;
-    font-size: var(--text-label);
-  }
-  .swarm-stats b {
-    font-size: var(--text-title);
-  }
-  .swarm-seg-l,
-  .swarm-spacer {
-    display: none;
-  }
-  .swarm-tools button {
-    padding: var(--space-1) var(--space-2);
-  }
-  .swarm-rail {
-    top: auto;
-    left: 0;
-    width: auto;
-    height: 196px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-  .swarm-rail header {
-    padding: 10px 16px 6px;
-  }
-  .swarm-cards {
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 2px 16px 10px;
-  }
-  /* A strip of rows along the bottom, each 260px, scrolling on its own. */
-  .swarm-needs {
-    grid-template-columns: none;
-    grid-auto-columns: 260px;
-    grid-auto-flow: column;
-  }
-  .swarm-needs > [data-kit="row"] {
-    max-height: 150px;
-    overflow-y: auto;
-  }
-  .swarm-waiting {
-    display: none;
-  }
-  .swarm-foot {
-    left: 16px;
-    right: 16px;
-    bottom: 206px;
-  }
-  .swarm-hint {
-    display: none;
-  }
-}
-/* A finger on the swarm's chips (UI audit #186): the narrow bar's are
-   21px tall, under any tap target. */
-@media (max-width: 760px) and (pointer: coarse) {
-  .swarm-tools button {
-    min-height: 32px;
-  }
 }
 
 /* M28: an edit Claude Code proposes, as a diff. */
@@ -4419,108 +4018,6 @@ button.agent-image {
   max-height: 40vh;
   margin: 4px 0;
   font: var(--text-meta)/1.4 var(--font-mono);
-}
-
-/* M28: following an editor, over the swarm's field. The panel is the
-   page's palette, as the file block is (UI audit #152), not the swarm's
-   always-dark one: its words and lines take the palette's (--divider is
-   the palette's line under the swarm, whose --line is its own; UI audit
-   #198). */
-.follow {
-  --mute: var(--ink-dim);
-  --line: var(--line);
-  position: absolute;
-  z-index: 8;
-  top: 76px;
-  left: 20px;
-  right: calc(var(--swarm-rail) + 20px);
-  bottom: 56px;
-  display: flex;
-  flex-direction: column;
-  color: var(--ink);
-  background: var(--canvas);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-.follow header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--section);
-  min-width: 0;
-}
-.follow-title {
-  display: flex;
-  flex-direction: column;
-  font-size: var(--text-meta);
-  line-height: 1.25;
-  flex: none;
-}
-.follow-title span {
-  color: var(--mute);
-}
-.follow-file {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: var(--text-meta)/1.3 var(--font-mono);
-}
-.follow-at {
-  color: var(--mute);
-}
-.follow-diag i {
-  font-style: normal;
-  margin-left: 10px;
-}
-.follow-diag .e {
-  color: var(--fail);
-}
-.follow-diag .w {
-  color: var(--needs);
-}
-.follow-tools {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
-.follow-note {
-  padding: 4px 12px;
-  font-size: var(--text-meta);
-  color: var(--mute);
-  border-bottom: 1px solid var(--line);
-}
-.follow-note.paused {
-  color: var(--needs);
-}
-.follow-note.gone,
-.follow-note.error {
-  color: var(--fail);
-}
-.follow-code {
-  flex: 1;
-  min-height: 0;
-}
-.follow-code .cm-editor {
-  height: 100%;
-}
-.swarm.phone .follow {
-  inset: 0;
-  border-radius: 0;
-  z-index: 9;
-}
-.swarm.phone .follow header {
-  flex-wrap: wrap;
-  gap: 6px 10px;
-}
-.swarm.phone .follow-file {
-  order: 3;
-  flex-basis: 100%;
 }
 
 /* M11: diff and file blocks. */
@@ -4764,7 +4261,7 @@ button.diff-why-run {
   }
 }
 
-/* Syntax colors (swarm/code.ts's classes, and chat's): the same tokens as
+/* Syntax colors (blocks/code.ts's classes, and chat's): the same tokens as
    the file block's and the editor block's (editor-theme.ts). */
 .hl-k {
   color: var(--accent);
@@ -6522,7 +6019,7 @@ html[data-scheme="light"] .doc {
   border-radius: var(--radius-control);
   shape-rendering: crispEdges;
 }
-/* The swarm's own ink and void, from the page (UI audit #198). */
+/* The overlay's own ink and void, from the page (UI audit #198). */
 .start-qr rect {
   fill: var(--ink);
 }
@@ -9228,8 +8725,7 @@ button.thread-quote:hover {
 
 /* Every shell bar on a computer is the panes' size and looks the same
    (Arugula #637), so moving between a machine's places doesn't move the bar. */
-.frame .app-bar,
-.swarm-shell .app-bar {
+.frame .app-bar {
   height: var(--head-h);
   align-items: center;
   gap: 10px;
@@ -9237,8 +8733,7 @@ button.thread-quote:hover {
 }
 
 :is(.ws-head, .k-top) .host-button,
-.frame .app-bar .host-button,
-.swarm-shell .app-bar .host-button {
+.frame .app-bar .host-button {
   height: 28px;
   padding: 0 8px;
   border: 0;
@@ -10090,53 +9585,10 @@ button.thread-quote:hover {
   outline-offset: -2px;
 }
 
-/* The swarm, chat and agents sit beside the rail, under their own bars
-   (which leave the places to the rail). */
-html[data-workspace="new"] :is(.chat, .swarm, .swarm-shell > .k-top) {
+/* Chat sits beside the rail, under its own bar (which leaves the places
+   to the rail). */
+html[data-workspace="new"] .chat {
   left: var(--rail-w, 56px);
-}
-
-/* Wall mode (#446, swarm/wall.ts): the swarm fills the screen, over the
-   workspace's rail and the shared bar, which stay where they are (the
-   panes under it keep their size); the bar's controls and the how-to
-   hint go, the brand and the counts stay to be read across a room. After
-   the wall-idle while, the cursor and the Exit button hide (a fade, which
-   reduced motion's rule below takes away). Every theme and view in the
-   swarm gets it from here. */
-html[data-wall] .swarm-shell > .k-top {
-  display: none;
-}
-html[data-wall] .swarm[data-wall] {
-  inset: 0;
-}
-.swarm[data-wall] .swarm-bar {
-  right: var(--swarm-rail);
-}
-.swarm[data-wall] .swarm-bar > :not(.swarm-brand, .swarm-stats),
-.swarm[data-wall] .swarm-hint {
-  display: none;
-}
-.swarm-wall-ctl {
-  position: absolute;
-  z-index: 7;
-  top: 16px;
-  right: calc(var(--swarm-rail) + 20px);
-  transition: opacity 0.4s ease;
-}
-.swarm-wall-ctl button {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  padding: var(--space-2) 12px;
-  border-radius: var(--chip-radius);
-  font: 500 var(--text-meta)/1 var(--font-mono);
-}
-.swarm[data-wall-idle],
-.swarm[data-wall-idle] * {
-  cursor: none !important;
-}
-.swarm[data-wall-idle] .swarm-wall-ctl {
-  opacity: 0;
-  pointer-events: none;
 }
 
 /* Not a chat block (#123): it's in its slot, not beside the rail. */

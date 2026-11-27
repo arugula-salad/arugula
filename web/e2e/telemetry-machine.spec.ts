@@ -124,14 +124,13 @@ test("the owner is asked once: put away it asks again, Yes turns it on, and view
   await load(page);
   await expect(card(page)).toHaveCount(0);
 
-  // Counting, then the swarm, opened; the page's count goes as it goes
+  // Counting, then chat, opened; the page's count goes as it goes
   // away (pagehide on the live page, not a race with an unload).
   await expect(page.locator("html[data-usage-counts]")).toHaveCount(1);
-  await page.evaluate(() => (location.hash = "#swarm"));
-  await expect(page.locator(".swarm")).toBeVisible();
+  await page.evaluate(() => (location.hash = "#chat"));
   await page.evaluate(() => dispatchEvent(new PageTransitionEvent("pagehide")));
   const views = async () => (await info()).preview.events.find((e) => e.event === "daily")?.views ?? {};
-  await expect.poll(views).toEqual({ swarm: 1 });
+  await expect.poll(views).toEqual({ chat: 1 });
 });
 
 test("the settings switch flips it, and No turns it off for good", async ({ page }) => {

@@ -18,7 +18,7 @@ import { directory } from "../../hosts";
 import { OPS, opPath } from "../../ops";
 import { gateKey, type ActRequest, type Notice, type PaneInfo } from "../../../shared/proto";
 import { needsYou, placeOf, sortNeedsYou } from "../../../shared/needs-you";
-import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
+import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../fleet-model";
 import type { Ask } from "../../../shared/ask";
 import { askNeed, NeedRow } from "../../../shared/kit/need-row";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";

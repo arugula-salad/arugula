@@ -15,7 +15,6 @@ import { ago } from "../../shared/time";
 import { useWorkspaceDir } from "../blocks";
 import { directory } from "../hosts";
 import { opPath, OPS } from "../ops";
-import { SWARM_ABOUT, closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { currentAccount } from "./app-bar";
 import { helpItems, newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
@@ -92,9 +91,8 @@ export function nextNeedingYou(client: Client): PaneId | undefined {
   return wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
 }
 
-/** Back to the panes from a place over them (the swarm, agents). */
+/** Back to the panes from a place over them (agents). */
 function toPanes() {
-  if (swarmRoute()) closeSwarm();
   if (agentsRoute()) closeAgentsPage();
 }
 
@@ -167,12 +165,11 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
   if (!state.roles) place("your-work", "Your work", () => openYourWork(client));
   if (machinesAt(client)) place("machines", `${machine ?? "This machine"} on Machines`, () => openMachinesAt(client));
   if (!phone) place("attention", "Needs you, every machine", () => openAttention());
-  if (!swarmRoute()) place("swarm", `Swarm: ${SWARM_ABOUT}`, openSwarm);
   if (hasChat()) place("chat", "Chat", () => openChat());
   if (client.flag("agent-delegation") && !state.roles) place("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
   // M113: a way out of a terminal (which keeps Tab) to the chrome, from
   // the keyboard; Tab and the arrows go on from there.
-  if (!phone && !swarmRoute() && !agentsRoute()) {
+  if (!phone && !agentsRoute()) {
     const focus = (key: string, title: string, sel: string, before?: () => void) =>
       out.push({
         key: `Places/${key}`,

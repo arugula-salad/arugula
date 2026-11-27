@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -317,7 +317,7 @@ test("an agent's issue is a chip on a session row and a swarm card, the first an
   assert.deepEqual(onIssueChip([{ issue: "#12", project: P }, { issue: "#12", project: "prj_other" }]).label, "#12 +1");
 });
 
-test("the swarm's By board groups agents by their first board, and No board goes last (#372)", () => {
+test("a pane's board group is its agent's first board, else No board (#372)", () => {
   const on = (...titles) => ({ issue: "#1", boards: titles.map((title) => ({ project: P, board: B, title, row: "r" })) });
   assert.equal(boardGroup(on("Launch", "Later")), "Launch");
   assert.equal(boardGroup(on("")), "Untitled board");
@@ -325,9 +325,6 @@ test("the swarm's By board groups agents by their first board, and No board goes
   assert.equal(boardGroup({ issue: "#1" }), NO_BOARD);
   assert.equal(boardGroup(null), NO_BOARD);
   assert.equal(boardGroup(undefined), NO_BOARD);
-  // Biggest first, then by name; the pile with no board after them all, however big.
-  const names = [[NO_BOARD, 9], ["Zed", 2], ["Alpha", 2], ["Big", 5]];
-  assert.deepEqual(names.sort(clusterOrder).map((n) => n[0]), ["Big", "Alpha", "Zed", NO_BOARD]);
 });
 
 test("a live item's tone, and how long a stall has been", () => {

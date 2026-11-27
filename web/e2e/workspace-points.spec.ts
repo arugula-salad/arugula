@@ -160,16 +160,9 @@ test("an open decision point is a card on the rail, answered from the phone, and
   expect(out).toContain("0 waiting at a gate, 1 decision open");
   expect(out).toContain("Which builder tier builds this work item (W-001) (small, medium, large)");
 
-  // On the swarm's rail: a card with a button for each answer.
+  // Its attention says it waits on you (Swarm's rail card went in Lift 6a).
   await open(page);
   await expect.poll(async () => (await reasonOf(page, block))?.kind ?? null, { timeout: 20_000 }).toBe("gate");
-  await page.goto("/#swarm");
-  const card = page.locator('[data-need][data-kind="gate"]');
-  await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator("[data-row-title]")).toHaveText("A decision waits on you");
-  await expect(card.locator('[data-need-line="0"]')).toHaveText("Which builder tier builds this work item (W-001)");
-  await expect(card.locator("[data-answer-point]")).toHaveText(["Small", "Medium", "Large"]);
-  await expect(card.locator('[data-answer-point="small"]')).toHaveAttribute("title", "A small builder.");
 
   // On a phone, from the sheet's "Needs you".
   const ctx = await browser.newContext({ ...phone, baseURL: base(), extraHTTPHeaders: { "tailscale-user-login": OWNER } });
@@ -208,11 +201,8 @@ test("a gate that asks a decision point is answered on its card, and the next ru
   await expect(gate.locator(".ws-gate-what")).toContainText("delivery: Ship the toy now");
   await expect(gate.locator("[data-answer-point]")).toHaveText(["Yes", "No"]);
 
-  // Answered Yes from the swarm's card.
-  await page.goto("/#swarm");
-  const card = page.locator('[data-need][data-kind="gate"]');
-  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: Ship the toy now", { timeout: 15_000 });
-  await card.locator('[data-answer-point="true"]').click();
+  // Answered Yes from its gate in the block.
+  await gate.locator('[data-answer-point="true"]').click();
   await expect.poll(() => question("ship-ok")?.state ?? null, { timeout: 20_000 }).toBe("answered");
   expect(question("ship-ok")).toMatchObject({ answer: true, answeredBy: [OWNER] });
 

@@ -9,9 +9,9 @@
 // of its block; then by the hub's sessions by card, and by its session (a
 // session's card is its panes' card).
 
-import type { BoardLead, BoardRow, BoardView, OnIssue } from "../../shared/proto";
-import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
-import { chiefProject, sessionLabel } from "../../shared/chief-of-staff.ts";
+import type { BoardLead, BoardRow, BoardView, OnIssue } from "../shared/proto";
+import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../shared/project-sessions.ts";
+import { chiefProject, sessionLabel } from "../shared/chief-of-staff.ts";
 
 /** How a card or a session stands, most urgent first: a session waits on
  * you, the row's question asks you, a session failed, its PR's checks fail,

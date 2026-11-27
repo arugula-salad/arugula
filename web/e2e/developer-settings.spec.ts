@@ -133,10 +133,6 @@ test("turning chant workspaces on in the dialog turns on them, and nothing else,
   await dialog(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(dialog(page)).toBeHidden();
   expect(await shown(page, pane)).toEqual(["chant-workspaces"]);
-  // The swarm's views are no flag's: all four, whatever is on.
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
 test("with a flag on, Settings still offers them; off takes chant workspaces away again", async ({ page }) => {
@@ -286,17 +282,6 @@ test("an ssh invite from the pane's menu works with Guest SSH access on, and is 
   expect(r.status).toBe(404);
   expect(r.text).toContain("`arugulad sharing guest-ssh on`");
   expect(await shown(page, pane)).toEqual([]);
-});
-
-test("the swarm's views are no flag: swarm-themes is retired", async ({ page }) => {
-  // Every swarm offers its four views (they left Labs); the old name is
-  // refused as any retired flag is, and an old file naming it is ignored.
-  const r = await setFlag("swarm-themes", true);
-  expect(r.ok).toBe(false);
-  await open(page);
-  await page.goto("/#swarm");
-  await expect(page.locator(".swarm")).toBeVisible();
-  await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 });
 
 test("Docs are no flag: docs is retired, and a machine's Docs answer with every flag off", async ({ page }) => {

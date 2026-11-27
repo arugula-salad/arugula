@@ -14,7 +14,7 @@ import type { PaneId } from "../../shared/proto";
 import { registerBlock, type BlockView } from "./view";
 import { askText } from "../../shared/ui/menu";
 import { BlockError, BlockLoading, EmptyState } from "./block-states";
-import type { Span } from "../swarm/code";
+import type { Span } from "./code";
 import { clientTarget, openInEditor } from "../open-in-editor";
 import { openEditor } from "./editor";
 import { Chip } from "../../shared/ui/state-chip";
@@ -117,14 +117,14 @@ function firstChanged(f: DiffFile): number | null {
 
 const LETTER: Record<DiffFile["status"], string> = { modified: "M", added: "A", deleted: "D", renamed: "R", untracked: "?", mode: "m" };
 
-let highlighter: Promise<typeof import("../swarm/code")> | null = null;
+let highlighter: Promise<typeof import("./code")> | null = null;
 
 /** The follow view's chunk, for highlighting (loaded once, when a file is
  * first opened). */
 function useCode() {
-  const [mod, setMod] = useState<typeof import("../swarm/code") | null>(null);
+  const [mod, setMod] = useState<typeof import("./code") | null>(null);
   useEffect(() => {
-    highlighter ??= import("../swarm/code");
+    highlighter ??= import("./code");
     let live = true;
     void highlighter.then((m) => live && setMod(m));
     return () => {

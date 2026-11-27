@@ -26,7 +26,7 @@ import { Row } from "../shared/kit/row";
 import { StateMark, type State } from "../shared/kit/state-mark";
 import { directory } from "../shell/hosts";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { KIND_LABEL, kindOf, shortHost, whatItDoes } from "../shell/swarm/model";
+import { KIND_LABEL, kindOf, shortHost, whatItDoes } from "../shell/fleet-model";
 import { lastTabOf } from "../shell/ui/shell/session-sidebar";
 import { names } from "../platform/links";
 import { session as platform } from "../platform/session";

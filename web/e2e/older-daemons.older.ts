@@ -67,13 +67,6 @@ test("Agents: this machine's recipes, and the team's agents", async ({ page, err
   await expect(team.locator("[data-agents-error]")).toHaveCount(0);
 });
 
-test("the swarm: this machine's panes", async ({ page, errors }) => {
-  await open(page, "#swarm");
-  // The panes are drawn on a canvas; the count is read from the same state.
-  await shows(page, errors, page.locator(".swarm [data-stat=panes]"));
-  await expect(page.locator(".swarm [data-stat=panes]")).toContainText(/[1-9]/);
-});
-
 test("the activity drawer: the session's history, or hidden on a daemon too old for it", async ({ page, errors }) => {
   await open(page);
   await expect(page.locator("[data-pane]").first()).toBeVisible();

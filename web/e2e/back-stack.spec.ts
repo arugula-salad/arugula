@@ -51,17 +51,3 @@ test("Escape that closes a menu closes only the menu", async ({ page }) => {
   await page.waitForTimeout(300);
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
 });
-
-test("a page's own mode keeps its Escape: the Swarm's wall mode leaves, the page stays", async ({ page }) => {
-  await openApp(page, `/p/${P}/boards`);
-  await rail(page, "overview").click();
-  await page.locator("[data-platform-bar] [data-view-swarm]").click();
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-  await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
-  await page.locator("[data-wall-enter]").click();
-  await expect(page.locator("[data-wall-exit]")).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(page.locator("[data-wall-exit]")).toHaveCount(0);
-  await page.waitForTimeout(300);
-  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
-});
