@@ -491,7 +491,7 @@ test.describe("accessibility", () => {
           if (!css.color || !css.backgroundColor) return 0;
           const a = lum(css.color), b = lum(css.backgroundColor);
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-        }).catch(() => 0), { message: `${palette} ${text}` }).toBeGreaterThanOrEqual(4.5);
+        }).catch(() => 0), { message: `${theme} ${text}` }).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
