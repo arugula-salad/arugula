@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -636,4 +636,23 @@ test("a row's live session: the one that needs you first, then working, then sto
   const [hosted] = liveSessions({ attachments: [], sessions: [ses("s9", "needs_input")] });
   assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", live: true, name: "s9-fix", word: "needs input", tone: "warn", facts: [], needs: true });
   assert.deepEqual(liveSessions({ attachments: [] }), []);
+});
+
+test("the desk's words: open PRs once each, a PR's queue, how long main is red, the title block's meta and the progress line (Lift 5a)", () => {
+  const live = (number, state, more = {}) => ({ state, kind: "pr", number, title: `PR ${number}`, ...more });
+  const pr = (id, l) => ({ id: `att_${id}`, role: "work", pointer: { kind: "forge_item", id }, live: l });
+  const row = (id, attachments, pointer = { kind: "none" }, l = null) => ({ id, pointer, live: l, attachments });
+  const v = { zones: [{ rows: [row("r1", [pr("fi_1", live(1, "checks_running", { queued: true, queued_since: 60_000 })), pr("fi_2", live(2, "merged"))]), row("r2", [pr("fi_1", live(1, "open"))], { kind: "forge_item", id: "fi_3" }, live(3, "open"))] }] };
+  const prs = openPrs(v);
+  assert.deepEqual(prs.map((p) => [p.id, p.row.id, p.label]), [["fi_1", "r1", "#1"], ["fi_3", "r2", "#3"]]);
+  assert.equal(prWord(prs[0].live, 13 * 60_000), "queued 12m");
+  assert.equal(prWord(prs[1].live), "open");
+  const now = 10 * 3_600_000;
+  assert.equal(redLine({ branch: "main", opened_at: now - 3 * 3_600_000 - 1 }, now), "main has been red for 3 hours");
+  assert.equal(redLine({ branch: "main", opened_at: now - 60_000 }, now), "main has been red for 1 minute");
+  assert.equal(redLine({ branch: "release", opened_at: now - 50 * 3_600_000 }, now), "release has been red for 2 days");
+  assert.deepEqual(deskLine({ done: 140, total: 191 }, 2, prs, 3 * 60_000), ["140/191", "2 ask you", "#1 queued 2m"]);
+  assert.deepEqual(deskLine({ done: 0, total: 0 }, 1, []), ["1 asks you"]);
+  assert.equal(progressWords({ done: 140, total: 191, proven: 105, review: 2 }), "73% · 140 of 191 done · 105 proven · 2 in review");
+  assert.equal(progressWords({ done: 0, total: 0, proven: 0, review: 0 }), "No work yet");
 });

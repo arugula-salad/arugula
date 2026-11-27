@@ -7,11 +7,12 @@
 // The view is shared with the board block (../../shared/boards/view).
 // Boards are on for everyone (they left Labs, #191).
 
-import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
+import { openTab } from "../../shared/docs/doc-actions";
+import { DocPage } from "./docs";
 import { boards } from "../../shared/boards/store";
 import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boards/text";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -30,11 +31,9 @@ import { toast } from "../toast";
 import { roleIn } from "../settings/environments";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
-import { currentProject, onCurrentProject } from "../current-project";
-import { scopeOf } from "../scope";
-import { ScopeToggle } from "../scope-toggle";
-import { NotOnBoard, dropWhere, useTriage, useUntriaged } from "./triage";
-import { ChevronIcon } from "../../shared/ui/icons";
+import { currentProject } from "../current-project";
+import { where } from "../where";
+import { NotOnBoard, dropWhere, useTriage } from "./triage";
 
 /** The reads in flight, by project: the bar, the project's home and a page
  * all ask for the same list at once, and share the one request. */
@@ -99,158 +98,35 @@ function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
   return <SearchField class="board-filter" value={q} onValue={setQ} label="Filter boards" placeholder="Filter boards by title, epic key or goal" slash data-boards-filter />;
 }
 
-/** `/boards` and `/boards/:board` (that board's row selected): the boards
- * of every project the reader belongs to on the list page, as a project's
- * Boards page (Arugula #1131): a group a project, its open boards (the ones
- * people made, then From Plane's), every project's Done folded at the foot,
- * each naming its project; the selected board in the middle. A project with
- * none isn't listed. Not on a board is a project's, so it stays on the
- * project's page: a project's heading says how many there are. */
-export function AllBoardsPage({ all, board }: { all?: boolean; board?: string }) {
+/** `/boards` and `/boards/:board`, every project's boards on one list
+ * until Lift 5a (Go to… finds a board now): kept as addresses (aru-082).
+ * `/boards` goes to the current project's Boards (else your first
+ * project's); a board's goes to its page, once one of your projects says
+ * it's there, and says so when none does. */
+export function AllBoardsPage({ board }: { board?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
-  useSubscribe((fn) => onCurrentProject(fn));
-  const scope = scopeOf({ page: "all-boards", all: all || undefined }, currentProject(), (id) => !!session.project(id));
-  const projects = scope ? session.projects.filter((p) => p.id === scope) : session.projects;
-  const key = projects.map((p) => p.id).join(",");
-  const [lists, setLists] = useState<Map<string, ProjectBoard[]> | null>(null);
-  const [q, setQ] = useState("");
-  const [unfolded, setUnfolded] = useState(false);
-  const [sort, setSort] = useBoardSort();
+  const [lost, setLost] = useState(false);
+  const ids = session.projects.map((p) => p.id);
+  const key = ids.join(",");
   useEffect(() => {
-    setLists(null);
+    if (!ids.length) return;
+    if (!board) {
+      const here = currentProject();
+      return void go(pathOf({ page: "boards", project: here && ids.includes(here) ? here : ids[0]! }, names), true);
+    }
     let live = true;
-    const read = () =>
-      void Promise.all(
-        projects.map((p) =>
-          readBoards(p.id).then(
-            (l): [string, ProjectBoard[]] => [p.id, l],
-            (): [string, ProjectBoard[]] => [p.id, []],
-          ),
-        ),
-      ).then((all) => live && setLists(new Map(all)));
-    read();
-    // A board changed in the middle (Arugula #1159): read again, keeping what's shown till then.
-    for (const p of projects) watch(p.id, read);
-    return () => {
-      live = false;
-      for (const p of projects) watching.get(p.id)?.delete(read);
-    };
-  }, [key]);
-  const shown = projects.flatMap((p) => {
-    const l = lists?.get(p.id);
-    return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
-  });
-  // Each shown project's issues on no board, read together.
-  const open = useUntriaged(shown.map((s) => s.p.id));
-  const projectOf = new Map(shown.flatMap(({ p, list }) => list.map((b) => [b.id, p] as const)));
-  const kept = shown.map(({ p, list }) => ({ p, list: newest(list.filter((b) => boardMatches(b, q)), sort) }));
-  const done = newest(kept.flatMap(({ list }) => list.filter((b) => b.closed_at != null)), sort);
-  const linked = board ? kept.flatMap(({ list }) => list).find((b) => b.id === board) : undefined;
-  // A Done board's own link unfolds Done, so its row can be the one selected.
-  const doneLinked = linked?.closed_at != null;
-  useEffect(() => {
-    if (doneLinked) setUnfolded(true);
-  }, [doneLinked]);
-  const folded = !(unfolded || !!q.trim());
-  const groups: ListGroup<ProjectBoard>[] = [
-    ...kept.map(({ p, list }) => {
-      const live = list.filter((b) => b.closed_at == null);
-      const plane = live.filter((b) => b.source);
-      const n = open?.get(p.id);
-      return {
-        title: p.name,
-        named: true,
-        key: p.id,
-        detail: !!n && <span data-all-boards-untriaged={p.id}>{n.toLocaleString()} not on a board</span>,
-        items: [...live.filter((b) => !b.source), ...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)],
-        attrs: { "data-all-boards-project": p.id },
-      };
-    }),
-    { title: "Done", key: "done", items: done, fold: { open: !folded, toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
-  ];
-  const pathTo = (id?: string) => pathOf({ page: "all-boards", board: id, all: all || undefined }, names);
-  const listPath = pathTo();
-  // A board linked to that has no row here (one the search hides, or the list still loading) draws all the same; one in none of the reader's projects (or out of scope) says so.
-  const rowless = !!board && !groups.some((g) => (!g.fold || g.fold.open) && g.items.some((b) => b.id === board));
-  const back = (
-    <a class="list-back" href={listPath} data-boards-back onClick={(e) => follow(e, listPath)}>
-      <ChevronIcon dir="left" /> Boards
-    </a>
-  );
-  const home = board ? projectOf.get(board) : undefined;
-  const pane =
-    rowless && board && lists ? (
-      home ? (
-        <BoardMiddle p={home} id={board} back={back} />
-      ) : (
-        <div class="boards-middle" data-all-boards-missing={board}>
-          {back}
-          <EmptyState where="page" title="That board isn't here." why={scope ? "It may be another project's: try All projects." : "It's in none of your projects, or it's gone."} />
-        </div>
-      )
-    ) : undefined;
-  const first = groups.find((g) => !g.fold)?.items[0]?.id;
-  const status =
-    lists === null ? (
-      <BlockLoading inline what="boards" />
-    ) : shown.length === 0 ? (
-      <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />
-    ) : groups.every((g) => g.items.length === 0) ? (
-      <EmptyLine data-boards-filter-none>No board matches “{q.trim()}”.</EmptyLine>
-    ) : undefined;
-  return (
-    <div class="boards-page" data-all-boards-page>
-      <ListPage<ProjectBoard>
-        label="Boards"
-        splitKey="platform-all-boards"
-        header={<PageHeader title="Boards" actions={<ScopeToggle r={{ page: "all-boards" }} scoped={!!scope} all={!!all} />} />}
-        searchLabel="Filter boards by title, epic key or goal"
-        query={q}
-        setQuery={setQ}
-        sort={{ options: TIME_SORTS, value: sort, onSort: setSort }}
-        groups={groups}
-        keyOf={(b) => b.id}
-        previewOn="click"
-        select={board ?? first ?? null}
-        opened={!!board}
-        // The address follows the row, as on a project's page.
-        onSelect={(b) => go(pathTo(b.id), true)}
-        onOpen={(b) => go(pathTo(b.id), true)}
-        status={status}
-        pane={pane}
-        row={(b) => {
-          const r = boardRow(b);
-          const p = projectOf.get(b.id);
-          // Done is every project's: each row there names its own.
-          return b.closed_at != null && p && shown.length > 1 ? { ...r, tags: <span class="dim" data-board-project={p.id}>{p.name}</span> } : r;
-        }}
-        preview={(b) => {
-          const p = projectOf.get(b.id);
-          return p && <BoardMiddle key={b.id} p={p} id={b.id} back={<ProjectLinks p={p} board={b.id} loose={open?.get(p.id)} />} />;
-        }}
-      />
-    </div>
-  );
-}
-
-/** Over a board on every project's Boards: the way to it on its project's
- * Boards, and to the project's issues on no board (`loose` of them), whose
- * row is there. */
-function ProjectLinks({ p, board, loose }: { p: PlatformProject; board: string; loose?: number }) {
-  const to = pathOf({ page: "board", project: p.id, board }, names);
-  const tri = pathOf({ page: "triage", project: p.id }, names);
-  return (
-    <p class="boards-middle-links">
-      <a href={to} data-all-boards-project-link={p.id} onClick={(e) => follow(e, to)}>
-        {p.name}'s Boards <ChevronIcon dir="right" />
-      </a>
-      {!!loose && (
-        <a href={tri} data-all-boards-untriaged-link={p.id} onClick={(e) => follow(e, tri)}>
-          {loose.toLocaleString()} not on a board <ChevronIcon dir="right" />
-        </a>
-      )}
-    </p>
-  );
+    setLost(false);
+    void Promise.all(ids.map((p) => readBoards(p).then((l) => (l.some((b) => b.id === board) ? p : null), () => null))).then((homes) => {
+      const home = homes.find(Boolean);
+      if (!live) return;
+      if (home) go(pathOf({ page: "board", project: home, board }, names), true);
+      else setLost(true);
+    });
+    return () => void (live = false);
+  }, [board, key]);
+  if (session.state === "ready" && !ids.length) return <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />;
+  if (lost) return <EmptyState where="page" data-all-boards-missing={board} title="That board isn't here." why="It's in none of your projects, or it's gone." />;
+  return <BlockLoading inline what="boards" />;
 }
 
 /** `/p/:project/boards`, `/p/:project/boards/:board` (that board's row
@@ -260,7 +136,7 @@ export function BoardsPage({ project, board, triage }: { project: string; board?
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <BoardList p={p} board={board} triage={triage} />;
+  return board ? <BoardDesk key={board} p={p} id={board} /> : <BoardList p={p} triage={triage} />;
 }
 
 /** The names of the machines of the reader's whose agents can't see the project's boards (#313); none while the grants load or when they can't be read. */
@@ -305,7 +181,7 @@ const isLoose = (r: BoardRow): r is typeof LOOSE => "loose" in r;
  * groups; the board itself in the middle. Not on a board is the first row,
  * with its count (Arugula #1130): selected, its issues go in the middle, and
  * one dragged onto a board's row goes on that board. */
-function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; triage?: boolean }) {
+function BoardList({ p, triage }: { p: PlatformProject; triage?: boolean }) {
   const list = useBoards(p.id);
   const [q, setQ] = useState("");
   const [making, setMaking] = useState(false);
@@ -320,11 +196,6 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
   const made = live.filter((b) => !b.source);
   const plane = live.filter((b) => b.source);
   const fromPlane = [...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)];
-  // A Done board's own link unfolds Done, so its row can be the one selected.
-  const doneLinked = !!board && done.some((b) => b.id === board);
-  useEffect(() => {
-    if (doneLinked) setUnfolded(true);
-  }, [doneLinked]);
   const groups: ListGroup<BoardRow>[] = [
     { key: LOOSE_KEY, items: [LOOSE] },
     { items: made },
@@ -332,20 +203,10 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
     { title: "Done", key: "done", items: done, fold: { open: unfolded || !!q.trim(), toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
   ];
   const boardPath = (id: string) => pathOf({ page: "board", project: p.id, board: id }, names);
-  const listPath = pathOf({ page: "boards", project: p.id }, names);
   const loosePath = pathOf({ page: "triage", project: p.id }, names);
-  // A board linked to that has no row here (another project's, one the search hides, or the list still loading) draws all the same.
-  const rowless = !!board && !shown.some((b) => b.id === board && (b.closed_at == null || unfolded || !!q.trim()));
-  const back = (
-    <a class="list-back" href={listPath} data-boards-back onClick={(e) => follow(e, listPath)}>
-      <ChevronIcon dir="left" /> Boards
-    </a>
-  );
-  const pane = !triage && rowless && board ? <BoardMiddle p={p} id={board} back={back} /> : undefined;
-  // The page's own address selects a row: Not on a board's, a board's, or with neither the first board (Not on a board when there's none).
-  const first = [...made, ...fromPlane][0]?.id;
-  const select = triage ? LOOSE_KEY : (board ?? first ?? null);
-  const pick = (r: BoardRow) => (isLoose(r) ? go(loosePath) : go(boardPath(r.id), !triage));
+  // Not on a board's row is selected by its own address; a board opens on its own page (Lift 5a).
+  const select = triage ? LOOSE_KEY : null;
+  const pick = (r: BoardRow) => (isLoose(r) ? go(loosePath) : go(boardPath(r.id)));
   const total = tri.whole;
   const status =
     list === null ? (
@@ -388,13 +249,12 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
         keyOf={(r) => (isLoose(r) ? LOOSE_KEY : r.id)}
         previewOn="click"
         select={select}
-        opened={!!board || !!triage}
+        opened={!!triage}
         // The address follows the row, so a board's link is the page with its row selected; from Not on a board, Back returns there.
         onSelect={pick}
         onOpen={pick}
         // Under Not on a board's row, which is always there.
         below={status && <div class="list-status">{status}</div>}
-        pane={pane}
         row={(r): ListRowParts => {
           if (isLoose(r))
             return {
@@ -406,7 +266,7 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
             };
           return { ...boardRow(r), attrs: { "data-board-item": r.id, ...(r.closed_at == null ? { "data-drop-target": "" } : {}) } };
         }}
-        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : <BoardMiddle key={r.id} p={p} id={r.id} />)}
+        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : null)}
       />
     </div>
   );
@@ -482,13 +342,12 @@ function NewBoard({ p, done }: { p: PlatformProject; done: () => void }) {
   );
 }
 
-/** One board, in the list page's middle: the board's own panel, its controls in the right column (Arugula #1129). `back`: the way to the list, when the board has no row in it. */
-function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: ComponentChildren }) {
+/** One board on its own page (Lift 5a): the desk, with the board's Docs as tabs (drawn as the Docs page draws one) and Workers in its ⋯. */
+function BoardDesk({ p, id }: { p: PlatformProject; id: string }) {
   return (
-    <div class="boards-middle boards-board" data-board-page={id}>
+    <div class="boards-board" data-board-page={id}>
       <BoardPanel
-        placement="aside"
-        back={back}
+        placement="desk"
         id={id}
         write={mayWrite(p)}
         platform={(path) => path}
@@ -496,15 +355,12 @@ function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: C
         // Each card's sessions on its row: the Sessions page folded into the board (Arugula #1082).
         cardSessions
         // A board moved to another project (Arugula #972): the page's address goes to its new one.
-        onProject={(home) => home !== p.id && homes.set(id, home)}
-        // Closed, reopened, renamed or moved on: its row in the list follows (Arugula #1159).
-        onBoard={() => boardsChanged(p.id)}
-        tools={
-          // The swarm is the shell's, on control's page (#466).
-          <a class="secondary small" href={`${controlOrigin()}/#swarm=board:${id}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
-            Workers
-          </a>
-        }
+        onProject={(home) => (home !== p.id ? homes.set(id, home) : where.boardRead())}
+        // Closed, reopened, renamed or moved on: the lists of boards and the crumb follow (Arugula #1159).
+        onBoard={() => (boardsChanged(p.id), where.boardRead())}
+        docTab={(doc) => <DocPage project={p.id} doc={doc} />}
+        // The swarm is the shell's, on control's page (#466).
+        extra={[{ label: "Workers", external: true, hint: "This board's agents in the swarm", run: () => openTab(`${controlOrigin()}/#swarm=board:${id}`), attrs: { "data-board-workers": "" } }]}
       />
     </div>
   );

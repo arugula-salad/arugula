@@ -33,78 +33,213 @@
    board is often a pane. The DOM stacks them Doing, Review, Next, Done; four
    across they read Next, Doing, Review, Done, as the progress bar does (the
    order below is the picture only: focus and the screen reader keep the DOM's). */
-/* The Boards page's board (Arugula #1129): the board, and its controls in a
-   column at the right that a row's drawer takes while open, wider then. Each
-   scrolls on its own. With 900px or less of the preview's room, the column
-   goes under the board (as a list page's aside, #1127). */
-.board-split {
+/* The board's desk (Lift 5a, ./desk.tsx): the board on the left two thirds
+   (its tabs, the alert strip, the PR fold, the title block and the lanes),
+   Needs you and the lead's panel on the right third. Each side scrolls on
+   its own; under 1100px the right third goes under the board. */
+.board-desk {
   display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
+  gap: var(--gap);
+  height: 100%;
+  min-height: 0;
+  padding: var(--gap);
+}
+
+.board-desk-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--section);
+  box-shadow: var(--shadow-card);
+}
+
+.board-desk-main > .board,
+.board-desk-tab {
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) 260px;
   min-height: 0;
-}
-
-.board-split[data-board-drawer-open] {
-  grid-template-columns: minmax(0, 1fr) 420px;
-}
-
-.board-split > .board {
-  min-height: 0;
-  padding: var(--space-4) var(--space-6) 30px;
+  padding: var(--gap) calc(var(--gap) * 2) 30px;
   overflow: auto;
 }
 
-.board-aside {
+.board-desk-tab > .platform-section {
+  padding: 0;
+}
+
+.board-desk-side {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--gap);
   min-width: 0;
   min-height: 0;
-  padding: var(--space-4) var(--space-5) 30px;
-  border-left: 1px solid var(--line);
+}
+
+.board-desk-side > .k-panel {
+  flex: 1;
+  width: auto;
+}
+
+.board-desk-side .board-lead-thread {
+  height: 100%;
+}
+
+.board-needs {
+  max-height: 45%;
   overflow: auto;
-  container-type: inline-size;
-  font-size: var(--text-sm);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--section);
+  box-shadow: var(--shadow-card);
 }
 
-.board-aside-part {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-  min-width: 0;
+.board-needs-head {
+  margin: 0 0 8px;
+  font: 600 var(--text-meta) / 1.4 var(--font-meta);
+  color: var(--ink);
 }
 
-.board-aside-head {
+.board-needs-none {
   margin: 0;
-  font: 600 var(--text-xs)/1.4 var(--font-mono);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--dim);
 }
 
-.board-aside .board-find {
-  flex-wrap: wrap;
-  align-self: stretch;
+.board-lead-head {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
 
-.board-aside .board-find > .search-field {
-  flex-basis: 100%;
+.board-lead-who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.board-aside .board-form {
-  align-self: stretch;
+/* The red alert strip: a red mark and edge, never a fill. */
+.board-alerts,
+.board-prs {
+  display: grid;
+  gap: 4px;
 }
 
-.board-aside-buttons {
+.board-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--fail);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+}
+
+.board-alert > .k-state {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-alert > .k-state .k-state-word {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.board-prs {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+
+.board-desk-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.board-desk-title {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: 12px 28px;
 }
 
-.board-aside .board-docs {
-  padding-left: 0;
-  border-left: 0;
+.board-desk-name {
+  flex: 1;
+  min-width: 240px;
+}
+
+.board-desk-name h1 {
+  margin: 0;
+  font: 700 var(--text-hero) / 1.15 var(--font-title);
+}
+
+.board-desk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  margin: 4px 0 0;
+}
+
+.board-desk-meta > span + span::before {
+  content: "· ";
+  color: var(--ink-faint);
+}
+
+.board-desk-facts {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+
+.board-desk-facts dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+}
+
+.board-desk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.board-desk-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.board-desk-progress > .board-bar {
+  flex: 1;
+}
+
+@media (max-width: 1100px) {
+  .board-desk {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+
+  .board-desk-main > .board,
+  .board-desk-tab {
+    overflow: visible;
+  }
+
+  .board-needs {
+    max-height: none;
+  }
+
+  .board-desk-side > .k-panel {
+    height: 70vh;
+  }
 }
 
 /* The drawer in the column: a section of the page, not a sheet. */
@@ -129,24 +264,6 @@
   font-weight: 600;
 }
 
-@container list-preview (max-width: 900px) {
-  .board-split,
-  .board-split[data-board-drawer-open] {
-    display: block;
-  }
-
-  .board-split > .board {
-    padding-bottom: var(--space-5);
-    overflow: visible;
-  }
-
-  .board-aside {
-    padding-top: var(--space-5);
-    border-top: 1px solid var(--line);
-    border-left: 0;
-    overflow: visible;
-  }
-}
 
 .board-lanes {
   display: grid;
@@ -603,10 +720,6 @@
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 12px 32px;
   margin-top: 12px;
-}
-
-.board-head-body.solo {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 @container (max-width: 719px) {

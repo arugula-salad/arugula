@@ -144,6 +144,9 @@ function pathSteps(r: Route, project: string | undefined): Step[] {
   } else if (r.page === "issues" || r.page === "issue" || r.page === "new-issue") {
     // The issues are Boards' (#656): Boards › Issues, each a level up (Arugula #1387).
     steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), link("Issues", pathOf({ page: "issues", project }, names), "issues"));
+  } else if (r.page === "board") {
+    // A board's own page (Lift 5a): Boards › its title.
+    steps.push(link(SECTION_LABEL.boards, sectionPath("boards", project), "boards"), { label: boards.title(r.board) ?? "Board", hook: "board" });
   } else if (r.page === "machines") steps.push(link("Machines", pathOf({ page: "machines", project, at: { at: "machines" } }, names), "machines"));
   else if (section) steps.push(link(SECTION_LABEL[section], sectionPath(section, project), section));
   // The last step is where you are: a link only when you're below it (an issue, under Issues).

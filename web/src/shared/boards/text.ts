@@ -546,6 +546,51 @@ export function prsOf(r: Pick<BoardRow, "pointer" | "live" | "attachments">): { 
   return out;
 }
 
+/** One open PR on the board, for the fold above its lanes (Lift 5a): its id, the row it's on, its live state and label. */
+export interface OpenPr {
+  id: string;
+  row: BoardRow;
+  live: BoardLive;
+  label: string;
+}
+
+/** The board's open PRs, each once, in the board's order: a row's own PR, then those attached to it as work. */
+export function openPrs(v: Pick<BoardView, "zones">): OpenPr[] {
+  const out: OpenPr[] = [];
+  const add = (row: BoardRow, p: BoardPointer, live?: BoardLive | null) => {
+    if (p.kind === "forge_item" && live && isOpenPr(live) && !out.some((o) => o.id === p.id)) out.push({ id: p.id, row, live, label: pointerLabel(p, live) });
+  };
+  for (const r of v.zones.flatMap((z) => z.rows)) {
+    add(r, r.pointer, r.live);
+    for (const a of r.attachments) if (a.role === "work") add(r, a.pointer, a.live);
+  }
+  return out;
+}
+
+/** What an open PR's fold row says of it: its queue (`queued 12m`), else its state's word. */
+export function prWord(l: BoardLive, now: number = Date.now()): string {
+  return queueChip(l, now)?.word ?? liveWord(l);
+}
+
+/** The alert strip's words for a branch's open red issue: `main has been red for 3 hours`. */
+export function redLine(a: { branch: string; opened_at: number }, now: number = Date.now()): string {
+  const m = Math.max(1, Math.floor((now - a.opened_at) / 60_000));
+  const [v, unit] = m < 60 ? [m, "minute"] : m < 2880 ? [Math.floor(m / 60), "hour"] : [Math.floor(m / 1440), "day"];
+  return `${a.branch} has been red for ${v} ${unit}${v === 1 ? "" : "s"}`;
+}
+
+/** The title block's meta: `140/191 · 2 ask you · #2868 queued`; the parts with nothing to say are left out. */
+export function deskLine(p: Pick<BoardProgress, "done" | "total">, mine: number, prs: OpenPr[], now: number = Date.now()): string[] {
+  const queued = prs.find((o) => o.live.queued);
+  return [p.total ? `${p.done}/${p.total}` : "", mine ? `${mine} ask${mine === 1 ? "s" : ""} you` : "", queued ? `${queued.label} ${prWord(queued.live, now)}` : ""].filter(Boolean);
+}
+
+/** The progress line's words: `73% · 140 of 191 done · 105 proven · 2 in review`. */
+export function progressWords(p: Pick<BoardProgress, "done" | "total" | "proven" | "review">): string {
+  if (!p.total) return "No work yet";
+  return [`${Math.round((p.done / p.total) * 100)}%`, `${p.done} of ${p.total} done`, p.proven ? `${p.proven} proven` : "", p.review ? `${p.review} in review` : ""].filter(Boolean).join(" · ");
+}
+
 /** A check's words: its conclusion once it has one, else its status. */
 export function checkWord(c: { status: string; conclusion: string | null }): string {
   return (c.status === "completed" && c.conclusion ? c.conclusion : c.status).replace(/_/g, " ");
