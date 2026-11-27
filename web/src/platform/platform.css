@@ -1295,84 +1295,14 @@ html[data-native-tabs] .platform {
   list-style: none;
 }
 
-.untri-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-top: 1px solid var(--line);
+/* A row (a kit Row) is dragged onto a board's, and shift-clicked to select a range. */
+.untri-list > li[draggable="true"] {
+  cursor: grab;
   user-select: none;
 }
 
-.untri-row:first-child {
-  border-top: 0;
-}
-
-.untri-row[draggable="true"] {
-  cursor: grab;
-}
-
-.untri-row:hover {
-  background: color-mix(in srgb, var(--fg) 6%, transparent);
-}
-
-.untri-row[data-selected] {
-  background: color-mix(in srgb, var(--accent-fill) 14%, transparent);
-}
-
-.untri-row input[type="checkbox"],
 .untri-head input[type="checkbox"] {
   margin: 0;
-}
-
-.untri-row input[type="checkbox"]:not(:checked) {
-  opacity: 0.4;
-}
-
-.untri-row:hover input[type="checkbox"],
-.untri-row input[type="checkbox"]:focus-visible {
-  opacity: 1;
-}
-
-.untri-num {
-  min-width: 42px;
-  color: var(--dim);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.untri-title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-span.untri-title {
-  cursor: inherit;
-}
-
-.untri-list a.untri-title {
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.untri-list a.untri-title:is(:hover, :focus-visible) {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.untri-fill {
-  flex: 1;
-}
-
-.untri-age {
-  min-width: 26px;
-  font-size: var(--text-sm);
-  text-align: right;
-  white-space: nowrap;
 }
 
 .untri-add {
@@ -1452,12 +1382,6 @@ span.untri-title {
   color: var(--dim);
   font-size: var(--text-sm);
   white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .chip.untri-label {
-    display: none;
-  }
 }
 
 /* Boards, Docs and the Inbox widened to every project (Arugula #881). */
