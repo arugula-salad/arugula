@@ -56,28 +56,6 @@ test("the panes: a terminal that runs a command", async ({ page, errors }) => {
   await shows(page, errors, page.locator(`[data-pane="${pane}"]`));
 });
 
-test("Agents: this machine's recipes, and the team's agents", async ({ page, errors }) => {
-  await open(page, "#agents");
-  const recipes = page.locator("[data-agents-page=recipes]");
-  await shows(page, errors, recipes.locator("[data-recipe], [data-agents-empty], [data-agents-none], [data-agents-scope]"));
-  await expect(recipes.locator("[data-agents-error]")).toHaveCount(0);
-  await page.evaluate(() => (location.hash = "agents=team"));
-  const team = page.locator("[data-agents-page=team]");
-  await shows(page, errors, team.locator("[data-agent], [data-shelf], [data-agents-empty], [data-agents-none]"));
-  await expect(team.locator("[data-agents-error]")).toHaveCount(0);
-});
-
-test("the activity drawer: the session's history, or hidden on a daemon too old for it", async ({ page, errors }) => {
-  await open(page);
-  await expect(page.locator("[data-pane]").first()).toBeVisible();
-  const drawer = page.locator("[data-activity-drawer]");
-  // A daemon whose history has no ids (before M112) gets no drawer.
-  if (!(await drawer.count())) return expect(errors, "thrown in the page").toEqual([]);
-  await page.locator("[data-activity-toggle]").click();
-  await expect(drawer).toHaveAttribute("data-activity-status", "ready");
-  await shows(page, errors, drawer.locator("[data-activity-id], [data-activity-empty]"));
-});
-
 /** The machine's Settings dialogs that list the daemon's rows: what each
  * shows once read. A daemon older than the dialog may say so instead
  * ("too old", "older than this page"), which is the page coping. */

@@ -5,8 +5,8 @@
 // Machines page (#1346), Swarm under the bar beside the rail, #1348), the shell's keys only on a
 // machine's page, and on a phone the places in a bar along the bottom and
 // the Inbox a bell in the top bar, with nothing wider than the phone; the
-// Sessions page folded away (#1082), its old address on to Boards, Runs
-// under Machines. On a fixture
+// Sessions page folded away (#1082), its old address on to Boards, and the
+// Runs list's on to Running over Machines (Lift 6a). On a fixture
 // page (app-frame-page.tsx) served on the daemon's origin; the hub's leg
 // (tokens through the relay on the app's host) is the cloud's spec.
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -116,22 +116,23 @@ test.describe("on a computer", () => {
     await onlyLit(page, "settings");
   });
 
-  test("Machines lights on its page, a machine's page, Runs and Build's old address; the Overview on its Swarm", async ({ page }, info) => {
+  test("Machines lights on its page, the Runs list's and Build's old addresses, and Swarm's", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
-    // Machines opens on the Machines page, its views Machines and Runs
-    // (no Workspaces for a reader off the hosted list).
+    // Machines opens on the Machines page, its one view Machines (no
+    // Workspaces for a reader off the hosted list; no Runs, Lift 6a).
     await rail(page, "machines").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await onlyLit(page, "machines");
-    expect(await hooks(page, "[data-place-views=machines] > *", "view")).toEqual(["machines", "runs"]);
+    expect(await hooks(page, "[data-place-views=machines] > *", "view")).toEqual(["machines"]);
     await here(page, "machines");
     await page.screenshot({ path: info.outputPath("frame-machines-views.png") });
-    await view(page, "runs").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
+    // The Runs list's old address is Running, over Machines; a spec's, Settings' Runs.
+    await page.goto(`/p/${P}/runs`);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?running$`));
     await onlyLit(page, "machines");
-    await here(page, "runs");
-    await view(page, "machines").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
+    await expect(page.getByRole("dialog", { name: "Running" }).locator("[data-kit=sheet]")).toBeVisible();
+    await page.goto(`/p/${P}/runs?spec=rsp_0123abcd`);
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*/runs$`));
     // Build's old address goes on to the Machines page (#1346), lit as Machines.
     await page.goto(`/p/${P}/machines/panes`);
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
@@ -142,14 +143,13 @@ test.describe("on a computer", () => {
     await onlyLit(page, "machines");
   });
 
-  test("what's new in the issues' threads is a count on Boards; the runs', on Runs (not Machines, Lift 3); chat's, on Chat (Arugula #1345)", async ({ page }) => {
+  test("what's new in the issues' threads is a count on Boards (not Machines, Lift 3); chat's, on Chat (Arugula #1345)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/machines`);
     await seedThreads(page);
     await expect(rail(page, "boards").locator("[data-count]")).toHaveText("3");
     await expect(rail(page, "machines").locator("[data-count]")).toHaveCount(0);
     await expect(rail(page, "overview").locator("[data-count]")).toHaveCount(0);
     await expect(rail(page, "docs").locator("[data-count]")).toHaveCount(0);
-    await expect(view(page, "runs").locator(".count-after")).toHaveText("@4");
     await expect(rail(page, "chat").locator("[data-count]")).toHaveText("2");
   });
 
@@ -224,26 +224,18 @@ test.describe("on a computer", () => {
     // One rail, the app's, with Machines lit.
     await expect(frame.locator("[data-rail]")).toHaveCount(1);
     await onlyLit(page, "machines");
-    // The machine's page, as it ships, with Machines' views: Machines, Runs
-    // (Arugula #1345), then its own Recipes. Its own Docs are the rail's Docs
-    // in the app, and the Swarm is the Overview's.
+    // The machine's page, as it ships, with no views bar of its own (Lift 6a):
+    // the rail has the places, and Running is the top bar's.
     await expect(frame.locator(".app.ws")).toBeVisible();
-    expect(await hooks(page, "[data-platform-machines] [data-machine-places] > *", "machine")).toEqual(["machines", "runs", "recipes"]);
-    await expect(frame.locator("[data-machine-machines]")).toHaveAttribute("aria-current", "page");
-    await expect(frame.locator("[data-machine-docs]")).toHaveCount(0);
+    await expect(frame.locator("[data-machine-places]")).toHaveCount(0);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     // Typed in the app, run on the machine, drawn back in the app.
     await page.locator(`[data-pane="${pane}"]`).click();
     await page.keyboard.type("echo app-frame-$((6*7))\n");
     await expect.poll(() => page.evaluate((p) => (window as unknown as { __app: { text(p: number): string } }).__app.text(p), pane)).toContain("app-frame-42");
     await page.screenshot({ path: info.outputPath("frame-machine.png") });
-    // Runs, one click from the machine's page.
-    await frame.locator("[data-machine-runs]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
-    await onlyLit(page, "machines");
     // Machines, from a machine's page, is the Machines page (Arugula #1346).
-    await page.goBack();
-    await frame.locator("[data-machine-machines]").click();
+    await rail(page, "machines").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await expect(page.locator(`[data-machines-list] [data-panes-pane="${pane}"]`)).toBeVisible();
   });
@@ -274,7 +266,6 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`));
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     await onlyLit(page, "machines");
-    await expect(page.locator("[data-platform-machines] [data-machine-machines]")).toHaveAttribute("aria-current", "page");
   });
 
 
@@ -297,8 +288,8 @@ test.describe("on a computer", () => {
     // A machine, from its name.
     await list.locator("[data-machines-machine-link]").click();
     await expect(page.locator("[data-platform-machines] .app.ws")).toBeVisible();
-    // The machine's bar has Machines, back to the Machines page.
-    await page.locator("[data-platform-machines] [data-machine-machines]").click();
+    // The rail's Machines, back to the Machines page.
+    await rail(page, "machines").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await here(page, "machines");
   });
@@ -428,7 +419,7 @@ test.describe("on a phone", () => {
     await tabs.locator("[data-tab-machines]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     await expect(tabs.locator("[data-tab-machines]")).toHaveAttribute("aria-current", "page");
-    expect(await hooks(page, "[data-place-views=machines] > *", "view")).toEqual(["machines", "runs"]);
+    expect(await hooks(page, "[data-place-views=machines] > *", "view")).toEqual(["machines"]);
     await page.screenshot({ path: info.outputPath("frame-phone-machines.png") });
     // The Inbox, by its bell: no tab lit.
     await bell.click();
@@ -437,7 +428,7 @@ test.describe("on a phone", () => {
     await expect(tabs.locator("[aria-current=page]")).toHaveCount(0);
   });
 
-  test("what's new in the issues' threads is a count on the Boards tab; the runs', on Machines; chat's, on Chat", async ({ page }) => {
+  test("what's new in the issues' threads is a count on the Boards tab, none on Machines; chat's, on Chat", async ({ page }) => {
     await openApp(page, () => `/p/${P}`);
     await seedThreads(page);
     await expect(page.locator("[data-tab-boards] [data-count]")).toHaveText("3");

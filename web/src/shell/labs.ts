@@ -7,7 +7,6 @@
 // them. The swarm's extra views (city, hive, timeline) are chunks of their
 // own, fetched when one is picked.
 
-export { AgentsPage } from "./ui/agents-page";
 export { AppsLayer, pickApp } from "./ui/apps";
 export { SandboxesLayer, openSandboxes } from "./ui/sandboxes";
 export { agentsBlock } from "./blocks/agents";

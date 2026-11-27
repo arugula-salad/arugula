@@ -23,8 +23,9 @@
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 //
-// They are 8 rows in a flat list (Arugula #1105; Lift 7 merged CI alerts,
-// Runs and spend into Agents). Where a row merged a few ("Repos and
+// They are 9 rows in a flat list (Arugula #1105; Lift 7 merged CI alerts
+// and spend into Agents; Lift 6a gave Runs a row of its own, with the run
+// specs and New run the Runs list had, #1483). Where a row merged a few ("Repos and
 // trackers": Linked repos and Plane), each is a part of it, under its own
 // heading, and the row says theirs in a line. The old sections' addresses
 // land on the row they're in now (`MOVED`, ../paths). Adding a machine is
@@ -44,6 +45,7 @@ import { useBoards } from "./boards";
 import { REPOS_MEAN } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
+import { RunSettings } from "./runs";
 import { FinishStep } from "../settings/finish-step";
 import { AgentModel } from "../settings/agent-model";
 import { AgentWorkspace } from "../settings/agent-workspace";
@@ -308,12 +310,15 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
       <Section id="agents" title="Agents">
         <AgentModel p={p} />
         <AgentWorkspace p={p} />
-        <RunGrant project={p.id} />
         <WorkspaceSize p={p} />
         <FinishStep p={p} />
         <CiAlertsSetting p={p} />
         <ClaudeSpend p={p} />
         <ProjectAgents p={p} show="tokens" />
+      </Section>
+      <Section id="runs" title="Runs" lede="Commands on its cloud workspaces: start one, keep its specs and their triggers, and its standing grant.">
+        <RunSettings p={p} />
+        <RunGrant project={p.id} />
       </Section>
       <Section id="secrets" title="Secrets and environments">
         <Environments p={p} />

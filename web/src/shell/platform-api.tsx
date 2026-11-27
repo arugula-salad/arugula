@@ -16,7 +16,7 @@ import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { LiveSlot } from "./ui/panes/live-slot";
 import { getSignedIn } from "./signed-in";
-import { openChat, openChatView, openRoom } from "./ui/places";
+import { openChat, openChatView, openRoom } from "./ui/place-links";
 import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
 import type { PlatformApi } from "../shared/platform-api";

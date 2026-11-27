@@ -20,7 +20,7 @@ import { openSettings } from "../settings-route";
 import { Rail as KitRail, type RailPlace } from "../../../shared/kit/frame/rail";
 import { AccountButton } from "../app-bar";
 import { openPlatform, platformHref } from "../../platform-links";
-import { BOARDS_TO, DOCS_TO, INBOX_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, machinesAt, openChat, openMachinesAt, useChatTick, type Place } from "../places";
+import { BOARDS_TO, DOCS_TO, INBOX_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, machinesAt, openChat, openMachinesAt, useChatTick, type Place } from "../place-links";
 import { countView } from "../../../shared/telemetry";
 import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, Mark, OverviewIcon, SettingsIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";

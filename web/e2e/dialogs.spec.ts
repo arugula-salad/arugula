@@ -7,7 +7,7 @@
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
 import { build } from "vite";
-import { closeContexts, open as openApp, openAttentionDrawer, reset } from "./helpers";
+import { closeContexts } from "./helpers";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const ENTRY = fileURLToPath(new URL("./dialogs-page.tsx", import.meta.url));
@@ -197,47 +197,11 @@ for (const [width, height] of [
   });
 }
 
-// The attention drawer is a side sheet (shell/ui/shell/attention-drawer.tsx):
-// Escape and a click on the backdrop each close it alone. On a desktop that is
-// the real drawer, opened from Go to…. A phone (700px and under) mounts no
-// drawer, so the bottom-sheet width is the fixture's sheet with the drawer's
-// own class, list and foot.
+// A side sheet (shared/ui/side-sheet.tsx) on the fixture page, as the
+// attention drawer had it (the drawer went in Lift 6a, #1483): Escape and a
+// click on the backdrop each close it alone, at the side on a desktop and
+// from the bottom on a phone.
 test.afterAll(closeContexts);
-
-test("the attention drawer, on a desktop: Escape and the backdrop close it", async ({ page }) => {
-  await page.setViewportSize({ width: 1000, height: 800 });
-  await reset(page);
-  const drawer = page.locator("[data-attention-drawer]");
-  await openAttentionDrawer(page);
-  await expect(drawer).toBeVisible();
-  await expect(drawer).toHaveAttribute("role", "dialog");
-  await expect(drawer).toHaveClass(/side-sheet/);
-  await expect(page.locator("[data-side-sheet-backdrop]")).toHaveCSS("background-color", "rgba(0, 0, 0, 0.4)");
-  expect(await inside(page, "[data-attention-drawer]")).toBe(true);
-  const box = (await drawer.boundingBox())!;
-  expect(Math.round(box.x + box.width)).toBe(1000);
-  expect(Math.round(box.width)).toBe(440);
-  // The backdrop is drawn over the panes: what is at a terminal's centre is the backdrop, not the terminal.
-  const backdrop = page.locator("[data-side-sheet-backdrop]");
-  await expect(backdrop).toBeVisible();
-  const pane = (await page.locator(".pane").first().boundingBox())!;
-  const bb = (await backdrop.boundingBox())!;
-  expect(bb.x).toBeLessThanOrEqual(pane.x);
-  expect(bb.y).toBeLessThanOrEqual(pane.y);
-  expect(bb.x + bb.width).toBeGreaterThanOrEqual(pane.x + pane.width);
-  expect(bb.y + bb.height).toBeGreaterThanOrEqual(pane.y + pane.height);
-  const x = Math.min(pane.x + pane.width / 2, box.x - 20);
-  const top = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.hasAttribute("data-side-sheet-backdrop"), [x, pane.y + pane.height / 2]);
-  expect(top).toBe(true);
-
-  await page.keyboard.press("Escape");
-  await expect(drawer).toHaveCount(0);
-
-  await openAttentionDrawer(page);
-  await expect(drawer).toBeVisible();
-  await page.mouse.click(10, 400);
-  await expect(drawer).toHaveCount(0);
-});
 
 for (const [width, height] of [
   [1000, 800],

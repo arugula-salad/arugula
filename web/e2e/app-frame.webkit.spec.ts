@@ -45,7 +45,7 @@ test.describe("on a computer", () => {
     for (const [key, url, views] of [
       ["overview", `/p/${P}[^/]*$`, []],
       ["docs", "/docs$", []],
-      ["machines", "/machines$", ["machines", "runs"]],
+      ["machines", "/machines$", ["machines"]],
       ["boards", "/boards$", []],
       ["chat", "/chat", []],
       ["inbox", "/inbox$", []],
@@ -59,12 +59,14 @@ test.describe("on a computer", () => {
     }
     await expect(page.locator("[data-rail] [data-open-overview]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*$`));
     await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines$`));
-    // Runs are Machines': lit, with its views.
+    // The Runs list's address is Running, over Machines (Lift 6a, #1483); closing it leaves Machines.
     await page.goto(`/p/${P}/runs`);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines\\?running$`));
     await expect(page.locator("[data-rail] [data-open-machines]")).toHaveAttribute("aria-current", "page");
     await expect(lit).toHaveCount(1);
-    await expect.poll(() => hooks(page, "[data-place-views] > *", "view")).toEqual(["machines", "runs"]);
-    await expect(page.locator("[data-view-runs]")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("dialog", { name: "Running" }).locator("[data-kit=sheet]")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     // Swarm's old address lands on Machines (Lift 6a).
     await page.goto(`/p/${P}/machines/swarm`);
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));

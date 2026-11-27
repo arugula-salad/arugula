@@ -10,7 +10,7 @@
 import type { ApiResponse, Client } from "../client";
 import { directory } from "../hosts";
 import { getFleet } from "./hosts";
-import { closePlace, currentPlace } from "./places";
+import { closePlace, currentPlace } from "./place-links";
 import { openDoc } from "./docs-route";
 
 /** `GET /api/search`'s hit (crates/proto/src/api.rs; not in proto.gen). */

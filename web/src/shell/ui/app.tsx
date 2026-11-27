@@ -6,7 +6,7 @@
 import { EmptyState } from "../../shared/ui/block-states";
 import { PageGuard } from "../../shared/ui/guard";
 import { AppBar } from "./app-bar";
-import type { Place } from "./places";
+import type { Place } from "./place-links";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -15,7 +15,6 @@ import { MenuLayer, PromptLayer } from "../../shared/ui/menu";
 import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
-import { agentsRoute } from "./agents-route";
 import { landOldDocs } from "./docs-route";
 import { SettingsPage } from "./settings-page";
 import { openSettings, settingsRoute } from "./settings-route";
@@ -52,19 +51,16 @@ import { connection, ContextHeader } from "./shell/context-header";
 import type { Renaming } from "./shell/rename-input";
 import { StatusPill } from "./shell/status-pill";
 import { Footer } from "../../shared/kit/frame/footer";
-import { ActivityToggle } from "./shell/activity";
 import { agentRunning } from "../../shared/needs-you";
 import { Rail } from "./shell/rail";
 import { noteLastTab, SessionSidebar, showSession } from "./shell/session-sidebar";
 import { TabStrip } from "./shell/tab-strip";
 import { PaneToolbar } from "./shell/pane-toolbar";
-import { ActivityDrawer } from "./shell/activity";
-import { AttentionDrawer } from "./shell/attention-drawer";
 import { TabArea } from "./panes/tab-area";
 import { TabAsks } from "./term-ask";
 import { DragGhost } from "./panes/drop-overlay";
 import { useHoverToSwitchTabs } from "./panes/drop";
-import { currentPlace, landOldOverview } from "./places";
+import { currentPlace, landOldOverview } from "./place-links";
 import { shellTitle } from "./titles";
 
 /** Whose frame the workspace is drawn in (Arugula #989): its own, with the
@@ -141,7 +137,7 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
   }, [client, known]);
   useLayoutEffect(() => {
     if (!ws) return;
-    // The swarm, agents and Docs pages sit beside its rail (style.css).
+    // The Settings and Docs pages sit beside its rail (style.css).
     document.documentElement.dataset.workspace = "new";
     return () => void delete document.documentElement.dataset.workspace;
   }, [ws]);
@@ -167,7 +163,6 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {state && <AgentsPageLayer client={client} />}
       <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -227,11 +222,7 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
               {tab && <PaneToolbar client={client} tab={tab} />}
               {tab && <TabAsks client={client} tab={tab} phone={phone} />}
               {main}
-              {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
             </div>
-            {/* Under the header and beside the rail, as the panes are (Arugula #796). */}
-            {/* M111: between the header and the footer, over the panes. */}
-            <AttentionDrawer client={client} />
           </div>
           {state && <WorkFooter client={client} />}
         </div>
@@ -261,7 +252,6 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {state && <AgentsPageLayer client={client} />}
       <SettingsPageLayer client={client} />
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -401,22 +391,6 @@ function useReportFocus(client: Client, phone: boolean) {
   }, [client, active, phone, client.connected]);
 }
 
-/** The Agents page (#403): loads Labs only while its route is up. */
-function AgentsPageLayer({ client }: { client: Client }) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
-    window.addEventListener("hashchange", fn);
-    return () => window.removeEventListener("hashchange", fn);
-  }, []);
-  if (!agentsRoute()) return null;
-  return (
-    <PlaceGuard client={client} at="agents">
-      <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>
-    </PlaceGuard>
-  );
-}
-
 /** The Settings page (Arugula #695), while its route is up. Where the
  * app's Settings is (control's page, the app), a section that's there now
  * lands on it (Arugula #1110), a machine's own once the machine shown is
@@ -473,13 +447,12 @@ function PlaceGuard({ client, at, inWorkspace, children }: { client: Client; at:
 }
 
 /** The places' names, for the footer. */
-const PLACE_NAME: Record<Place, string> = { panes: "Machines", agents: "Agents", settings: "Settings" };
+const PLACE_NAME: Record<Place, string> = { panes: "Machines", settings: "Settings" };
 
 /** The frame's footer: the place, its keys, the agents running on this
  * machine (not while the link is down: they may not be, M113; a stopped
- * agent isn't, UI audit #154) and the session's Activity. */
+ * agent isn't, UI audit #154). The activity drawer went in Lift 6a (#1483). */
 function WorkFooter({ client }: { client: Client }) {
   const running = client.connected ? (client.state?.panes ?? []).filter(agentRunning).length : 0;
-  const activity = client.session !== null && client.state?.sessions.length ? <ActivityToggle client={client} /> : null;
-  return <Footer place={PLACE_NAME[currentPlace()]} running={running} extra={activity} />;
+  return <Footer place={PLACE_NAME[currentPlace()]} running={running} />;
 }

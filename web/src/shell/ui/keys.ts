@@ -18,7 +18,6 @@ import { useLayoutEffect } from "preact/hooks";
 import { addBindings, both, keysChanged } from "../../shared/keys";
 import type { Client } from "../client";
 import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
-import { agentsRoute } from "./agents-route";
 import { nextNeedingYou } from "./goto-source";
 import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
@@ -190,7 +189,7 @@ addBindings([
  * reading order, when the workspace shows panes and has that many. */
 function jumpTarget(e: KeyboardEvent): number | null {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || agentsRoute()) return null;
+  if (!w || w.phone || !w.client.state) return null;
   // Not from under a dialog (Go to…, the picker, a prompt).
   if (document.querySelector(".prompt-backdrop")) return null;
   const n = Number(e.code.slice("Digit".length));
@@ -203,7 +202,7 @@ function jumpTarget(e: KeyboardEvent): number | null {
  * layout (with `one`, also a tab of one pane). */
 function focusTarget(one = false) {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || agentsRoute()) return null;
+  if (!w || w.phone || !w.client.state) return null;
   // Not from under a dialog.
   if (document.querySelector(".prompt-backdrop")) return null;
   const tab = w.client.tabView();

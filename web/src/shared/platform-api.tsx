@@ -73,6 +73,17 @@ export interface ChatNav {
   openGrants?(): void;
 }
 
+/** The Running drawer's opener (Lift 6a, #1483): `project` for its CI runs
+ * and alerts, `place` (`board:brd_…`) to pin to; `opened`, open from the
+ * address (`/p/:project/machines?running`, where the Runs list's lands),
+ * and `closed` told when it closes, to take that off the address. */
+export interface RunningProps {
+  project: string | null;
+  place: string | null;
+  opened?: boolean;
+  closed?: () => void;
+}
+
 export interface PlatformApi {
   /** The teams this account is in; none until they're known. */
   teams(): PlatformTeam[];
@@ -192,7 +203,7 @@ export interface PlatformApi {
    * without it has no panel. */
   AgentPanel?: ComponentType<AgentPanelProps>;
   /** Running (Lift 6a, §3.9): the top bar's "N running" and its drawer, over the page's machines; `place` (`board:brd_…`) to pin to. Where the page reaches machines itself (the app). */
-  Running?: ComponentType<{ project: string | null; place: string | null }>;
+  Running?: ComponentType<RunningProps>;
   /** Settings › Machines' sections (Arugula #1107): Access and sharing,
    * Agents and Advanced, whose parts are mostly the machine's own, read
    * from it through the page's own client to it, each saying so when the

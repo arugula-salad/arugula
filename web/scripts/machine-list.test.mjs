@@ -47,17 +47,6 @@ test("another project's session isn't there; a pane the fleet doesn't have (priv
   assert.deepEqual([...new Set(seen)], [true]);
 });
 
-test("Agents only keeps the agents' panes, and the sessions with one", () => {
-  const h = host("mini", [
-    [1, null, [[10, [1, 2]]]],
-    [2, null, [[11, [3]]]],
-  ]);
-  const panes = [pane("mini", 1, { type: "agent" }), pane("mini", 2), pane("mini", 3)];
-  const { machines, quiet } = machineSections([h], panes, { only: (p) => p.info.type === "agent" });
-  assert.deepEqual(machines[0].sessions.map((s) => [s.id, s.panes]), [[1, 1]]);
-  assert.deepEqual(quiet, []);
-});
-
 test("this computer first, then online before offline, yours before teammates', then name; quiet ones apart", () => {
   const s = (id) => [[id, null, [[id * 10, [id]]]]];
   const hosts = [

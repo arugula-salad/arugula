@@ -51,9 +51,9 @@ export interface PinnedCard {
 }
 
 /** A host's sessions that `shows` lets through, each with the panes the
- * fleet has of it (another's private pane isn't one) and `only` keeps;
+ * fleet has of it (another's private pane isn't one);
  * a session left with none isn't there. */
-function sessionsOf(h: FleetHost, panes: FleetPane[], shows: Shows, only: (p: FleetPane) => boolean): SessionCard[] {
+function sessionsOf(h: FleetHost, panes: FleetPane[], shows: Shows): SessionCard[] {
   const st = h.summary;
   if (!st) return [];
   const yours = !h.owner;
@@ -64,7 +64,7 @@ function sessionsOf(h: FleetHost, panes: FleetPane[], shows: Shows, only: (p: Fl
     const tabs = s.tabs.flatMap((tid): SessionTab[] => {
       const t = st.tabs.find((x) => x.id === tid);
       if (!t) return [];
-      const ps = t.layout.panes.flatMap(([id]) => byId.get(id) ?? []).filter(only);
+      const ps = t.layout.panes.flatMap(([id]) => byId.get(id) ?? []);
       return ps.length ? [{ id: t.id, name: t.name, panes: ps }] : [];
     });
     const all = tabs.flatMap((t) => t.panes);
@@ -81,8 +81,6 @@ export interface Options {
   /** The machine you last used (its id, or its name where it has none):
    * first of yours when there's no `here`. */
   recent?: string | null;
-  /** The panes shown (Agents only's); every one by default. */
-  only?: (p: FleetPane) => boolean;
   /** Whether a machine with no session in the project is listed at all
    * (yours, the project's cloud workspaces); one with some always is. */
   keep?: (h: FleetHost) => boolean;
@@ -92,7 +90,7 @@ export interface Options {
  * then online before offline, yours before teammates', the one you used
  * last, then by name; and `quiet`, those kept with none, by name. */
 export function machineSections(hosts: FleetHost[], panes: FleetPane[], o: Options = {}): { machines: MachineSection[]; quiet: MachineSection[] } {
-  const { shows = every, here = null, recent = null, only = () => true, keep = () => true } = o;
+  const { shows = every, here = null, recent = null, keep = () => true } = o;
   const all = hosts.map(
     (h): MachineSection => ({
       name: h.name,
@@ -101,7 +99,7 @@ export function machineSections(hosts: FleetHost[], panes: FleetPane[], o: Optio
       cloud: !!h.hosted,
       owner: h.owner,
       here: !!here && h.name === here,
-      sessions: sessionsOf(h, panes, shows, only),
+      sessions: sessionsOf(h, panes, shows),
     }),
   );
   const last = (m: MachineSection) => !!recent && (m.id ?? m.name) === recent;

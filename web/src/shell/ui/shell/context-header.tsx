@@ -16,7 +16,6 @@ import { SessionButton } from "./session-sidebar";
 import { offlineWhy } from "./live";
 import { setSidebarOpen, useSidebar } from "./prefs";
 import { usePlace } from "./rail";
-import { MachinePlaces } from "../places";
 import { ChevronIcon } from "../../../shared/ui/icons";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
@@ -113,17 +112,10 @@ export function ContextHeader({
   ];
   if (panes && session) steps.push({ label: session.name, hook: "session", node: <SessionButton client={client} session={session} setRenaming={setRenaming} /> });
   if (panes && session && tab) steps.push({ label: tabLabel(client, tab), hook: "tab" });
-  // The machine's own until Machines' lift (6): how it's reached and its
-  // places beside the crumb; an update, what waits and who's here on the
-  // right, past the empty middle (the window's drag, desktop-xvfb).
-  const views = (
-    <>
-      <ConnectionChip client={client} />
-      {/* Docs sits under this head (Arugula #796); the other places cover it
-          with a bar of their own (AppBar). */}
-      {panes && <MachinePlaces client={client} at={at} />}
-    </>
-  );
+  // How it's reached beside the crumb (the rail has the places, Lift 6a);
+  // an update, what waits and who's here on the right, past the empty
+  // middle (the window's drag, desktop-xvfb).
+  const views = <ConnectionChip client={client} />;
   const tools = (
     <>
       <UpdateChip client={client} />

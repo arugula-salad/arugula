@@ -774,11 +774,6 @@ html[data-native-tabs] .platform {
   }
 }
 
-.run-id {
-  flex: none;
-  font-size: var(--text-meta);
-}
-
 .run-start {
   display: flex;
   flex-wrap: wrap;
@@ -955,9 +950,6 @@ html[data-native-tabs] .platform {
   .run-spec-actions {
     float: none;
     margin-top: 4px;
-  }
-  .run-id {
-    display: none;
   }
 }
 

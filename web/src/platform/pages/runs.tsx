@@ -1,11 +1,10 @@
-// `/p/:project/runs` and `/p/:project/runs/:run` (M215): a project's runs
-// on its hosted workspaces (step 7), and one run.
-//
-// The list narrows by state, by what started it (its Trigger: by hand, a
-// deploy, a schedule, an event) and by run spec, newest first (M216's
-// reads). Owners and editors on the hosted list start a run (a spec, or a
-// command) and keep the project's run specs, with their schedules and
-// event rules (M214's routes): a list, add and remove.
+// `/p/:project/runs/:run` (M215): one run on a project's hosted workspaces
+// (step 7); and the project's runs in its Settings (`RunSettings`): owners
+// and editors on the hosted list start a run (a spec, or a command) and keep
+// the project's run specs, with their schedules and event rules (M214's
+// routes): a list, add and remove. The list of runs went in Lift 6a
+// (#1483): what runs now is the Running drawer's, and `/p/:project/runs`
+// lands there.
 //
 // A run's view: who or what started it, the exact command its S37
 // operation runs and the operation's hash, its pane while it runs (on
@@ -16,17 +15,14 @@
 // (M196's object room on the run's id). While it goes, the view waits on
 // the platform for its next event (`since` and `wait`).
 
-import { Card } from "../../shared/ui/card";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
 import { ThreadBeside } from "../../shared/chat/thread-beside";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
-import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { Markdown } from "../../shared/ui/markdown";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
@@ -36,19 +32,14 @@ import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { toast } from "../toast";
-import { ListLoading, mayWrite, nameIn } from "./issues";
+import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { NewWorkspaceButton } from "./hosted-workspace";
-import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
-import { runTone, type Tone } from "../swarm";
-import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote, workspaceLabel } from "../runs-text";
-import { ThreadUnread } from "../thread-unread";
-import { Caret, ExternalIcon } from "../../shared/ui/icons";
-
-const menuAt = (e: MouseEvent, items: MenuItem[]) => {
-  const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
-};
+import { runs, type HostedWorkspace, type RunArtifacts, type RunLogPage, type RunSpec, type RunView } from "../runs";
+import { runTone } from "../swarm";
+import { STATES, argvOf, commandLine, decodeOp, deployTitle, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, shortId, startedBy, stripAnsi, tone, took, triggerLine, withoutExitNote } from "../runs-text";
+import { ExternalIcon } from "../../shared/ui/icons";
+import { Section } from "../../shared/ui/settings-section";
 
 const short = (id: string) => id.replace(/^run_/, "").slice(0, 8);
 
@@ -86,171 +77,45 @@ function useWorkspaces(project: string): HostedWorkspace[] | null {
   return ws;
 }
 
-/** What the list holds, as the swarm's bar counts its panes: the runs
- * (the newest 50 that match), and of them the waiting, the going, the
- * succeeded and the failed (UI audit #164: `29 runs · 25 succeeded`). */
-function RunStats({ list }: { list: RunView[] }) {
-  const n = (t: Tone) => list.filter((r) => runTone(r.state) === t).length;
-  const stats: [number, string][] = [
-    [n("warn"), "waiting"],
-    [n("accent"), "running"],
-    [list.filter((r) => r.state === "succeeded").length, "succeeded"],
-    [n("danger"), "failed"],
-  ];
-  return (
-    <div class="sw-stats" data-runs-stats>
-      <span>
-        <b>{list.length}</b> {list.length === 1 ? "run" : "runs"}
-      </span>
-      {stats.map(([k, what]) =>
-        k ? (
-          <span key={what} class={what === "failed" ? "bad" : undefined}>
-            <b>{k}</b> {what}
-          </span>
-        ) : null,
-      )}
-    </div>
-  );
-}
-
-export function RunsPage({ project, filter }: { project: string; filter: RunFilter }) {
-  const p = useProject(project);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <RunList p={p} filter={filter} />;
-}
-
-function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
-  const [list, setList] = useState<RunView[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // The project home's Start a run comes here with `#new-run`.
-  const [starting, setStarting] = useState(() => starter(p) && location.hash === "#new-run");
-  const [addingSpec, setAddingSpec] = useState(false);
-  const [specs, rereadSpecs] = useSpecs(p.id);
+/** A project's runs, a part of its Settings' Runs (Lift 6a, #1483): New
+ * run and New run spec, then its specs with their triggers. */
+export function RunSettings({ p }: { p: PlatformProject }) {
+  const [starting, setStarting] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [specs, reread] = useSpecs(p.id);
   const listed = useWorkspaces(p.id);
-  const workspaces = listed ?? [];
-  const nameOf = nameIn(p);
-  const specName = (id: unknown) => (typeof id === "string" ? specs?.find((s) => s.id === id)?.name : undefined);
-  const key = JSON.stringify([p.id, filter.state, filter.trigger, filter.spec]);
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    setError(null);
-    runs.list(p.id, filter).then(
-      (r) => live && setList(r.runs),
-      (e: Error) => live && setError(e.message),
-    );
-    return () => void (live = false);
-  }, [key, tick]);
-  // While any of them goes, read the list again now and then.
-  const going = !!list?.some((r) => !ended(r.state));
-  useEffect(() => {
-    if (!going) return;
-    const t = setInterval(() => document.visibilityState === "visible" && setTick((n) => n + 1), 10_000);
-    return () => clearInterval(t);
-  }, [going]);
-
-  const to = (f: RunFilter) => go(pathOf({ page: "runs", project: p.id, ...f }, names));
-  const stateMenu = (e: MouseEvent) =>
-    menuAt(e, [
-      { header: "State" },
-      { label: "Any state", checked: !filter.state, run: () => to({ ...filter, state: undefined }) },
-      ...Object.entries(STATES).map(([k, v]) => ({ label: v, checked: filter.state === k, run: () => to({ ...filter, state: k }) })),
-    ]);
-  const triggerMenu = (e: MouseEvent) =>
-    menuAt(e, [
-      { header: "Trigger" },
-      { label: "Any trigger", checked: !filter.trigger, run: () => to({ ...filter, trigger: undefined }) },
-      ...Object.entries(TRIGGERS).map(([k, v]) => ({ label: v, checked: filter.trigger === k, run: () => to({ ...filter, trigger: k }) })),
-    ]);
-  const specMenu = (e: MouseEvent) =>
-    menuAt(e, [
-      { header: "Run spec" },
-      { label: "Any spec, or none", checked: !filter.spec, run: () => to({ ...filter, spec: undefined }) },
-      ...(specs ?? []).map((s) => ({ label: s.name, checked: filter.spec === s.id, run: () => to({ ...filter, spec: s.id }) })),
-    ]);
-  const narrowed = !!(filter.state || filter.trigger || filter.spec);
-
+  const why = whyNoStart(p);
   return (
-    <section class="platform-section sw-page runs-page" data-runs={p.id}>
-      <PageHeader
-        title="Runs"
-        actions={
-          // One way to add, as the issues' New issue (UI audit #164).
-          starter(p) && (
-            <>
-              <button class="secondary" data-run-spec-new aria-expanded={addingSpec} onClick={() => setAddingSpec(!addingSpec)}>
-                New run spec
-              </button>
-              <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
-                New run
-              </button>
-            </>
-          )
-        }
-        stats={!!list?.length && <RunStats list={list} />}
-      />
-      {starting && <StartRun p={p} specs={specs ?? []} workspaces={workspaces} done={() => setStarting(false)} />}
-      <div class="issues-tools">
-        <button class="secondary" aria-pressed={!!filter.state} data-runs-state onClick={stateMenu}>
-          {filter.state ? `State: ${STATES[filter.state] ?? filter.state}` : "State"} <Caret />
-        </button>
-        <button class="secondary" aria-pressed={!!filter.trigger} data-runs-trigger onClick={triggerMenu}>
-          {filter.trigger ? `Trigger: ${TRIGGERS[filter.trigger] ?? filter.trigger}` : "Trigger"} <Caret />
-        </button>
-        <button class="secondary" aria-pressed={!!filter.spec} data-runs-spec onClick={specMenu}>
-          {filter.spec ? `Spec: ${specName(filter.spec) ?? "one"}` : "Spec"} <Caret />
-        </button>
-        {narrowed && (
-          <button class="link" data-runs-clear onClick={() => to({})}>
-            Clear
-          </button>
-        )}
-      </div>
-      {list === null && error ? (
-        <BlockError inline title="Can't read this project's runs." detail={error} retry={() => setTick((n) => n + 1)} />
-      ) : (
-        error && <p class="control-error" role="alert">{error}</p>
-      )}
-      {list === null && !error && <ListLoading />}
-      {list?.length === 0 &&
-        (narrowed ? (
-          <EmptyLine data-runs-none>
-            No runs match.
-          </EmptyLine>
+    <Section
+      id="run-specs"
+      title="Run specs"
+      summary={specs ? (specs.length ? `${specs.length} ${specs.length === 1 ? "spec" : "specs"}` : "None yet") : undefined}
+      count={specs?.length}
+      lede="A spec names a command or an instruction and the cloud workspace it runs on; a schedule or an event rule starts it."
+    >
+      <div data-run-settings={p.id}>
+        {why ? (
+          <p class="dim" data-runs-why>
+            {why}
+          </p>
+        ) : listed && !listed.length ? (
+          <p class="dim" data-runs-none>
+            A run needs a cloud workspace to go on: make one first. <NewWorkspaceButton project={p.id} />
+          </p>
         ) : (
-          <NoRuns p={p} workspaces={listed} starting={starting} start={() => setStarting(true)} />
-        ))}
-      <ul class="issues-list card-list" data-runs-list>
-        {list?.map((r) => {
-          const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
-          const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
-          // By name, not its `hw_…` id (UI audit #145).
-          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? workspaceLabel(r)) : null;
-          return (
-            // A card in the swarm's language (../swarm.css): its bar is the
-            // run's state, which the meta line says in words.
-            <Card as="li" class="run-row" tone={runTone(r.state)} key={r.id} data-run-row={r.id} data-run-state={r.state}>
-              <div class="run-row-main">
-                <a href={path} class="run-row-title run-title" onClick={(e) => follow(e, path)}>
-                  {runTitle(r.op, specName(r.source.spec), r.deploy)}
-                </a>
-                <ThreadUnread target={r.id} />
-                <span class="run-row-meta dim">
-                  <StateChip tone={runTone(r.state)}>{STATES[r.state] ?? r.state}</StateChip> · {triggerLine(r, nameOf)} · <Time at={r.created_at} long />
-                  {r.started_at && end ? ` · ${took(r.started_at, end)}` : ""}
-                  {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
-                </span>
-              </div>
-              <code class="run-id card-id" title={r.id}>
-                {short(r.id)}
-                {ws ? ` · ${ws}` : ""}
-              </code>
-            </Card>
-          );
-        })}
-      </ul>
-      <Specs p={p} specs={specs} workspaces={workspaces} reread={rereadSpecs} adding={addingSpec} setAdding={setAddingSpec} />
-    </section>
+          <div class="settings-actions">
+            <button class="primary" data-run-start-open aria-expanded={starting} onClick={() => setStarting(!starting)}>
+              New run
+            </button>
+            <button class="secondary" data-run-spec-new aria-expanded={adding} onClick={() => setAdding(!adding)}>
+              New run spec
+            </button>
+          </div>
+        )}
+        {starting && <StartRun p={p} specs={specs ?? []} workspaces={listed ?? []} done={() => setStarting(false)} />}
+        <Specs p={p} specs={specs} workspaces={listed ?? []} reread={reread} adding={adding} setAdding={setAdding} />
+      </div>
+    </Section>
   );
 }
 
@@ -259,42 +124,6 @@ export function whyNoStart(p: PlatformProject): string | null {
   if (!mayWrite(p)) return "A team's owners and editors start its runs; you can read them here.";
   if (!session.hosted) return "Runs: limited beta, not on your account yet.";
   return null;
-}
-
-/** No runs yet: the next step for someone who can start one (a cloud
- * workspace first, where there's none to run on), and why not, in one
- * line, for anyone else. */
-function NoRuns({ p, workspaces, starting, start }: { p: PlatformProject; workspaces: HostedWorkspace[] | null; starting: boolean; start: () => void }) {
-  const why = whyNoStart(p);
-  if (why || workspaces === null)
-    return (
-      <EmptyState where="page" data-runs-none data-runs-why={why ? "" : undefined} title="No runs yet." why={why ?? undefined} />
-    );
-  if (!workspaces.length)
-    return (
-      <EmptyState
-        where="page"
-        data-runs-none
-        title="No runs yet."
-        why="A run needs a cloud workspace to go on: make one first."
-        action={<NewWorkspaceButton project={p.id} />}
-      />
-    );
-  return (
-    <EmptyState
-      where="page"
-      data-runs-none
-      title="No runs yet."
-      why="A run is a command on one of the project's cloud workspaces."
-      action={
-        !starting && (
-          <button class="primary" data-runs-none-start onClick={start}>
-            Start a run
-          </button>
-        )
-      }
-    />
-  );
 }
 
 /** Start a run by hand: a spec, or a command on a hosted workspace. */
@@ -375,7 +204,7 @@ function Specs({
   specs: RunSpec[] | null;
   workspaces: HostedWorkspace[];
   reread: () => void;
-  /** New run spec's form is open (the header's button, UI audit #164). */
+  /** New run spec's form is open (its button, above). */
   adding: boolean;
   setAdding: (on: boolean) => void;
 }) {
@@ -395,20 +224,14 @@ function Specs({
   if (specs.length === 0 && !can) return null;
   return (
     <div class="run-specs" data-run-specs>
-      <h2>
-        Run specs <span class="dim">{specs.length}</span>
-      </h2>
       {adding && <NewSpec p={p} workspaces={workspaces} done={() => (setAdding(false), reread())} />}
-      {specs.length === 0 && <p class="dim">None yet. A spec names a command or an instruction and the workspace it runs on; give it a schedule or an event rule.</p>}
+      {specs.length === 0 && <p class="dim">None yet.</p>}
       <ul class="platform-list run-spec-list">
         {specs.map((s) => {
-          const filter = pathOf({ page: "runs", project: p.id, spec: s.id }, names);
           return (
             <li key={s.id} data-run-spec={s.name}>
               <div class="run-spec-head">
-                <a href={filter} class="run-spec-name" onClick={(e) => follow(e, filter)}>
-                  <b>{s.name}</b>
-                </a>{" "}
+                <b class="run-spec-name">{s.name}</b>{" "}
                 <span class="dim">on {wsName(s.workspace)}</span>
                 {can && (
                   <span class="run-spec-actions">
@@ -670,7 +493,7 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
 
 // ---- One run
 
-/** A run's page; `pane`, the same as a pane beside a board (Lift 6a, #1483): no way back to the Runs list, which the pane's own × and ⋯ stand for. */
+/** A run's page; `pane`, the same as a pane beside a board (Lift 6a, #1483): no way back to Running, which the pane's own × and ⋯ stand for. */
 export function RunPage({ project, run, msg, thread, pane }: { project: string; run: string; msg?: number; thread?: number; pane?: boolean }) {
   const p = useProject(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
@@ -713,7 +536,9 @@ function RunDetail({ p, id, msg, thread, pane }: { p: PlatformProject; id: strin
   const [specs] = useSpecs(p.id);
   const workspaces = useWorkspaces(p.id) ?? [];
   const nameOf = nameIn(p);
-  const back = pathOf({ page: "runs", project: p.id }, names);
+  // Back to what runs now (the Runs list went in Lift 6a), and a spec's place in Settings.
+  const back = pathOf({ page: "machines", project: p.id, at: { at: "machines", running: true } }, names);
+  const specsAt = pathOf({ page: "settings", scope: "project", project: p.id, section: "runs" }, names);
   if (missing && !run) return <Missing what={`That run isn't one you can read (${missing}).`} />;
   if (!run) return <p class="platform-section dim">Loading…</p>;
   if (run.project !== p.id) return <Missing what="That run is in another project." />;
@@ -732,7 +557,7 @@ function RunDetail({ p, id, msg, thread, pane }: { p: PlatformProject; id: strin
       <PageHeader
         title={<span data-run-title>{runTitle(run.op, spec?.name, run.deploy)}</span>}
         named
-        back={pane ? undefined : { href: back, label: "Runs", onClick: (e) => follow(e, back), data: "run-back" }}
+        back={pane ? undefined : { href: back, label: "Running", onClick: (e) => follow(e, back), data: "run-back" }}
         state={
           <StateChip tone={runTone(run.state)} data-run-state-label>
             {STATES[run.state] ?? run.state}
@@ -755,7 +580,7 @@ function RunDetail({ p, id, msg, thread, pane }: { p: PlatformProject; id: strin
             <>
               {" "}
               · from{" "}
-              <a href={pathOf({ page: "runs", project: p.id, spec: spec.id }, names)} onClick={(e) => follow(e, pathOf({ page: "runs", project: p.id, spec: spec.id }, names))}>
+              <a href={specsAt} onClick={(e) => follow(e, specsAt)}>
                 {spec.name}
               </a>
             </>

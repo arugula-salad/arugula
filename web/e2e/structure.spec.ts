@@ -88,7 +88,8 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
   await reset(page);
   await expect(page.getByRole("navigation", { name: "Places", exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Where you are", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Machines' views" })).toBeVisible();
+  // No views bar of the machine's own: the rail has the places (Lift 6a, #1483).
+  await expect(page.getByRole("navigation", { name: "Machines' views" })).toHaveCount(0);
   await expect(page.getByRole("complementary", { name: /^Sessions on / })).toBeVisible();
   await expect(page.getByRole("tablist", { name: /^Tabs in / })).toBeVisible();
   await expect(page.getByRole("toolbar", { name: "Panes" })).toBeVisible();

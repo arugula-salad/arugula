@@ -134,9 +134,9 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   await expect(friend.locator(".ws-tabs .new-tab")).toHaveAttribute("title", "Viewers can't open tabs in this session");
   // Adding a pane isn't theirs at all (UI audit #197): no greyed + Pane.
   await expect(friend.locator("[data-add-pane]")).toHaveCount(0);
-  for (const sel of ['[data-preset="columns"]', "[data-pane-focus]"]) {
-    await expect(friend.locator(sel)).toBeDisabled();
-    await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
+  for (const sel of ['[data-preset="grid"]', "[data-pane-expand]"]) {
+    await expect(friend.locator(sel).first()).toBeDisabled();
+    await expect(friend.locator(sel).first()).toHaveAttribute("title", "Viewers can't change the layout");
   }
   // A viewer doesn't size the tab (the daemon letterboxes it): no offer to.
   await expect(friend.locator("[data-sized-elsewhere]")).toHaveCount(0);

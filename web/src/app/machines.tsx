@@ -8,7 +8,7 @@ import type { ComponentChildren, ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { AgentPanelProps } from "../shared/kit/panel";
 import type { MachineAt } from "../shared/machine-paths";
-import type { OverviewZoom, PlatformApi } from "../shared/platform-api";
+import type { OverviewZoom, PlatformApi, RunningProps } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 import { OnControl } from "../platform/pages/machines";
 import type { Fleet } from "../shell/fleet";
@@ -177,7 +177,7 @@ export function appOverview(session: () => AppSession | null): ComponentType<{ p
 /** `PlatformApi.Running` over `session` (Lift 6a, #1483): the drawer
  * (./running), in a chunk of its own, loaded with the page. Nothing while
  * the hub can't reach machines from this host. */
-export function appRunning(session: () => AppSession | null): ComponentType<{ project: string | null; place: string | null }> {
+export function appRunning(session: () => AppSession | null): ComponentType<RunningProps> {
   return function Running(props) {
     const s = session();
     useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));

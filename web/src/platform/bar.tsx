@@ -225,7 +225,10 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const p = session.project(project);
   const api = usePlatformApi();
   const place = r.page === "board" ? `board:${r.board}` : null;
-  if (rail) return <TopBar steps={pathSteps(r, project)} views={children} tools={api.Running && <api.Running project={project ?? null} place={place} />} data-platform-bar />;
+  // Machines' `?running` (the Runs list's old address) opens Running; closing it takes that off.
+  const running = r.page === "machines" && r.at.at === "machines" && !!r.at.running;
+  const closed = () => r.page === "machines" && running && go(pathOf({ ...r, at: { at: "machines" } }, names), true);
+  if (rail) return <TopBar steps={pathSteps(r, project)} views={children} tools={api.Running && <api.Running project={project ?? null} place={place} opened={running} closed={closed} />} data-platform-bar />;
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       <PhoneTop name={project ? (p?.name ?? "…") : "All projects"} />

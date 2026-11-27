@@ -32,13 +32,13 @@ export function Connecting({ name }: { name: string }) {
   );
 }
 
-/** An old `#swarm` link (Swarm went in Lift 6a, #1483; the fragment stays
- * forever): it lands on Machines, at the pane it named where this page has
- * it. */
-export function SwarmLanding({ client }: { client: Client }) {
+/** An old `#swarm` or `#agents` link (Swarm and the Agents page went in
+ * Lift 6a, #1483; the fragments stay forever): it lands on Machines, at the
+ * pane a `#swarm` named where this page has it. */
+export function OldLinkLanding({ client }: { client: Client }) {
   useEffect(() => {
     const land = () => {
-      const m = /^#swarm(?:=(?:board:[\w-]+|(?:[0-9a-f]+\.)?(\d+)))?$/.exec(location.hash);
+      const m = /^#(?:swarm(?:=(?:board:[\w-]+|(?:[0-9a-f]+\.)?(\d+)))?|agents(?:=team)?)$/.exec(location.hash);
       if (!m) return;
       history.replaceState(history.state, "", location.pathname + location.search);
       dispatchEvent(new HashChangeEvent("hashchange"));

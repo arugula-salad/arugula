@@ -27,9 +27,10 @@ export function focusPerScreenTests(profile: Phone) {
     const [one, two, three] = await panes(desktop);
 
     // The desktop focuses the first pane.
-    const toolbar = desktop.locator("[data-pane-toolbar]");
+    // The active pane's Focus (the tab's head line has none since Lift 6a).
+    const toggleFocus = async () => desktop.locator(`[data-pane-expand="${await desktop.evaluate(() => window.__arugula.client.active())}"]`).click();
     await desktop.evaluate((p) => window.__arugula.client.setActive(p), one);
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).toBe(one);
     await expect.poll(() => shownIds(desktop)).toEqual([one]);
 
@@ -54,7 +55,7 @@ export function focusPerScreenTests(profile: Phone) {
     // The desktop, still the holder, focuses again. The phone is not
     // trapped by it: its tap ends it.
     await desktop.evaluate((p) => window.__arugula.client.setActive(p), two);
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).toBe(two);
     await expect.poll(() => shownIds(desktop)).toEqual([two]);
     await tap(phone, three);
@@ -64,18 +65,18 @@ export function focusPerScreenTests(profile: Phone) {
     expect(await sized()).toBe(size);
 
     // Restoring on the desktop hides nothing from the phone.
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).toBe(two);
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).toBeNull();
     await expect.poll(() => shownIds(phone)).toHaveLength(3);
 
     // With the phone gone, the desktop focuses and restores as ever.
     await phone.context().close();
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).not.toBeNull();
     await expect.poll(() => shownIds(desktop)).toHaveLength(1);
-    await toolbar.locator("[data-pane-focus]").click();
+    await toggleFocus();
     await expect.poll(() => focus(desktop)).toBeNull();
     await expect.poll(() => shownIds(desktop)).toHaveLength(3);
   });

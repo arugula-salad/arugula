@@ -191,53 +191,6 @@
   border-radius: 0;
 }
 
-/* A run is a Card laid out as a line (the Runs page keeps today's look until its lift). */
-.run-row.card {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.run-row-main {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.platform-section a.run-row-title {
-  margin-right: 6px;
-  color: var(--ink);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.platform-section a.run-row-title:hover {
-  color: var(--accent);
-}
-
-.run-row-meta {
-  display: block;
-  margin-top: 3px;
-  font-size: var(--text-meta);
-}
-
-.platform .run-row .card-id {
-  flex: 0 1 auto;
-  max-width: 40%;
-  margin-top: 3px;
-}
-
-/* Titles take two lines before they're cut. */
-.platform .sw-page a.run-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
 .platform .sw-mono {
   font-family: var(--font-mono);
   font-size: var(--text-meta);
@@ -265,14 +218,6 @@
 @media (max-width: 700px) {
   .platform .sw-stats b {
     font-size: var(--text-xl);
-  }
-  .platform .run-row.card {
-    flex-wrap: wrap;
-  }
-  .platform .run-row .card-id {
-    flex: 1 1 100%;
-    max-width: none;
-    margin-top: 0;
   }
 }
 

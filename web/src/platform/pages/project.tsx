@@ -273,7 +273,9 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
     return () => void (live = false);
   }, [p.id]);
   if (list === null) return null;
-  const all = pathOf({ page: "runs", project: p.id }, names);
+  // What runs now is Running's, and New run is Settings' Runs (the Runs list went in Lift 6a, #1483).
+  const all = pathOf({ page: "machines", project: p.id, at: { at: "machines", running: true } }, names);
+  const start = pathOf({ page: "settings", scope: "project", project: p.id, section: "runs" }, names);
   return (
     <>
       <SectionHead title="Runs" all={all} onAll={(e) => follow(e, all)} />
@@ -295,7 +297,7 @@ function ProjectRuns({ p, workspaces }: { p: PlatformProject; workspaces: unknow
             title="No runs yet."
             why="A run is a command on one of the project's cloud workspaces, by hand, on a schedule or on an event."
             action={
-              <a class="primary" href={`${all}#new-run`} onClick={(e) => follow(e, `${all}#new-run`)} data-project-start-run>
+              <a class="primary" href={start} onClick={(e) => follow(e, start)} data-project-start-run>
                 Start a run
               </a>
             }
