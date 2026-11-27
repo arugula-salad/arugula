@@ -24,6 +24,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
 import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
+import { RunPage } from "./runs";
 import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { blindLine, blindMachines, type Grant } from "../settings/grants";
@@ -372,6 +373,7 @@ function BoardDesk({ p, id }: { p: PlatformProject; id: string }) {
         // Closed, reopened, renamed or moved on: the lists of boards and the crumb follow (Arugula #1159).
         onBoard={() => (boardsChanged(p.id), where.boardRead())}
         docTab={(doc, more) => <DocPage project={p.id} doc={doc} more={more} />}
+        runTab={(run) => <RunPage project={p.id} run={run} pane />}
         // A tile's body opens its card's page (#1520).
         openCard={(issue) => go(pathOf({ page: "issue", project: p.id, issue }, names))}
         // The swarm is the shell's, on control's page (#466).

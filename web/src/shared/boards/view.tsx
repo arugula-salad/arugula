@@ -102,6 +102,7 @@ export function BoardPanel({
   placement = "column",
   extra = [],
   docTab,
+  runTab,
   openCard,
 }: {
   id: string;
@@ -125,6 +126,8 @@ export function BoardPanel({
   extra?: MenuItem[];
   /** A project Doc's tab, as the page draws a Doc. */
   docTab?: (doc: string, more: MenuItem[]) => preact.ComponentChildren;
+  /** A run's detail as a pane beside the board (`run_…`, Lift 6a): the platform's page draws it; without it a run pane is a link. */
+  runTab?: (run: string) => preact.ComponentChildren;
   /** Open a card's page by its issue (`iss_…`): a tile's body on the desk goes there (#1520), not to the drawer. */
   openCard?: (issue: string) => void;
 }) {
@@ -567,6 +570,7 @@ export function BoardPanel({
       if (d?.missing) return <DocLink d={d} project={view.board.project} platform={platform} remove={unlink} />;
       return docTab ? docTab(p.ref, menu) : null;
     }
+    if (p.kind === "run" && runTab && p.ref.startsWith("run_") && !p.offline) return runTab(p.ref);
     const r = p.kind === "pr" ? prOf(p.ref, prs)?.row : p.kind === "card" ? rowOf(p.ref, view) : undefined;
     return r ? <Drawer place="column" r={r} platform={platform} close={() => closePane(p.id)} project={view.board.project} others={allRows} write={write} act={act} id={id} /> : null;
   };
