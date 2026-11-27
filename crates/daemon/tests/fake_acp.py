@@ -10,6 +10,8 @@ Prompts:
   plain CMD      run, but 40 lines of plain text with no escape codes
   perm TOOL      a tool call named TOOL (an MCP tool, say) that asks
                  permission; the reply says "Allowed." or "Not allowed."
+  readout PATH   a Read of PATH that asks permission, as Claude Code does
+                 for a file outside its working directory (#1514)
   read PATH      a Read tool call with no command that fails (not a shell command)
   write NAME TEXT  writes TEXT to NAME in its session's folder, unasked
   work A B       thinks, makes a tool call, edits A in its session's folder
@@ -605,6 +607,20 @@ def prompt(mid, p):
         subprocess.run(["git", "commit", "-q", "-m", f"add {b}"], cwd=cwd, check=True)
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
         msg("done")
+    elif text.startswith("readout "):
+        path = text[8:]
+        tid = f"tool{n}"
+        update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": tid, "title": f"Read {path}", "kind": "read",
+                        "status": "pending", "rawInput": {"file_path": path}})
+        answer = ask(sid, tid, f"Read {path}", "Read")
+        outcome = (answer or {}).get("outcome", {})
+        if outcome.get("outcome") == "selected" and outcome.get("optionId", "").startswith("allow"):
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "completed"})
+            msg("Read it.")
+        else:
+            update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed",
+                            "rawOutput": "User refused permission to run tool"})
+            msg("Not allowed.")
     elif text.startswith("perm "):
         name = text[5:]
         tid = f"tool{n}"
