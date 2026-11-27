@@ -234,9 +234,11 @@ test("the first Doc block: kept on the Docs page, Go to Docs", async ({ page }) 
   );
   expect(doc).not.toBeNull();
   const chip = chipOf(page, doc!, "docs-page");
-  await expect(chip).toContainText("Kept on the Docs page. Ask any agent for a Doc");
+  await expect(chip).toContainText("Kept in Docs. Ask any agent for a Doc");
+  // A machine with no app finds its Docs in Go to… (Lift 6b).
   await chip.locator("[data-hint-act]").click();
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe("#docs");
+  await expect(page.locator("[data-goto]")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.evaluate((p) => window.__arugula.client.intent({ op: "close_pane", pane: p }), doc!);
 });
 

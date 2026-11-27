@@ -56,3 +56,8 @@ if people miss it. Newest at the bottom.
 - **A Claude Code terminal's raw lines in the panel's transcript:** its tool calls fold to a line each; its banner, prompt box, spinners and timings are left out (the Terminal, `v`, still shows them) (Lift 4, Arugula #1480).
 - **`AskCard`, `QuestionCard` and `FormCard`** (`shared/ask.tsx`) and their CSS: an agent's question, form or sign-in link is the kit's NeedRow, with the same answers (Lift 4, Arugula #1480).
 - **Swarm's rail cards** (their kind colours, pop-in, uppercase titles and tinted frames): the rail is a list of NeedRows, as Needs you's (Lift 4, Arugula #1480).
+- **The shell's Docs page (`#docs`):** a machine's Docs are in Go to… by title, and the app's Docs are the rail's; an old `#docs` lands on one of them (Lift 6b, Arugula #1484).
+- **My Docs and Team Docs tabs:** one list, with a Mine filter in a team (Lift 6b, Arugula #1484).
+- **The Docs list's sort (Updated or Created), search, time groups and preview pane:** the latest changed first; Go to… finds a Doc by title; a Doc opens on its page (Lift 6b, Arugula #1484).
+- **A Docs row's ⋯ and the list's ticks (Move several to a team):** a Doc's ⋯ on its page has the same, one Doc at a time (Lift 6b, Arugula #1484).
+- **The Docs page's empty state with Start an agent:** the list's empty state says where Docs come from (Lift 6b, Arugula #1484).

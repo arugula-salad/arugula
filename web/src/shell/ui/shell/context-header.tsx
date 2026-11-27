@@ -125,7 +125,7 @@ export function ContextHeader({
       <ConnectionChip client={client} />
       {/* Docs sits under this head (Arugula #796); the other places cover it
           with a bar of their own (AppBar). */}
-      {(panes || at === "docs") && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
+      {panes && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
     </>
   );
   const tools = (

@@ -118,13 +118,6 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   // Machines' bar: Panes and Swarm; no Chat on the rail.
   await expect(page.locator("[data-machine-swarm]")).toBeVisible();
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  // The Docs page (#1494) isn't Labs' (native #204): in the bar, and at
-  // its address.
-  await expect(page.locator("[data-machine-docs]")).toBeVisible();
-  await page.goto("/#docs");
-  await expect(page.locator("[data-docs-page]")).toBeVisible();
-  await open(page);
-  await ready(page, pane);
   await noLabsItems(page, pane);
 
   // Go to… has no chat entry (and does have the rest). A chat block
@@ -137,8 +130,6 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await expect(
     palette.getByRole("option", { name: /chat/i }).filter({ hasNotText: "Start a chat" }).filter({ hasNotText: "Search output for" }),
   ).toHaveCount(0);
-  await palette.getByRole("combobox", { name: "Go to" }).fill("docs");
-  await expect(palette.getByRole("option", { name: /Docs on this machine/ })).toBeVisible();
   await palette.getByRole("combobox", { name: "Go to" }).fill("split");
   await expect(palette.getByRole("option").first()).toBeVisible();
   await page.keyboard.press("Escape");
@@ -159,10 +150,6 @@ test("without labs the page never requests the Labs chunk", async ({ page }) => 
   await noLabsItems(page, pane);
   await page.goto("/#swarm");
   await expect(page.locator(".swarm")).toBeVisible();
-  // And the Docs page (#1494): everyone's since native #204, a chunk of
-  // its own, not Labs'.
-  await page.goto("/#docs");
-  await expect(page.locator("[data-docs-page]")).toBeVisible();
   // The page's own scripts did load, so the check looks at something.
   expect(asked.some((u) => /\/assets\/main-[\w-]+\.js/.test(u))).toBe(true);
   expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
@@ -311,9 +298,4 @@ test("setting the flag on the running daemon brings it all back, with no restart
   // A studio app is in its legend now; Managoat, retired, still isn't.
   await expect(page.locator(".swarm-legend")).toContainText("Studio app");
   await expect(page.locator(".swarm-legend")).not.toContainText("Managoat");
-
-  // And the Docs page: at its address, and one of the machine's places.
-  await page.goto("/#docs");
-  await expect(page.locator("[data-docs-page]")).toBeVisible();
-  await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
 });

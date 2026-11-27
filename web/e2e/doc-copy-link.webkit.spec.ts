@@ -70,7 +70,7 @@ test.describe("Copy link in WebKit", () => {
     const d = await newDoc(post, term, "Copy me");
     await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
     const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
-    // Shared with a link, so there's one to copy (as docs-page.spec.ts's #708 test).
+    // Shared with a link, so there's one to copy.
     const id = "0123456789abcdef0123456789abcdef";
     const key = "k".repeat(43);
     const at = Date.now();
