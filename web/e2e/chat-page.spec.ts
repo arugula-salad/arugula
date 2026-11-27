@@ -64,6 +64,19 @@ test.describe("computer", () => {
     await expect(thread).toHaveCount(0);
   });
 
+  test("a dialog of Chat's (New direct message) opens over the stream, and a click on it reaches it", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${GENERAL}`);
+    await page.locator('[data-room-new="tm_1/dms"]').click();
+    const start = page.locator("[data-dm-start]");
+    await expect(start).toBeVisible();
+    // Nothing of the stream's column is over it (the rooms' column once clipped its dialogs).
+    expect(await start.evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !!top && (top === b || b.contains(top));
+    })).toBe(true);
+  });
+
   test("your presence is behind your picture while chat is on (Arugula #1079)", async ({ page }) => {
     await open(page, `/p/${P}/chat/${GENERAL}`);
     await expect(page.locator(`[data-room-view="${GENERAL}"]`)).toBeVisible();
