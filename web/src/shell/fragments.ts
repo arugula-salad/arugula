@@ -43,8 +43,8 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#issuer-signin=", why: "A product's sign-in through the hub's issuer resumed after signing in here (M228): the /oauth/authorize, /oauth/hud or /oauth/hud/post (M237) request it came in on.", where: ["shell/control.ts"] },
   // ---- the shell's own places: one page, served by the daemon
   { route: "#swarm", why: "The swarm (M41)'s old links: Swarm went in Lift 6a, and they land on the panes, at the pane named.", where: ["shell/views.tsx", "shell/main.tsx"] },
-  { route: "#overview", why: "A machine's sessions at a glance (M111), retired for the Machines page (Arugula #1349): an old link lands there, at the machine shown.", where: ["shell/ui/places.tsx", "shell/ui/app.tsx"] },
-  { route: "#agents", why: "The machine's agents (#403): the shell's.", where: ["shell/ui/agents-route.ts", "shell/ui/agents-page.tsx", "shell/ui/shell/rail.tsx"] },
+  { route: "#overview", why: "A machine's sessions at a glance (M111), retired for the Machines page (Arugula #1349): an old link lands there, at the machine shown.", where: ["shell/ui/place-links.ts", "shell/ui/app.tsx"] },
+  { route: "#agents", why: "The machine's agents page (#403)'s old links: it went in Lift 6a (#1483), and they land on the panes.", where: ["shell/views.tsx", "shell/main.tsx"] },
   { route: "#docs", why: "The Docs this machine keeps (#1494), retired with the shell's Docs page (Lift 6b, Arugula #1484): an old link lands on the app's Docs, or, on a machine with no app, Go to…, where its Docs are.", where: ["shell/ui/docs-route.ts", "shell/ui/app.tsx"] },
   { route: "#pane=", why: "A pane to show, from a notification or the swarm.", where: ["shell/main.tsx"] },
   { route: "#pop=", why: "A pane popped out into a window of its own (#497): the page shows only it.", where: ["shell/main.tsx", "shell/ui/panes/pop-out.tsx"] },
@@ -72,12 +72,11 @@ export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shared/docs/doc-render.tsx", why: "A tabs Doc on its own page follows `#s2` (Arugula #829), the tab it names." },
   { where: "shared/telemetry.ts", why: "Notes which view is open (M103), never the fragment itself." },
   { where: "shell/main.tsx", why: "Reads `#pane=`, `#machine=` and `#link=`, and redirects the platform's old routes." },
-  { where: "shell/views.tsx", why: "An old `#swarm`, landing on the panes." },
+  { where: "shell/views.tsx", why: "An old `#swarm` or `#agents`, landing on the panes." },
   { where: "shell/trust/gate.tsx", why: "The sign-in screens follow `#join=`, `#device=` and invites." },
   { where: "shell/trust/overlay.tsx", why: "The overlay's prompts follow the secret fragments above." },
-  { where: "shell/ui/agents-page.tsx", why: "`#agents`." },
   { where: "shell/ui/app.tsx", why: "Redraws on the shell's places." },
-  { where: "shell/ui/places.tsx", why: "The places bar follows `#agents`." },
+  { where: "shell/ui/place-links.ts", why: "Redraws what follows the route (the rail, the chat count)." },
   { where: "shell/ui/shell/rail.tsx", why: "The rail follows the shell's places." },
 ];
 

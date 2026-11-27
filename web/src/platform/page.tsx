@@ -362,7 +362,7 @@ function movedPage(r: Route): Route {
     if (project) return { page: "chat", project };
   }
   // Build's list of panes (#1083) is the Machines page (Arugula #1346).
-  if (r.page === "machines" && r.at.at === "panes") return { ...r, at: { at: "machines", ...(r.at.agents ? { agents: true } : {}) } };
+  if (r.page === "machines" && r.at.at === "panes") return { ...r, at: { at: "machines" } };
   return r;
 }
 

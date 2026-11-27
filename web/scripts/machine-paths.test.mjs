@@ -129,19 +129,18 @@ test("Build's home is every machine's panes, with a machine as its filter (#1083
   assert.deepEqual(parse(`/p/${P}/machines/panes`, "?machine=../x").at, { at: "panes" });
   // Control's page has no such list: the machine's, or its own.
   assert.equal(controlHash({ at: "panes" }), "");
-  // Agents only, a flag beside the machine (#1082).
-  assert.deepEqual(parse(`/p/${P}/machines/panes`, `?machine=${D}&agents`).at, { at: "panes", machine: D, agents: true });
-  assert.equal(pathOf({ page: "machines", project: P, at: { at: "panes", machine: D, agents: true } }), `/p/${P}/machines/panes?machine=${D}&agents`);
-  assert.equal(pathOf({ page: "machines", project: P, at: { at: "panes", agents: true } }), `/p/${P}/machines/panes?agents`);
+  // Agents only went in Lift 6a (#1483): an old `&agents` is the plain list.
+  assert.deepEqual(parse(`/p/${P}/machines/panes`, `?machine=${D}&agents`).at, { at: "panes", machine: D });
   assert.equal(controlHash({ at: "panes", machine: D }), `machine=${D}`);
 });
 
-test("the Machines page keeps Agents only in its address (#1346)", () => {
-  assert.deepEqual(parse(`/p/${P}/machines`, "?agents").at, { at: "machines", agents: true });
-  assert.equal(pathOf({ page: "machines", project: P, at: { at: "machines", agents: true } }), `/p/${P}/machines?agents`);
+test("an old Agents only is the Machines page; Running opens over it from its address (Lift 6a)", () => {
+  assert.deepEqual(parse(`/p/${P}/machines`, "?agents").at, { at: "machines" });
+  assert.deepEqual(parse(`/p/${P}/machines`, "?running").at, { at: "machines", running: true });
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "machines", running: true } }), `/p/${P}/machines?running`);
   // Only on the page itself: not on a pane's or a machine's by name.
-  assert.equal(parse(`/p/${P}/machines`, "?pane=9&agents").at.agents, undefined);
-  assert.equal(parse(`/p/${P}/machines`, "?machine=mini&agents").at.agents, undefined);
+  assert.equal(parse(`/p/${P}/machines`, "?pane=9&running").at.running, undefined);
+  assert.equal(parse(`/p/${P}/machines`, "?machine=mini&running").at.running, undefined);
 });
 
 test("Pop out opens the pane alone, in the app and on control's page (#1032)", () => {

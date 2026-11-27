@@ -16,7 +16,7 @@ import { platformHref } from "../../platform-links";
 import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
-import { closePlace, currentPlace, machinesAt, openMachinesAt } from "../places";
+import { closePlace, currentPlace, machinesAt, openMachinesAt } from "../place-links";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
 import { BranchIcon, Caret, MoreIcon, PanesIcon, PinIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";

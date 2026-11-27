@@ -15,7 +15,6 @@ import { ago } from "../../shared/time";
 import { useWorkspaceDir } from "../blocks";
 import { directory } from "../hosts";
 import { opPath, OPS } from "../ops";
-import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { currentAccount } from "./app-bar";
 import { helpItems, newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 import { openYourWork } from "./conversations";
@@ -23,7 +22,7 @@ import { openDoc } from "./docs-route";
 import { getFleet } from "./hosts";
 import { openHit, searchOutput, type Asked, type OutputHit } from "./output-search";
 import { paneName } from "./pane-name";
-import { hasChat, machinesAt, openChat, openMachinesAt } from "./places";
+import { hasChat, machinesAt, openChat, openMachinesAt } from "./place-links";
 import { openSettings } from "./settings-route";
 import { openAttention } from "./shell/attention-drawer";
 import { focusSessionSearch } from "./shell/prefs";
@@ -91,11 +90,6 @@ export function nextNeedingYou(client: Client): PaneId | undefined {
   return wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
 }
 
-/** Back to the panes from a place over them (agents). */
-function toPanes() {
-  if (agentsRoute()) closeAgentsPage();
-}
-
 /** Everything for what's shown now. */
 function items(client: Client, phone: boolean, workspace: string | null, docs: DocRow[]): GoItem[] {
   const state = client.state;
@@ -110,7 +104,6 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
   const onPanes = (c: GoItem): GoItem => ({
     ...c,
     run: () => {
-      toPanes();
       const a = client.active();
       if (!phone && a !== undefined) client.viewOf(a)?.focus();
       return c.run();
@@ -120,17 +113,16 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
   // Jumps: this machine's sessions, tabs and panes (the shown project's
   // only, Arugula #1347), and its Docs.
   const toPane = (p: PaneId) => {
-    toPanes();
     client.setActive(p);
     requestAnimationFrame(() => client.viewOf(p)?.focus());
   };
   for (const s of client.shownSessions()) {
-    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, kind: "session", title: s.name, machine, run: () => (toPanes(), showSession(client, s.id)) });
+    if (s.id !== session) out.push({ key: `Go/session ${s.id}`, kind: "session", title: s.name, machine, run: () => showSession(client, s.id) });
     for (const tid of s.tabs) {
       const t = client.tabView(tid);
       if (!t) continue;
       const label = tabLabel(client, t);
-      out.push({ key: `Go/tab ${tid}`, kind: "tab", title: label, machine, also: s.name, run: () => (toPanes(), client.selectTab(tid)) });
+      out.push({ key: `Go/tab ${tid}`, kind: "tab", title: label, machine, also: s.name, run: () => client.selectTab(tid) });
       for (const p of paneIds(t)) {
         const info = client.info(p);
         if (!info) continue;
@@ -166,10 +158,9 @@ function items(client: Client, phone: boolean, workspace: string | null, docs: D
   if (machinesAt(client)) place("machines", `${machine ?? "This machine"} on Machines`, () => openMachinesAt(client));
   if (!phone) place("attention", "Needs you, every machine", () => openAttention());
   if (hasChat()) place("chat", "Chat", () => openChat());
-  if (client.flag("agent-delegation") && !state.roles) place("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
   // M113: a way out of a terminal (which keeps Tab) to the chrome, from
   // the keyboard; Tab and the arrows go on from there.
-  if (!phone && !agentsRoute()) {
+  if (!phone) {
     const focus = (key: string, title: string, sel: string, before?: () => void) =>
       out.push({
         key: `Places/${key}`,

@@ -4,7 +4,6 @@
 
 import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { openSettings } from "./settings-route";
-import { openAgentsPage } from "./agents-route";
 import { DOCS_TO } from "./docs-route";
 import { openPlatform, platformHref } from "../platform-links";
 import { useState } from "preact/hooks";
@@ -13,7 +12,7 @@ import { EXPIRE_TITLE, gateKey } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
-import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./places";
+import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./place-links";
 import { noticeRoom, noticeTitle, sortNotices } from "../../shared/notice";
 import { GrantActs } from "./grant-acts";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
@@ -410,11 +409,6 @@ function PhoneSheet({ client, close }: { client: Client; close: () => void }) {
                   {owner && platformHref(DOCS_TO) && (
                     <button data-open-docs onClick={act(() => openPlatform(DOCS_TO))}>
                       Docs
-                    </button>
-                  )}
-                  {owner && client.flag("agent-delegation") && (
-                    <button data-open-agents onClick={act(() => openAgentsPage())}>
-                      Agents
                     </button>
                   )}
                   {active !== undefined && owner && (

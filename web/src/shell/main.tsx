@@ -36,7 +36,7 @@ import { Client } from "./client";
 import { directory } from "./hosts";
 import { followSource, Machines } from "./machines";
 import { appAddress, type PagesFlag } from "./app-redirect";
-import { Connecting, MachineView, SwarmLanding } from "./views";
+import { Connecting, MachineView, OldLinkLanding } from "./views";
 import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
@@ -321,7 +321,7 @@ const draw = () => {
     // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : shell()}
-      {!popAt && <SwarmLanding key={client.base} client={client} />}
+      {!popAt && <OldLinkLanding key={client.base} client={client} />}
       <AgentDialogLayer />
       <AppearanceLayer />
       <FeedbackLayer />

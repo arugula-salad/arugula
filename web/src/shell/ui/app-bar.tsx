@@ -1,14 +1,14 @@
-// The bar every place shares: the panes, the swarm, chat and agents. The
-// same things sit in the same spots on each: the machine and the places on
-// the left, what the place itself offers next to them, then the command
-// palette's button and the account menu on the right. Before this each
-// place drew a bar of its own, and the swarm none.
+// The bar over a place (Settings): the machine on the left, what the place
+// itself offers next to it, then the command palette's button and the
+// account menu on the right. With no rail (a phone, no machine shown yet)
+// a Panes button leads back; the rail and Go to… have the other places
+// (the places bar went in Lift 6a, #1483).
 
 import type { ComponentChildren } from "preact";
 import type { Client } from "../client";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
 import { HostButton } from "./hosts";
-import { MachinePlaces, Places, type Place } from "./places";
+import { closePlace, type Place } from "./place-links";
 import { ConnectionChip } from "./shell/context-header";
 import { openMenu, useMenuOpenFrom, type MenuItem } from "../../shared/ui/menu";
 import { useRef } from "preact/hooks";
@@ -84,7 +84,6 @@ export function AppBar({
     const views = (
       <>
         {!all && <ConnectionChip client={client} />}
-        <MachinePlaces client={client} at={at} />
         {children}
       </>
     );
@@ -110,8 +109,11 @@ export function AppBar({
       ) : (
         <HostButton />
       )}
-      {!rail && <Places client={client} at={at} />}
-      {rail && <MachinePlaces client={client} at={at} />}
+      {!rail && at !== "panes" && (
+        <button class="place" title="Your panes" data-open-panes onClick={() => closePlace(at)}>
+          Panes
+        </button>
+      )}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton />}

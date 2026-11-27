@@ -85,7 +85,6 @@ type To = (at: MachineAt) => string;
 export function MachinesList({
   project,
   fleet,
-  agents,
   show,
   card,
   add,
@@ -93,7 +92,6 @@ export function MachinesList({
 }: {
   project: string;
   fleet: Fleet;
-  agents: boolean;
   show?: string;
   card?: number;
   /** Add a machine open (`?add`). */
@@ -108,7 +106,7 @@ export function MachinesList({
   useSubscribe((fn) => sessionPins.subscribe(fn));
   const phone = usePhone();
   const to: To = (at) => pathOf({ page: "machines", project, at }, names);
-  const here = (a: boolean, adding = false) => to({ at: "machines", ...(a ? { agents: true } : {}), ...(adding ? { add: true } : {}) });
+  const here = (adding = false) => to({ at: "machines", ...(adding ? { add: true } : {}) });
   const p = platform.project(project);
   const name = platform.project(project)?.name ?? "this project";
   const hosted = (id: string | undefined) => (id ? session?.daemons.find((d) => d.id === id)?.hosted : undefined);
@@ -155,7 +153,7 @@ export function MachinesList({
         actions={
           <>
             {p && (
-              <button class="secondary" data-machines-add onClick={() => go(here(agents, true))}>
+              <button class="secondary" data-machines-add onClick={() => go(here(true))}>
                 Add a machine
               </button>
             )}
@@ -163,7 +161,7 @@ export function MachinesList({
           </>
         }
       />
-      {add && p && <AddMachine p={p} onClose={() => go(here(agents), true)} />}
+      {add && p && <AddMachine p={p} onClose={() => go(here(), true)} />}
       {directory.list === null ? (
         <p class="dim">Loading…</p>
       ) : !fleet.list.length ? (

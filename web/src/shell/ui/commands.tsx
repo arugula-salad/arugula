@@ -11,7 +11,7 @@ import { openSessionProject } from "./project-dialog";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { cardItems } from "./pane-card";
-import { hasChat } from "./places";
+import { hasChat } from "./place-links";
 import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
 import { startAgent } from "./agent-dialog";

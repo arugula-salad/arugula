@@ -6135,45 +6135,6 @@ html[data-scheme="light"] .doc {
   font-size: var(--text-meta);
 }
 
-/* #403: the Agents page, over everything like the chat page. Its tabs
-   sit in the shared bar, after the places, as the panes' sessions do. */
-.agents-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
-}
-
-/* Recipes and Team are the Agents page's own tabs, not more places: small,
-   underlined, not filled like Panes · Swarm · Chat · Agents. */
-.agents-tabs button {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 0;
-  font-size: var(--text-meta);
-  color: var(--ink-dim);
-  border-bottom: 2px solid transparent;
-}
-
-.agents-tabs button:hover {
-  color: var(--ink);
-}
-
-.agents-tabs button.on {
-  color: var(--ink);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
-}
-
-/* What was just done, under the search. */
-.agents-said {
-  margin: 0;
-  padding: var(--space-2) var(--space-5) 0;
-  color: var(--ink-dim);
-  font-size: var(--text-meta);
-}
-
 .agents-none b {
   color: var(--ink);
 }
@@ -6187,11 +6148,6 @@ html[data-scheme="light"] .doc {
 .agents-none {
   margin: 0 8px;
   color: var(--ink-dim);
-}
-
-/* What went wrong on the Agents and Docs pages, the same red. */
-.agents-error {
-  margin: 8px;
 }
 
 .agents-loading {
@@ -6241,102 +6197,11 @@ html[data-scheme="light"] .doc {
   color: var(--fail);
 }
 
-/* The recipe form, in the preview's place: its buttons stay in view. */
-.agents-form {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  text-align: left;
-}
-
-.agents-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* A preview's words: a heading, what the recipe says, and what it has. */
-.agents-words-head {
-  margin: var(--space-5) 0 var(--space-2);
-  color: var(--ink-dim);
-  font: 700 var(--text-body)/1 var(--font-title);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-}
-
-.agents-recipe-prompt {
-  margin: 0;
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--canvas);
-  font: var(--text-meta)/1.5 var(--font-mono);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.agents-facts {
-  margin: 0;
-}
-
-.agents-facts dt {
-  margin-top: var(--space-3);
-  color: var(--ink-dim);
-  font: 700 var(--text-body)/1 var(--font-title);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-}
-
-.agents-facts dt:first-child {
-  margin-top: 0;
-}
-
-.agents-facts dd {
-  margin: var(--space-1) 0 0;
-  overflow-wrap: anywhere;
-}
-
-.agents-field {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 10px;
-  align-items: center;
-}
-
-.agents-field > span {
-  color: var(--ink-dim);
-}
-
-.agents-field input,
-.agents-field select,
-.agents-field textarea {
-  width: 100%;
-}
-
-.agents-field textarea {
-  resize: vertical;
-  font-family: var(--font-mono);
-}
-
-.agents-prompt {
-  align-items: start;
-}
-
-.agents-prompt > span {
-  padding-top: 4px;
-}
-
 .agents-shelf-head .dim {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
-}
-
-.phone .agents-field {
-  grid-template-columns: 1fr;
-  gap: 2px;
 }
 
 .agents-recipe-list li code {
@@ -7600,10 +7465,6 @@ button.thread-quote:hover {
     padding: 0 4px;
     overflow-x: auto;
     scrollbar-width: none;
-  }
-
-  .app-bar .agents-tabs {
-    order: 3;
   }
 
   .app-bar .account-login {
@@ -9122,247 +8983,6 @@ button.thread-quote:hover {
   background: var(--card-raised);
 }
 
-/* The activity drawer (M112b): below the tab, never one of its panes. The
-   panes above re-measure as it opens or is dragged taller. */
-.ws-activity {
-  flex: none;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--section);
-  border-top: 1px solid var(--line);
-  font-size: var(--text-meta);
-}
-
-.ws-activity-resize {
-  position: absolute;
-  top: -3px;
-  left: 0;
-  right: 0;
-  height: 6px;
-  cursor: row-resize;
-  z-index: 2;
-}
-
-.ws-activity-resize:hover,
-.ws-activity-resize:focus-visible {
-  background: color-mix(in srgb, var(--accent-fill) 40%, transparent);
-  outline: none;
-}
-
-.ws-activity-bar {
-  flex: none;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px 0 4px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.ws-activity-bar button,
-.ws-activity-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  height: 22px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  color: var(--ink-dim);
-  font-size: var(--text-meta);
-}
-
-.ws-activity-bar button:hover,
-.ws-activity-toggle:hover {
-  background: var(--card-raised);
-  color: var(--ink);
-}
-
-.ws-activity-title {
-  color: var(--ink) !important;
-  font-weight: 600;
-}
-
-.ws-activity-filters {
-  display: flex;
-  gap: 2px;
-  margin-left: 6px;
-}
-
-.ws-activity-filter.on {
-  background: var(--card-raised);
-  color: var(--ink) !important;
-}
-
-.ws-activity-count {
-  color: var(--ink-dim);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-label);
-}
-
-.ws-activity-fill {
-  flex: 1;
-}
-
-.ws-activity-waiting {
-  color: var(--review) !important;
-}
-
-.ws-activity-live .ws-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-faint);
-}
-
-.ws-activity-live.on {
-  color: var(--ink) !important;
-}
-
-.ws-activity-live.on .ws-dot {
-  background: var(--done);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 22%, transparent);
-}
-
-.ws-activity-more {
-  padding: 0 4px !important;
-}
-
-.ws-activity-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 4px 6px;
-}
-
-.ws-activity-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  min-height: 24px;
-  padding: 3px 8px;
-  border-radius: var(--radius-control);
-  text-align: left;
-  color: var(--ink);
-  font-size: var(--text-meta);
-}
-
-.ws-activity-row:hover:not(:disabled) {
-  background: var(--card-raised);
-}
-
-.ws-activity-row:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.ws-activity-time {
-  flex: none;
-  color: var(--ink-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.ws-activity-kind {
-  flex: none;
-  min-width: 46px;
-  color: var(--ink-dim);
-  font-size: var(--text-label);
-  text-transform: uppercase;
-  letter-spacing: var(--track-caps);
-}
-
-.ws-activity-kind.agent,
-.ws-activity-kind.answer {
-  color: var(--accent);
-}
-
-.ws-activity-kind.system {
-  color: var(--review);
-}
-
-.ws-activity-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ws-activity-row[data-activity-kind="command"] .ws-activity-text,
-.ws-activity-row[data-activity-kind="action"] .ws-activity-text {
-  font-family: var(--font-mono);
-}
-
-.ws-activity-status {
-  flex: none;
-  width: 7ch;
-  text-align: right;
-  font-size: var(--text-label);
-  color: var(--ink-dim);
-}
-
-.ws-activity-status.ok {
-  color: var(--done);
-}
-
-.ws-activity-status.bad {
-  color: var(--fail);
-}
-
-.ws-activity-pane {
-  width: 24ch;
-}
-
-.ws-activity-by,
-.ws-activity-pane {
-  flex: none;
-  max-width: 24ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-dim);
-}
-
-.ws-activity-empty,
-.ws-activity-note {
-  padding: 10px 8px;
-  color: var(--ink-dim);
-}
-
-.ws-activity-note {
-  padding: 4px 8px;
-  font-size: var(--text-label);
-}
-
-.ws-activity-empty.error,
-.ws-activity-note.error {
-  color: var(--fail);
-}
-
-.ws-activity-empty button {
-  margin-left: 10px;
-}
-
-.ws-activity-toggle {
-  height: 20px !important;
-  margin-right: 4px;
-}
-
-.ws-activity-toggle.on {
-  color: var(--ink);
-  background: var(--card-raised);
-}
-
-@media (max-width: 1100px) {
-  .ws-activity-count,
-  .ws-activity-row .ws-activity-by {
-    display: none;
-  }
-}
-
 /* ---- M111 (#1026): the bell, the attention drawer and the session
    overview. */
 
@@ -9560,13 +9180,6 @@ button.thread-quote:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* The activity drawer's first-open line: what it keeps. */
-.ws-activity-intro {
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--text-meta);
 }
 
 .app.ws .ws-work {
@@ -10072,7 +9685,7 @@ html[data-workspace="new"] .thread-panel {
 }
 
 /* Focus that can be seen on the chrome's other controls too. */
-.app.ws :is(.ws-sidebar input, .add-pane select, .ws-tabs [role="tab"], [role="option"], .ws-sidebar-resize, .ws-activity [tabindex="0"]):focus-visible {
+.app.ws :is(.ws-sidebar input, .add-pane select, .ws-tabs [role="tab"], [role="option"], .ws-sidebar-resize):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }

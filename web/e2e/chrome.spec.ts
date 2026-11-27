@@ -82,15 +82,14 @@ test.describe("on a computer", () => {
     }
   });
 
-  test("the bar is the machine, then its places, on the panes (Arugula #637); an old #docs opens Go to… where the machine's Docs are", async ({ page }) => {
+  test("the bar is the machine and its session, on the panes, with no places of its own (Lift 6a); an old #docs opens Go to… where the machine's Docs are", async ({ page }) => {
     await newWorkspace(page);
-    const places = page.locator("[data-machine-places]");
     await expect(page.locator(".ws-wordmark")).toHaveCount(0);
-    await expect(places.locator("[data-machine-panes]")).toHaveAttribute("aria-current", "page");
+    // The rail has the places (Lift 6a, Arugula #1483): the bar has no Panes, Runs or Recipes.
+    await expect(page.locator("[data-top] [data-machine-places], [data-top] .places")).toHaveCount(0);
     // No bell: the rail's Inbox is the one count (Lift 6d, Arugula #1486).
     await expect(page.locator("[data-open-attention]")).toHaveCount(0);
-    // The shell's Docs page went with Lift 6b (Arugula #1484): no Docs in a lone machine's bar.
-    await expect(places.locator("[data-machine-docs]")).toHaveCount(0);
+    // The shell's Docs page went with Lift 6b (Arugula #1484).
     await page.evaluate(() => (location.hash = "docs"));
     await expect(page.locator("[data-goto]")).toBeVisible();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
@@ -124,19 +123,19 @@ test.describe("on a computer", () => {
     const pane = await active(page);
     const rail = page.locator("[data-rail]");
     // The app's places (Arugula #1345). A machine on its own has no platform
-    // page: no Overview, Boards, Docs, Chat or Inbox on the rail, and no
-    // Machines or Runs in its bar (its Docs are in Go to…, Arugula #1484).
+    // page: no Overview, Boards, Docs, Chat or Inbox on the rail (its Docs
+    // are in Go to…, Arugula #1484).
     expect(await rail.locator("> *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? "").filter(Boolean))).toEqual(["mark", "machines", "settings"]);
     await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
-    await expect(page.locator("[data-machine-places] [data-machine-machines], [data-machine-places] [data-machine-runs]")).toHaveCount(0);
 
-    // No Swarm (Lift 6a): an old #swarm lands on the panes, at the same tab and pane.
-    await expect(page.locator("[data-machine-places] [data-machine-swarm]")).toHaveCount(0);
-    await page.evaluate(() => (location.hash = "#swarm"));
-    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-    await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
-    expect((await tab(page)).id).toBe(t);
-    expect(await active(page)).toBe(pane);
+    // No Swarm and no Agents page (Lift 6a): an old #swarm or #agents lands on the panes, at the same tab and pane.
+    for (const old of ["#swarm", "#agents", "#agents=team"]) {
+      await page.evaluate((h) => (location.hash = h), old);
+      await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+      await expect(rail.locator("[data-open-machines]")).toHaveAttribute("aria-current", "page");
+      expect((await tab(page)).id).toBe(t);
+      expect(await active(page)).toBe(pane);
+    }
 
     // The tab strip's caret is a disclosure (#378), not a place: the rail has no Sessions.
     const caret = page.locator(".ws-tabs [data-open-sessions]");
@@ -277,8 +276,8 @@ test.describe("states", () => {
     const empty = page.locator("[data-no-sessions]");
     await expect(empty.locator(".empty-state-title")).toHaveText(/^No sessions on /);
     await expect(page.locator("[data-session-empty]")).toBeVisible();
-    // Nothing that needs a session: no tab strip, toolbar or activity.
-    await expect(page.locator(".ws-tabs, [data-pane-toolbar], [data-activity-toggle]")).toHaveCount(0);
+    // Nothing that needs a session: no tab strip or toolbar.
+    await expect(page.locator(".ws-tabs, [data-pane-toolbar]")).toHaveCount(0);
     await empty.getByRole("button", { name: "New session" }).click();
     await expect.poll(() => panes(page)).toHaveLength(1);
     await expect(page.locator("[data-no-sessions]")).toHaveCount(0);

@@ -1,6 +1,5 @@
 // Accessibility (#401) on a machine's own page: panes (a terminal and a Doc
-// beside it), the swarm, the Docs page, the Agents page's two tabs, and the
-// settings (Appearance and Developer settings), each at 1440 and 400 px, light and dark. A daemon
+// beside it), the Docs page and the settings (Appearance and Developer settings), each at 1440 and 400 px, light and dark. A daemon
 // of its own, so what earlier specs in the shard left on the suite's daemon
 // doesn't change what's scanned. What's checked and the known list:
 // a11y.ts.
@@ -74,41 +73,6 @@ test("panes, sessions sidebar closed", async ({ page }) => {
     if (width !== "desktop") return;
     if (await page.locator("[data-session-sidebar]").count()) await page.locator(".ws-tabs [data-open-sessions]").click();
     await expect(page.locator(".ws-crumb-caret")).toBeVisible();
-  });
-});
-
-test("agents: Recipes", async ({ page }) => {
-  // A project of its own, so the home directory's recipes aren't what's made.
-  const project = join(dir, "project");
-  mkdirSync(project);
-  await post("/api/a2a/recipes/projects", { dir: project });
-  await post("/api/a2a/recipes/save", { dir: project, name: "fixer", description: "Fixes failing tests", tools: ["Read"], prompt: "You fix tests." });
-  await prepare(page);
-  await everyWay(page, "agents-recipes", async () => {
-    await page.goto("/#agents");
-    await expect(page.locator("[data-agents-page=recipes] [data-recipe=fixer]")).toBeVisible();
-  });
-});
-
-test("agents: Team, with a task waiting", async ({ page }) => {
-  // Other people and machines, as the page is told of them.
-  await page.route(/\/api\/a2a\/catalog/, (r) =>
-    r.fulfill({
-      json: {
-        machines: [
-          { machine: "m1", name: "buildbox", owner: "", here: true, online: true, note: null, fetched_ms: null, agents: [{ name: "reviewer", description: "Reviews diffs" }] },
-          { machine: "m2", name: "spare", owner: "Dana", here: false, online: false, note: "offline", fetched_ms: null, agents: [] },
-        ],
-      },
-    }),
-  );
-  await page.route(/\/api\/a2a\/waiting$/, (r) => r.fulfill({ json: { waiting: [{ id: "t1", history: [{ parts: [{ text: "Check the nightly build" }] }], metadata: { arugula: { agent: "reviewer", caller: "Dana" } } }] } }));
-  await page.route(/\/api\/a2a\/grants$/, (r) => r.fulfill({ json: [{ account: "a9", name: "Sam", agent: "reviewer", until_ms: Date.now() + 3_600_000 }] }));
-  await prepare(page);
-  await everyWay(page, "agents-team", async () => {
-    await page.goto("/#agents=team");
-    await expect(page.locator("[data-agents-page=team] [data-waiting=t1]")).toBeVisible();
-    await expect(page.locator("[data-agents-page=team] [data-agent=reviewer]")).toBeVisible();
   });
 });
 

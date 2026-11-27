@@ -114,42 +114,6 @@
   display: none;
 }
 
-/* It sits with the panes, on their background and at their inset, so the
-   space around it is even (the panes' padding is the space above it). */
-:where(.app.ws) .ws-work:has(> .ws-activity) {
-  background: var(--well);
-}
-
-.ws-activity {
-  margin: 0 8px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  overflow: visible;
-}
-
-.ws-activity-bar {
-  height: 32px;
-}
-
-.ws-activity-row {
-  min-height: 25px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line-strong) 45%, transparent);
-}
-
-.ws-activity-time {
-  font: var(--text-label) var(--font-mono);
-  min-width: 8ch;
-}
-
-.ws-activity-kind {
-  min-width: 64px;
-}
-
-.ws-activity-filter.on {
-  background: var(--chrome-selected);
-  box-shadow: inset 0 0 0 1px var(--chrome-selected-line);
-}
-
 @media (max-width: 1100px) {
   .pane-toolbar {
     gap: 4px;
@@ -182,7 +146,6 @@
 .pt-count { margin-left: auto; }
 .pt-fill { flex: none; width: 4px; }
 .pt-note { position: absolute; right: 10px; top: 100%; z-index: 10; background: var(--section); }
-.ws-activity { background: var(--chrome-panel); }
 @media (max-width: 1100px) {
   .pane-toolbar .pt-presets > .bar-btn { padding-inline: var(--space-1); }
 }
@@ -236,7 +199,6 @@ html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws
 
 /* The header's stack takes the Overview's crumb type (.app-path): its steps
    are the machine menu, the session menu and the tab's name. */
-
 
 /* The tab's head line (Lift 6a): its state, name, machine and kind before the pane controls. */
 .pt-head {

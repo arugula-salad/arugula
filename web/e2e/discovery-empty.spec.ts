@@ -1,9 +1,8 @@
 // Empty states that do the next step (Discovery 5), in the shell: the
 // attention drawer, empty (from Go to…), says what lands there and offers Set up while Claude
 // Code's settings lack Arugula's hooks (the daemon's answer is stubbed both
-// ways, so nothing touches this box's ~/.claude); and the activity
-// drawer says what it keeps the first time it's open, and not again. The
-// platform's empty states are in discovery-empty-platform.spec.ts.
+// ways, so nothing touches this box's ~/.claude). The platform's empty
+// states are in discovery-empty-platform.spec.ts.
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts, openAttentionDrawer, reset } from "./helpers";
@@ -46,31 +45,4 @@ test("the attention drawer offers no Set up where the hooks are in", async ({ pa
   // Long enough for the daemon's answer to have come.
   await page.waitForTimeout(500);
   await expect(page.locator("[data-attention-setup]")).toHaveCount(0);
-});
-
-test("the activity drawer says what it keeps the first time it's open, and not again", async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      localStorage.removeItem("arugula.workspace.activity");
-    } catch {
-      // No storage: the drawer starts closed anyway.
-    }
-  });
-  await reset(page);
-  const drawer = page.locator("[data-activity-drawer]");
-  await page.locator("[data-activity-toggle]").click();
-  await expect(drawer).toHaveClass(/open/);
-  await expect(drawer.locator("[data-activity-intro]")).toContainText("Activity keeps what happened in this session");
-  // Seen when shown: this browser's (a daemon's page has no account).
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}")["seen:activity-intro"])).toBeTruthy();
-  await drawer.locator(".ws-activity-title").click();
-  await expect(drawer).not.toHaveClass(/open/);
-  await drawer.locator(".ws-activity-title").click();
-  await expect(drawer).toHaveClass(/open/);
-  await expect(drawer.locator("[data-activity-intro]")).toHaveCount(0);
-  // Nor after a reload (which starts the drawer closed, as the init script says).
-  await page.reload();
-  await page.locator("[data-activity-toggle]").click();
-  await expect(page.locator("[data-activity-drawer]")).toHaveClass(/open/);
-  await expect(page.locator("[data-activity-intro]")).toHaveCount(0);
 });

@@ -22,7 +22,7 @@ import { shellPlatformApi } from "../shell/platform-api";
 import { AgentDialogLayer, startAgent } from "../shell/ui/agent-dialog";
 import { measureCell, type Cell } from "../shell/ui/cells";
 import { installKeys } from "../shell/ui/keys";
-import { MachineView, SwarmLanding } from "../shell/views";
+import { MachineView, OldLinkLanding } from "../shell/views";
 import { names } from "../platform/links";
 import { session as platform } from "../platform/session";
 import { current, go, pathOf } from "../platform/router";
@@ -277,7 +277,6 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
         <MachinesList
           project={project}
           fleet={machines.fleet}
-          agents={(at.at === "machines" || at.at === "panes") && !!at.agents}
           show={at.at === "machines" ? at.show : undefined}
           card={at.at === "machines" ? at.session : undefined}
           add={at.at === "machines" && !!at.add}
@@ -295,7 +294,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       {!pop && <KeepPane key={client.base} project={project} client={client} asked={at.pane} />}
       {at.pane !== undefined && <PaneProject key={client.base} project={project} client={client} at={at} />}
       {/* An old `#swarm` link lands here (Lift 6a). */}
-      <SwarmLanding client={client} />
+      <OldLinkLanding client={client} />
       <AgentDialogLayer />
     </PlatformApiContext.Provider>
   );

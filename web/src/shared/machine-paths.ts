@@ -14,11 +14,12 @@ export type MachineAt =
    * machine shown (`agents`, `settings=machine`…). `pop`: the pane alone
    * in its window, on the home machine, which this address can't name
    * (#1032). Without either, the Machines page (Arugula #1346): every
-   * machine's sessions in the project; `agents`, only the agents'; `show`,
-   * scrolled to a machine (its id, or a name where it has none) and
-   * `session`, to that session's card (Arugula #1349); `add`, with Add a
-   * machine open (Lift 7). */
-  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; agents?: true; show?: string; session?: number; add?: true }
+   * machine's sessions in the project; `show`, scrolled to a machine (its
+   * id, or a name where it has none) and `session`, to that session's card
+   * (Arugula #1349); `add`, with Add a machine open (Lift 7); `running`,
+   * with the Running drawer open (the Runs list's old address lands there,
+   * Lift 6a). An old `?agents` (Agents only, gone in Lift 6a) is Machines. */
+  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true; show?: string; session?: number; add?: true; running?: true }
   /** A machine's page, with a pane to show: shared from (`share`), a person
    * to follow there (`follow`), alone in its window (`pop`); or with
    * Start an agent open (`agent`). */
@@ -28,7 +29,7 @@ export type MachineAt =
   | { at: "swarm"; focus?: { machine?: string; pane: number }; board?: string }
   /** Build's old home (Arugula #1083), every machine's panes: now the
    * Machines page's old address, which the app sends there (#1346). */
-  | { at: "panes"; machine?: string; agents?: true };
+  | { at: "panes"; machine?: string };
 
 /** A machine's id at the front of a path segment, before its slug: a
  * daemon's id is hex. */
@@ -62,10 +63,10 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
       ...(name ? { name } : {}),
       ...(LAYER.test(layer) ? { layer } : {}),
       ...(pane !== undefined && q.has("pop") ? { pop: true } : {}),
-      ...(pane === undefined && !name && q.has("agents") ? { agents: true } : {}),
       ...(show && NAME.test(show) ? { show } : {}),
       ...(session !== undefined ? { session } : {}),
       ...(pane === undefined && !name && q.has("add") ? { add: true } : {}),
+      ...(pane === undefined && !name && q.has("running") ? { running: true } : {}),
     };
   }
   if (rest.length !== 1) return null;
@@ -77,7 +78,7 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
   if (rest[0] === "panes") {
     // A machine's id, or a name where it has none (a daemon's own hosts).
     const machine = q.get("machine");
-    return { at: "panes", ...(machine && NAME.test(machine) ? { machine } : {}), ...(q.has("agents") ? { agents: true } : {}) };
+    return { at: "panes", ...(machine && NAME.test(machine) ? { machine } : {}) };
   }
   const machine = MACHINE.exec(rest[0])?.[1];
   if (!machine) return null;
@@ -123,10 +124,8 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
       : m.at === "machines" && m.pop
         ? ["pop"]
         : m.at === "machines"
-          ? (["agents", "add"] as const).filter((k) => m[k])
-          : m.at === "panes" && m.agents
-            ? ["agents"]
-            : [];
+          ? (["add", "running"] as const).filter((k) => m[k])
+          : [];
   const qs = [q.toString(), ...flags].filter(Boolean).join("&");
   const layer = m.at === "machines" && m.layer ? `#${m.layer}` : "";
   return `${path}${qs ? `?${qs}` : ""}${layer}`;

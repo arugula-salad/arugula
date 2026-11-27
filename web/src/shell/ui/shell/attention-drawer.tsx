@@ -30,7 +30,7 @@ import { openMenu, type MenuItem } from "../../../shared/ui/menu";
 import { agentNotifyItems, notificationItems, pushNow, subscribePush, toggleNotify } from "../notify";
 import { hooksInstalled, setUpClaude } from "../agents-setup";
 import { addPane } from "./add-pane";
-import { closePlace, currentPlace, openRoom } from "../places";
+import { closePlace, currentPlace, openRoom } from "../place-links";
 import { noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../../../shared/notice";
 import { GrantActs } from "../grant-acts";
 import { SideSheet } from "../../../shared/ui/side-sheet";
