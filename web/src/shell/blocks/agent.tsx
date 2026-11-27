@@ -606,7 +606,8 @@ export function AgentComposer({
           }
         }}
       />
-      {busy ? (
+      {/* The agent's one Stop (Lift 6a): a question it asks has none of its own. */}
+      {busy || s.asks.some((a) => !a.accepted) ? (
         <button type="button" class="secondary danger" onClick={() => void client.api(`/api/blocks/${id}/call/cancel`, {}, "couldn't stop it")}>
           Stop
         </button>
@@ -791,7 +792,6 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               actions={{
                 answer: (content) => call("answer", { id: a.id, content }),
                 decline: () => call("decline", { id: a.id }),
-                stop: a.kind === "url" ? undefined : () => call("cancel", {}),
               }}
             />
           ))}

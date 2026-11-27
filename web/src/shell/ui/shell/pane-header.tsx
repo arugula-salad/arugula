@@ -144,12 +144,10 @@ export function PaneHeader({
       }}
       lead={
         <>
-          {n > 0 && (
-            <span class="pane-header-n" title={jump ? `Pane ${n} (${jump})` : `Pane ${n}`} data-pane-ordinal={n}>
-              {String(n).padStart(2, "0")}
-            </span>
-          )}
-          <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={glyph} /></span>
+          {/* No pane numbers (Lift 6a): its number is the glyph's tooltip, with Ctrl+Shift+N. */}
+          <span class="pane-header-type" role="img" aria-label={type} title={n > 0 ? `${type} · pane ${n}${jump ? ` (${jump})` : ""}` : type} data-pane-ordinal={n > 0 ? n : undefined}>
+            <PaneTypeIcon type={glyph} />
+          </span>
         </>
       }
       title={<BarTitle class="pane-header-title">{title}</BarTitle>}

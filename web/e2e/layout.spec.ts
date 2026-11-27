@@ -252,8 +252,9 @@ test("the pane header's menu focuses, splits and closes", async ({ page }) => {
   await expect.poll(() => panes(page)).toHaveLength(2);
   const second = (await panes(page))[1];
   await expect(page.locator("[data-pane-header]")).toHaveCount(2);
-  // Its number is the Ctrl+Shift+digit one, not the pane's id.
-  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveText("02");
+  // Its number is the Ctrl+Shift+digit one, not the pane's id: its glyph's tooltip, not on the header (Lift 6a).
+  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveAttribute("data-pane-ordinal", "2");
+  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveAttribute("title", /pane 2/);
 
   // A click on the header gives that pane the keys.
   await page.locator(`[data-pane-header="${first}"] .pane-header-title`).click();

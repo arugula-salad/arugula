@@ -11,7 +11,7 @@ import { startDrag } from "../drag";
 import { openMenu } from "../../../shared/ui/menu";
 import { openFresh } from "../open-fresh";
 import { PaneMarks } from "../people";
-import { drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
+import { asksAbove, drawsItsOwn, TermAnswered, TermAsk, TermDiff } from "../term-ask";
 import { ThreadBadge } from "../threads";
 import { HintPaneModal } from "../hints";
 import { drop } from "./drop";
@@ -138,7 +138,7 @@ export function PaneSlot({
       <StartedByBadge client={client} id={id} />
       <PaneMarks client={client} pane={id} />
       <ThreadBadge client={client} pane={id} />
-      {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && <TermAsk client={client} id={id} ask={info.ask} />}
+      {info?.diff ? <TermDiff client={client} id={id} diff={info.diff} /> : info?.ask && !drawsItsOwn(info.ask) && !asksAbove(info, phone) && <TermAsk client={client} id={id} ask={info.ask} />}
       {!info?.ask && !info?.diff && info?.answered && info.type === "terminal" && <TermAnswered client={client} id={id} answered={info.answered} />}
       {waiting && (
         <button

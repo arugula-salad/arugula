@@ -273,7 +273,7 @@ function AskBody({ ask, actions, more }: { ask: Ask; actions: AskActions; more?:
   );
 }
 
-/** Its answers: Submit, Skip (or the place's words for them), Answer in terminal, Stop, and the place's own. */
+/** Its answers: Submit, Skip (or the place's words for them), Answer in terminal, and the place's own. No Stop: one Stop an agent, its own (Lift 6a). */
 function AskButtons({ actions, submit, disabled, labels, more }: { actions: AskActions; submit?: () => void; disabled?: boolean; labels?: { submit: string; decline: string }; more?: ComponentChildren }) {
   return (
     <div class="k-row-actions">
@@ -288,11 +288,6 @@ function AskButtons({ actions, submit, disabled, labels, more }: { actions: AskA
       {actions.terminal && (
         <Button title="Claude Code shows its own picker" onClick={() => actions.terminal!()}>
           Answer in terminal
-        </Button>
-      )}
-      {actions.stop && (
-        <Button kind="danger" onClick={() => actions.stop!()}>
-          Stop
         </Button>
       )}
       {more}
