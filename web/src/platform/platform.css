@@ -235,12 +235,6 @@ html[data-native-tabs] .platform {
   overflow: hidden;
 }
 
-/* A thread in a room's own column (#agents, a board's channel): as the
-   room's stream, its back link in the head. */
-.platform-chat .chat:not(.phone) .chat-thread.chat-thread-panel .chat-go {
-  color: var(--ink-dim);
-}
-
 .chat-reached {
   margin: 2px 0 0;
   color: var(--ink-dim);
@@ -272,9 +266,7 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
   font-size: var(--text-meta);
 }
-.chat-about-reach {
-  margin: 0;
-}
+.chat-about-reach,
 .chat-about-reach > div {
   display: grid;
   grid-template-columns: 11em 1fr;
@@ -315,16 +307,9 @@ html[data-native-tabs] .platform {
   position: static;
   display: inline-block;
   width: 8px;
-  border-color: var(--ink-dim);
-}
-.chat-list .chat-lead-dot.presence-active {
-  border-color: var(--done);
 }
 .chat-list .k-row[data-dragging] {
   opacity: 0.5;
-}
-.chat-top {
-  margin-bottom: 6px;
 }
 /* A group's head is a quiet label over its rows, as the prototype's. */
 .chat-side .chat-section {

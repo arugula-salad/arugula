@@ -4331,7 +4331,7 @@ offline: boolean, };
 /**
  * What a pane shows.
  */
-export type LayoutPaneKind = "doc" | "pr" | "preview" | "run" | "terminal" | "card" | "prompt" | "other";
+export type LayoutPaneKind = "doc" | "pr" | "preview" | "run" | "terminal" | "card" | "prompt" | "room" | "other";
 
 /**
  * A person's layout prefs: each of [`PREFS`]' keys on or off; a key left

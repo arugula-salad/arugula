@@ -154,6 +154,9 @@ pub enum PaneKind {
     Card,
     /// A blocked agent's permission or question (`ref` its pane, `%N`).
     Prompt,
+    /// A chat room: #agents or a board's channel (`ref` its room's id,
+    /// `ob_…`; Arugula #1522).
+    Room,
     /// A kind this side doesn't know yet.
     #[serde(other)]
     Other,

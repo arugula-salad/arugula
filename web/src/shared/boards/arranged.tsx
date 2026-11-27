@@ -11,7 +11,8 @@ import type { ComponentChildren } from "preact";
 import type { BoardRow, BoardView, InboxItem, LayoutPane, LayoutTab, PlaceLayout } from "../proto";
 import { usePlatformApi } from "../platform-api";
 import { HOME } from "../place-layout";
-import { DocsIcon, IssueIcon, PaneTypeIcon, PrIcon, PulseIcon, ExternalIcon } from "../ui/icons";
+import { RoomPane, isRoomPane } from "../chat/room-pane";
+import { ChatIcon, DocsIcon, IssueIcon, PaneTypeIcon, PrIcon, PulseIcon, ExternalIcon } from "../ui/icons";
 import type { MenuItem } from "../ui/menu";
 import type { PaneItem } from "../kit/panes/panes";
 import type { OpenPr } from "./text";
@@ -32,6 +33,8 @@ export function paneMeta(p: LayoutPane, defaultTitle: (name: string) => string):
 
 export function paneIcon(kind: LayoutPane["kind"]): ComponentChildren {
   switch (kind) {
+    case "room":
+      return <ChatIcon />;
     case "doc":
       return <DocsIcon />;
     case "pr":
@@ -58,6 +61,8 @@ export function PaneBody({ p, project, platform, own }: { p: LayoutPane; project
   const api = usePlatformApi();
   const mine = own(p);
   if (mine) return <>{mine}</>;
+  // #agents or a board's channel (Arugula #1522): Chat's room, pinned.
+  if (isRoomPane(p)) return <RoomPane room={p.ref} />;
   const pane = p.ref.replace(/^%/, "");
   // Its machine is away: the state it was last shown with.
   if (p.offline || ((p.kind === "terminal" || p.kind === "prompt") && !p.machine))

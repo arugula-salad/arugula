@@ -45,6 +45,9 @@ import { AGENTS_GROUP, AgentsSection, agentOrder, movedByKey, useAgentRooms } fr
 import { isAgentRoom, isAgentsRoom, isBoardChannel, isStaffRoom } from "./agent-rooms";
 import { AgentAbout } from "./agent-about";
 import { composerLine } from "./tags";
+import { placeLayouts } from "../place-layout";
+import { Kbd } from "../kit/kbd";
+import { both, useBinding } from "../keys";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
 import { sessionLabel } from "../chief-of-staff";
@@ -727,6 +730,10 @@ function RoomView({
   const [still] = useState(movedByKey);
   const api = usePlatformApi();
   const { nav, toast } = api;
+  // A board's channel opens as a pane on its board (Arugula #1522): `o`.
+  const asPane = useRef<HTMLAnchorElement>(null);
+  const paneHref = !phone && !pinned && isBoardChannel(room) && room.project && room.target ? api.nav.boardHref?.(room.project, room.target) : undefined;
+  useBinding(paneHref ? { id: "chat.as-pane", label: "Open as a pane", chip: "open as a pane", keys: both("key:o"), run: () => asPane.current?.click() } : null, [paneHref]);
   // The bell's moon follows a snooze, here or in Settings.
   useSubscribe(subscribeNotify);
   useEffect(() => void loadNotify(), []);
@@ -850,6 +857,26 @@ function RoomView({
               {/* On a computer the room's About is in Details (UI audit #169):
                   one ⓘ, not two. A phone has no Details. */}
               {phone && <AboutButton room={room} toast={toast} />}
+              {paneHref && (
+                <a
+                  ref={asPane}
+                  class="chat-go"
+                  href={paneHref}
+                  title="Open as a pane, on its board (o)"
+                  data-room-open-pane
+                  onClick={(e) => {
+                    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    // On its board's layout first, so the board opens with it.
+                    void placeLayouts
+                      .change(`board:${room.target}`, { op: "show", pane: { kind: "room", ref: room.id, title: `#${room.name}`, machine: null, state: null }, intent: "beside", tab: null, in_place_of: null })
+                      .catch((x: Error) => toast(`Couldn't open it as a pane: ${x.message}`))
+                      .finally(() => nav.openBoard?.(room.project!, room.target!));
+                  }}
+                >
+                  Open as a pane <Kbd keys="o" />
+                </a>
+              )}
               <AgentsChip room={room.id} />
               <RoomOptionsButton store={store} room={room} toast={toast} more={leave ? [leave] : []} />
               {!phone && !isAgentRoom(room) && (

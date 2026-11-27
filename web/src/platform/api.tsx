@@ -54,6 +54,7 @@ export const platformApi: PlatformApi = {
     roomLink: (room, seq, thread) => `${location.origin}${roomPath(room, seq, thread)}`,
     roomHref: (room) => roomPath(room),
     boardHref: (project, board) => pathOf({ page: "board", project, board }, names),
+    openBoard: (project, board) => go(pathOf({ page: "board", project, board }, names)),
     openGrants: () => go("/settings"),
   },
   ...noMachines,
