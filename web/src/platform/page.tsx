@@ -375,12 +375,14 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(movedPage(r), known));
-  // Not after a Back: the effect runs after the paint, and a Back before
-  // then would have it replace the entry Back went to with this page's
-  // (Arugula #1074).
+  // Not after a Back, nor after a step to elsewhere: the effect runs after
+  // the paint, and a Back (or Escape's step to the Overview) before then
+  // would have it replace the entry gone to with this page's (Arugula #1074).
   const pops = popCount();
+  const seen = location.pathname + location.search;
   useEffect(() => {
+    const now = location.pathname + location.search;
     // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
-    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
+    if (want && want !== now && now === seen && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }

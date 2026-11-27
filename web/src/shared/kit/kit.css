@@ -258,6 +258,7 @@
   display: flex;
   align-items: center;
   min-width: 0;
+  overflow: hidden;
   font-size: var(--text-meta);
 }
 .k-crumb-step {
@@ -282,7 +283,16 @@
   font-weight: 600;
 }
 .k-crumb-sep {
+  flex: none;
   color: var(--ink-faint);
+}
+/* A narrow bar (a 1000-wide app window) shortens the steps before here,
+   each to a letter or two, and here last; none spills into the views. */
+.k-crumb > * {
+  min-width: 3ch;
+}
+.k-crumb > [aria-current="page"] {
+  flex-shrink: 0.2;
 }
 
 /* ---- 7. Kbd: a small raised key. */
@@ -932,6 +942,11 @@ button.k-foot-key:hover {
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
+/* The window's buttons (Linux's app) end at the window's edge, as a
+   titlebar's do, not the bar's padding in (desktop-xvfb's titlebar claim). */
+.k-top > .window-buttons {
+  margin-right: -12px;
+}
 /* The window's drag in the desktop app: the crumb gives way first. */
 .k-top-fill {
   flex: 1;
@@ -953,6 +968,12 @@ button.k-foot-key:hover {
   font-size: var(--text-meta);
   white-space: nowrap;
   cursor: pointer;
+}
+/* A narrow bar gives the crumb the keys' room: `?` and the titles say them. */
+@media (max-width: 1100px) {
+  .k-top-act .k-kbd {
+    display: none;
+  }
 }
 .k-top-act:hover {
   border-color: var(--line-strong);
