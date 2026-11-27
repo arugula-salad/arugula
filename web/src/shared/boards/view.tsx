@@ -52,7 +52,7 @@ import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
 import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, workerOf, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
-import { boardPlace, ChangedLine, forYou, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
+import { boardPlace, ChangedLine, forYou, PromptAsk, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
 import { Panes, type PaneItem } from "../kit/panes/panes";
@@ -573,6 +573,7 @@ export function BoardPanel({
   const item = (p: LayoutPane): PaneItem =>
     paneItem(p, {
       body: <PaneBody p={p} project={view.board.project} platform={platform} own={own} />,
+      above: p.kind === "prompt" ? <PromptAsk p={p} /> : undefined,
       meta: paneMeta(p, defaultTitle),
       dot: arranged.quiet.has(p.id),
       arriving: arranged.arrived.has(p.id),

@@ -13,8 +13,9 @@
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { CloseIcon, ExpandIcon, IconButton, TabsIcon } from "../../ui/icons";
-import { StateMark, type State } from "../state-mark";
+import type { State } from "../state-mark";
 import { dragLine } from "./drag-line";
+import { PaneHead } from "./pane-head";
 import { len } from "./geometry";
 import "../kit.css";
 
@@ -45,6 +46,8 @@ export interface PaneItem {
   close?: () => void;
   /** More controls before those (↺, Open). */
   extra?: ComponentChildren;
+  /** Over its body, under its title row: what it asks you (a prompt's question, a plain `claude`'s ask). */
+  above?: ComponentChildren;
   body: ComponentChildren;
   data?: Record<string, string | undefined>;
 }
@@ -112,35 +115,34 @@ function PaneFrame({ p, focused, compact, onFocus }: { p: PaneItem; focused: boo
   const cls = ["k-pane", p.default && "is-default", focused && "is-focused", compact && "is-compact", p.dim && "is-dim", p.arriving && !p.dot && "is-arriving"].filter(Boolean).join(" ");
   return (
     <section class={cls} aria-label={p.title} data-pane-id={p.id} data-pane-focused={focused ? "" : undefined} data-pane-compact={compact ? "" : undefined} onPointerDown={onFocus} {...p.data}>
-      <header class="k-pane-head">
-        {!p.default && (
-          <>
-            {p.icon}
-            <b class="k-pane-title">{p.title}</b>
-            {p.dot && <span class="k-pane-dot" aria-label="New" data-pane-dot />}
-            {p.meta && <span class="m-meta k-pane-meta">{p.meta}</span>}
-            {p.state && <StateMark state={p.state.state} word={p.state.word} />}
-          </>
-        )}
-        <span class="k-pane-controls">
-          {p.extra}
-          {p.move && (
-            <IconButton label={`Move ${p.title} to its own tab`} class="bar-btn sq" data-pane-move onClick={p.move}>
-              <TabsIcon size="sm" />
-            </IconButton>
-          )}
-          {p.max && (
-            <IconButton label={`Maximise ${p.title}`} class="bar-btn sq" data-pane-max onClick={p.max}>
-              <ExpandIcon size="sm" />
-            </IconButton>
-          )}
-          {p.close && (
-            <IconButton label={`Close ${p.title}`} class="bar-btn sq" data-pane-close onClick={p.close}>
-              <CloseIcon size="sm" />
-            </IconButton>
-          )}
-        </span>
-      </header>
+      <PaneHead
+        icon={p.default ? undefined : p.icon}
+        title={p.default ? undefined : p.title}
+        meta={p.default ? undefined : p.meta}
+        dot={!p.default && p.dot}
+        state={p.default ? undefined : p.state}
+        actions={
+          <span class="k-pane-controls">
+            {p.extra}
+            {p.move && (
+              <IconButton label={`Move ${p.title} to its own tab`} class="bar-btn sq" data-pane-move onClick={p.move}>
+                <TabsIcon size="sm" />
+              </IconButton>
+            )}
+            {p.max && (
+              <IconButton label={`Maximise ${p.title}`} class="bar-btn sq" data-pane-max onClick={p.max}>
+                <ExpandIcon size="sm" />
+              </IconButton>
+            )}
+            {p.close && (
+              <IconButton label={`Close ${p.title}`} class="bar-btn sq" data-pane-close onClick={p.close}>
+                <CloseIcon size="sm" />
+              </IconButton>
+            )}
+          </span>
+        }
+      />
+      {p.above && <div class="k-pane-above">{p.above}</div>}
       <div class="k-pane-body">{p.body}</div>
     </section>
   );

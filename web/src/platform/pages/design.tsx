@@ -170,11 +170,20 @@ function FieldsDemo() {
 
 function SheetDemo() {
   const [open, setOpen] = useState(false);
+  const [side, setSide] = useState(false);
   return (
     <>
       <Button data-design-open="sheet" onClick={() => setOpen(true)}>
         Open a sheet
       </Button>
+      <Button data-design-open="side-sheet" onClick={() => setSide(true)}>
+        Open a side sheet
+      </Button>
+      {side ? (
+        <Sheet side title="Running" onClose={() => setSide(false)}>
+          <p>Every live process across your machines, the alerts first.</p>
+        </Sheet>
+      ) : null}
       {open ? (
         <Sheet title="Remove this board?" onClose={() => setOpen(false)}>
           <p>Its rows stay in the project's issues.</p>
