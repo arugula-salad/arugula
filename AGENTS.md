@@ -325,6 +325,7 @@ screen that hasn't moved keeps today's pieces
 | `/design` | the kit | Lift 2 (#1478) |
 | a board's page, its tiles and an issue on a board (its card); Add row | the kit | Lift 5a (#1481) |
 | the Overview, with its agent panel | the kit | Lift 4 (#1480) |
+| Settings (You, Project, Team, a machine's, and a daemon's own `#settings`); Machines' Add a machine | the kit | Lift 7 (#1487) |
 | everything else | today's pieces | |
 
 The design lift (Arugula #1477 onward) moves screens to the v6 kit one phase

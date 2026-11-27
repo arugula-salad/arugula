@@ -2,7 +2,7 @@
 // badges, and the switches that go with them.
 
 import { devices, expect, test } from "@playwright/test";
-import { active, menu, menuItem, panes, paneEl, ready, reset, tab, tabsInSession, text, type, openSettingsPage } from "./helpers";
+import { active, menu, menuItem, panes, paneEl, ready, reset, tab, tabsInSession, text, type, openSettingsPage, setting } from "./helpers";
 
 test("finished commands get marks; a mark selects its output and runs again", async ({ page }) => {
   await reset(page);
@@ -108,7 +108,7 @@ test("the workspace's parts: rail, header, sessions, tabs, toolbar, footer", asy
 
 test("Settings offers notifications for this device", async ({ page }) => {
   await reset(page);
-  await expect((await openSettingsPage(page)).getByRole("switch", { name: "Notify this device" })).toBeVisible();
+  await expect((await setting(page, "switch", "Notify this device"))).toBeVisible();
   // The service worker that shows them is registered.
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration()))).toBe(true);
 });

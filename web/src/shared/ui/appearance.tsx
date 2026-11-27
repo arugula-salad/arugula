@@ -1,8 +1,7 @@
 // Appearance: this device's theme, preset and Look's three sliders
-// (design lift §4.3, §4.4). Each change applies at once, so the page is the preview. Drawn in
-// place in Settings (You's Appearance, the daemon's `#settings`; Arugula
-// #1318), and as a dialog, Appearance…, where there's no Settings page to
-// go to: the phone's settings menu and the command palette.
+// (design lift §4.3, §4.4). Each change applies at once, so the page is
+// the preview. One dialog, Look (`s`, the top bar's Look, the phone's
+// settings menu and Go to…): Settings has no Appearance of its own (Lift 7).
 
 import { useEffect, useState } from "preact/hooks";
 import { both, useBindings } from "../keys";
@@ -63,7 +62,7 @@ function close() {
 }
 
 /** Back to nothing picked: Dark, Arugula and its sliders. */
-export function ResetAppearance() {
+function ResetAppearance() {
   useSubscribe(onAppearance);
   return (
     <button class="secondary" type="button" onClick={resetAppearance} disabled={isDefaultAppearance()}>
@@ -100,10 +99,8 @@ const LOOK: { key: keyof Sliders; name: string; ends: [string, string] }[] = [
   { key: "depth", name: "Depth", ends: ["Flat", "Deep"] },
 ];
 
-/** What the dialog holds, drawn in place where Settings is a page (You's
- * Appearance, the daemon's `#settings`): the theme and the preset, then
- * the sliders. */
-export function AppearanceControls() {
+/** What the dialog holds: the theme and the preset, then the sliders. */
+function AppearanceControls() {
   useSubscribe(onAppearance);
   const a = appearance();
   const s = lookSliders(a);

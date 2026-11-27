@@ -4,7 +4,7 @@
 // deliberate.
 
 import { expect, test, type Page } from "@playwright/test";
-import { active, panes, reset, tab, tabsInSession, openSettingsPage, closeSettingsPage } from "./helpers";
+import { active, panes, reset, tab, tabsInSession, openSettingsPage, closeSettingsPage, openLook } from "./helpers";
 
 async function newWorkspace(page: Page) {
   await reset(page);
@@ -183,7 +183,7 @@ test.describe("on a computer", () => {
 
     // Settings opens its page, marked in the rail, and Machines comes back.
     await rail.locator("[data-open-settings]").click();
-    await expect(page.locator("[data-settings-page] [data-appearance-controls]")).toBeVisible();
+    await expect(page.locator("[data-settings-page] [data-settings-row]").first()).toBeVisible();
     await expect(rail.locator("[data-open-settings]")).toHaveAttribute("aria-current", "page");
     await closeSettingsPage(page);
   });
@@ -259,10 +259,10 @@ test.describe("on a computer", () => {
     await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
     expect(saved).toEqual({ theme: "light", preset: "arugula", light: null, warmth: 0, depth: 0 });
-    // Appearance has no switch any more.
-    await expect((await openSettingsPage(page)).locator("[data-appearance-controls]")).toBeVisible();
+    // Look has no switch for it any more.
+    const look = await openLook(page);
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
-    await page.locator('[data-theme-choice="dark"]').click();
+    await look.locator('[data-theme-choice="dark"]').click();
     await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!))).toEqual({ theme: "dark", preset: "arugula", light: null, warmth: 0, depth: 0 });
 
@@ -468,7 +468,7 @@ test.describe("accessibility", () => {
 
   test("terminal text contrasts with explicit program backgrounds after a theme change", async ({ page }) => {
     await newWorkspace(page);
-    await openSettingsPage(page);
+    await openLook(page);
     for (const theme of ["light", "dark"]) {
       await page.locator(`[data-theme-choice="${theme}"]`).click();
       await expect(page.locator("html")).toHaveAttribute("data-scheme", theme);

@@ -283,6 +283,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
           agents={(at.at === "machines" || at.at === "panes") && !!at.agents}
           show={at.at === "machines" ? at.show : undefined}
           card={at.at === "machines" ? at.session : undefined}
+          add={at.at === "machines" && !!at.add}
           session={session}
         />
       </main>

@@ -46,16 +46,18 @@ test("each route parses", () => {
   assert.deepEqual(parse("/t/team_1/settings"), { page: "settings", scope: "team", owner: "team_1" });
   assert.deepEqual(parse("/settings/personal"), { page: "settings", scope: "team", owner: "personal" });
   // An old link's `#section` is the section, where the path names none.
-  assert.deepEqual(parse("/settings", "", "#appearance"), { page: "settings", scope: "you", section: "appearance" });
-  assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "ci-alerts" });
+  // Appearance is Look's (Lift 7): its address lands on Preferences; CI alerts is part of Agents.
+  assert.deepEqual(parse("/settings", "", "#appearance"), { page: "settings", scope: "you", section: "preferences" });
+  assert.deepEqual(parse("/settings/you/appearance"), { page: "settings", scope: "you", section: "preferences" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "agents" });
   assert.deepEqual(parse("/settings/you/security", "", "#appearance"), { page: "settings", scope: "you", section: "security" });
   assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
   // Your machines' agents are each machine's now (Arugula #1107): the old addresses open Machines'.
   assert.deepEqual(parse("/settings", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "machine", section: "agents" });
-  // Preferences is part of Appearance (Arugula #1318): its old addresses land there.
-  assert.deepEqual(parse("/settings/you/preferences"), { page: "settings", scope: "you", section: "appearance" });
-  assert.deepEqual(parse("/settings", "", "#preferences"), { page: "settings", scope: "you", section: "appearance" });
+  // Preferences is a section of its own again (Lift 7), Appearance being Look's.
+  assert.deepEqual(parse("/settings/you/preferences"), { page: "settings", scope: "you", section: "preferences" });
+  assert.deepEqual(parse("/settings", "", "#preferences"), { page: "settings", scope: "you", section: "preferences" });
   // You is four sections (Arugula #1320): each old one's address, by path or by `#`, lands on the one that holds it now.
   const held = {
     push: "notifications",
@@ -112,11 +114,16 @@ test("each route parses", () => {
   assert.equal(pathOf({ page: "settings", scope: "project", project: P, section: "repos" }), `/settings/project/${P}/repos`);
   // A section that's part of another now (Arugula #1105) lands on that one, by path or `#section`.
   assert.deepEqual(parse(`/settings/project/${P}/environments`), { page: "settings", scope: "project", project: P, section: "secrets" });
-  assert.deepEqual(parse(`/settings/project/${P}/finish`), { page: "settings", scope: "project", project: P, section: "runs" });
+  assert.deepEqual(parse(`/settings/project/${P}/finish`), { page: "settings", scope: "project", project: P, section: "agents" });
+  // CI alerts, Runs and spend are parts of Agents (Lift 7); Machines is Machines' Add a machine.
+  for (const old of ["runs", "run-grant", "ci-alerts", "spend"]) assert.deepEqual(parse(`/settings/project/${P}/${old}`), { page: "settings", scope: "project", project: P, section: "agents" }, old);
+  assert.deepEqual(parse(`/settings/project/${P}-x/machines`), { page: "machines", project: P, at: { at: "machines", add: true } });
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "machines", add: true } }), `/p/${P}/machines?add`);
+  assert.deepEqual(parse(`/p/${P}/machines`, "?add"), { page: "machines", project: P, at: { at: "machines", add: true } });
   assert.deepEqual(parse(`/settings/project/${P}/agent-model`), { page: "settings", scope: "project", project: P, section: "agents" });
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#plane"), { page: "settings", scope: "project", project: P, section: "repos" });
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#boards"), { page: "settings", scope: "project", project: P, section: "issues" });
-  assert.deepEqual(parse(`/settings/project/${P}/size`), { page: "settings", scope: "project", project: P, section: "runs" });
+  assert.deepEqual(parse(`/settings/project/${P}/size`), { page: "settings", scope: "project", project: P, section: "agents" });
   assert.deepEqual(parse("/settings/you/finish"), { page: "settings", scope: "you", section: "finish" }, "only a project's");
   // A repo to link opens Linked repos.
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" });
@@ -224,15 +231,14 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
   for (const first of TOP) assert.ok(/^[a-z]+$/.test(first), first);
 });
 
-test("a team's pages (Arugula #895): its id, then its slug, then the tab", () => {
+test("a team's old pages (Arugula #895): its chat, and its Members in Settings › Team (Lift 7)", () => {
   const T = "a1b2c3d4e5f60718";
   const teamNames = (id) => (id === T ? "Acme Inc." : undefined);
-  for (const tab of ["chat", "members"]) {
-    assert.deepEqual(parse(`/t/${T}/${tab}`), { page: "team", team: T, tab });
-    assert.equal(pathOf({ page: "team", team: T, tab }, teamNames), `/t/${T}-acme-inc/${tab}`);
-    assert.deepEqual(parse(pathOf({ page: "team", team: T, tab }, teamNames)), { page: "team", team: T, tab }, "the slug is only for people");
-  }
-  assert.deepEqual(parse(`/t/${T}-an-old-name/members`), { page: "team", team: T, tab: "members" });
+  assert.deepEqual(parse(`/t/${T}/chat`), { page: "team", team: T });
+  assert.equal(pathOf({ page: "team", team: T }, teamNames), `/t/${T}-acme-inc/chat`);
+  assert.deepEqual(parse(pathOf({ page: "team", team: T }, teamNames)), { page: "team", team: T }, "the slug is only for people");
+  assert.deepEqual(parse(`/t/${T}/members`), { page: "settings", scope: "team", owner: T, section: "members" });
+  assert.deepEqual(parse(`/t/${T}-an-old-name/members`), { page: "settings", scope: "team", owner: T, section: "members" });
   assert.equal(parse(`/t/${T}`).page, "missing", "a tab is named");
   assert.equal(parse(`/t/${T}/boards`).page, "missing");
   assert.equal(parse(`/t/${T}/chat/more`).page, "missing");
