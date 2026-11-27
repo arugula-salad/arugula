@@ -2,10 +2,12 @@
 // grouped by project, the one you're in first; a teammate's asks folded;
 // each row answered in place; `↵` goes to an item's place in another
 // project, and `esc` comes back. The rail's Inbox badge is the server's
-// `count`, and each project's mark its `by_project`. On the app frame's
-// fixture page (app-frame-page.tsx), whose `/api/inbox` is the spec's.
+// `count`, and each project's mark its `by_project`. Beside it, the agent
+// panel peeks the asker of the row the keys are on (#1528). On the app
+// frame's fixture page (app-frame-page.tsx), whose `/api/inbox` is the spec's.
 import { expect, test, type Page } from "@playwright/test";
 import type { InboxItem } from "../src/shared/proto.gen";
+import { overview, paneItem, say } from "./overview-fixture";
 import { away, openApp, P as ARUGULA, SITE } from "./stack-steps";
 
 test.use({ permissions: ["local-network-access"], viewport: { width: 1440, height: 900 } });
@@ -94,4 +96,27 @@ test("↵ goes to an item's place in another project, and esc comes back", async
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(/\/inbox$/);
   await expect(page.locator("[data-platform-inbox]")).toBeVisible();
+});
+
+test("moving through the rows peeks each asker in the panel beside it: an agent's session, then the chief of staff", async ({ page }) => {
+  const { term, agent } = await overview(page);
+  const host = await page.evaluate((t) => (window as unknown as { __app: { fleet: { panes: { id: number; host: string }[] } } }).__app.fleet.panes.find((p) => p.id === t)!.host, term);
+  const chief = { ...ITEMS[0], id: "prp_cos", title: "Start a worker on #12?", from: { name: "Chief of staff · Arugula" }, since: NOW };
+  // The agent's block on #12 asks, and so does the chief of staff.
+  await say(page, [{ ...paneItem(host, agent), title: "Which colour?" }, chief]);
+  await page.locator("[data-rail] [data-open-inbox]").click();
+  await expect(row(page, `${host}.${agent}:1`)).toBeVisible();
+  const panel = page.locator("[data-inbox-side] [data-kit=panel]");
+  await expect(panel.locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
+  await away(page);
+  await page.keyboard.press("j");
+  await expect(panel.locator('[data-tab^="agent:"]')).toHaveAttribute("aria-selected", "true");
+  await expect(panel.locator("[data-panel-transcript]")).toBeVisible();
+  await page.keyboard.press("j");
+  await expect(row(page, "prp_cos")).toHaveAttribute("data-selected", "true");
+  await expect(panel.locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
+  // Answered in the row, it's gone from the list once the server says so, and the panel stays.
+  await row(page, "prp_cos").getByRole("button", { name: /^Start/ }).click();
+  await expect(row(page, "prp_cos")).toContainText("Start by you");
+  await expect(panel).toBeVisible();
 });

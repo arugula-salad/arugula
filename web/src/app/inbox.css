@@ -34,3 +34,26 @@
   color: var(--ink-dim);
   font-size: var(--text-meta);
 }
+
+/* Beside it, the agent panel (#1528), as the Overview's right column: as
+   wide as the panel, kept in view while the list scrolls. On a phone, one
+   column, the panel under the list. */
+.inbox-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--gap);
+  align-items: start;
+}
+.inbox-page.phone {
+  grid-template-columns: minmax(0, 1fr);
+}
+.inbox-side {
+  position: sticky;
+  top: 0;
+  height: calc(100vh - 80px);
+  min-width: 0;
+}
+.inbox-page.phone .inbox-side {
+  position: static;
+  height: auto;
+}
