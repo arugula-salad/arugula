@@ -1,11 +1,12 @@
 // Claude Code's hooks are only partly installed (#906: an older install,
 // say): said once, as a line under the top bar, once per browser for each
-// set of what's missing, with Set it up…, which opens Getting started's
-// Agents step. Only the owner's own daemon is asked (`/api/setup?part=agents`),
-// once per page. Agent panes' adapters aren't said here any more: Continue
-// here runs a conversation in a terminal, which needs none
+// set of what's missing, with Set it up…, which opens Getting started (Add
+// a machine) with Claude Code's one click under it (Lift 7). Only the
+// owner's own daemon is asked (`/api/setup?part=agents`), once per page.
+// Agent panes' adapters aren't said here: Continue here runs a conversation
+// in a terminal, which needs none
 // (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b), and
-// Getting started's Agents step still says each adapter's state.
+// the Start-an-agent dialog says each adapter's state.
 //
 // And the hooks alone (`turnOnHooks`, `POST /api/setup/hooks`): the hint
 // `claude-hooks` (../hints/hooks) on a terminal where Claude Code waits at

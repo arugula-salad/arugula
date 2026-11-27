@@ -1,5 +1,5 @@
 // "Edit in nvim": a checkbox for the Editor preference, in + Pane › Editor
-// and on Getting started. Ticking it sets the same preference as Settings ›
+// (Getting started had it until Lift 7). Ticking it sets the same preference as Settings ›
 // Editor (nvim); unticking goes back to what it was before. Needs no nvim:
 // only the preference is checked. + Pane's checkbox on a page that shows
 // VS Code is in editor-pref.spec.ts, whose daemon has a block listener.
@@ -26,25 +26,3 @@ test("+ Pane › Editor on a page that can't show VS Code: Edit in nvim is ticke
   await expect(drawer.locator("[data-edit-in-nvim]")).toBeDisabled();
 });
 
-test("Getting started: Edit in nvim sets the same preference", async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
-  await reset(page);
-  await paletteCommand(page, "Help/Getting started");
-  const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel).toBeVisible();
-  // Named once (the card's heading), and it says there's nothing to
-  // install only when the daemon found nvim.
-  await expect(panel.getByText("Edit in nvim", { exact: true })).toHaveCount(1);
-  const found = await page.evaluate(async () => ((await (await fetch("/api/setup?part=agents")).json()) as { nvim?: boolean }).nvim);
-  expect(typeof found).toBe("boolean");
-  await expect(panel.locator("[data-edit-in-nvim-says]")).toHaveText(
-    found ? "Opens files in nvim, in a pane. Nothing to install." : "Opens files in nvim, in a pane. Needs nvim, which isn't on this machine's PATH yet.",
-  );
-  const box = panel.locator("[data-edit-in-nvim]");
-  await expect(box).not.toBeChecked();
-  await box.check();
-  expect(await pref(page)).toBe("nvim");
-  await panel.getByRole("button", { name: "Close" }).click();
-  await settingsShows(page, "nvim", true);
-});

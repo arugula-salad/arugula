@@ -1,9 +1,10 @@
-// #110: Getting started, from Go to…'s Help, Settings and the
-// phone's sheet. It doesn't open by itself, not even on a first visit
+// #110: Getting started, from Go to…'s Help and the phone's sheet: one
+// screen since Lift 7 (#1487), Add a machine, with the join command to
+// copy, and Claude Code's one click where it's here and not set up. It
+// doesn't open by itself, not even on a first visit
 // (https://app.arugula.io/issues/iss_fa949b979b607ef8f0414cbe674ab33b), and
-// Tailscale left it for Settings (a dialog of its own). Its last step,
-// Things to try, is a button for each thing, marked done once used. #96:
-// what a phone that can't be notified is told.
+// Tailscale is Settings' (a dialog of its own). #96: what a phone that
+// can't be notified is told.
 
 import { devices, expect, test } from "@playwright/test";
 import { reset, closeContexts, sheetTab, paletteCommand, settingsRow } from "./helpers";
@@ -23,34 +24,20 @@ test("a first visit opens on the work, with no Getting started; the palette open
   const page = await ctx.newPage();
   await reset(page);
   await expect(page.locator(".session-button")).toBeVisible();
-  const panel = page.getByRole("dialog", { name: "Getting started" });
+  const panel = page.getByRole("dialog", { name: "Add a machine" });
   // Nothing opens by itself: no Getting started, no What's new, no telemetry card.
   await page.waitForTimeout(1500);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("[data-whats-new], [data-telemetry-card], [data-agents-nudge]")).toHaveCount(0);
 
-  // In Go to…'s Help, four steps: no Phone.
+  // In Go to…'s Help: one screen, Add a machine, with the command to copy and no Phone.
   await paletteCommand(page, "Help/Getting started");
   await expect(panel).toBeVisible();
-  const progress = panel.locator("[data-start-progress]");
-  await expect(progress).toHaveText("Step 1 / 4 · Welcome");
-  await expect(panel.getByRole("heading", { name: "Right-click anything" })).toBeVisible();
-  await expect(panel.locator('[data-start-seg="phone"], [data-start-serve]')).toHaveCount(0);
-  await panel.locator("[data-start-next]").click();
-  await expect(progress).toHaveText("Step 2 / 4 · Cloud");
   await expect(panel.locator("[data-start-connect]")).toHaveText("Connect to Arugula cloud");
-  await panel.locator("[data-start-next]").click();
-  await expect(progress).toHaveText("Step 3 / 4 · Agents");
-  await expect(panel.locator("[data-start-agent]")).toBeVisible();
-  await panel.locator('[data-start-seg="try"]').click();
-  await expect(progress).toHaveText("Step 4 / 4 · Things to try");
-  // The test daemon isn't joined: that's still to do; Tailscale isn't on the list.
-  await expect(panel.locator('[data-start-todo] [data-check="todo"]').first()).toBeVisible();
-  await expect(panel.locator("[data-start-todo]")).not.toContainText("Tailscale");
-  await panel.getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator("[data-join-command]")).toHaveText("arugulad join https://control.arugula.io");
+  await expect(panel.locator('[data-start-seg], [data-start-progress], [data-start-next], [data-start-serve]')).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  // Closing says where it went.
-  await expect(page.locator("[data-start-toast]")).toHaveText("Getting started is in Go to…, any time.");
 
   // Not by itself on the next visit either.
   await page.reload();
@@ -59,11 +46,6 @@ test("a first visit opens on the work, with no Getting started; the palette open
   await page.waitForTimeout(1000);
   await expect(panel).toBeHidden();
 
-  // Its agents step opens the agent dialog.
-  await paletteCommand(page, "Help/Getting started");
-  await panel.locator('[data-start-seg="agents"]').click();
-  await panel.locator("[data-start-agent]").click();
-  await expect(panel).toBeHidden();
   await ctx.close();
 });
 
@@ -80,13 +62,13 @@ test("Tailscale is in Settings, a dialog of its own", async ({ page }) => {
   // The desktop app's menu, opening Getting started at its old Phone step, gets it too.
   await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "phone" })));
   await expect(dialog).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Getting started" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Add a machine" })).toHaveCount(0);
 });
 
 test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page }) => {
   // #708: that app names the event by the page's `__arugulaPage`, exactly so.
   await reset(page);
-  const panel = page.getByRole("dialog", { name: "Getting started" });
+  const panel = page.getByRole("dialog", { name: "Add a machine" });
   await expect(panel).toBeHidden();
   await page.evaluate(() =>
     dispatchEvent(
@@ -96,7 +78,7 @@ test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page
     ),
   );
   await expect(panel).toBeVisible();
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 2 / 4 · Cloud");
+  await expect(panel.locator("[data-start-connect]")).toBeVisible();
 });
 
 // #1003: joining Arugula cloud is one click. Connect shows the link that
@@ -125,8 +107,7 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
     return r.fulfill({ json: { ...real, control: control() } });
   });
   await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "cloud" })));
-  const panel = page.getByRole("dialog", { name: "Getting started" });
-  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 2 / 4 · Cloud");
+  const panel = page.getByRole("dialog", { name: "Add a machine" });
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
   // Nothing asked about typing before sign-in: the join settles it, on for
   // your account (from your phone too) and off for a team (Arugula issue
@@ -169,11 +150,11 @@ test.describe("phone", () => {
 
   test("in the sheet", async ({ page }) => {
     await reset(page);
-    await expect(page.getByRole("dialog", { name: "Getting started" })).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Add a machine" })).toBeHidden();
     await page.locator(".sheet-button").click();
     await sheetTab(page, "More");
     await page.getByRole("button", { name: "Getting started" }).click();
-    await expect(page.getByRole("dialog", { name: "Getting started" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add a machine" })).toBeVisible();
   });
 
   test("iOS in a Safari tab: add it to the Home Screen, once", async ({ browser }) => {
@@ -208,58 +189,42 @@ test.describe("phone", () => {
   });
 });
 
-test("Things to try: each button does its thing, and is marked done once used, for good", async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const page = await ctx.newPage();
+// Claude Code's one click (#335): offered on the screen where Claude Code is
+// here and not set up; opened at `agents` (the hooks' nudge, the hint's
+// Set it up), whatever its state. The daemon's answers are stood in for.
+test("Claude Code's one click: on the screen when it's here and not set up, and at agents whatever its state", async ({ page }) => {
   await reset(page);
-  const panel = page.getByRole("dialog", { name: "Getting started" });
-  const tryStep = async () => {
-    await paletteCommand(page, "Help/Getting started");
-    await panel.locator('[data-start-seg="try"]').click();
-    await expect(panel.locator("[data-start-tries]")).toBeVisible();
-  };
-  const item = (id: string) => panel.locator(`[data-start-try="${id}"]`);
-  await tryStep();
-  for (const id of ["swarm", "agent", "port", "pr", "push", "search"]) await expect(item(id)).toBeVisible();
-  await expect(panel.locator("[data-start-try][data-done]")).toHaveCount(0);
-  // The test daemon has no block sites: Open a port says why it can't.
-  await expect(item("port").getByRole("button")).toBeDisabled();
-  await expect(item("port")).toContainText("block sites");
-
-  // Command search.
-  await item("search").getByRole("button").click();
-  await expect(panel).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Go to…" })).toBeVisible();
+  let ready = false;
+  let posted = 0;
+  const claude = () => ({ installed: true, tools: ready, hooks: ready });
+  await page.route(/\/api\/setup(\/agents\/claude)?(\?.*)?$/, async (r) => {
+    const u = new URL(r.request().url());
+    if (u.pathname === "/api/setup/agents/claude") {
+      posted++;
+      ready = true;
+      return r.fulfill({ json: { ok: true, done: ["Claude Code has Arugula's MCP server and hooks."] } });
+    }
+    if (u.searchParams.get("part") === "agents") return r.fulfill({ json: { claude: claude(), adapters: [] } });
+    // The rest is the daemon's own; a read still out when the test ends is dropped.
+    const real = await r
+      .fetch()
+      .then((x) => x.json() as Promise<Record<string, unknown>>)
+      .catch(() => null);
+    if (real) await r.fulfill({ json: { ...real, claude: claude(), adapters: [] } }).catch(() => {});
+  });
+  const panel = page.getByRole("dialog", { name: "Add a machine" });
+  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "cloud" })));
+  const offer = panel.locator("[data-start-offer]");
+  await expect(offer).toContainText("One click runs it here as agent panes");
+  await offer.locator("[data-start-claude]").click();
+  await expect.poll(() => posted).toBe(1);
+  await expect(offer.locator("[data-start-done]")).toContainText("MCP server and hooks");
   await page.keyboard.press("Escape");
-
-  // Open a pull request asks which.
-  await tryStep();
-  await expect(item("search")).toHaveAttribute("data-done", "");
-  await item("pr").getByRole("button").click();
-  await expect(page.getByRole("dialog", { name: "Open a pull request" }).first()).toBeVisible();
+  // Set up: not offered by itself, but at `agents` it says so.
+  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "cloud" })));
+  await expect(panel.locator("[data-start-connect]")).toBeVisible();
+  await expect(panel.locator("[data-start-offer]")).toHaveCount(0);
   await page.keyboard.press("Escape");
-
-  // Start an agent opens the agent dialog.
-  await tryStep();
-  await item("agent").getByRole("button").click();
-  await expect(panel).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Start an agent" }).first()).toBeVisible();
-  await page.keyboard.press("Escape");
-
-  // The swarm.
-  await tryStep();
-  await item("swarm").getByRole("button").click();
-  await expect(page.locator(".swarm")).toBeVisible();
-  expect(new URL(page.url()).hash).toMatch(/^#swarm/);
-
-  // Remembered (the seen store, this browser's here), after a reload too.
-  await page.goto("/");
-  await expect.poll(() => page.evaluate(() => window.__arugula?.client.state !== null)).toBe(true);
-  await expect(page.locator(".session-button")).toBeVisible();
-  await tryStep();
-  for (const id of ["search", "pr", "agent", "swarm"]) await expect(item(id)).toHaveAttribute("data-done", "");
-  await expect(item("port")).not.toHaveAttribute("data-done", "");
-  const seen = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula.seen") ?? "{}"));
-  expect(Object.keys(seen)).toEqual(expect.arrayContaining(["seen:getting-started.try.search", "seen:getting-started.try.swarm"]));
-  await ctx.close();
+  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "agents" })));
+  await expect(panel.locator("[data-start-claude-ready]")).toHaveText("Claude Code is set up");
 });

@@ -1,8 +1,8 @@
 // An agent whose adapter isn't installed here, or has no Node to run on
 // (#111): the command that installs it, copyable, and Install, which runs
-// it in a pane you can watch. In the Start an agent dialog, the block and
-// Getting started's Agents step, which also says when one is out of date
-// (#335): older than the daemon's pin, and the same install updates it.
+// it in a pane you can watch. In the Start an agent dialog and the block,
+// which also say when one is out of date (#335): older than the daemon's
+// pin, and the same install updates it.
 
 import { OPS, opPath } from "../ops";
 import type { Client } from "../client";
