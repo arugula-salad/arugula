@@ -431,6 +431,10 @@ export function RoomBody({
       <div
         class={`thread-list${dropping ? " dropping" : ""}`}
         ref={list}
+        // A scrolling list the keyboard can reach and scroll (axe's
+        // scrollable-region-focusable): a room with no links in sight has
+        // nothing else to Tab to.
+        tabIndex={0}
         data-room={room.id}
         onScroll={() => anchor.onScroll()}
         {...(current.writable ? dropTarget(setDropping) : {})}

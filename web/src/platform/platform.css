@@ -222,7 +222,6 @@ html[data-native-tabs] .platform {
   width: auto;
   border-right-color: var(--line);
   border-radius: calc(var(--radius) + 4px) 0 0 calc(var(--radius) + 4px);
-  clip-path: inset(-24px 0 -24px -24px);
 }
 
 .platform-chat .chat:not(.phone) > .chat-body .chat-thread {
