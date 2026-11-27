@@ -10,7 +10,7 @@
 
 .members-dialog small {
   display: block;
-  color: var(--dim);
+  color: var(--ink-dim);
   font-weight: 400;
 }
 
@@ -67,11 +67,11 @@
   gap: 8px;
   min-width: 0;
   padding: 6px 8px;
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
 }
 
 .members-list li:hover {
-  background: var(--raised-hover);
+  background: var(--hover);
 }
 
 .members-what {

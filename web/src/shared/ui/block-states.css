@@ -21,11 +21,11 @@
   box-sizing: border-box;
   max-width: 34em;
   padding: var(--space-4) 18px;
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
-  border-left: 3px solid var(--danger);
-  border-radius: var(--card-radius);
-  background: color-mix(in srgb, var(--danger) 7%, var(--bg));
-  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent);
+  border-left: 3px solid var(--fail);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--fail) 7%, var(--canvas));
+  color: var(--ink);
   text-align: left;
 }
 
@@ -42,14 +42,14 @@
 }
 
 .block-error-title {
-  font-size: var(--text-lg);
+  font-size: var(--text-title);
   font-weight: 600;
   line-height: 20px;
 }
 
 .block-error-detail {
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -86,8 +86,8 @@
   max-width: 34em;
   padding: var(--space-4) 18px;
   border: 1px dashed var(--line-strong);
-  border-radius: var(--card-radius);
-  color: var(--dim);
+  border-radius: var(--radius);
+  color: var(--ink-dim);
   text-align: left;
 }
 
@@ -102,9 +102,9 @@
 /* Two classes: a page's own `h3` rule (the phone sheet's) must not win. */
 .empty-state-card > .empty-state-title {
   margin: 0;
-  color: var(--fg);
+  color: var(--ink);
   font-family: inherit;
-  font-size: var(--text-lg);
+  font-size: var(--text-title);
   font-weight: 600;
   line-height: 20px;
   letter-spacing: 0;
@@ -113,7 +113,7 @@
 
 .empty-state-why {
   max-width: 420px;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   line-height: 1.45;
 }
 
@@ -127,7 +127,7 @@
 /* No match, "None yet.", and the phone's Here with nothing waiting. */
 .empty-line {
   margin: var(--space-2) 0;
-  color: var(--dim);
+  color: var(--ink-dim);
   font-size: var(--t-body);
   line-height: 1.45;
 }
@@ -139,7 +139,7 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 @media (pointer: coarse), (max-width: 600px) {
@@ -151,7 +151,7 @@
 
   .empty-state-why {
     max-width: none;
-    font-size: var(--text-lg);
+    font-size: var(--text-title);
     line-height: 1.4;
   }
 

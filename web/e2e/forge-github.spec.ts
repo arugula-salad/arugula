@@ -131,7 +131,7 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
     const dot = document.querySelector(".forge-dot.queued") as HTMLElement;
     const dotBg = getComputedStyle(dot).backgroundColor;
     const warnEl = document.createElement("div");
-    warnEl.style.color = "var(--warn)";
+    warnEl.style.color = "var(--needs)";
     document.body.appendChild(warnEl);
     const warnColor = getComputedStyle(warnEl).color;
     document.body.removeChild(warnEl);

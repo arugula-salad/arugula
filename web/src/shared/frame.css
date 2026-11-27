@@ -10,9 +10,9 @@
      that; pane-chrome.css keeps this name, as its grid also shows outside
      the frame, where it falls back to --raised (UI audit #181). */
   --chrome-line: var(--line-strong);
-  --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
-  --chrome-selected: color-mix(in srgb, var(--accent-fill) 14%, var(--surface));
-  --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
+  --chrome-panel: color-mix(in srgb, var(--canvas) 60%, var(--section));
+  --chrome-selected: color-mix(in srgb, var(--accent-fill) 14%, var(--section));
+  --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--section));
 }
 
 .ws-head {
@@ -32,8 +32,8 @@
   padding: 0 18px;
   box-sizing: border-box;
   border-right: 1px solid var(--line-strong);
-  color: var(--subtle);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
@@ -47,7 +47,7 @@
 }
 
 .ws-wordmark:hover {
-  background: var(--raised);
+  background: var(--card-raised);
 }
 
 /* A place in the head (the platform page's): a line only once it's the
@@ -55,7 +55,7 @@
 .frame-place {
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: var(--btn-radius);
+  border-radius: var(--radius-control);
 }
 
 /* The place you're in, in a page's head (its views). */

@@ -69,9 +69,9 @@ export function itemBlockSpecs(tag: string) {
     // The strip's primary takes its tone (red here), with the page's background as its text.
     const [fill, danger, text, bg] = await Promise.all([
       b.locator("[data-item-next] .primary").evaluate((e) => getComputedStyle(e).backgroundColor),
-      cssColor(page, "--danger"),
+      cssColor(page, "--fail"),
       b.locator("[data-item-next] .primary").evaluate((e) => getComputedStyle(e).color),
-      cssColor(page, "--bg"),
+      cssColor(page, "--canvas"),
     ]);
     expect(fill).toBe(danger);
     expect(text).toBe(bg);
@@ -102,26 +102,26 @@ export function itemBlockSpecs(tag: string) {
     await shot(page, "pr-ready");
   });
 
-  test(`${tag}: a merged PR has a purple pill and no strip`, async ({ page }) => {
+  test(`${tag}: a merged PR has a done pill and no strip`, async ({ page }) => {
     await open(page);
     const b = block(page, "pr-merged");
     await expect(b.locator("[data-item-pill]")).toHaveText("Merged");
     await expect(b).toHaveAttribute("data-item-state", "merged");
     await expect(b.locator("[data-item-next]")).toHaveCount(0);
     await expect(b.locator("[data-item-fact='text']")).toHaveText("merged 1cc9e39f · 2h");
-    // The pill is the merged purple, not green or red.
-    const [pill, purple] = await Promise.all([
+    // The pill is done's color (Lift 7: merged is done), not red.
+    const [pill, done] = await Promise.all([
       b.locator("[data-item-pill]").evaluate((e) => getComputedStyle(e).borderTopColor),
       page.evaluate(() => {
         const s = document.createElement("i");
-        s.style.color = "var(--merged)";
+        s.style.color = "var(--done)";
         document.body.append(s);
         const c = getComputedStyle(s).color;
         s.remove();
         return c;
       }),
     ]);
-    expect(pill).toBe(purple);
+    expect(pill).toBe(done);
     await shot(page, "pr-merged");
   });
 

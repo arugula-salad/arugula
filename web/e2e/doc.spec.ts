@@ -261,7 +261,7 @@ test("charts read in the light theme and the dark", async ({ page }) => {
         textLum: lum(text),
         bar: getComputedStyle(svg.querySelector("rect[data-bar]")!).fill,
         series: probe("var(--doc-leaf)"),
-        app: probe("var(--info)"),
+        app: probe("var(--review)"),
         grid: getComputedStyle(svg.querySelector("line")!).stroke,
         color: getComputedStyle(svg).color,
       };

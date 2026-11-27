@@ -62,7 +62,7 @@ test("whatever the preset, theme and sliders, every word reads at 4.5:1 and need
           for (const depth of steps) {
             const t = paint(dark, { light, warmth, depth }, p);
             const at = `${p.id} ${name} ${light}/${warmth}/${depth}`;
-            for (const word of ["ink", "ink-dim", "accent", "needs", "fail", "done", "review", "subtle", "merged"])
+            for (const word of ["ink", "ink-dim", "accent", "needs", "fail", "done", "review"])
               for (const on of ["canvas", "section", "card", "card-raised"]) {
                 const r = contrast(t[word], t[on]);
                 assert.ok(r >= 4.5, `${at}: --${word} on --${on} is ${r.toFixed(2)}`);

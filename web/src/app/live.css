@@ -7,8 +7,8 @@
   margin: 8px 0;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: var(--canvas);
 }
 
 .live-pane .live-slot .term-host,

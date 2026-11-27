@@ -2,14 +2,14 @@
    waits, for what, until when. Palette tokens only. */
 
 .watches-on {
-  font-size: var(--text-md);
+  font-size: var(--text-body);
 }
 
 .watches-on.compact {
   flex: none;
   padding: 4px 12px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--section);
 }
 
 .watches-on h4 {
@@ -42,5 +42,5 @@
 }
 
 .watch-on-error {
-  color: var(--danger);
+  color: var(--fail);
 }

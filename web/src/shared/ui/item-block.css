@@ -7,8 +7,8 @@
    between them. */
 .item-block {
   --item-pad: var(--space-3);
-  color: var(--fg);
-  font-size: var(--text-md);
+  color: var(--ink);
+  font-size: var(--text-body);
 }
 
 .item-block > .card-body {
@@ -33,30 +33,30 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--item-pad);
-  background: var(--raised);
+  background: var(--card-raised);
 }
 
 .item-kind {
   display: inline-flex;
   flex: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .item-block[data-item-state="open"] .item-kind {
-  color: var(--ok);
+  color: var(--done);
 }
 
 .item-block[data-item-state="merged"] .item-kind {
-  color: var(--merged);
+  color: var(--done);
 }
 
 .item-block[data-item-state="closed"] .item-kind {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .item-number {
   flex: none;
-  color: var(--dim);
+  color: var(--ink-dim);
 }
 
 .item-title {
@@ -72,7 +72,7 @@
   position: relative;
   display: inline-flex;
   flex: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .item-live {
@@ -82,14 +82,14 @@
   width: 7px;
   height: 7px;
   box-sizing: border-box;
-  border: 1.5px solid var(--ok);
+  border: 1.5px solid var(--done);
   border-radius: 50%;
-  background: var(--ok);
+  background: var(--done);
 }
 
 .item-live[data-item-live="paused"] {
-  background: var(--raised);
-  border-color: var(--subtle);
+  background: var(--card-raised);
+  border-color: var(--ink-dim);
 }
 
 .item-icon-btn {
@@ -97,14 +97,14 @@
   padding: 0 4px;
   border: 0;
   background: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
   font: inherit;
   text-decoration: none;
   cursor: pointer;
 }
 
 .item-icon-btn:is(:hover, :focus-visible) {
-  color: var(--fg);
+  color: var(--ink);
 }
 
 /* The next step: one strip, tinted by what it asks. */
@@ -114,7 +114,7 @@
   gap: var(--space-2);
   margin: var(--space-2) var(--space-2) 0;
   border: 1px solid var(--c);
-  border-radius: var(--btn-radius);
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
@@ -123,21 +123,21 @@
 }
 
 .item-next-warn {
-  --c: var(--warn);
+  --c: var(--needs);
 }
 
 .item-next-danger {
-  --c: var(--danger);
+  --c: var(--fail);
 }
 
 .item-next-ok {
-  --c: var(--ok);
+  --c: var(--done);
 }
 
 /* Held (#495): a note, not a call to act, so it's dim. */
 .item-next-info {
-  --c: var(--muted);
-  color: var(--dim);
+  --c: var(--ink-faint);
+  color: var(--ink-dim);
 }
 
 .item-next-icon {
@@ -156,7 +156,7 @@
    secondaries stay outlined. */
 .item-next .primary:not(:disabled) {
   --btn-fill: var(--c);
-  color: var(--bg);
+  color: var(--canvas);
 }
 
 .item-next-actions {
@@ -171,8 +171,8 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-4);
-  font: var(--text-sm)/1.4 var(--font-mono);
-  color: var(--subtle);
+  font: var(--text-meta)/1.4 var(--font-mono);
+  color: var(--ink-dim);
 }
 
 .item-fact {
@@ -182,19 +182,19 @@
 }
 
 .item-branch {
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .item-ok {
-  color: var(--ok);
+  color: var(--done);
 }
 
 .item-warn {
-  color: var(--warn);
+  color: var(--needs);
 }
 
 .item-danger {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .item-fact.item-ok,
@@ -205,7 +205,7 @@
 
 .item-label {
   padding: 0 6px;
-  border: 1px solid var(--muted);
+  border: 1px solid var(--ink-faint);
   border-radius: var(--chip-radius);
 }
 
@@ -242,7 +242,7 @@
   width: 11px;
   height: 11px;
   background: var(--c);
-  color: var(--on-color);
+  color: var(--on-accent);
   font-size: 8px; /* off-scale: avatar mark */
 }
 
@@ -252,15 +252,15 @@
 }
 
 .item-avatar-ok {
-  --c: var(--ok);
+  --c: var(--done);
 }
 
 .item-avatar-danger {
-  --c: var(--danger);
+  --c: var(--fail);
 }
 
 .item-avatar-info {
-  --c: var(--info);
+  --c: var(--review);
 }
 
 .item-body-text {
@@ -281,7 +281,7 @@
 .item-more {
   margin-top: var(--space-1);
   padding: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 .item-tabs {
@@ -304,34 +304,34 @@
   border-bottom: 2px solid transparent;
   border-radius: 0;
   background: none;
-  color: var(--subtle);
+  color: var(--ink-dim);
   font: inherit;
   cursor: pointer;
 }
 
 .item-tab[data-tone="danger"] {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .item-tab[data-tone="warn"] {
-  color: var(--warn);
+  color: var(--needs);
 }
 
 .item-tab[aria-selected="true"] {
   border-bottom-color: currentColor;
-  color: var(--fg);
+  color: var(--ink);
 }
 
 .item-tab[aria-selected="true"][data-tone="danger"] {
-  color: var(--danger);
+  color: var(--fail);
 }
 
 .item-tab[aria-selected="true"][data-tone="warn"] {
-  color: var(--warn);
+  color: var(--needs);
 }
 
 .item-tab-count {
-  font: var(--text-xs) var(--font-mono);
+  font: var(--text-label) var(--font-mono);
   opacity: 0.85;
 }
 

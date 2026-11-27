@@ -963,10 +963,10 @@ div.k-row-line {
   font-size: var(--text-label);
 }
 .k-field-warn {
-  color: var(--danger);
+  color: var(--fail);
 }
 .k-field[data-warn] .k-field-box {
-  border-color: var(--danger);
+  border-color: var(--fail);
 }
 .k-toggle {
   display: inline-flex;

@@ -11,8 +11,8 @@
 .thread-agents {
   flex: none;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  font-size: var(--text-md);
+  background: var(--section);
+  font-size: var(--text-body);
 }
 
 .thread-agents button {
@@ -21,15 +21,15 @@
 }
 
 .thread-agent {
-  --c: var(--muted);
-  --ct: var(--subtle);
+  --c: var(--ink-faint);
+  --ct: var(--ink-dim);
   position: relative;
   box-sizing: border-box;
   min-width: 0;
   text-align: left;
-  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  background: color-mix(in srgb, var(--c) 7%, var(--section));
   border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line));
-  border-radius: var(--field-radius);
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -55,18 +55,18 @@
 }
 
 .thread-agent.idle {
-  --c: var(--ok);
-  --ct: var(--ok);
+  --c: var(--done);
+  --ct: var(--done);
 }
 
 .thread-agent.needs_you {
-  --c: var(--warn);
-  --ct: var(--warn);
+  --c: var(--needs);
+  --ct: var(--needs);
 }
 
 .thread-agent.failed {
-  --c: var(--danger);
-  --ct: var(--danger);
+  --c: var(--fail);
+  --ct: var(--fail);
 }
 
 .thread-agent-name {
@@ -80,42 +80,42 @@
   flex: none;
   padding: 1px 4px;
   border-radius: 3px;
-  background: var(--raised);
-  color: var(--subtle);
-  font: 700 var(--text-xs)/1 var(--font-mono);
+  background: var(--card-raised);
+  color: var(--ink-dim);
+  font: 700 var(--text-label)/1 var(--font-mono);
   letter-spacing: 0;
 }
 
 .thread-agent-state {
   flex: none;
   color: var(--ct);
-  font: 700 var(--text-md)/1 var(--font-title);
+  font: 700 var(--text-body)/1 var(--font-title);
   letter-spacing: var(--track-display);
   text-transform: uppercase;
 }
 
 .thread-agent-now {
-  color: var(--dim);
-  font: 500 var(--text-sm)/1.5 var(--font-mono);
+  color: var(--ink-dim);
+  font: 500 var(--text-meta)/1.5 var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .thread-agent-now {
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .thread-agent-read {
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .thread-agent-read.waits {
-  color: var(--warn);
+  color: var(--needs);
 }
 
 /* One agent: a single line. */
@@ -183,7 +183,7 @@
   padding: 8px 12px;
   background: none;
   border: 0;
-  color: var(--subtle);
+  color: var(--ink-dim);
   text-align: left;
   cursor: pointer;
 }
@@ -203,20 +203,20 @@
   margin: 0 12px 8px;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--bg);
-  font-size: var(--text-sm);
+  border-radius: var(--radius-control);
+  background: var(--canvas);
+  font-size: var(--text-meta);
 }
 
 .thread-agent-detail p {
   margin: 0 0 4px;
-  color: var(--subtle);
+  color: var(--ink-dim);
 }
 
 .thread-agent-detail p:last-child {
   margin-bottom: 0;
-  color: var(--dim);
-  font-size: var(--text-sm);
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
 }
 
 /* Open, Silence and Stop, for the agent's owner (#653). */
@@ -239,9 +239,9 @@
 .thread-seen span {
   padding: 0 6px;
   border-radius: 8px;
-  background: var(--raised);
-  color: var(--subtle);
-  font: 500 var(--text-xs)/1.6 var(--font-mono);
+  background: var(--card-raised);
+  color: var(--ink-dim);
+  font: 500 var(--text-label)/1.6 var(--font-mono);
 }
 
 .thread-seen span .icon {
@@ -256,9 +256,9 @@
   align-items: center;
   gap: 4px 5px;
   padding: 0 0 6px;
-  font-size: var(--text-sm);
+  font-size: var(--text-meta);
 }
 
 .thread-to-label {
-  color: var(--dim);
+  color: var(--ink-dim);
 }
