@@ -184,7 +184,7 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
   await expect(draft.locator(".forge-new-title")).toHaveText("Frobs leak");
   await expect(draft.locator(".forge-new-text li strong")).toHaveText("per frob");
   await expect.poll(async () => (await info(page, r.block))?.ask?.id).toBe("new");
-  await expect(page.locator('.pane-ask .ask[data-ask="new"]')).toHaveCount(0);
+  await expect(page.locator('.pane-ask [data-ask="new"]')).toHaveCount(0);
   expect(writes).toEqual([]);
   // Edited in place and sent.
   await draft.locator("[data-new-edit]").click();

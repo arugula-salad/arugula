@@ -18,9 +18,11 @@ export function Row({
   meta,
   open,
   onClick,
+  inert,
   children,
   ...data
 }: {
+  inert?: boolean;
   kind?: RowKind;
   mark?: State;
   /** The kind of thing, a word: "ask", "board", "doc". */
@@ -35,11 +37,13 @@ export function Row({
   [data: `data-${string}`]: unknown;
 }) {
   return (
-    <div class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} {...data}>
+    <div class={`k-row is-${kind}`} data-kit="row" data-open={open || undefined} inert={inert} {...data}>
       <button type="button" class="k-row-line" aria-expanded={open} aria-current={kind === "selected" ? "true" : undefined} onClick={onClick}>
         {mark ? <Mark state={mark} /> : null}
         {label ? <span class="k-row-kind m-meta">{label}</span> : null}
-        <span class="k-row-title">{title}</span>
+        <span class="k-row-title" data-row-title>
+          {title}
+        </span>
         {meta?.map((m, i) => (
           <span key={i} class="k-row-meta m-meta">
             {m}

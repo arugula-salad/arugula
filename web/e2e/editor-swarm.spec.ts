@@ -238,7 +238,7 @@ test("a breakpoint puts a card on the rail, and Continue works", async () => {
   await openFile(vs, "app.js", 1);
   await vs.keyboard.press("F5");
   // The phone's rail: the debugger paused.
-  const card = phone.locator('.swarm-card[data-kind="paused"]');
+  const card = phone.locator('[data-need][data-kind="paused"]');
   await expect(card).toBeVisible({ timeout: 30_000 });
   await expect(card).toContainText("Debugger paused");
   await expect(card).toContainText("app.js:3");
@@ -273,7 +273,7 @@ test("Claude Code's diff from a terminal pane is accepted from the rail and land
   await expect(beside).toContainText("cart.js");
   await expect(beside.locator(".diff-text .add")).toContainText("b.price");
   // On the phone's rail: accept it there.
-  const card = phone.locator('.swarm-card[data-kind="diff"]');
+  const card = phone.locator('[data-need][data-kind="diff"]');
   await expect(card).toBeVisible({ timeout: 10_000 });
   await expect(card.locator(".diff-text .del")).toContainText("a + b, 0");
   await card.locator("[data-accept]").click();

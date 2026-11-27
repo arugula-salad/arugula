@@ -165,7 +165,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-app-swarm] [data-swarm-back]")).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("frame-swarm.png") });
     // A card opens its pane on its machine's page; Back returns to the Swarm.
-    const card = page.locator(`[data-app-swarm] .swarm-card[data-panes$=":${pane}"]`);
+    const card = page.locator(`[data-app-swarm] [data-need][data-panes$=":${pane}"]`);
     await expect(card).toBeVisible({ timeout: 20_000 });
     await card.locator("[data-open-card]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}(&machine=[\\w.-]+)?$`));

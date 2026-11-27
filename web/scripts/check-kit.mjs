@@ -51,7 +51,6 @@ export const ALLOWED = new Set([
   "sheet-card",
   "sheet-row",
   "steps-row",
-  "swarm-card",
   "switcher-row",
   "telemetry-card",
   "thread-row",

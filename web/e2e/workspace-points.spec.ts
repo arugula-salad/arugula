@@ -164,10 +164,10 @@ test("an open decision point is a card on the rail, answered from the phone, and
   await open(page);
   await expect.poll(async () => (await reasonOf(page, block))?.kind ?? null, { timeout: 20_000 }).toBe("gate");
   await page.goto("/#swarm");
-  const card = page.locator('.swarm-card[data-kind="gate"]');
+  const card = page.locator('[data-need][data-kind="gate"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await expect(card.locator(".ch .ct")).toHaveText("A decision waits on you");
-  await expect(card.locator(".cq")).toHaveText("Which builder tier builds this work item (W-001)");
+  await expect(card.locator("[data-row-title]")).toHaveText("A decision waits on you");
+  await expect(card.locator('[data-need-line="0"]')).toHaveText("Which builder tier builds this work item (W-001)");
   await expect(card.locator("[data-answer-point]")).toHaveText(["Small", "Medium", "Large"]);
   await expect(card.locator('[data-answer-point="small"]')).toHaveAttribute("title", "A small builder.");
 
@@ -210,8 +210,8 @@ test("a gate that asks a decision point is answered on its card, and the next ru
 
   // Answered Yes from the swarm's card.
   await page.goto("/#swarm");
-  const card = page.locator('.swarm-card[data-kind="gate"]');
-  await expect(card.locator(".cq")).toHaveText("delivery: Ship the toy now", { timeout: 15_000 });
+  const card = page.locator('[data-need][data-kind="gate"]');
+  await expect(card.locator('[data-need-line="0"]')).toHaveText("delivery: Ship the toy now", { timeout: 15_000 });
   await card.locator('[data-answer-point="true"]').click();
   await expect.poll(() => question("ship-ok")?.state ?? null, { timeout: 20_000 }).toBe("answered");
   expect(question("ship-ok")).toMatchObject({ answer: true, answeredBy: [OWNER] });

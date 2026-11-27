@@ -50,7 +50,7 @@ test("a real Claude Code permission prompt, allowed from the rail", async ({ pag
   }, command);
   await page.goto("/#swarm");
   const host = await page.evaluate(() => window.__arugula.hosts.current);
-  const card = page.locator(`.swarm-card[data-kind="ask"][data-panes~="${host}:${pane}"]`);
+  const card = page.locator(`[data-need][data-kind="ask"][data-panes~="${host}:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 90_000 });
   expect(existsSync(join(dir, "m26-marker.txt"))).toBe(false);
   await expect(card.locator(".agent-perm-cmd")).toHaveText("touch m26-marker.txt");

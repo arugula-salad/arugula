@@ -174,6 +174,91 @@
   gap: 2px;
   container: k-need / inline-size;
 }
+/* An agent's question in a need row: its questions, their options (one
+   picked as a pressed button, several as checkboxes), Other, a preview. */
+.k-ask {
+  display: grid;
+  gap: 10px;
+}
+.k-ask p {
+  margin: 0;
+}
+.k-ask-q {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.k-ask-q > legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0;
+}
+.k-ask-hint {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.k-ask-options[role="group"] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.k-ask-option {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.k-ask-option:hover {
+  border-color: var(--focus);
+}
+.k-ask-option[aria-checked="true"],
+.k-ask-option:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.k-ask-option.is-check,
+.k-ask-options[role="group"] > .k-ask-option {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+/* A thumb's reach: a row's answers and a question's options on a touch screen. */
+@media (pointer: coarse) {
+  .k-row-body .k-button,
+  .k-ask-option {
+    min-height: 40px;
+  }
+}
+.k-ask-label {
+  font-weight: 600;
+}
+.k-ask-desc {
+  color: var(--ink-dim);
+  font-size: var(--text-meta);
+}
+.k-field-box.is-long {
+  height: auto;
+  padding: 6px 10px;
+}
 
 /* ---- 4. Well: inset, flat, mono, its label set into the frame; brighter
    on focus. Terminals, agent panes and a to-do's how. */

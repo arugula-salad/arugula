@@ -52,7 +52,7 @@ async function clearRail(page: Page) {
       await f.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch(() => {});
     }
   });
-  await expect(page.locator(".swarm-card[data-bundle]")).toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator("[data-need][data-bundle]")).toHaveCount(0, { timeout: 10_000 });
 }
 
 /** A pane's screen, through its host's API. */
@@ -328,10 +328,10 @@ test("Machines and Escape lead back to the panes, with the rail beside the swarm
 test("a finished card's main button is Open, and Dismiss is down with Show and Edit", async ({ page }) => {
   await swarm(page);
   const pane = await fake.finish("workstation");
-  const card = page.locator(`.swarm-card[data-panes~="workstation:${pane}"]`);
+  const card = page.locator(`[data-need][data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ca button.primary")).toHaveText(["Open"]);
-  await expect(card.locator(".ca-nav [data-dismiss-card]")).toBeVisible();
+  await expect(card.locator("[data-main]")).toHaveText(["Open"]);
+  await expect(card.locator("[data-dismiss-card]")).toBeVisible();
   await card.locator("[data-open-card]").click();
   await expect(page.locator(".swarm")).toBeHidden();
 });
@@ -339,11 +339,11 @@ test("a finished card's main button is Open, and Dismiss is down with Show and E
 test("failures on one machine bundle into one card, dismissed together", async ({ page }) => {
   await swarm(page);
   const panes = await fake.trouble("build-02", 3);
-  const card = page.locator('.swarm-card[data-bundle="failed:build-02"]');
+  const card = page.locator('[data-need][data-bundle="failed:build-02"]');
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ch .ct")).toHaveText("3 failed on build-02", { timeout: 10_000 });
-  await expect(card.locator(".n")).toHaveText("×3");
-  await expect(card.locator(".cq")).toContainText("cargo test -p relay failed (exit 101)");
+  await expect(card.locator("[data-row-title]")).toHaveText("3 failed on build-02", { timeout: 10_000 });
+  await expect(card.locator("[data-count]")).toHaveText("×3");
+  await expect(card.locator('[data-need-line="0"]')).toContainText("cargo test -p relay failed (exit 101)");
   await card.getByRole("button", { name: "Dismiss all 3" }).click();
   await expect(card).toHaveCount(0);
   for (const id of panes) {
@@ -355,14 +355,14 @@ test("an agent's approval is allowed from the rail, and the follow-up wakes it",
   await swarm(page);
   await clearRail(page);
   const pane = await fake.agentAsks("workstation", "api", "cargo test -p swarm");
-  const card = page.locator(`.swarm-card[data-panes~="workstation:${pane}"]`);
+  const card = page.locator(`[data-need][data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".ch .ct")).toHaveText("Claude Code asks");
+  await expect(card.locator("[data-row-title]")).toHaveText("Claude Code asks");
   await expect(card.locator(".agent-perm-cmd")).toHaveText("cargo test -p swarm");
   await card.getByRole("button", { name: "Allow", exact: true }).click();
   // The card says who allowed it, and offers a follow-up.
-  const done = page.locator(`.swarm-card[data-answered][data-panes="workstation:${pane}"]`);
-  await expect(done.locator(".answered-by")).toHaveText(/^Allowed by .+, \d\d:\d\d/);
+  const done = page.locator(`[data-answered][data-panes="workstation:${pane}"]`);
+  await expect(done.locator("[data-answered-by]")).toHaveText(/^Allowed by .+, \d\d:\d\d/);
   await expect.poll(() => capture(page, "workstation", pane)).toContain('"behavior":"allow"');
   await expect.poll(() => page.evaluate((k) => window.__arugula.fleet.panes.find((p) => p.key === k)?.info.inbox, `workstation:${pane}`)).toBe(true);
   await done.locator(".followup input").fill("now run the tests");
@@ -377,9 +377,9 @@ test("two agents asking in one project are one card: deny them both", async ({ p
   await clearRail(page);
   const a = await fake.agentAsks("workstation", "web", "rm -rf build");
   const b = await fake.agentAsks("build-01", "web", "rm -rf build");
-  const card = page.locator(`.swarm-card[data-kind="ask"][data-panes~="workstation:${a}"]`);
+  const card = page.locator(`[data-need][data-kind="ask"][data-panes~="workstation:${a}"]`);
   await expect(card).toHaveAttribute("data-panes", new RegExp(`build-01:${b}`), { timeout: 20_000 });
-  await expect(card.locator(".ch .ct")).toHaveText("2 agents ask");
+  await expect(card.locator("[data-row-title]")).toHaveText("2 agents ask");
   await card.getByRole("button", { name: "Deny all 2" }).click();
   await expect(card).toHaveCount(0);
   await expect.poll(() => capture(page, "workstation", a)).toContain('"behavior":"deny"');
@@ -392,8 +392,8 @@ test("a question is answered on its card", async ({ page }) => {
   await swarm(page);
   await clearRail(page);
   const pane = await fake.agentQuestion("build-02", "infra");
-  const card = page.locator(`.swarm-card[data-bundle][data-panes~="build-02:${pane}"]`);
-  await expect(card.locator(".cq")).toHaveText("Which colour do you prefer?", { timeout: 20_000 });
+  const card = page.locator(`[data-need][data-bundle][data-panes~="build-02:${pane}"]`);
+  await expect(card.locator('[data-need-line="0"]')).toHaveText("Which colour do you prefer?", { timeout: 20_000 });
   // AskUserQuestion's card: three questions, answered in place.
   const q = (n: number) => card.locator(`[data-question="${n}"]`);
   await q(0).getByRole("radio", { name: /^Blue/ }).click();
@@ -401,7 +401,7 @@ test("a question is answered on its card", async ({ page }) => {
   await q(2).getByRole("radio", { name: /^Cat/ }).click();
   await card.getByRole("button", { name: "Submit" }).click();
   await expect(card).toHaveCount(0);
-  await expect(page.locator(`.swarm-card[data-answered][data-panes="build-02:${pane}"] .answered-by`)).toHaveText(/^Answered by /);
+  await expect(page.locator(`[data-answered][data-panes="build-02:${pane}"] [data-answered-by]`)).toHaveText(/^Answered by /);
   await expect.poll(() => capture(page, "build-02", pane)).toContain("Blue");
   await fake.close("build-02", pane);
 });
@@ -411,9 +411,9 @@ test("a finished build's card clears by itself", async ({ page }) => {
   await swarm(page);
   await clearRail(page);
   const pane = await fake.finish("workstation");
-  const card = page.locator(`.swarm-card[data-kind="done"][data-panes~="workstation:${pane}"]`);
+  const card = page.locator(`[data-need][data-kind="done"][data-panes~="workstation:${pane}"]`);
   await expect(card).toBeVisible({ timeout: 20_000 });
-  await expect(card.locator(".cq")).toContainText("cargo build --release finished after 5s");
+  await expect(card.locator('[data-need-line="0"]')).toContainText("cargo build --release finished after 5s");
   await expect(card).toHaveCount(0, { timeout: 20_000 });
 });
 
@@ -424,7 +424,7 @@ test("a full rail: the rest pulse in place, and the rail says how many", async (
   const failing = (
     await Promise.all([fake.trouble("workstation", 1), fake.trouble("build-01", 1), fake.trouble("build-02", 2)])
   ).flatMap((ids, i) => ids.map((id) => `${["workstation", "build-01", "build-02"][i]}:${id}`));
-  await expect(page.locator(".swarm-card[data-bundle]")).toHaveCount(2, { timeout: 20_000 });
+  await expect(page.locator("[data-need][data-bundle]")).toHaveCount(2, { timeout: 20_000 });
   await expect(page.locator(".swarm-waiting")).toHaveAttribute("data-waiting", /^[12]$/);
   // Every run has failed before the rail is cleared: one failing after it
   // would put a card back.
@@ -465,7 +465,7 @@ test("hover peeks, a cluster name zooms, a pane opens in its tab, a notification
   // A notification for a pane that wants you opens the swarm at its card.
   const [pane] = await fake.trouble("workstation", 1);
   await page.goto(`/#swarm=${pane}`);
-  await expect(page.locator(`.swarm-card.focus[data-panes~="workstation:${pane}"]`)).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(`[data-need][data-selected][data-panes~="workstation:${pane}"]`)).toBeVisible({ timeout: 20_000 });
   await clearRail(page);
 });
 
@@ -517,12 +517,12 @@ test.describe("phone", () => {
     expect(rail!.y).toBeGreaterThan(viewport.height / 2);
     const ask = await fake.agentAsks("build-01", "infra", "npm publish --dry-run");
     const [failed] = await fake.trouble("workstation", 1);
-    const askCard = page.locator(`.swarm-card[data-panes~="build-01:${ask}"]`);
+    const askCard = page.locator(`[data-need][data-panes~="build-01:${ask}"]`);
     await expect(askCard).toBeVisible({ timeout: 20_000 });
     await askCard.getByRole("button", { name: "Allow", exact: true }).tap();
     await expect.poll(() => capture(page, "build-01", ask)).toContain('"behavior":"allow"');
     await fake.close("build-01", ask);
-    const failCard = page.locator(`.swarm-card[data-panes~="workstation:${failed}"]`);
+    const failCard = page.locator(`[data-need][data-panes~="workstation:${failed}"]`);
     await failCard.scrollIntoViewIfNeeded();
     await failCard.getByRole("button", { name: "Dismiss" }).tap();
     await expect(failCard).toHaveCount(0);
@@ -556,7 +556,7 @@ test.describe("phone", () => {
     await swarm(page);
     await clearRail(page);
     const [pane] = await fake.trouble("build-02", 1);
-    const card = page.locator(`.swarm-card[data-panes~="build-02:${pane}"]`);
+    const card = page.locator(`[data-need][data-panes~="build-02:${pane}"]`);
     await expect(card).toBeVisible({ timeout: 20_000 });
     await card.locator("[data-share-card]").tap();
     await expect(page.locator(".swarm")).toHaveCount(0);

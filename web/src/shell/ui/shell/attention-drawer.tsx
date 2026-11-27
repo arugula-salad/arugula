@@ -19,7 +19,8 @@ import { OPS, opPath } from "../../ops";
 import { gateKey, type ActRequest, type Notice, type PaneInfo } from "../../../shared/proto";
 import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { agentDisplay, cardTitle, kindOf, reasonOf, shortHost, whatItDoes } from "../../swarm/model";
-import { AskCard, type Ask } from "../../../shared/ask";
+import type { Ask } from "../../../shared/ask";
+import { askNeed, NeedRow } from "../../../shared/kit/need-row";
 import { PermissionBody, PermissionButtons, permissionTarget, VIEWER_NOTE } from "../answer-card";
 import { DiffCard } from "../diff-card";
 import { editDiff } from "../term-ask";
@@ -505,7 +506,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
             <PermissionButtons ask={ask} act={(action, extra) => run(action, { ...extra, id: ask.id })} more={go} />
           </div>
         ) : ask && r?.ask?.what === "question" ? (
-          <AskCard ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} more={go} />
+          <NeedRow need={askNeed(ask, "")} open ask={ask} actions={{ answer: (content) => run("answer", { content, id: ask.id }), decline: () => run("deny", { id: ask.id }) }} extra={go} />
         ) : r ? (
           <div class="ws-att-acts">
             {r.actions.includes("allow") && (
