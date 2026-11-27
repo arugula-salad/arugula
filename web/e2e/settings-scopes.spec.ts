@@ -296,7 +296,7 @@ test.describe("on a computer", () => {
     // Nothing leaves for arugula.io: the status page is this spec's.
     await context.route(/^https:\/\/[^/]*arugula\.io\//, (r) => r.fulfill({ contentType: "text/html", body: "<title>Status</title>" }));
     const menu = async () => {
-      await page.locator(".ws-rail [data-signed-in-as]").click();
+      await page.locator("[data-rail] [data-signed-in-as]").click();
       return page.locator(".menu-item");
     };
     // A control you run yourself (this page's own hub): no Status anywhere.

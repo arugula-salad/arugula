@@ -31,7 +31,7 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
   const fill = await page.locator(".pane").boundingBox();
   expect(fill!.width).toBeGreaterThan(380);
   await expect(page.locator(".phone-bar")).toBeVisible();
-  await expect(page.locator(".ws-rail, .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-pane-header]")).toHaveCount(0);
+  await expect(page.locator("[data-rail], .ws-head, [data-session-sidebar], [data-pane-toolbar], [data-pane-header]")).toHaveCount(0);
 
   // Ctrl from the key bar, then "c", interrupts a running command.
   await type(page, shown, "sleep 100\n");

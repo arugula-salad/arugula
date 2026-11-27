@@ -11,7 +11,7 @@ test.use({ viewport: { width: 1440, height: 900 }, serviceWorkers: "block" });
 
 test("the caret shows and hides the sessions sidebar, and stays when it's closed", async ({ page }) => {
   await reset(page);
-  const rail = page.locator(".ws-rail");
+  const rail = page.locator("[data-rail]");
   const caret = page.locator(".ws-tabs [data-open-sessions]");
   const sidebar = page.locator("[data-session-sidebar]");
   await expect(rail).toBeVisible();
@@ -66,7 +66,7 @@ test("the caret is the panes' only, and Machines brings the sidebar back", async
   await page.locator("[data-machine-places] [data-machine-swarm]").click();
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#swarm");
   await expect(page.locator("[data-open-sessions]")).toHaveCount(0);
-  await page.locator(".ws-rail [data-open-machines]").click();
+  await page.locator("[data-rail] [data-open-machines]").click();
   await expect(caret).toBeVisible();
   await expect(sidebar).toBeVisible();
 
@@ -75,7 +75,7 @@ test("the caret is the panes' only, and Machines brings the sidebar back", async
   await expect(sidebar).toHaveCount(0);
   await page.locator("[data-machine-places] [data-machine-swarm]").click();
   await expect(page.locator("[data-open-sessions]")).toHaveCount(0);
-  await page.locator(".ws-rail [data-open-machines]").click();
+  await page.locator("[data-rail] [data-open-machines]").click();
   await expect(sidebar).toHaveCount(0);
   await expect(caret).toHaveAttribute("aria-expanded", "false");
   await expect(caret.locator("svg")).toHaveCount(1);

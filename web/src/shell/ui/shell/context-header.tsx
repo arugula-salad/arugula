@@ -5,7 +5,7 @@
 
 import { tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
-import { AccountButton, CommandsButton } from "../app-bar";
+import { CommandsButton } from "../app-bar";
 import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet, HostButton, hostMenuShown, machineState } from "../hosts";
 import { PeopleBar, shareSession } from "../people";
@@ -164,7 +164,6 @@ export function ContextHeader({
         </button>
       )}
       <PeopleBar client={client} />
-      <AccountButton client={client} />
       <WindowButtons />
     </header>
   );

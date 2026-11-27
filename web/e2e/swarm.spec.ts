@@ -311,7 +311,7 @@ test.describe("a board focus on a phone", () => {
 test("Machines and Escape lead back to the panes, with the rail beside the swarm (#551)", async ({ page }) => {
   await swarm(page);
   // The rail stays beside the swarm: its Machines, back to the panes.
-  const rail = page.locator(".ws-rail");
+  const rail = page.locator("[data-rail]");
   await expect(rail).toBeVisible();
   await rail.locator("[data-open-machines]").click();
   await expect(page.locator(".swarm")).toBeHidden();

@@ -19,7 +19,7 @@ async function open(page: Page, feedback: (r: Route) => Promise<void>) {
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/settings/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto("/settings");
-  await page.locator(".ws-rail [data-signed-in-as]").click();
+  await page.locator("[data-rail] [data-signed-in-as]").click();
   await page.getByRole("menuitem", { name: "Send feedback…" }).click();
   const d = page.getByRole("dialog", { name: "Send feedback" });
   await expect(d).toBeVisible();

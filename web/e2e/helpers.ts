@@ -290,7 +290,7 @@ export async function sheetTab(page: Page, tab: "Here" | "Machines" | "More") {
 /** The Settings page, from the rail (Arugula #695); stays if it's open. */
 export async function openSettingsPage(page: Page) {
   const settings = page.locator("[data-settings-page]");
-  if (!(await settings.isVisible())) await page.locator(".ws-rail [data-open-settings]").click();
+  if (!(await settings.isVisible())) await page.locator("[data-rail] [data-open-settings]").click();
   await expect(settings).toBeVisible();
   return settings;
 }
@@ -321,6 +321,6 @@ export async function paletteCommand(page: Page, key: string) {
 
 /** Back to the panes from the Settings page. */
 export async function closeSettingsPage(page: Page) {
-  await page.locator(".ws-rail [data-open-machines]").click();
+  await page.locator("[data-rail] [data-open-machines]").click();
   await expect(page.locator("[data-settings-page]")).toHaveCount(0);
 }

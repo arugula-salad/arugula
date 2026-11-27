@@ -58,10 +58,7 @@
   border-radius: var(--btn-radius);
 }
 
-/* The place you're in, the same on the shell's rail and in the platform
-   page's head. On the rail it's the pill around the icon that lights, not
-   the whole button (Arugula #1077). */
-.ws-rail-button.here .ws-rail-pill,
+/* The place you're in, in a page's head (its views). */
 .frame-place.here {
   background: var(--chrome-selected);
   border-color: var(--chrome-selected-line);
@@ -76,82 +73,3 @@
   -webkit-app-region: no-drag;
 }
 
-/* The rail, as both pages draw it (#377): shell-chrome.css had these for the
-   shell alone, and the platform page doesn't load that file. After
-   style.css's rail, as they were. */
-.ws-rail {
-  padding-top: 0;
-  gap: 6px;
-  border-right-color: var(--line-strong);
-}
-
-.ws-brand {
-  height: var(--head-h);
-  margin-bottom: 2px;
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.ws-rail-button {
-  min-height: 48px;
-  box-sizing: border-box;
-  justify-content: center;
-  gap: 6px;
-  margin-inline: 4px;
-  padding: 6px 0;
-  border: 1px solid transparent;
-  border-radius: var(--btn-radius);
-}
-
-/* The button itself stays unlit, lit or hovered: the pill shows it, and the
-   label under it, in the accent colour, has the rail's width (#1077). */
-.ws-rail-button.here,
-.ws-rail-button:hover {
-  background: none;
-}
-
-.ws-rail-button.here {
-  color: var(--accent);
-}
-
-.ws-rail-button.here::before {
-  display: none;
-}
-
-.ws-rail-pill {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 26px;
-  box-sizing: border-box;
-  border: 1px solid transparent;
-  border-radius: 13px;
-}
-
-.ws-rail-button:not(.here):hover .ws-rail-pill {
-  background: var(--raised);
-}
-
-/* The platform page's icons don't shrink (`.app.ws .icon`'s job on the
-   shell, which the platform page has no `.app.ws` for). */
-.ws-rail .icon {
-  flex: none;
-}
-
-/* The platform page's brand is a link (to control's page), drawn as the
-   shell's button is. */
-a.ws-brand {
-  box-sizing: border-box;
-  padding: 1px 6px;
-  color: var(--fg);
-  text-align: center;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
-  padding-top: 0;
-}
-
-.ws-rail {
-  background: var(--surface);
-}
