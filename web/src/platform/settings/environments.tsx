@@ -3,9 +3,10 @@
 // secrets. A secret's value goes from this page to the platform once,
 // sealed with the project's key there, and is never shown or read back:
 // only a deploy's run gets it, on its own box, while it runs. Setting one
-// takes a browser's session (a CLI's login or an agent is refused). Owners
-// and editors plan a deploy to one ("Deploy…"); approving it stays an
-// owner's, with a passkey, on control's page. Every member sees each
+// takes a browser's session (a CLI's login or an agent is refused). An
+// owner's or editor's agent plans a deploy to one (or the CLI: the page that
+// did went in Lift 7); approving it stays an owner's, from its Needs-you
+// row, with a passkey. Every member sees each
 // environment's latest deploys, whatever became of them, and reaches each
 // one's page from there, not only from its push.
 //
@@ -19,10 +20,8 @@ import { Card } from "../../shared/ui/card";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
-import { names } from "../links";
 import { DeployRow } from "../pages/deploy";
 import { ENVIRONMENTS_MEAN } from "../pages/project";
-import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { deployTone } from "../swarm";
 import { Section, SectionListContext } from "../../shared/ui/settings-section";
@@ -64,13 +63,11 @@ export function Environments({ p }: { p: PlatformProject }) {
   useEffect(() => void load(), [p.id]);
   const role = roleIn(p);
   const owner = role === "owner";
-  const plans = role !== "viewer";
   useEffect(() => {
     if (!asked.current || envs === null || !drivers.length) return;
     asked.current = false;
     if (owner && !envs.length) setMaking(true);
   }, [envs, drivers, owner]);
-  const deployPath = (env: string) => pathOf({ page: "new-deploy", project: p.id, env }, names);
   return (
     <Section
       id="environments"
@@ -80,8 +77,8 @@ export function Environments({ p }: { p: PlatformProject }) {
       hooks={{ "data-environments": "" }}
       more={
         <p>
-          Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. An owner or editor (or their agent) plans a
-          deploy with Deploy…, and it's applied only once an owner approves it on their phone or in a browser, with a passkey. A secret's value
+          Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. An owner's or editor's agent plans a deploy
+          (or <code>arugula deploys plan</code>), and it's applied only once an owner approves it from Needs you, with a passkey. A secret's value
           is never shown here again, or read back: only a deploy's run gets it. Set one to replace it.
         </p>
       }
@@ -100,8 +97,6 @@ export function Environments({ p }: { p: PlatformProject }) {
               env={env}
               driver={drivers.find((d) => d.name === env.driver)}
               owner={owner}
-              plans={plans}
-              deployPath={deployPath(env.id)}
             />
           ))}
         </div>
@@ -128,7 +123,7 @@ export function Environments({ p }: { p: PlatformProject }) {
   );
 }
 
-function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Environment; driver?: Driver; owner: boolean; plans: boolean; deployPath: string }) {
+function EnvironmentCard({ env, driver, owner }: { env: Environment; driver?: Driver; owner: boolean }) {
   const settings = Object.entries(env.settings);
   const minted = (driver?.secrets ?? []).filter((s) => s.minted && !env.secret_names.includes(s.name));
   const history = useHistory(env.project, env.id);
@@ -141,11 +136,6 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
         <Chip kind="tag" title="Its driver: what applies its deploys">
           {env.driver}
         </Chip>
-        {plans && (
-          <a class="secondary small env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
-            Deploy…
-          </a>
-        )}
       </div>
       {settings.length > 0 && (
         // Labelled as its secrets and deploys are, a chip each, so a lone

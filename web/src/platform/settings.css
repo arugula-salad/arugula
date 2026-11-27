@@ -374,10 +374,6 @@
   align-items: center;
 }
 
-.platform .env-deploy {
-  margin: 0 0 0 auto;
-}
-
 /* Its driver's settings, a key and value each, wrapping. */
 .platform .env-facts {
   display: flex;
@@ -476,16 +472,6 @@
   color: var(--dim);
 }
 
-/* What the platform read of the commit (#333): dim, one line, cut short. */
-.platform .deploy-table .deploy-row-note {
-  display: inline-block;
-  max-width: 36ch;
-  margin-left: var(--space-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
 
 /* A rollback: a tag, as a repo's private is, not a button. */
 .platform .deploy-table .deploy-roll-back {
@@ -693,9 +679,6 @@
   .platform .deploy-table tbody tr > td:last-child {
     grid-row: 1;
     grid-column: 2;
-  }
-  .platform .env-deploy {
-    margin-left: 0;
   }
   .platform .env-card .card-head .chip-tag {
     margin-right: auto;

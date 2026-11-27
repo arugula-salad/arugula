@@ -128,8 +128,6 @@ export type Route =
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
   | { page: "move"; project: string }
-  | { page: "deploys"; project: string }
-  | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox"; all?: true }
   | { page: "all-boards"; board?: string; all?: true }
@@ -324,11 +322,11 @@ export function parse(path: string, search = "", hash = ""): Route {
   // Its settings, from before they were Settings' (Arugula #1104).
   if (parts.length === 3 && parts[2] === "settings") return withOldSection(settingsRoute(["project", project], q), hash) ?? missing;
   if (parts.length === 4 && parts[2] === "settings" && parts[3] === "move") return { page: "move", project };
-  if (parts.length === 3 && parts[2] === "deploys") return { page: "deploys", project };
-  if (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new") {
-    const env = q.get("env");
-    return { page: "new-deploy", project, ...(env && /^env_[0-9a-f]{32}$/.test(env) ? { env } : {}) };
-  }
+  // Its deploys and Deploy… went (Lift 7): an approval is a Needs-you row,
+  // a deploy's page is its link, and its environments, with each one's
+  // history, are its Settings' Secrets and environments.
+  if ((parts.length === 3 && parts[2] === "deploys") || (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new"))
+    return { page: "settings", scope: "project", project, section: "secrets" };
   if (parts[2] === "chat") {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && (parts[3] === "activity" || parts[3] === "saved")) return { page: "chat", project, view: parts[3] };
@@ -608,10 +606,6 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}`;
     case "move":
       return `/p/${s(r.project)}/settings/move`;
-    case "deploys":
-      return `/p/${s(r.project)}/deploys`;
-    case "new-deploy":
-      return `/p/${s(r.project)}/deploys/new${r.env ? `?env=${r.env}` : ""}`;
     case "installed":
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":

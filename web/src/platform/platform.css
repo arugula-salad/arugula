@@ -1025,10 +1025,6 @@ html[data-native-tabs] .platform {
   display: block;
 }
 
-.deploy-form .deploy-commit {
-  font-family: var(--font-mono);
-}
-
 .deploy-about {
   font-size: var(--text-sm);
 }
