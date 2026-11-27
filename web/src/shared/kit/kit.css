@@ -539,6 +539,12 @@
   color: var(--ink-faint);
   font-size: var(--text-label);
 }
+.k-field-warn {
+  color: var(--danger);
+}
+.k-field[data-warn] .k-field-box {
+  border-color: var(--danger);
+}
 .k-toggle {
   display: inline-flex;
   align-items: center;

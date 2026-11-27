@@ -4,8 +4,10 @@
 // answer, escalated; a to-do's how) and answers in place: a question's
 // options, a permission's Allow/Deny, a folder's trust, an approval's
 // Start/Not now, or a to-do's Done/Can't with a note. Answered, it is a dim
-// receipt. It holds at a third of a wide screen or a phone (360–480px):
-// put rows in a `NeedList`, and the meta wraps under the title.
+// receipt. A to-do's note is checked as it's typed: one that looks like a
+// secret says so, and isn't sent until it's gone. It holds at a third of a
+// wide screen or a phone (360–480px): put rows in a `NeedList`, and the
+// meta wraps under the title.
 //
 // The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
 // table binds them, and presses a row's answer by its `data-answer` (the
@@ -14,13 +16,15 @@
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
+import { looksSecret } from "../secret-like";
 import { Button } from "./button";
 import { TextField } from "./field";
 import { Row } from "./row";
 import { Well } from "./well";
 import "./kit.css";
 
-export type NeedKind = "ask" | "permission" | "trust" | "approval" | "todo" | (string & {});
+export type NeedKind =
+  "ask" | "permission" | "trust" | "approval" | "todo" | (string & {});
 
 export interface NeedOption {
   id: string;
@@ -108,13 +112,20 @@ export function NeedRow({
   const mine = need.for === "you";
   const todo = need.kind === "todo";
   const meta: ComponentChildren[] = [];
-  if (receipt) meta.push(`${receipt.what} by ${receipt.by} ${receipt.at}${receipt.note ? ` · ${receipt.note}` : ""}`);
+  if (receipt)
+    meta.push(
+      `${receipt.what} by ${receipt.by} ${receipt.at}${receipt.note ? ` · ${receipt.note}` : ""}`,
+    );
   else meta.push(<span class={mine ? "k-needs" : undefined}>{who(need)}</span>);
   if (need.escalated) meta.push("escalated");
   if (need.subject) meta.push(<span class="m-id">{need.subject.id}</span>);
   meta.push(<span class="m-id">{need.age}</span>);
 
-  const options = need.answer?.options?.length ? need.answer.options : (DEFAULTS[need.kind] ?? []);
+  // The note's check, as it's typed: what it looks like, if a secret.
+  const secret = todo ? looksSecret(note) : null;
+  const options = need.answer?.options?.length
+    ? need.answer.options
+    : (DEFAULTS[need.kind] ?? []);
   const copy = () => {
     void navigator.clipboard?.writeText(need.how ?? "");
     setCopied(true);
@@ -149,12 +160,28 @@ export function NeedRow({
           </div>
         </Well>
       ) : null}
-      {todo ? <TextField label="Note" hint="no secrets" value={note} onInput={setNote} onEnter={() => onAnswer?.(options[0]!, note)} /> : null}
+      {todo ? (
+        <TextField
+          label="Note"
+          hint="no secrets"
+          warn={secret ? `That looks like ${secret}: leave it out` : undefined}
+          value={note}
+          onInput={setNote}
+          onEnter={() => !secret && onAnswer?.(options[0]!, note)}
+        />
+      ) : null}
       {(mine && options.length) || extra ? (
         <div class="k-row-actions">
           {mine
             ? options.map((o, i) => (
-                <Button key={o.id} kind={i === 0 ? "primary" : "plain"} keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]} data-answer={i} onClick={() => onAnswer?.(o, todo ? note : undefined)}>
+                <Button
+                  key={o.id}
+                  kind={i === 0 ? "primary" : "plain"}
+                  keys={todo ? (i === 0 ? "D" : undefined) : KEYS[i]}
+                  data-answer={i}
+                  disabled={!!secret}
+                  onClick={() => onAnswer?.(o, todo ? note : undefined)}
+                >
                   {o.label}
                 </Button>
               ))
@@ -168,9 +195,20 @@ export function NeedRow({
 
 /** Need rows in a column that may be a third of the screen: under 480px
  * each row's meta wraps under its title. */
-export function NeedList({ label, children }: { label: string; children: ComponentChildren }) {
+export function NeedList({
+  label,
+  children,
+}: {
+  label: string;
+  children: ComponentChildren;
+}) {
   return (
-    <div class="k-need-list" role="group" aria-label={label} data-kit="need-list">
+    <div
+      class="k-need-list"
+      role="group"
+      aria-label={label}
+      data-kit="need-list"
+    >
       {children}
     </div>
   );
