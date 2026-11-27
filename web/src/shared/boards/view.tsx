@@ -31,6 +31,7 @@
 import { useEffect, useId, useRef, useState, useContext } from "preact/hooks";
 import type { BoardLead, BoardAnsweredAsk, BoardGroup, BoardPointer, LayoutNewPane, LayoutPane, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import type { TabItem } from "../kit/tabs";
+import type { PanelTarget } from "../kit/panel";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { sessionLabel } from "../chief-of-staff";
@@ -50,7 +51,7 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
+import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, workerOf, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
 import { boardPlace, ChangedLine, forYou, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
@@ -101,6 +102,7 @@ export function BoardPanel({
   placement = "column",
   extra = [],
   docTab,
+  openCard,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -123,6 +125,8 @@ export function BoardPanel({
   extra?: MenuItem[];
   /** A project Doc's tab, as the page draws a Doc. */
   docTab?: (doc: string, more: MenuItem[]) => preact.ComponentChildren;
+  /** Open a card's page by its issue (`iss_…`): a tile's body on the desk goes there (#1520), not to the drawer. */
+  openCard?: (issue: string) => void;
 }) {
   const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
@@ -210,10 +214,15 @@ export function BoardPanel({
   const prs = view ? openPrs(view) : [];
   const tabs: TabItem[] = layout.tabs.map((t, i) => ({ id: t.id, title: tabTitle(t, view?.board.title ?? "Board"), count: i + 1, closes: t.id !== HOME, dot: t.id !== tab && ((t.for_you && !looked.has(t.id)) || t.panes.some((p) => arranged.quiet.has(p.id))) }));
   // The desk's keys (Lift 5a): its tabs by number, a row at a time, Filter, Add row and the lead.
+  /** The worker `j`/`k` peek in the panel (#1520), by the tile they're on. */
+  const [peek, setPeek] = useState<PanelTarget | null>(null);
   const tile = (by: number) => {
     const all = [...document.querySelectorAll<HTMLElement>(`[data-board="${id}"] [data-board-row]`)];
     const at = all.indexOf(document.activeElement as HTMLElement);
-    all[Math.max(0, Math.min(all.length - 1, at < 0 ? 0 : at + by))]?.focus();
+    const to = all[Math.max(0, Math.min(all.length - 1, at < 0 ? 0 : at + by))];
+    to?.focus();
+    const r = to && view?.zones.flatMap((z) => z.rows).find((x) => x.id === to.dataset.boardRow);
+    if (r) setPeek(workerOf(r, id));
   };
   const openFind = () => (setTab(HOME), setFilterOpen(true), requestAnimationFrame(() => findBox.current?.focus()));
   useBindings(
@@ -387,6 +396,12 @@ export function BoardPanel({
     ...(extra.length ? ["separator" as const, ...extra] : []),
   ];
   const grouped = !!view.groups?.length;
+  // On the desk a card opens its page (#1520); a PR, a link or a note, and the board block, the drawer.
+  const openRow = (row: string) => {
+    const r = allRows.find((x) => x.id === row);
+    if (desk && openCard && r?.pointer.kind === "issue") openCard(r.pointer.id);
+    else setDrawer(row);
+  };
 
 
   const findBar = (
@@ -474,7 +489,7 @@ export function BoardPanel({
           if (narrows && z.rows.length === 0) return null;
           const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
           return (
-          <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} opened={drawer} asks={!desk} />
+          <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={openRow} details={setDrawer} opened={drawer} asks={!desk} />
           );
         })}
       </div>
@@ -704,7 +719,7 @@ export function BoardPanel({
           </section>
           {prefsOpen && prefs.prefs && <LayoutSheet prefs={prefs.prefs} flip={prefs.flip} close={() => setPrefsOpen(false)} />}
           <div class="board-desk-side">
-            <BoardSide view={view} id={id} phone={phone} above={<BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />} />
+            <BoardSide view={view} id={id} phone={phone} peek={peek} onPeekClose={() => setPeek(null)} above={<BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />} />
           </div>
         </div>
       </RowItems.Provider>
@@ -1141,6 +1156,7 @@ function Lane({
   groups,
   moveRow,
   open,
+  details,
   opened,
   asks,
 }: {
@@ -1157,6 +1173,8 @@ function Lane({
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
   open: (row: string) => void;
+  /** ⋯ → Details: the drawer, where `open` goes to the card's page (#1520). */
+  details?: (row: string) => void;
   /** The row whose drawer is open: its card is the selected one. */
   opened: string | null;
   /** Each row's open ask is a card on it (the block's); the desk has them in its Needs you. */
@@ -1186,7 +1204,7 @@ function Lane({
       {!fold.folded && (
         <ul class="board-rows">
           {rows.slice(0, cut).map((r) => (
-            <BoardItemRow key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} opened={opened} asks={asks} />
+            <BoardItemRow key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} details={details} opened={opened} asks={asks} />
           ))}
           {cut < rows.length && (
             <li>
@@ -1262,6 +1280,7 @@ function BoardItemRow({
   groups,
   moveRow,
   open,
+  details,
   opened,
   asks,
 }: {
@@ -1275,6 +1294,8 @@ function BoardItemRow({
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
   open: (row: string) => void;
+  /** ⋯ → Details: the drawer, where `open` goes to the card's page (#1520). */
+  details?: (row: string) => void;
   opened: string | null;
   asks: boolean;
 }) {
@@ -1292,7 +1313,7 @@ function BoardItemRow({
   const meta = tileMeta(r, who);
   const more = (e: MouseEvent) =>
     menuAt(e, [
-      { label: "Details", run: () => open(r.id) },
+      { label: "Details", run: () => (details ?? open)(r.id) },
       { label: "Edit…", run: () => setEditing(r.id) },
       ...(groups.length
         ? [

@@ -57,8 +57,9 @@ test("a card's session is on its tile, what needs you first; the drawer has them
   await expect(needs.locator("[data-board-tile-word]")).toHaveText("needs you");
   await expect(needs.locator("[data-board-tile-meta]")).toContainText("needs input");
   await page.screenshot({ path: info.outputPath("board-card-sessions.png") });
-  // The drawer says them too.
-  await rail.locator("[data-board-ptr]").click();
+  // The drawer says them too: ⋯ → Details (the tile's body opens the card's page, #1520).
+  await rail.locator("[data-board-row-menu]").click();
+  await page.getByRole("menuitem", { name: "Details" }).click();
   const drawer = page.locator('[data-board-drawer="row_0970"] [data-board-drawer-card-sessions]');
   await expect(drawer.locator("[data-board-card-session]")).toHaveCount(2);
   // A computer's session opens its pane, in Build.

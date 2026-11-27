@@ -254,15 +254,19 @@ test.describe("the list follows the board's page", () => {
 test.describe("on a board's page (Lift 5a)", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("a row's drawer is a sheet over the board; Esc shuts it and the row has the focus", async ({ page }) => {
+  test("a row's drawer (⋯ → Details) is a sheet over the board; Esc shuts it and the row has the focus; the tile's body opens its card's page (#1520)", async ({ page }) => {
     await openApp(page, `/p/${P}/boards/brd_0a01`);
-    await page.locator('[data-board-row="row_brd_0a01"] [data-board-ptr]').click();
+    await page.locator('[data-board-row="row_brd_0a01"] [data-board-row-menu]').click();
+    await page.getByRole("menuitem", { name: "Details" }).click();
     const drawer = page.locator('[data-side-sheet-backdrop] [data-board-drawer="row_brd_0a01"]');
     await expect(drawer).toBeVisible();
     await expect(drawer.locator("[data-board-drawer-title]")).toHaveText("Launch's first issue");
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
-    await expect(page.locator('[data-board-row="row_brd_0a01"]')).toBeFocused();
+    // Back where it was opened from: the row (its ⋯).
+    await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[data-board-row="row_brd_0a01"]'))).toBe(true);
+    await page.locator('[data-board-row="row_brd_0a01"] [data-board-ptr]').click();
+    await expect(page).toHaveURL(/\/issues\/iss_/);
   });
 
   test("a grouped board has a Group menu under Filter, and it narrows the rows", async ({ page }) => {

@@ -23,7 +23,7 @@ const pr = { id: "att_pr", role: "work", pointer: { kind: "forge_item", id: "fi_
 
 const ROWS = {
   next: [row("row_1622", "next", 1622, "Chat: polls, as cards")],
-  doing: [row("row_1448", "doing", 1448, "Row hover shows actions", { ask: ask("ask_1", true, "Truncate the middle, or hide the project?", ["Truncate middle", "Hide project"]) })],
+  doing: [row("row_1448", "doing", 1448, "Row hover shows actions", { ask: ask("ask_1", true, "Truncate the middle, or hide the project?", ["Truncate middle", "Hide project"]), attachments: [{ id: "att_w", role: "work", pointer: { kind: "block", machine: "m_geek", pane: "%3" }, block: { state: "working", title: "claude@geek" } }] })],
   review: [row("row_1443", "review", 1443, "Sidebar caret beside the crumb", { attachments: [pr] }), row("row_1416", "review", 1416, "Run this board card", { ask: ask("ask_2", false, "What should the card say?", []) })],
   done: [1444, 1445, 1446, 1447].map((n) => row(`row_${n}`, "done", n, `Done ${n}`, { live: { state: "merged", kind: "pr", number: n, title: `Done ${n}` }, proof: n === 1444 ? { by: "ci" } : undefined })),
 };
@@ -270,16 +270,28 @@ test("lanes read Next · Doing · Review · Done; a tile says its state and who 
   await expect(done.locator("[data-board-row]")).toHaveCount(4);
 });
 
-test("j and k move between tiles; Enter opens one", async ({ page }) => {
+test("j and k move between tiles, peeking each card's worker in the panel; Enter opens the card's page (#1520)", async ({ page }) => {
   await openDesk(page);
+  const tabs = page.locator(".board-desk-side [data-kit=panel] [role=tab]");
+  const tiles = page.locator("[data-board-row]");
+  await expect(tabs).toHaveCount(2);
   await page.keyboard.press("j");
-  await expect(page.locator("[data-board-row]").first()).toBeFocused();
+  await expect(tiles.first()).toBeFocused();
+  // #1448's worker, a visitor in italics, in front.
+  await expect(tiles.first()).toHaveAttribute("data-board-row", "row_1448");
+  await expect(tabs).toHaveCount(3);
+  await expect(tabs.nth(2)).toHaveText("#1448");
+  await expect(tabs.nth(2)).toHaveClass(/is-peek/);
+  await expect(tabs.nth(2)).toHaveAttribute("aria-selected", "true");
+  // The next has no worker: the board's tab is in front again.
   await page.keyboard.press("j");
-  await expect(page.locator("[data-board-row]").nth(1)).toBeFocused();
+  await expect(tiles.nth(1)).toBeFocused();
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("k");
-  await expect(page.locator("[data-board-row]").first()).toBeFocused();
+  await expect(tabs).toHaveCount(3);
   await page.keyboard.press("Enter");
-  await expect(page.locator("[data-board-drawer]")).toBeVisible();
+  await expect(page).toHaveURL(/\/issues\/iss_1448$/);
 });
 
 test("Add row is a sheet: a title, a description and Start an agent on it; it opens the issue, puts it on the board and asks for its agent", async ({ page }, info) => {

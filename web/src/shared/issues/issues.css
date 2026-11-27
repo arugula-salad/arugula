@@ -384,3 +384,35 @@ details.issues-note > summary {
   margin: 12px 0 0;
   font-size: var(--text-meta);
 }
+
+/* A card's page (#1520): the issue, with the agent panel beside it (its worker in front). */
+.card-place {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--gap);
+  height: 100%;
+  min-height: 0;
+  padding-right: var(--gap);
+  box-sizing: border-box;
+}
+
+.card-place-work {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.card-place-work:focus {
+  outline: none;
+}
+
+.card-place > .k-panel-col {
+  padding: var(--gap) 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1000px) {
+  .card-place {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+}

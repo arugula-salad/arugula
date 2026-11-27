@@ -12,12 +12,13 @@
 // Boards › the board › #N.
 
 import { useEffect, useState } from "preact/hooks";
+import { panelKey, usePanel } from "../../shared/kit/panel";
 import type { BoardRow, BoardView } from "../../shared/proto";
 import { usePlatformApi } from "../../shared/platform-api";
 import { sessionLabel } from "../../shared/chief-of-staff";
 import { chat } from "../../shared/chat-store";
 import type { Between } from "../../shared/chat/room";
-import { askNeed } from "../../shared/boards/desk";
+import { askNeed, workerOf } from "../../shared/boards/desk";
 import { answeredWords, boardItems, itemFor, itemNeed } from "../../shared/boards/text";
 import { boards } from "../../shared/boards/store";
 import { liveSessions, openPrs, prWord, waitingOf } from "../../shared/boards/text";
@@ -37,14 +38,26 @@ import { Missing } from "./project";
 export function IssuePage({ project, issue, msg, thread }: { project: string; issue: string; msg?: number; thread?: number }) {
   const on = useIssuesOn(project);
   const card = useCard(project, issue);
+  const AgentPanel = usePanel();
   if ("show" in on) return on.show;
   const p = on.p;
   const list = pathOf({ page: "issues", project: p.id }, names);
   const back = { href: list, label: "Issues", onClick: (e: MouseEvent) => follow(e, list), data: "issue-back" };
-  return (
+  const view = (
     <IssueApiContext.Provider value={here}>
       <IssueView key={issue} class="platform-section sw-page" place={{ project: p.id, members: membersOf(p), writer: mayWrite(p) }} id={issue} msg={msg} thread={thread} back={back} Missing={Missing} card={card ? { props: <CardProps c={card} />, ask: <OpenAsk c={card} project={project} />, between: answered(card.row) } : undefined} />
     </IssueApiContext.Provider>
+  );
+  // A card (an issue on a board) has the agent panel beside it, its worker in front (#1520).
+  if (!card || !AgentPanel) return view;
+  const worker = workerOf(card.row, card.view.board.id);
+  return (
+    <div class="card-place" data-card-place={issue}>
+      <div class="card-place-work" data-work tabIndex={-1}>
+        {view}
+      </div>
+      <AgentPanel project={p.id} targets={worker ? [worker] : []} current={worker ? panelKey(worker) : undefined} />
+    </div>
   );
 }
 
