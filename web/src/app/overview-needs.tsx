@@ -24,7 +24,7 @@ import { Row } from "../shared/kit/row";
 import { Surface } from "../shared/kit/surface";
 import { both, useBindings, type Binding } from "../shared/keys";
 import { platformFetch, refusalOf } from "../shared/maintenance";
-import { ago } from "../shared/time";
+import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { act } from "../shell/swarm/view";
@@ -141,7 +141,7 @@ function needOf(i: InboxItem, me: string | null | undefined, fleet: Fleet, a: An
     answer: a ? { via: i.kind === "todo" ? "todo" : "card", options: a.options } : undefined,
     escalated: i.escalated,
     how,
-    age: ago(i.since).replace(/ ago$/, ""),
+    age: needAge(i.since),
   };
 }
 
@@ -280,7 +280,7 @@ export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxI
   };
 
   const count = live.filter((i) => i.counts && !forTeammate(i, me) && i.kind !== "todo").length;
-  const oldest = asks.find((i) => !receipts.has(i.id));
+  const oldest = needAge(asks.find((i) => !receipts.has(i.id))?.since);
   return (
     <div class="ov-needs" data-ov-needs>
       <Surface kind="section" as="section" aria-label="Needs you" data-ov-needs-asks>
@@ -289,7 +289,7 @@ export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxI
           <span class="m-meta" data-ov-needs-count>
             {count || ""}
           </span>
-          {oldest && <span class="ov-head-end m-meta">oldest {ago(oldest.since).replace(/ ago$/, "")}</span>}
+          {oldest && <span class="ov-head-end m-meta">oldest {oldest}</span>}
         </header>
         {asks.length === 0 ? (
           <p class="ov-quiet" data-ov-needs-none>

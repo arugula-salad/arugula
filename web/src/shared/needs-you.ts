@@ -7,6 +7,7 @@
 // (the Swarm's rail, the phone's sheet, the attention drawer, a session's
 // top pane) is in one order, `byNeedsYou` (#451).
 
+import { ago } from "./time.ts";
 import type { PaneInfo, Reason } from "./proto";
 
 /** The one label for it, everywhere. */
@@ -80,3 +81,11 @@ export const agentRunning = (p: Pick<PaneInfo, "type" | "kind" | "running">) => 
 
 /** "1 needs you", "3 need you". */
 export const needYouText = (n: number) => `${n} ${n === 1 ? "needs" : "need"} you`;
+
+/** How long a thing has waited, short ("7m", "2h", "3d"); "" when its time
+ * is missing or can't be one (0, or before 2001: seconds, not ms), so a row
+ * never says it waited since 1970. */
+export function needAge(since: number | null | undefined, now = Date.now()): string {
+  if (!since || !Number.isFinite(since) || since < 1e12) return "";
+  return ago(since, now).replace(/ ago$/, "");
+}
