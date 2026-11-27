@@ -14,7 +14,7 @@
 // page's: `AgentPanel` (app/panel.tsx) draws agents, rooms and threads in
 // it, and a place reaches that through `usePanel()`.
 
-import type { ComponentChildren, ComponentType } from "preact";
+import { isValidElement, type ComponentChildren, type ComponentType, type VNode } from "preact";
 import { useRef, useState } from "preact/hooks";
 import { both, useBindings, type Binding } from "../keys";
 import { usePlatformApi } from "../platform-api";
@@ -107,11 +107,13 @@ export function Panel({
   children,
 }: {
   label: string;
-  tabs: TabItem[];
-  current: string;
-  onPick: (id: string) => void;
+  /** None: no tab strip (a place that shows one conversation). */
+  tabs?: TabItem[];
+  current?: string;
+  onPick?: (id: string) => void;
   onClose?: (id: string) => void;
-  head: PanelHead;
+  /** Who it is; or the place's own head, drawn as it is. */
+  head: PanelHead | VNode;
   /** Transcript or Terminal, where the tab has both (`onView`). */
   view?: PanelView;
   onView?: (v: PanelView) => void;
@@ -225,11 +227,14 @@ export function Panel({
       {above}
       <Surface kind="section" as="aside" class="k-panel" aria-label={label} tabIndex={-1} data-kit="panel" data-panel={current}>
         <div class="k-panel-tabs">
-          <Tabs label={label} tabs={tabs} current={current} onPick={onPick} onClose={onClose} />
+          {tabs?.length ? <Tabs label={label} tabs={tabs} current={current ?? ""} onPick={onPick ?? (() => {})} onClose={onClose} /> : null}
           <IconButton class="k-panel-tool" label="Collapse the panel" title="Collapse the panel (\)" data-panel-collapse onClick={() => (setFloor(false), put({ ...size, shut: true }))}>
             <ChevronIcon dir="right" size="sm" />
           </IconButton>
         </div>
+        {isValidElement(head) ? (
+          <header class="k-panel-head">{head}</header>
+        ) : (
         <header class="k-panel-head" data-panel-head={head.name} data-panel-state={head.status}>
           {!head.person && <Avatar name={head.name} agent />}
           <div class="k-panel-who">
@@ -256,6 +261,7 @@ export function Panel({
             </IconButton>
           )}
         </header>
+        )}
         {back && (
           <button type="button" class="k-panel-back" data-panel-back onClick={back.go}>
             <ChevronIcon dir="left" size="xs" /> {back.label}
