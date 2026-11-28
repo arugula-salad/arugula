@@ -58,6 +58,11 @@
   overflow: auto;
 }
 
+/* Its header holds its controls: the kit's corner ones would cover its ⋯. */
+.board-desk-main .k-pane.is-default > .k-pane-head {
+  display: none;
+}
+
 .board-changed {
   align-self: center;
   white-space: nowrap;

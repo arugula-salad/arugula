@@ -557,11 +557,11 @@ export function BoardPanel({
     if (focused === pane) setFocused(null);
     if (max === pane) setMax(null);
   };
-  const maxPane = (pane: string, opened: boolean) => {
+  const maxPane = (pane: string) => {
     if (max === pane) return setMax(null);
     setMax(pane);
     setFocused(pane);
-    if (opened) void arranged.change({ op: "maximise", pane });
+    void arranged.change({ op: "maximise", pane });
   };
   const reset = () => (setMax(null), setFocused(null), void arranged.change({ op: "reset" }));
   /** The board's own panes: a Doc, a PR's or a card's drawer. */
@@ -586,7 +586,7 @@ export function BoardPanel({
       arriving: arranged.arrived.has(p.id),
       mine: !p.opened_by.machine,
       move: tabNow.id === HOME ? () => void arranged.change({ op: "move", pane: p.id, tab: null, index: null }) : undefined,
-      max: () => maxPane(p.id, true),
+      max: () => maxPane(p.id),
       close: () => closePane(p.id),
       restore: p.in_place_of ? { name: defaultTitle(p.in_place_of), run: () => closePane(p.id) } : undefined,
     });
@@ -696,7 +696,7 @@ export function BoardPanel({
   // The tab's body is its panes (#1565): on the home tab the board is one of
   // them, with its header and lanes scrolling inside it, and what you and the
   // lead open sits beside it at full height.
-  const home: PaneItem[] = tabNow.id === HOME ? [{ id: LANES, title: view.board.title, default: true, size: layout.default_sizes[LANES], max: () => maxPane(LANES, false), body: board, data: { "data-board-default": LANES } }] : [];
+  const home: PaneItem[] = tabNow.id === HOME ? [{ id: LANES, title: view.board.title, default: true, size: layout.default_sizes[LANES], body: board, data: { "data-board-default": LANES } }] : [];
   return (
     <CardSessions.Provider value={byCard}>
       <RowItems.Provider value={itemWords}>
