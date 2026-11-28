@@ -71,6 +71,18 @@ test("the board on the left two thirds, its Needs you and lead on the right thir
   await page.screenshot({ path: info.outputPath("board-desk-1440.png") });
 });
 
+test("the board fills its tab body to the right panel, as a Doc tab does, at 1440, 2000 and 2560 wide (#1558)", async ({ page }, info) => {
+  await openDesk(page);
+  for (const width of [1440, 2000, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    const main = (await page.locator(".board-desk-main").boundingBox())!;
+    const board = (await page.locator(`.board-desk-main > [data-board="${B}"]`).boundingBox())!;
+    // Its scroller meets the card's edge (inside its 1px border), so no dead column and its scrollbar by the panel.
+    expect(Math.abs(board.x + board.width - (main.x + main.width - 1))).toBeLessThan(1.5);
+    await page.screenshot({ path: info.outputPath(`board-desk-fill-${width}.png`) });
+  }
+});
+
 test("the right third is the agent panel (#1520): ✦ alone, and the board's one tab flipping Lead 🔒 ⇄ # channel; Also leads names its other boards", async ({ page }, info) => {
   await openDesk(page);
   // The same lead (claude@dust on mch_dust) leads another board of the project.

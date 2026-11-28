@@ -32,13 +32,17 @@ const tokenName = (agent: Agent) => (agent.machine_name || agent.machine).replac
 /** A session's name, as the platform gives it, else from its id. */
 const sessionName = (agent: Agent) => agent.machine_name || `Agent session ${agent.machine.slice(4, 12)}`;
 
+/** "<owner>'s agent", or "your agent" when the owner is the reader, named
+ * "you" (Arugula #1559): every "X's agent" is built here. */
+export const agentOf = (owner: string) => (owner === "you" ? "your agent" : `${owner}'s agent`);
+
 /** "<owner>'s agent on <machine>", or a token's "<owner>'s agent token
  * “<name>”", or a session's own name. `gone`: a machine with no name now. */
 export function agentLabel(owner: string, agent: Agent, gone = agent.machine): string {
   if (isCi(agent)) return ciLabel(agent);
   if (isSession(agent)) return sessionName(agent);
-  if (isToken(agent)) return `${owner}'s agent token “${tokenName(agent)}”`;
-  return `${owner}'s agent on ${agent.machine_name || gone}`;
+  if (isToken(agent)) return `${agentOf(owner)} token “${tokenName(agent)}”`;
+  return `${agentOf(owner)} on ${agent.machine_name || gone}`;
 }
 
 /** Short, for a list's row (UI audit #163): `agent · <machine>`, or

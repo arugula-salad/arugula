@@ -5,6 +5,7 @@
 // it is.
 
 import type { ChatAgent, ChatMessage } from "../proto";
+import { agentOf } from "../agent-label";
 import { agentName } from "../agent-name";
 import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
@@ -23,7 +24,7 @@ export function agentHandle(a: ChatAgent, projectName?: (id: string) => string |
 function ownerTip(m: ChatMessage): string {
   const owner = m.author ? m.name || "someone" : "a deleted account";
   const on = m.agent!.machine_name || "a machine that left";
-  return `${owner}'s agent, on ${on}`;
+  return `${agentOf(owner)}, on ${on}`;
 }
 
 /** The author's name in a message's head, a hit or a saved item: a person's

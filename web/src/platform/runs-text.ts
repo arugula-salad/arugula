@@ -4,6 +4,8 @@
 // pane is on control's page, and the address's filters. Tested in
 // scripts/runs.test.mjs.
 
+import { agentOf } from "../shared/agent-label.ts";
+
 /** What a run's operation does (`arugula_e2e::run::Op`). */
 export interface Op {
   daemon: string;
@@ -210,7 +212,7 @@ export function startedBy(
     return cap(`a rule (${ev}${repo})`);
   }
   const who = run.started_by ? (name(run.started_by) ?? cap("someone who left")) : cap("someone who left");
-  return run.started_by_agent ? `${who}'s agent` : who;
+  return run.started_by_agent ? agentOf(who) : who;
 }
 
 /** An id short, its prefix kept: `hw_fa79e709` (UI audit #164). The page

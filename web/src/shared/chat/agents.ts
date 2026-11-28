@@ -4,7 +4,7 @@
 // (scripts/agents.test.mjs).
 
 import type { ChatMessage, ChatRoomAgent } from "../proto";
-import { ciWriter } from "../agent-label";
+import { agentOf, ciWriter } from "../agent-label.ts";
 
 /** A line the platform wrote in a room (#122: a grant let agents in), not
  * a person: no author, and `via` says so. Drawn as a note, not a message. */
@@ -45,7 +45,7 @@ export function authorLabel(m: ChatMessage): string {
   // What an agent session said in its thread (Arugula #215): the session's.
   if (!m.author && m.via?.startsWith("said:ses_")) return `Agent session ${m.via.slice("said:ses_".length, "said:ses_".length + 8)}`;
   const name = m.author ? m.name || "someone" : "a deleted account";
-  return m.agent ? `${name}'s agent on ${m.agent.machine_name || "a machine that left"}` : name;
+  return m.agent ? `${agentOf(name)} on ${m.agent.machine_name || "a machine that left"}` : name;
 }
 
 /** "a, b and c". */

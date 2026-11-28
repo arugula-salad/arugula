@@ -7,6 +7,7 @@
 // the read fails and nothing shows.
 
 import { useEffect, useState } from "preact/hooks";
+import { agentOf } from "./agent-label";
 import { call } from "./chat-store";
 import { sessionLabel } from "./chief-of-staff";
 import { usePlatformApi } from "./platform-api";
@@ -44,7 +45,7 @@ export function useWatchesOn(path: string | null): [WatchShown[], () => void] {
 /** Whose agent it is, as the reader may know it: a chief of staff by its
  * project's name, with `projectName` (Arugula #1457). */
 export function watcher(w: WatchShown, projectName?: (id: string) => string | undefined): string {
-  return w.session ? `${w.owner_name}'s agent ${sessionLabel(w.session, projectName)}` : `${w.owner_name}'s agent`;
+  return w.session ? `${agentOf(w.owner_name)} ${sessionLabel(w.session, projectName)}` : agentOf(w.owner_name);
 }
 
 /** The watches on a PR or a thread; nothing when there are none. */
