@@ -204,11 +204,13 @@ test.describe("desktop", () => {
 
 test.describe("continue here", () => {
   test("resumes it in a terminal tab named after it, no agent block", async ({ page }) => {
-    seed("osprey", "Fish hawks");
+    const { id } = seed("osprey", "Fish hawks");
     await reset(page);
     const [term] = await panes(page);
     await menu(page, paneEl(page, term), "Your work…");
     await picker(page).locator(".yw-filter").fill("fish hawks");
+    // The list reads the machine's conversations first: Enter on it before then continues nothing.
+    await expect(picker(page).locator(`[data-conversation="${id}"]`)).toBeVisible();
     // Enter in the search continues the row it's on.
     await picker(page).locator(".yw-filter").press("Enter");
     await expect(picker(page)).toBeHidden();
