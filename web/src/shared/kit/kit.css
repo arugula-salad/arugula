@@ -121,8 +121,11 @@ a.k-row-line {
 .k-row-kind {
   flex: none;
   width: 72px;
+  overflow: hidden;
   color: var(--ink-dim);
   font-size: var(--text-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k-row-title {
   flex: 1;

@@ -22,6 +22,7 @@ export function Row({
   lead,
   mark,
   label,
+  labelTip,
   title,
   meta,
   open,
@@ -45,6 +46,8 @@ export function Row({
   mark?: State;
   /** The kind of thing, a word: "ask", "board", "doc". */
   label?: string;
+  /** The label's tooltip: the whole of a label cut short. */
+  labelTip?: string;
   title: ComponentChildren;
   /** Who and when, after the title, each dim (or as given). */
   meta?: ComponentChildren[];
@@ -64,7 +67,9 @@ export function Row({
     <>
         {lead}
         {mark ? <Mark state={mark} /> : null}
-        {label ? <span class="k-row-kind m-meta">{label}</span> : null}
+        {label ? <span class="k-row-kind m-meta" title={labelTip}>
+            {label}
+          </span> : null}
         <span class="k-row-title" data-row-title>
           {title}
         </span>

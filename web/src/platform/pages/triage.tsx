@@ -19,6 +19,7 @@ import { toast } from "../toast";
 import { ListPreview } from "../../shared/ui/list-page";
 import { mayWrite } from "./issues";
 import { WaitingWrites } from "./tracker-writes";
+import { rowRef } from "../../shared/boards/text";
 import { TRIAGE_NONE, addedWords, boxState, itemHref, rangeKeys, sourceLabel, targets } from "./triage-text";
 import { addUntriaged, countUntriaged, keyOf, pointerOf, readUntriaged, type Chosen, type UntriagedPage } from "./untriaged";
 import { ObjectChip, Chip } from "../../shared/ui/state-chip";
@@ -410,7 +411,8 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
                         <Row
                           kind={on ? "selected" : "plain"}
                           lead={write && <input type="checkbox" checked={on} aria-label={`Select ${name}`} data-triage-select onChange={() => {}} />}
-                          label={name}
+                          label={rowRef(name)}
+                          labelTip={name}
                           title={
                             href ? (
                               <a href={href} title={i.title} draggable={false} {...(github ? { target: "_blank", rel: "noopener noreferrer" } : { onClick: (e: MouseEvent) => follow(e, href) })}>

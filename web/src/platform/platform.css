@@ -1367,6 +1367,11 @@ html[data-native-tabs] .platform {
   list-style: none;
 }
 
+/* The id column: room for `arugula#2981` on one line, the title after it. */
+.untri-list .k-row-kind {
+  width: 88px;
+}
+
 /* A row (a kit Row) is dragged onto a board's, and shift-clicked to select a range. */
 .untri-list > li[draggable="true"] {
   cursor: grab;
