@@ -1506,6 +1506,13 @@
     "LeadBoard": {
       "description": "`POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's\nlead (`session`, its name on its machine), or with `release` the lead is\ncleared, by the machine of the session that leads or by a person.",
       "properties": {
+        "conversation": {
+          "description": "The id of the calling session's Claude Code conversation (Arugula\n#1563): the lead is told by it, whatever the session is called then,\nand is gone when no pane holds it. Left out with `release`, or when\nthe session has none (a terminal whose hooks were never heard).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "pane": {
           "description": "The calling session's pane on its machine, the one it takes the lead\nfrom; left out with `release`.",
           "format": "uint32",
@@ -2242,6 +2249,13 @@
       "properties": {
         "goal": {
           "description": "What the board is for; left out: none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lead_conversation": {
+          "description": "The id of `lead_session`'s Claude Code conversation (Arugula #1563):\nits lead is told by it, whatever the session is called then.",
           "type": [
             "string",
             "null"

@@ -331,9 +331,11 @@ pub async fn start_here(
             }
         }
         _ => {
-            let body =
-                serde_json::to_value(LeadBoard { session: Some(title.clone()), pane: Some(block), release: false })
-                    .unwrap_or_default();
+            // Its conversation, once the block has one (Arugula #1563); a block
+            // that hasn't started one yet leads by its title.
+            let conversation = crate::agent_mentions::conversation(app, block).await;
+            let lead = LeadBoard { session: Some(title.clone()), pane: Some(block), conversation, release: false };
+            let body = serde_json::to_value(lead).unwrap_or_default();
             match app.control.cloud(Method::POST, &agent_board_lead(&claims.board), Some(&body)).await {
                 Ok(_) => "it leads the board".to_owned(),
                 Err(why) => format!("it doesn't lead the board: {why}"),

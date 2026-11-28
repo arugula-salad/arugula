@@ -9681,6 +9681,13 @@
               "null"
             ]
           },
+          "conversation": {
+            "description": "An agent's post: the id of its session's Claude Code conversation\n(Arugula #1563), kept, never shown. A board's lead isn't told its own\npost by it, whatever the session is called now. A person's post\nignores it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "files": {
             "description": "Files uploaded for this message (ids from `POST .../files`, #107):\nthe poster's own, for this room, not attached before. A message may\nbe only files.",
             "items": {
@@ -13416,6 +13423,13 @@
         "properties": {
           "goal": {
             "description": "What the board is for; left out: none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lead_conversation": {
+            "description": "The id of `lead_session`'s Claude Code conversation (Arugula #1563):\nits lead is told by it, whatever the session is called then.",
             "type": [
               "string",
               "null"

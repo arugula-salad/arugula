@@ -1151,6 +1151,11 @@ pub struct NewBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead_pane: Option<u32>,
+    /// The id of `lead_session`'s Claude Code conversation (Arugula #1563):
+    /// its lead is told by it, whatever the session is called then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead_conversation: Option<String>,
 }
 
 /// `POST` to [`AGENT_BOARD_LEAD`]: the calling session takes the board's
@@ -1168,6 +1173,13 @@ pub struct LeadBoard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub pane: Option<u32>,
+    /// The id of the calling session's Claude Code conversation (Arugula
+    /// #1563): the lead is told by it, whatever the session is called then,
+    /// and is gone when no pane holds it. Left out with `release`, or when
+    /// the session has none (a terminal whose hooks were never heard).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub conversation: Option<String>,
     #[serde(default)]
     pub release: bool,
 }
