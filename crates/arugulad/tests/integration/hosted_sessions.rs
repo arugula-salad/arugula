@@ -1520,7 +1520,7 @@ fn three_tries_run_at_once_and_a_review_waits() {
 }
 
 /// A Codex session asks nobody either (aru-115): its block runs codex-acp
-/// in `full-access`, Codex's counterpart of Claude Code's bypass, and what
+/// in `full-access` (codex-acp's `agent-full-access`), Codex's counterpart of Claude Code's bypass, and what
 /// still asks the block allows. Its questions are elicitations, not
 /// permissions, so they still go to its card and come back answered.
 #[test]
@@ -1547,7 +1547,7 @@ fn a_codex_session_asks_nobody_but_its_questions_reach_the_card() {
         .filter(|e| e.file_name().to_string_lossy().starts_with("fake-"))
         .map(|e| std::fs::read_to_string(e.path()).unwrap())
         .collect();
-    assert!(modes.contains(r#""mode": "full-access""#), "its session's mode: {modes}");
+    assert!(modes.contains(r#""mode": "agent-full-access""#), "its session's mode: {modes}");
     assert!(!lines.iter().any(|l| l.contains("Couldn't switch")), "{lines:#?}");
 
     // A question goes to the card, and its answer comes back.

@@ -3096,14 +3096,22 @@ fn mode_ids(result: &Value) -> Vec<String> {
 /// has modes of its own (codex-acp 2.1.0: `read-only`, `workspace-write`,
 /// `agent`, `agent-full-access`), so `auto` is the one that asks least and
 /// keeps its sandbox: `agent`, which asks only for what its reviewer finds
-/// unsafe. Never `agent-full-access`: a grant from here doesn't lift a
-/// restriction of Codex's. A mode it doesn't offer isn't sent blind: the
-/// block says so.
+/// unsafe. `auto` is never `agent-full-access`: a grant from here doesn't
+/// lift a restriction of Codex's. `full-access`, which only a person or a
+/// hosted session asks for (`start_agent` refuses it, #163), is Codex's
+/// `agent-full-access`. A mode it doesn't offer isn't sent blind: the block
+/// says so.
 fn agent_mode(agent: Kind, mode: &str, offered: &[String]) -> Result<String, String> {
     if agent != Kind::Codex {
         return Ok(mode.to_owned());
     }
-    let id = if mode == "auto" { "agent" } else { mode };
+    let id = match mode {
+        "auto" => "agent",
+        // What a hosted session asks for (its box is the limit): the one
+        // way here to Codex's full access, past the refusal for an agent.
+        "full-access" => "agent-full-access",
+        _ => mode,
+    };
     if offered.iter().any(|m| m == id) {
         Ok(id.to_owned())
     } else if offered.is_empty() {

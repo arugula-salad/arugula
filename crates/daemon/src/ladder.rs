@@ -77,7 +77,7 @@ pub struct Ask {
 
 /// Permission modes that skip every check: an agent never hands one to
 /// another; only the person starts an agent like that.
-pub const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access"];
+pub const SKIPS_CHECKS: &[&str] = &["bypassPermissions", "full-access", "agent-full-access"];
 
 /// Start an agent for a board, here or on another machine of this account,
 /// under the board's grant: what the target answered, or why not, in words

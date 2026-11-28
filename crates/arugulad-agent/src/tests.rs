@@ -930,6 +930,18 @@ fn auto_never_becomes_codex_s_full_access() {
 }
 
 #[test]
+fn a_hosted_codex_session_s_full_access_is_codex_s_own() {
+    // aru-115: a hosted session asks Codex for `full-access`; codex-acp
+    // offers it as `agent-full-access`. Through the state machine, as sent.
+    let g = codex_open("full-access", &CODEX_MODES);
+    assert_eq!(asked_modes(&g), ["agent-full-access"]);
+    // Not offered: said, not sent.
+    let g = codex_open("full-access", &["read-only", "agent"]);
+    assert_eq!(asked_modes(&g), Vec::<String>::new());
+    assert!(g.mode_warning.is_some());
+}
+
+#[test]
 fn claude_s_modes_go_through_as_they_are() {
     assert_eq!(agent_mode(Kind::Claude, "auto", &[]).as_deref(), Ok("auto"));
     assert_eq!(agent_mode(Kind::Claude, "yolo", &["default".into()]).as_deref(), Ok("yolo"));

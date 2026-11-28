@@ -49,7 +49,7 @@ use tracing::{info, warn};
 use crate::{mux::Api, server::App, store::now_ms};
 
 /// Permission modes that skip every check: never for a task (S34).
-const SKIPS_CHECKS: [&str; 3] = ["bypassPermissions", "dontAsk", "full-access"];
+const SKIPS_CHECKS: [&str; 4] = ["bypassPermissions", "dontAsk", "full-access", "agent-full-access"];
 
 /// "Allow for an hour".
 pub const GRANT_MS: u64 = 3_600_000;
