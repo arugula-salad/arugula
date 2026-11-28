@@ -418,6 +418,13 @@ pub struct AgentMention {
     /// daemon ignores it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// The pane a board's lead leads from (Arugula #1492), for a post on the
+    /// board's thread. While it's alive the daemon gives the message to the
+    /// session in it now, whatever that session is called; with no such pane
+    /// it goes by `session`, as before. An older daemon ignores it (nothing
+    /// here refuses an unknown field), so control may send it to any daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<u32>,
     /// With an agent's post (#575): the name of the session that wrote it.
     /// The daemon never gives the message to a session of this name, so an
     /// agent's mention of its own machine doesn't come back to it. An older
