@@ -61,12 +61,12 @@ test("the board on the left two thirds, its Needs you and lead on the right thir
   await expect(page.locator('[data-path="board"]')).toHaveText("Product improvements");
   // Its asks are in Needs you, not on its tiles.
   await expect(page.locator(`[data-board="${B}"] .board-ask`)).toHaveCount(0);
-  // The title block: the meta line, the lead and its machine, the progress line.
+  // The title block: the meta line and the progress line; the lead is the panel's alone (#1571).
   await expect(page.locator("[data-board-heading]")).toHaveText("Product improvements");
   await expect(page.locator("[data-board-meta]")).toContainText("4/8");
   await expect(page.locator("[data-board-meta]")).toContainText("1 asks you");
   await expect(page.locator("[data-board-meta]")).toContainText("#2868 queued");
-  await expect(page.locator("[data-board-lead-facts]")).toContainText("dust");
+  await expect(page.locator("[data-board-head]")).not.toContainText("dust");
   await expect(page.locator("[data-board-progress-words]")).toHaveText("50% · 4 of 8 done · 1 proven · 2 in review");
   await page.screenshot({ path: info.outputPath("board-desk-1440.png") });
 });

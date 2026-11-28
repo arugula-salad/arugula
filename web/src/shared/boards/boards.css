@@ -227,20 +227,6 @@
   color: var(--ink-faint);
 }
 
-.board-desk-facts {
-  display: flex;
-  gap: 24px;
-  margin: 0;
-}
-
-.board-desk-facts dd {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 2px 0 0;
-  font-family: var(--font-mono);
-}
-
 .board-desk-actions {
   display: flex;
   align-items: center;

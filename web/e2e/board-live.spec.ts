@@ -181,10 +181,10 @@ test.describe("on a computer", () => {
 test.describe("its lead", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("your own lead whose pane is here: its name and machine in the title block, and Lead 🔒 in the agent panel with Transcript and Terminal (#1520)", async ({ page }, info) => {
+  test("your own lead whose pane is here: Lead 🔒 in the agent panel with Transcript and Terminal (#1520), and not in the title block (#1571)", async ({ page }, info) => {
     await openBoard(page, (pane) => ({ machine: "m_suite", machine_name: "suite-box", session: "Product Improvements", pane, at: 1 }));
-    await expect(page.locator("[data-board-lead-facts]")).toContainText("Product Improvements");
-    await expect(page.locator("[data-board-lead-facts]")).toContainText("suite-box");
+    await expect(page.locator("[data-board-head]")).not.toContainText("suite-box");
+    await expect(page.locator("[data-board-head]")).not.toContainText(/\blead\b/);
     const side = page.locator(".board-desk-side [data-kit=panel]");
     await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("Lead 🔒");
     await expect(side.locator("[data-panel-toggle]")).toHaveText("⇄ channel");
@@ -207,7 +207,6 @@ test.describe("its lead", () => {
   test("a board no one leads has its channel alone, with no switch", async ({ page }) => {
     await openBoard(page);
     await expect(page.locator("[data-board-heading]")).toHaveText("Launch");
-    await expect(page.locator("[data-board-lead-facts]")).toHaveCount(0);
     const side = page.locator(".board-desk-side [data-kit=panel]");
     await expect(side.locator("[role=tab][aria-selected=true]")).toHaveText("# Launch");
     await expect(side.locator("[data-panel-toggle]")).toHaveCount(0);

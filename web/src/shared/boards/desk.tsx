@@ -2,7 +2,7 @@
 // the screen's): what the Boards page draws around a board's lanes. On the
 // left two thirds, the tabs (`1`–`6`: the board's own, then those opened
 // beside it, Lift 5b's ./arranged.tsx), the red alert strip, the open PRs folded one row each, and the
-// title block with its lead, machine and progress. On the right third, the
+// title block and progress (its lead is the panel's, #1571). On the right third, the
 // board's Needs you as NeedRows (its asks, and the agents' asks and to-dos
 // on its issues from the project's Inbox, Arugula #1469; a teammate's
 // folded under one neutral row each),
