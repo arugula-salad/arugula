@@ -196,6 +196,23 @@ pub struct PostThreadArgs {
     /// Reply in the thread of this message (its seq).
     #[serde(default)]
     pub parent: Option<i64>,
+    /// A short word a watcher can wake on, like `pr_ready` or `blocked`:
+    /// lowercase letters, digits, `_` and `-`, starting with a letter, at
+    /// most 40 characters.
+    #[serde(default)]
+    pub signal: Option<String>,
+}
+
+/// What a hosted `post_thread` asks control: a signal is checked as the
+/// machine's `post_thread` checks it, before anything is sent.
+fn post_op(a: PostThreadArgs) -> Result<SessionIssuesOp, String> {
+    if a.text.trim().is_empty() {
+        return Err("say something".into());
+    }
+    if let Some(s) = &a.signal {
+        arugula_control_wire::chat::signal_check(s)?;
+    }
+    Ok(SessionIssuesOp::ThreadPost { room: a.room, text: a.text, parent: a.parent, signal: a.signal })
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -453,7 +470,7 @@ pub(crate) fn tools() -> Vec<Tool> {
         .with_annotations(read_thread),
         Tool::new(
             POST_THREAD,
-            "Post in a room read_session_thread reads (staff, or a room of this project), as the asker's agent, labelled with this session: parent replies in a thread. It reaches whom an agent's post there reaches: the asker, in their staff room; a board's lead, on its board's thread; an issue's lead, on its issue's thread; a person named by @login. Returns its seq.",
+            "Post in a room read_session_thread reads (staff, or a room of this project), as the asker's agent, labelled with this session: parent replies in a thread; signal (like pr_ready) is what a watch on chat.reply matches. It reaches whom an agent's post there reaches: the asker, in their staff room; a board's lead, on its board's thread; an issue's lead, on its issue's thread; a person named by @login. Returns its seq.",
             schema_for_type::<PostThreadArgs>(),
         )
         .with_title("Post in a room")
@@ -703,11 +720,8 @@ impl Server {
     }
 
     async fn post_thread(&self, session: &str, args: Value) -> Out {
-        let a: PostThreadArgs = parse(args)?;
-        if a.text.trim().is_empty() {
-            return Err("say something".into());
-        }
-        match self.ask(session, SessionIssuesOp::ThreadPost { room: a.room, text: a.text, parent: a.parent }).await? {
+        let op = post_op(parse(args)?)?;
+        match self.ask(session, op).await? {
             SessionIssuesGiven::Posted { room, seq } => done(
                 format!("Posted in room {room} (message {seq})"),
                 json!({ "room": room, "seq": seq, "session": session }),
@@ -1029,6 +1043,19 @@ mod tests {
     use std::net::Ipv4Addr;
 
     use super::*;
+
+    /// A hosted post sends its signal when set and nothing when not
+    /// (Arugula #1538); a bad one is refused before it is sent.
+    #[test]
+    fn a_hosted_post_sends_its_signal_only_when_set() {
+        let op = |v: Value| post_op(serde_json::from_value(v).unwrap());
+        let with = serde_json::to_value(op(json!({ "room": "staff", "text": "up", "signal": "pr_ready" })).unwrap());
+        assert_eq!(with.unwrap()["signal"], "pr_ready");
+        let without = serde_json::to_value(op(json!({ "room": "staff", "text": "up" })).unwrap()).unwrap();
+        assert!(without.get("signal").is_none(), "{without}");
+        let e = op(json!({ "room": "staff", "text": "up", "signal": "PR ready" })).unwrap_err();
+        assert!(e.contains("slug"), "{e}");
+    }
 
     const TABLE: &str = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
    0: 0100007F:D431 0100007F:9C40 01 00000000:00000000 00:00000000 00000000  1004        0 7001 1 0000000000000000 100 0 0 10 0

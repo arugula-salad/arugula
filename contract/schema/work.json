@@ -5411,6 +5411,13 @@
             "room": {
               "type": "string"
             },
+            "signal": {
+              "description": "A slug a watcher can wake on (Arugula #1538), as `post_thread`'s.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "text": {
               "type": "string"
             }
@@ -5980,6 +5987,13 @@
             },
             "room": {
               "type": "string"
+            },
+            "signal": {
+              "description": "A slug a watcher can wake on (Arugula #1538), as `post_thread`'s.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "text": {
               "type": "string"

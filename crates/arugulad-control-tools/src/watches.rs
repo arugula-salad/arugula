@@ -1014,6 +1014,20 @@ mod tests {
         assert!(expires("6").is_err());
     }
 
+    /// A lead sleeps until a worker posts its signal (Arugula #1538): the
+    /// watch takes `signal` as a match on both chat events, and keeps it.
+    #[test]
+    fn a_chat_watch_matches_on_a_signal() {
+        for event in ["chat.reply", "chat.posted"] {
+            let b = create_body(args(json!({ "event": event, "match": { "room": "ob_1", "signal": "pr_ready" } })))
+                .unwrap();
+            assert_eq!(b.event.as_deref(), Some(event));
+            assert_eq!(b.matches.unwrap()["signal"], "pr_ready", "{event}");
+        }
+        let e = create_body(args(json!({ "event": "chat.reply", "match": { "text": "ready" } }))).err().unwrap();
+        assert!(e.contains("signal"), "{e}");
+    }
+
     #[test]
     fn a_pr_watch_takes_a_head_for_one_pr() {
         let body = |v| create_body(args(v));

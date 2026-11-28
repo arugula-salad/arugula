@@ -36,7 +36,7 @@ Every agent starts knowing nothing. Its prompt says:
 
 ## Talk to them
 
-Each issue agent leads its issue's thread. To tell one something, `post_thread` with `room` = its issue's `iss_…` id. It gets that as its next prompt, wherever it runs. Its answers come to the board channel, which you lead. Keep the issue's thread for that issue's work, so a person who reads it later sees the whole story.
+Each issue agent leads its issue's thread. To tell one something, `post_thread` with `room` = its issue's `iss_…` id. It gets that as its next prompt, wherever it runs. Its answers come to the board channel, which you lead. Issue agents post with `signal: "pr_ready"` when their PR is up, and `blocked` when they need you. To sleep until one does, `watch` event `chat.reply`, match `{room: <board channel>, signal: "pr_ready"}`, not `agent.idle`, which fires at every turn end. Keep the issue's thread for that issue's work, so a person who reads it later sees the whole story.
 
 On this machine you can also read an agent's block (`read_output`, `format` `messages`) and `wait` on it until `idle`.
 
