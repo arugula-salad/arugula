@@ -102,6 +102,20 @@ export function sections(v: Pick<BoardView, "zones" | "groups">): Section[] {
   return out;
 }
 
+/** The Steps view (Arugula #1579): `rows` (the board's open rows, a find
+ * narrows them) in the platform's `sequence`, as `board_read`'s Steps block
+ * has them, grouped by step. */
+export function stepsOf(v: Pick<BoardView, "sequence">, rows: BoardRow[]): { step: number; rows: BoardRow[] }[] {
+  const by = new Map(rows.map((r) => [r.id, r]));
+  const out: { step: number; rows: BoardRow[] }[] = [];
+  for (const r of (v.sequence ?? []).flatMap((id) => by.get(id) ?? [])) {
+    const step = r.step ?? 1;
+    if (out.at(-1)?.step === step) out.at(-1)!.rows.push(r);
+    else out.push({ step, rows: [r] });
+  }
+  return out;
+}
+
 /** A group's progress in words: `2 of 5 done`, or `no work yet`. */
 export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
   return p.total ? `${p.done} of ${p.total} done` : "no work yet";
