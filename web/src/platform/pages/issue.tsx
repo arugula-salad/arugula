@@ -18,8 +18,8 @@ import { usePlatformApi } from "../../shared/platform-api";
 import { shownSession } from "../../shared/chief-of-staff";
 import { chat } from "../../shared/chat-store";
 import type { Between } from "../../shared/chat/room";
-import { askNeed, workerOf } from "../../shared/boards/desk";
-import { answeredWords, boardItems, itemFor, itemNeed } from "../../shared/boards/text";
+import { workerOf } from "../../shared/boards/desk";
+import { answeredWords, askNeed, boardItems, itemFor, itemNeed } from "../../shared/boards/text";
 import { boards } from "../../shared/boards/store";
 import { liveSessions, openPrs, prWord, waitingOf } from "../../shared/boards/text";
 import { issues, linkedRepos, openOnGithub } from "../../shared/issues/store";
@@ -180,7 +180,7 @@ function OpenAsk({ c, project }: { c: Card; project: string }) {
         Open ask <span class={first === "you" ? "k-needs" : "dim"}>{first === "you" ? "asks you" : `asks ${first}`}</span>
       </h2>
       <NeedList label="Open on this card">
-        {a && <NeedRow need={askNeed(c.row, a, now)} open onAnswer={(o) => void answer(o.id ? { option: o.id } : { text: o.label })} />}
+        {a && <NeedRow need={askNeed(a, c.row.live?.number, now)} open onAnswer={(o) => void answer(o.id ? { option: o.id } : { text: o.label })} />}
         {items.map((i) => {
           const need = itemNeed(i, itemFor(i, me, memberName), c.row.live?.number, now);
           return (

@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardSource, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue, InboxItem, BoardAnsweredAsk } from "../proto";
+import type { BoardSource, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue, InboxItem, BoardAnsweredAsk, BoardAsk } from "../proto";
 import type { Need } from "../kit/need-row";
 import type { Tone } from "../ui/state-chip";
 
@@ -809,6 +809,21 @@ export function boardItems(rows: Pick<BoardRow, "id" | "pointer">[], items: Inbo
 
 /** Who an item waits on, as a NeedRow says it: "you", or the teammate's name. */
 export const itemFor = (i: Pick<InboxItem, "for">, me: string | null, name: (account: string) => string): string => (i.for && me && i.for !== me ? name(i.for) : "you");
+
+/** An ask on a row, as the A2P row draws it, on its issue `#number` if it has one: the option it recommends first (`y`, #1580), and marked. */
+export function askNeed(a: BoardAsk, number: number | undefined, now: number): Need {
+  const options = [...a.options].sort((x, y) => Number(y === a.recommend) - Number(x === a.recommend));
+  return {
+    kind: "ask",
+    title: a.question,
+    from: { name: a.asked_by },
+    for: a.mine ? "you" : a.who_name || "someone",
+    subject: number ? { kind: "issue", id: `#${number}` } : undefined,
+    lines: a.why ? [a.why] : undefined,
+    answer: a.can_answer ? { via: "card", options: options.map((o) => ({ id: o, label: o === a.recommend ? `${o} · recommended` : o })) } : undefined,
+    age: stalledFor(a.created_at, now),
+  };
+}
 
 /** An agent's item on a row as a NeedRow draws it: answered in place when it's an approval or a to-do (its options), else opened where it lives. */
 export function itemNeed(i: InboxItem, who: string, number: number | undefined, now: number = Date.now()): Need {

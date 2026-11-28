@@ -9,14 +9,25 @@
 // A card is the object as it is now. While the room is open the cards
 // that show an object are asked for again every `REFRESH` ms, so an issue
 // that closes changes its card without a reload.
+//
+// An ask's link (Arugula #1581) is the ask itself, answerable here: the
+// row's ask as Needs you draws it (`NeedRow`), answered through its board
+// as the row and Needs you answer it, so the row, Needs you and the
+// asking agent's wake-up all follow. It's read again when its board
+// changes (answered anywhere), and answered, it's the receipt.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
 import { Time } from "../ui/time";
 import "../boards/bar.css";
-import { epicLine } from "../boards/text";
+import { askNeed, epicLine } from "../boards/text";
+import { boards } from "../boards/store";
+import { chat } from "../chat-store";
+import { NeedList, NeedRow, type NeedOption } from "../kit/need-row";
+import type { BoardAnsweredAsk, BoardAsk } from "../proto";
 import { CloseIcon } from "../ui/icons";
 import { isPrState, PrMark } from "../kit/pr-mark";
+import { clock } from "./ask-card";
 
 export type Tone = "open" | "done" | "bad" | "wait" | "off";
 
@@ -37,6 +48,7 @@ export type Preview =
       note: string | null;
       at: number;
     }
+  | { kind: "ask"; url: string; board: string; board_title: string; issue: number | null; ask: BoardAsk; answered: BoardAnsweredAsk | null }
   | { kind: "web"; url: string; site: string; title: string; description: string; image: string | null };
 
 // Polled, not pushed: a card's object changes in tables that know nothing of
@@ -134,6 +146,7 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
   const [cards, setCards] = useState<Preview[]>([]);
   const [removed, setRemoved] = useState(false);
   const wants = mayLink(text);
+  const ask = () => void request(room, seq).then(setCards);
   useEffect(() => {
     if (!wants) {
       setCards([]);
@@ -157,7 +170,7 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
       {cards.map((card) => {
         // #879: the link as written, a Doc's key with it.
         const c = { ...card, url: asWritten(text, card.url) };
-        return c.kind === "object" ? <ObjectCard key={card.url} c={c} /> : c.kind === "board" ? <BoardCard key={card.url} c={c} /> : <WebCard key={card.url} c={c} />;
+        return c.kind === "object" ? <ObjectCard key={card.url} c={c} /> : c.kind === "board" ? <BoardCard key={card.url} c={c} /> : c.kind === "ask" ? <AskCard key={card.url} c={c} again={ask} /> : <WebCard key={card.url} c={c} />;
       })}
       {mine && (
         <button
@@ -230,6 +243,43 @@ function BoardCard({ c }: { c: Extract<Preview, { kind: "board" }> }) {
       {c.lead && <span class="link-card-meta" data-link-card-lead>Led by {c.lead}</span>}
       {c.closed && c.note && <span class="link-card-desc" data-link-card-note>{c.note}</span>}
     </a>
+  );
+}
+
+/** An ask (Arugula #1581): its row's `NeedRow`, open while it waits and
+ * answered through its board; answered, the receipt. `again` reads the
+ * message's cards again: after an answer here, and when its board changes. */
+function AskCard({ c, again }: { c: Extract<Preview, { kind: "ask" }>; again: () => void }) {
+  const [said, setSaid] = useState<string | null>(null);
+  useEffect(() => chat.onObject(c.board, again), [c.board]);
+  const done = c.answered;
+  const answer = (o: NeedOption) =>
+    void boards.answer(c.board, c.ask.id, o.id ? { option: o.id } : { text: o.label }).then(
+      () => (setSaid(null), again()),
+      (e: Error) => setSaid(e.message),
+    );
+  const receipt = done ? { what: done.answer, by: done.answered_by, at: clock(done.answered_at) } : undefined;
+  return (
+    <div data-link-card-ask={c.ask.id} data-ask-state={done ? "answered" : "open"}>
+      <NeedList label={`Asked on ${c.board_title}`}>
+        <NeedRow
+          need={askNeed(c.ask, c.issue ?? undefined, Date.now())}
+          open={!done}
+          onAnswer={done || !c.ask.can_answer ? undefined : answer}
+          receipt={receipt}
+          extra={
+            <a class="m-meta" href={c.url}>
+              on {c.board_title}
+            </a>
+          }
+        />
+      </NeedList>
+      {said && (
+        <p class="bad" role="alert" data-link-card-said>
+          {said}
+        </p>
+      )}
+    </div>
   );
 }
 

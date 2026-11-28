@@ -21,7 +21,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { BoardRow, ChatAsk, InboxItem } from "../shared/proto";
-import { askNeed } from "../shared/boards/desk";
+import { askNeed } from "../shared/boards/text";
 import { boards } from "../shared/boards/store";
 import { Button } from "../shared/kit/button";
 import { NeedRow, type Need, type NeedOption, type Receipt } from "../shared/kit/need-row";
@@ -395,7 +395,7 @@ export function useNeeds({ me, fleet, toast, peek, goes, tabOf }: { me: string |
     const r = asked.get(i.id);
     const a = done || (i.kind === "board_ask" && forTeammate(i, me) && !r?.ask?.can_answer) ? null : answering(fleet, i);
     const base = needOf(i, me, fleet, a);
-    const ask = r?.ask && askNeed(r, r.ask, Date.now());
+    const ask = r?.ask && askNeed(r.ask, r.live?.number, Date.now());
     const drawn = ask ? { ...base, subject: ask.subject ?? base.subject, lines: ask.lines, answer: a ? ask.answer : undefined } : base;
     // What waits in a tab here says which one (Lift 9).
     const tab = tabOf?.(i);

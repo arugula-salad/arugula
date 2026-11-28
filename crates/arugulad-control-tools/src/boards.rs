@@ -1379,6 +1379,17 @@ fn find_attachment<'a>(row: &'a Row, what: &str) -> Result<&'a wire::Attachment,
 }
 
 /// A write that changes one row: the card of that row and the progress.
+/// What an ask's answer says first: where, and its link to post in a
+/// thread, where it unfurls answerable (Arugula #1581), when control gave
+/// one.
+fn asked_line(view: &BoardView, row: &str, label: &str) -> String {
+    let link = view.zones.iter().flat_map(|z| &z.rows).find(|r| r.id == row).and_then(|r| r.ask.as_ref()?.link.clone());
+    match link {
+        Some(l) => format!("Asked on {label}. To ask in a chat thread too, post its link there (post_thread): {l}"),
+        None => format!("Asked on {label}."),
+    }
+}
+
 fn one_row(view: &BoardView, what: &str, row: &str, verbose: bool) -> Out {
     let mut lines = vec![what.to_owned()];
     lines.extend(card_of(view, row).into_iter().map(|l| format!("  {l}")));
@@ -1705,7 +1716,8 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                 conversation,
             };
             let v = ask_call(c, &agent_board_row_ask(&a.board, &row.id), ask).await?;
-            one_row(&view_of(v)?, &format!("Asked on {}.", row.item_label()), &row.id, a.verbose)
+            let view = view_of(v)?;
+            one_row(&view, &asked_line(&view, &row.id, &row.item_label()), &row.id, a.verbose)
         }
         "note" => {
             let a: NoteArgs = args(a)?;
@@ -1975,6 +1987,22 @@ mod tests {
         assert!(ids(&n).is_empty());
         let (n, _) = by(None, None, Some("label:ui"));
         assert_eq!(ids(&n), ["row_1"], "label: in the text");
+    }
+
+    /// An ask's answer hands back its link, to post in a thread (Arugula
+    /// #1581); a control that gives none, just where it was asked.
+    #[test]
+    fn an_ask_answers_with_its_link() {
+        let mut r = row("row_1", json!({ "kind": "issue", "id": "iss_7" }), native(7), json!([]));
+        r["ask"] = json!({ "id": "ask_1", "who": "a", "who_name": "sam", "question": "Ship?", "asked_by": "x",
+                           "created_at": 1, "link": "https://app.arugula.io/p/prj_1/boards/brd_1/asks/ask_1" });
+        let line = asked_line(&board(json!([r.clone()])), "row_1", "#7");
+        assert_eq!(
+            line,
+            "Asked on #7. To ask in a chat thread too, post its link there (post_thread): https://app.arugula.io/p/prj_1/boards/brd_1/asks/ask_1"
+        );
+        r["ask"]["link"] = Value::Null;
+        assert_eq!(asked_line(&board(json!([r])), "row_1", "#7"), "Asked on #7.");
     }
 
     /// A board of rows by item, for the tests of addressing: each is

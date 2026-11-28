@@ -363,7 +363,12 @@ mine: boolean,
 /**
  * The reader may answer it: the person it names, or an owner or editor.
  */
-can_answer: boolean, created_at: number, };
+can_answer: boolean, created_at: number, 
+/**
+ * Its link on the page (Arugula #1581): posted in a chat thread, it
+ * unfurls into the ask, answerable there. None for a raised ask.
+ */
+link?: string, };
 
 /**
  * What an attachment is for.

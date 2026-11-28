@@ -399,3 +399,75 @@ test("on a phone Lanes | Steps is a tab (#1579)", async ({ page }, info) => {
   await expect(page.locator("[data-board-steps] [data-board-row]")).toHaveCount(4);
   await page.screenshot({ path: info.outputPath("board-steps-phone.png"), fullPage: true });
 });
+
+test("an ask's link in the board's channel unfurls into the ask (#1581): answered there, the row and Needs you go with it", async ({ page }, info) => {
+  const answers: unknown[] = [];
+  await openDesk(page, answers);
+  // Answered, the board's view keeps it as the row's history, as control does.
+  const answered = { ...VIEW, zones: VIEW.zones.map((z) => ({ ...z, rows: z.rows.map((r) => (r.id === "row_1448" ? { ...r, ask: undefined, asked: [{ id: "ask_1", question: "Truncate the middle, or hide the project?", answer: "Truncate middle", asked_by: "claude@geek", answered_by: "sam", answered_at: Date.now() }] } : r)) })) };
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: answers.length ? answered : VIEW }));
+  await expect(page.locator('[data-board-needs] [data-board-ask="ask_1"]')).toBeVisible();
+  // The board's thread: the lead posted the ask's link, and control unfurls it as the row's ask.
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate(
+    ({ P, B, view }) => {
+      const id = "ob_board";
+      const seq = 7;
+      const link = `${location.origin}/p/${P}/boards/${B}/asks/ask_1`;
+      const room = { id, kind: "object", team: "t", name: "Product improvements", machine: null, machine_name: null, target: B, project: P, with: null, others: [], private: false, last: seq, read: seq, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+      const ask = view.zones.flatMap((z) => z.rows).find((r) => r.id === "row_1448")!.ask!;
+      const w = window as unknown as { __answered?: boolean };
+      const card = () => ({
+        kind: "ask",
+        url: link,
+        board: B,
+        board_title: "Product improvements",
+        issue: 1448,
+        ask: { ...ask, can_answer: !w.__answered },
+        answered: w.__answered ? { id: "ask_1", question: ask.question, answer: "Truncate middle", asked_by: "claude@geek", answered_by: "sam", answered_at: Date.now() } : null,
+      });
+      const msg = { seq, at: Date.now() - 60_000, author: "", name: "claude@dust", text: `Sam, this one's yours: ${link}`, quote: null, pane: null, edited: null, deleted: null, imported: null, agent: { machine: "m_dust", machine_name: "dust" }, reactions: [], files: [], pinned: false, also: false, mentions: [] };
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/chat/targets") return json(room);
+        if (url.pathname === `/api/chat/rooms/${id}/messages`) return json({ room, messages: [msg], more: false });
+        if (url.pathname === `/api/chat/rooms/${id}/previews`) return json({ previews: { [seq]: [card()] }, web: true });
+        if (url.pathname === `/api/boards/${B}/asks/ask_1/answer` && init?.method === "POST") {
+          const r = await before(input, init);
+          // As control does: the board changed.
+          w.__answered = true;
+          (c as unknown as { heard(ev: unknown): void }).heard({ type: "object", target: B });
+          return r;
+        }
+        return before(input, init);
+      };
+      const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+      c.on = true;
+      c.rooms = [...c.rooms, room];
+      c.emit();
+    },
+    { P, B, view: VIEW },
+  );
+  const side = page.locator(".board-desk-side");
+  await side.locator("[data-panel-toggle]").click();
+  const card = side.locator('[data-link-card-ask="ask_1"][data-ask-state="open"]');
+  await expect(card).toContainText("Truncate the middle, or hide the project?");
+  await expect(card).toContainText("#1448");
+  await page.screenshot({ path: info.outputPath("board-ask-unfurled.png") });
+  await card.getByRole("button", { name: /Truncate middle/ }).click();
+  expect(answers).toEqual([{ option: "Truncate middle", text: null }]);
+  // The card is its receipt; the row's ask and its Needs you row are gone.
+  await expect(side.locator('[data-link-card-ask="ask_1"][data-ask-state="answered"]')).toContainText("Truncate middle by sam");
+  await side.locator("[data-panel-toggle]").click();
+  await expect(page.locator('[data-board-needs] [data-board-ask="ask_1"]')).toHaveCount(0);
+  await expect(page.locator("[data-board-meta]")).not.toContainText("asks you");
+});
+
+test("an ask's link opens its board at the ask: open in Needs you, as its row's #row= does (#1581, #1580)", async ({ page }) => {
+  await openDesk(page, [], `/p/${P}/boards/${B}/asks/ask_1`);
+  const ask = page.locator('[data-board-needs] [data-board-ask="ask_1"]');
+  await expect(ask.getByRole("button", { name: /Truncate middle/ })).toBeVisible();
+  await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
+});
