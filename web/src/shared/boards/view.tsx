@@ -560,11 +560,11 @@ export function BoardPanel({
     if (focused === pane) setFocused(null);
     if (max === pane) setMax(null);
   };
-  const maxPane = (pane: string, opened: boolean) => {
+  const maxPane = (pane: string) => {
     if (max === pane) return setMax(null);
     setMax(pane);
     setFocused(pane);
-    if (opened) void arranged.change({ op: "maximise", pane });
+    void arranged.change({ op: "maximise", pane });
   };
   const reset = () => (setMax(null), setFocused(null), void arranged.change({ op: "reset" }));
   /** The board's own panes: a Doc, a PR's or a card's drawer. */
@@ -589,36 +589,13 @@ export function BoardPanel({
       arriving: arranged.arrived.has(p.id),
       mine: !p.opened_by.machine,
       move: tabNow.id === HOME ? () => void arranged.change({ op: "move", pane: p.id, tab: null, index: null }) : undefined,
-      max: () => maxPane(p.id, true),
+      max: () => maxPane(p.id),
       close: () => closePane(p.id),
       restore: p.in_place_of ? { name: defaultTitle(p.in_place_of), run: () => closePane(p.id) } : undefined,
     });
-  const home = layout.tabs[0]!;
-  const defaults: PaneItem[] =
-    tabNow.id !== HOME
-      ? []
-      : sections(narrowed).flatMap((sec): PaneItem[] => {
-          const name = defaultName(sec);
-          if (layout.closed_defaults.includes(name)) return [];
-          // The lead shows something in its place for a while: ↺ puts it back.
-          const instead = home.panes.find((p) => p.in_place_of === name);
-          if (instead) return [item(instead)];
-          const body = drawSection(sec);
-          return body ? [{ id: name, title: defaultTitle(name), default: true, size: layout.default_sizes[name], max: () => maxPane(name, false), close: () => closePane(name), body, data: { "data-board-default": name } }] : [];
-        });
-  const openedPanes = tabNow.panes.filter((p) => tabNow.id !== HOME || !p.in_place_of).map(item);
-  const panes = (
-    <Panes
-      label={tabNow.id === HOME ? view.board.title : tabTitle(tabNow, view.board.title)}
-      defaults={defaults}
-      opened={openedPanes}
-      focused={focused}
-      max={max}
-      min={PANE_MIN}
-      onFocus={(pane) => (pane !== focused && setFocused(pane), arranged.seen(pane))}
-      onResize={(pane, size) => void arranged.change({ op: "resize", pane, size })}
-    />
-  );
+  // A group the lead shows something in place of, for a while, leaves the lanes: ↺ puts it back.
+  const replaced = new Set(layout.tabs[0]!.panes.flatMap((p) => (p.in_place_of ? [p.in_place_of] : [])));
+  const openedPanes = tabNow.panes.map(item);
   // `g a`: #agents beside the board (Arugula #1522).
   const agentsKey = desk && <AgentsPaneKey project={view.board.project} show={(p) => void show(p)} />;
 
@@ -693,7 +670,9 @@ export function BoardPanel({
           }
         />
       )}
-      {desk ? panes : sections(narrowed).map(drawSection)}
+      {sections(narrowed)
+        .filter((sec) => !desk || !replaced.has(defaultName(sec)))
+        .map(drawSection)}
       {view.said && (
         <p class="board-said" role="status" data-board-said>
           {view.said}
@@ -717,19 +696,26 @@ export function BoardPanel({
 
   // While panes are open beside the board, its right column narrows to a quarter.
   const beside = openedPanes.length > 0 || tabNow.id !== HOME;
+  // The tab's body is its panes (#1565): on the home tab the board is one of
+  // them, with its header and lanes scrolling inside it, and what you and the
+  // lead open sits beside it at full height.
+  const home: PaneItem[] = tabNow.id === HOME ? [{ id: LANES, title: view.board.title, default: true, size: layout.default_sizes[LANES], body: board, data: { "data-board-default": LANES } }] : [];
   return (
     <CardSessions.Provider value={byCard}>
       <RowItems.Provider value={itemWords}>
         <div class={beside ? "board-desk is-beside" : "board-desk"} data-board-desk={id} data-board-beside={beside ? "" : undefined}>
           <section class="board-desk-main" aria-label={view.board.title}>
             <DeskTabs tabs={tabs} current={tabNow.id} pick={setTab} close={(t) => (void arranged.change({ op: "close_tab", tab: t }), t === tab && setTab(HOME))} />
-            {tabNow.id === HOME ? (
-              board
-            ) : (
-              <div class="board-desk-tab" data-board-tab={tabNow.id}>
-                {panes}
-              </div>
-            )}
+            <Panes
+              label={tabNow.id === HOME ? view.board.title : tabTitle(tabNow, view.board.title)}
+              defaults={home}
+              opened={openedPanes}
+              focused={focused}
+              max={max}
+              min={PANE_MIN}
+              onFocus={(pane) => (pane !== focused && setFocused(pane), arranged.seen(pane))}
+              onResize={(pane, size) => void arranged.change({ op: "resize", pane, size })}
+            />
           </section>
           {prefsOpen && prefs.prefs && <LayoutSheet prefs={prefs.prefs} flip={prefs.flip} close={() => setPrefsOpen(false)} />}
           <div class="board-desk-side">

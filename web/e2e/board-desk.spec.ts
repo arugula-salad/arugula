@@ -76,7 +76,8 @@ test("the board fills its tab body to the right panel, as a Doc tab does, at 144
   for (const width of [1440, 2000, 2560]) {
     await page.setViewportSize({ width, height: 900 });
     const main = (await page.locator(".board-desk-main").boundingBox())!;
-    const board = (await page.locator(`.board-desk-main > [data-board="${B}"]`).boundingBox())!;
+    // The board is its tab's pane (#1565): that pane's body is its scroller.
+    const board = (await page.locator(`.board-desk-main [data-board-default="lanes"] > .k-pane-body:has(> [data-board="${B}"])`).boundingBox())!;
     // Its scroller meets the card's edge (inside its 1px border), so no dead column and its scrollbar by the panel.
     expect(Math.abs(board.x + board.width - (main.x + main.width - 1))).toBeLessThan(1.5);
     await page.screenshot({ path: info.outputPath(`board-desk-fill-${width}.png`) });
