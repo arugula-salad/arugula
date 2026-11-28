@@ -21,9 +21,10 @@
 // for both, the list stands alone and a row opens its preview in its place,
 // and the sort is a menu rather than a select beside the search.
 //
-// The list folds to a strip (Arugula #1126): `‹` in its header or `[`, and
-// `[` or the strip opens it again. Each page remembers it, as it does the
-// split; ↑↓ still move the rows while it's folded. Where the list stands
+// The list folds to a strip (Arugula #1126): `‹` in its header, and the
+// strip opens it again (no key by default: `[` is the panel's, #1534).
+// Each page remembers it, as it does the split; ↑↓ still move the rows
+// while it's folded. Where the list stands
 // alone it doesn't fold. A preview's aside goes under its words when the
 // preview has under ~900px (Arugula #1127).
 
@@ -394,11 +395,6 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
         return;
       }
       if (inField(e.target) && !searching) return;
-      if (e.key === "[" && !searching && !s.narrow) {
-        e.preventDefault();
-        s.fold(!s.shut);
-        return;
-      }
       // A button's Space is its own.
       if (e.key === " " && !searching && s.selectable && s.selectedKey !== null && !(e.target as Element | null)?.closest?.("button, a, [role='separator']")) {
         e.preventDefault();
@@ -563,7 +559,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
     <div ref={root} class={`list-page${detail || pane ? " detail" : ""}${shut ? " folded" : ""}`} style={style} data-list-page data-list-folded={String(shut)}>
       <div class="list-split">
         {shut && (
-          <button ref={unfold} type="button" class="list-strip" aria-label={`Show ${label}`} title={`Show ${label} ([)`} aria-expanded="false" aria-keyshortcuts="[" data-list-unfold onClick={() => fold(false)}>
+          <button ref={unfold} type="button" class="list-strip" aria-label={`Show ${label}`} title={`Show ${label}`} aria-expanded="false" data-list-unfold onClick={() => fold(false)}>
             <ChevronIcon dir="right" />
             <span class="list-strip-name">{label}</span>
           </button>
@@ -572,7 +568,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
           <div class="list-head">
             <div class="list-head-main">{header}</div>
             {!narrow && (
-              <IconButton label={`Hide ${label}`} title={`Hide ${label} ([)`} class="secondary small list-fold" aria-expanded="true" aria-keyshortcuts="[" data-list-fold onClick={() => fold(true)}>
+              <IconButton label={`Hide ${label}`} title={`Hide ${label}`} class="secondary small list-fold" aria-expanded="true" data-list-fold onClick={() => fold(true)}>
                 <ChevronIcon dir="left" />
               </IconButton>
             )}

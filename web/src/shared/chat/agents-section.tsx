@@ -7,7 +7,8 @@
 // ./agent-rooms.
 
 import { useState } from "preact/hooks";
-import { both, useBindings } from "../keys";
+import { control } from "../controls";
+import { useBindings } from "../keys";
 import type { ChatStore } from "../chat-store";
 import type { ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
@@ -49,7 +50,7 @@ export function AgentsSection({ store, rooms, picked, projectName }: { store: Ch
     store.openObject(c.board.id).then(open, (e: Error) => setError(`Couldn't open #${c.board.title}: ${e.message}`));
   };
   // The prototype's keys (#1522): j and k move through these rows; g a is
-  // #agents.
+  // #agents, and s your chief of staff.
   const steps: (() => void)[] = [
     ...(rooms.staff ? [() => open(rooms.staff!)] : []),
     ...(rooms.agents ? [() => open(rooms.agents!)] : []),
@@ -66,11 +67,13 @@ export function AgentsSection({ store, rooms, picked, projectName }: { store: Ch
   };
   useBindings(
     [
-      { id: "chat.agents-next", label: "The next agents' room", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => step(1) },
-      { id: "chat.agents-prev", label: "The agents' room before", keys: both("key:k"), run: () => step(-1) },
-      ...(rooms.agents ? [{ id: "chat.agents", label: "#agents", group: "go" as const, chip: "#agents", keys: both("key:g key:a"), run: () => open(rooms.agents!) }] : []),
+      { ...control("chat.agents-next"), run: () => step(1) },
+      { ...control("chat.agents-prev"), run: () => step(-1) },
+      ...(rooms.agents ? [{ ...control("chat.agents"), run: () => open(rooms.agents!) }] : []),
+      // `s`: the chief of staff, where the page has one (#1534).
+      ...(rooms.staff ? [{ ...control("chat.staff"), run: () => open(rooms.staff!) }] : []),
     ],
-    [picked, ids.join(), !!rooms.agents],
+    [picked, ids.join(), !!rooms.agents, !!rooms.staff],
   );
   const linkOf = (r: ChatRoom | undefined) => (r ? nav.roomHref(r.id) : undefined);
   const unread = [rooms.staff, rooms.agents, ...rooms.open.map((c) => c.room)].reduce((n, r) => n + (r?.unread ?? 0), 0);

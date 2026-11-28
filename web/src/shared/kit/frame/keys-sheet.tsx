@@ -1,8 +1,10 @@
-// The `?` sheet (Lift 3, #1479): every key this page has, in three columns,
-// drawn from the one table (shared/keys.ts), so a binding can't be missing
-// from it. `?` opens and closes it; so does the footer's `?`.
+// The `?` card (Lift 3, #1479; Arugula #1534): one screen, the core (the
+// first hour's keys) and then this page's, in three columns, drawn from the
+// one table (shared/keys.ts), so a binding can't be missing from it. `?`
+// opens and closes it; so does the footer's `?`.
 
-import { bindings, both, GROUPS, hintOf, subscribeKeys, useBinding } from "../../keys";
+import { control } from "../../controls";
+import { bindings, GROUPS, hintOf, subscribeKeys, useBinding } from "../../keys";
 import { useSubscribe } from "../../ui/hooks";
 import { Kbd } from "../kbd";
 import { Sheet } from "../sheet";
@@ -25,14 +27,15 @@ export function KeysSheetLayer() {
     return () => void listeners.delete(fn);
   });
   useSubscribe(subscribeKeys);
-  useBinding({ id: "keys", label: "Every shortcut", group: "app", context: "everywhere", keys: both("key:?"), run: () => set(!open) }, []);
+  useBinding({ ...control("keys"), run: () => set(!open) }, []);
   if (!open) return null;
   const all = bindings();
+  const groups = [{ id: "core", label: "The core" }, ...GROUPS];
   return (
     <Sheet title="Keyboard shortcuts" onClose={() => set(false)}>
       <div class="k-keys" data-keys-sheet>
-        {GROUPS.map((g) => {
-          const list = all.filter((b) => (b.group ?? "screen") === g.id);
+        {groups.map((g) => {
+          const list = all.filter((b) => (b.core ? "core" : (b.group ?? "screen")) === g.id);
           return list.length ? (
             <section key={g.id} class="k-keys-group" aria-label={g.label}>
               <h3 class="m-meta">{g.label}</h3>

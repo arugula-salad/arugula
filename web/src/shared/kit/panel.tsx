@@ -11,14 +11,15 @@
 // place that starts it `folded`, a Doc's page, keeps its own fold); the
 // floor (`f`: its body, the transcript or the terminal, over the whole page;
 // ⤢ or Esc leaves it, and its tabs, head and composer stay where they were); and its keys,
-// in the one key table: `l` focuses the panel, `h` the work beside it
-// (`[data-work]`), `v` Transcript or Terminal. What a tab shows is the
+// in the one key table: `l` focuses the panel, `s` flips to the chief of
+// staff and back (#1534), `v` Transcript or Terminal. What a tab shows is the
 // page's: `AgentPanel` (app/panel.tsx) draws agents, rooms and threads in
 // it, and a place reaches that through `usePanel()`.
 
 import { isValidElement, type ComponentChildren, type ComponentType, type VNode } from "preact";
 import { useRef, useState } from "preact/hooks";
-import { both, useBindings, type Binding } from "../keys";
+import { control } from "../controls";
+import { useBindings, type Binding } from "../keys";
 import { usePlatformApi } from "../platform-api";
 import { ChatMarkdown } from "../chat/chat-markdown";
 import { surfacesFor } from "../surfaces";
@@ -31,7 +32,7 @@ import { Kbd } from "./kbd";
 import { MARKS, StateMark, type State } from "./state-mark";
 import { Surface } from "./surface";
 import { Tabs, type TabItem } from "./tabs";
-import type { PanelTarget } from "./panel-key";
+import { CHIEF_KEY, type PanelTarget } from "./panel-key";
 import "./kit.css";
 
 export { CHIEF_KEY, panelKey, type PanelTarget } from "./panel-key";
@@ -163,63 +164,53 @@ export function Panel({
   const focusPanel = () => requestAnimationFrame(() => col.current?.querySelector<HTMLElement>("[data-kit=panel]")?.focus());
 
   // The keys read the panel as it is now.
-  const now = useRef({ size, floor, view, onView, back, floors });
-  now.current = { size, floor, view, onView, back, floors };
+  const now = useRef({ size, floor, view, onView, back, floors, tabs, current, onPick });
+  now.current = { size, floor, view, onView, back, floors, tabs, current, onPick };
+  // The tab `s` came from, to flip back to.
+  const before = useRef<string | null>(null);
+  /** Where `s` goes: the chief of staff's tab, or from it back to the tab before. */
+  const staffFlip = () => {
+    const { current: at, tabs: all, onPick: pick } = now.current;
+    const to = !at || at === CHIEF_KEY ? before.current : CHIEF_KEY;
+    return pick && to && all?.some((t) => t.id === to) ? to : null;
+  };
   const keys: Binding[] = [
     {
-      id: "panel-focus",
-      context: "panel",
-      label: "Focus the agent panel",
-      chip: "panel",
-      keys: both("key:l"),
-      hint: { mac: "l h", other: "l h" },
+      ...control("panel-focus"),
       run: () => {
         if (now.current.size.shut) put({ ...now.current.size, shut: false });
         focusPanel();
       },
     },
+    { ...control("panel-work"), run: () => (document.querySelector<HTMLElement>("[data-work]") ?? document.querySelector<HTMLElement>("main"))?.focus() },
     {
-      id: "panel-work",
-      context: "panel",
-      label: "Focus the work beside the panel",
-      keys: both("key:h"),
-      run: () => (document.querySelector<HTMLElement>("[data-work]") ?? document.querySelector<HTMLElement>("main"))?.focus(),
+      ...control("panel-staff"),
+      when: () => !!staffFlip(),
+      run: () => {
+        const to = staffFlip()!;
+        const at = now.current.current;
+        before.current = to === CHIEF_KEY ? at! : null;
+        if (now.current.size.shut) put({ ...now.current.size, shut: false });
+        now.current.onPick!(to);
+      },
     },
     {
-      id: "panel-view",
-      context: "panel",
-      label: "Transcript or terminal, in the panel",
-      keys: both("key:v"),
+      ...control("panel-view"),
       when: () => !!now.current.onView && !now.current.size.shut,
       run: () => now.current.onView!(now.current.view === "terminal" ? "transcript" : "terminal"),
     },
+    { ...control("panel-floor"), when: () => now.current.floors && !now.current.size.shut, run: () => setFloor((f) => !f) },
+    { ...control("panel-narrow"), run: () => step(-1) },
+    { ...control("panel-wide"), run: () => step(1) },
     {
-      id: "panel-floor",
-      context: "panel",
-      label: "The panel's transcript or terminal full screen, and back",
-      keys: both("key:f"),
-      when: () => now.current.floors && !now.current.size.shut,
-      run: () => setFloor((f) => !f),
-    },
-    { id: "panel-narrow", context: "panel", label: "Narrower panel", keys: both("key:["), run: () => step(-1) },
-    { id: "panel-wide", context: "panel", label: "Wider panel", keys: both("key:]"), run: () => step(1) },
-    {
-      id: "panel-collapse",
-      context: "panel",
-      label: "Collapse the panel to a strip, and back",
-      keys: both("key:\\"),
+      ...control("panel-collapse"),
       run: () => {
         setFloor(false);
         put({ ...now.current.size, shut: !now.current.size.shut });
       },
     },
     {
-      id: "panel-back",
-      context: "panel",
-      label: "Leave the floor, or a thread in the panel",
-      // From a field too (the floor's composer), but never a terminal's.
-      keys: both("*+key:escape"),
-      hint: { mac: "esc", other: "esc" },
+      ...control("panel-back"),
       when: (e) =>
         (now.current.floor || !!now.current.back) &&
         !e.ctrlKey &&

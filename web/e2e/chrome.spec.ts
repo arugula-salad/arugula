@@ -387,7 +387,7 @@ test.describe("accessibility", () => {
     );
     expect(unnamed).toEqual([]);
     // And the ones with a key say it.
-    await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Enter\)$/);
+    await expect(page.locator("[data-pane-expand]").first()).toHaveAttribute("title", /\(Ctrl\+Shift\+Z\)$/);
     await expect(page.locator("[data-add-pane]")).toHaveAttribute("title", /\(Ctrl\+Shift\+E\)$/);
     await expect(page.locator("[data-open-palette]")).toHaveAttribute("title", /\((Ctrl\+K|⌘K)\)$/);
     // Named by what it shows: the label, a space, the chord (#458).

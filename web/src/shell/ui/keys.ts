@@ -3,7 +3,7 @@
 // Go to… (⌘K) is the frame's. Each takes its key only while the workspace is up
 // (`here`), so the app's other pages list none of them.
 //
-// Panes (M110): Ctrl+Shift+Enter toggles the tab's focus on the active
+// Panes (M110): Ctrl+Shift+Z toggles the tab's focus on the active
 // pane, Ctrl+Shift+E opens + Pane (the pane toolbar's), and
 // Ctrl+Alt+Shift+arrows grow (→ ↓) or shrink (← ↑) the active pane, and
 // Ctrl+Shift+L goes to the next pane that needs you. Each
@@ -15,7 +15,8 @@
 // incognito.
 
 import { useLayoutEffect } from "preact/hooks";
-import { addBindings, both, keysChanged } from "../../shared/keys";
+import { control } from "../../shared/controls";
+import { addBindings, keysChanged, typingIn } from "../../shared/keys";
 import type { Client } from "../client";
 import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { nextNeedingYou } from "./goto-source";
@@ -32,30 +33,19 @@ let workspace: { client: Client; phone: boolean } | null = null;
 const workspaceClient = () => workspace?.client ?? null;
 let appClient: () => Client | null = workspaceClient;
 
-const ctrlOrCmd = (code: string) => [`Ctrl+Shift+${code}`, `Meta+Shift+${code}`];
 const mac = desktopPlatform() === "macos";
 /** The desktop app's Cmd chords. `when` checks the app's platform, not the
  * browser's OS, so they're listed for both; `here` keeps their hints off
  * every other page (M113). */
-const appKey = (code: string) => ({ group: "app" as const, keys: both(`Meta+${code}`), here: () => mac });
+const appKey = (id: "desktop.close" | "desktop.tab" | "desktop.window" | "desktop.attach") => ({ ...control(id), here: () => mac });
 /** Only while the workspace is up. */
 const inWorkspace = () => !!workspace;
 
 addBindings([
   {
-    id: "pane.jump",
-    group: "panes",
-    chip: "go to pane",
+    // By code, so Shift's symbols and the layout don't matter.
+    ...control("pane.jump"),
     here: inWorkspace,
-    label: "Go to pane 1–9",
-    // By code, so Shift's symbols and the layout don't matter. On a Mac,
-    // Cmd+Shift+3, 4 and 5 are the system's screenshots: Ctrl+Shift works
-    // for all nine.
-    keys: {
-      mac: [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => ctrlOrCmd(`Digit${n}`)),
-      other: [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => ctrlOrCmd(`Digit${n}`)),
-    },
-    hint: { mac: "Ctrl+Shift+1–9", other: "Ctrl+Shift+1–9" },
     when: (e) => jumpTarget(e) !== null,
     run: (e) => {
       const c = workspace!.client;
@@ -68,21 +58,15 @@ addBindings([
     },
   },
   {
-    id: "pane.focus",
-    group: "panes",
-    chip: "focus",
+    ...control("pane.focus"),
     here: inWorkspace,
-    label: "Focus pane / restore layout",
-    keys: { mac: ctrlOrCmd("Enter"), other: ["Ctrl+Shift+Enter"] },
-    when: () => focusTarget() !== null,
+    // A field's own Ctrl+Shift+Z is its redo; a terminal's goes to the pane.
+    when: () => focusTarget() !== null && !(typingIn(document.activeElement) && !document.activeElement?.closest(".xterm")),
     run: () => toggleFocus(workspace!.client, focusTarget()!),
   },
   {
-    id: "pane.pop-out",
-    group: "panes",
+    ...control("pane.pop-out"),
     here: inWorkspace,
-    label: "Pop the pane out into its own window",
-    keys: { mac: ctrlOrCmd("KeyO"), other: ["Ctrl+Shift+KeyO"] },
     when: () => {
       const w = workspace;
       const pane = focusTarget() && w ? w.client.active(w.client.tabView()!.id) : undefined;
@@ -94,20 +78,14 @@ addBindings([
     },
   },
   {
-    id: "pane.add",
-    group: "panes",
+    ...control("pane.add"),
     here: inWorkspace,
-    label: "Add a pane",
-    keys: { mac: ctrlOrCmd("KeyE"), other: ["Ctrl+Shift+KeyE"] },
     when: () => addPane.available && focusTarget(true) !== null,
     run: () => addPane.toggle(),
   },
   {
-    id: "pane.next-needs-you",
-    group: "panes",
+    ...control("pane.next-needs-you"),
     here: inWorkspace,
-    label: "Go to the next pane that needs you",
-    keys: { mac: ctrlOrCmd("KeyL"), other: ["Ctrl+Shift+KeyL"] },
     // Taken only when a pane needs you, and not from under a dialog.
     when: () => !!workspace?.client.state && !document.querySelector(".prompt-backdrop") && nextNeedingYou(workspace.client) !== undefined,
     run: () => {
@@ -118,15 +96,8 @@ addBindings([
     },
   },
   {
-    id: "pane.resize",
-    group: "panes",
+    ...control("pane.resize"),
     here: inWorkspace,
-    label: "Grow or shrink the pane",
-    keys: {
-      mac: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((k) => `Ctrl+Shift+Alt+${k}`),
-      other: ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((k) => `Ctrl+Shift+Alt+${k}`),
-    },
-    hint: { mac: "⌃⌥⇧ arrows", other: "Ctrl+Alt+Shift+arrows" },
     // Taken only when it resized something.
     when: (e) => focusTarget() !== null && resizeActive(workspace!.client, e.code.slice("Arrow".length).toLowerCase() as Way),
     run: () => {},
@@ -135,9 +106,7 @@ addBindings([
   // page. Cmd-W closes the pane (not the window), Cmd-T opens a tab, Cmd-N
   // a window, and Cmd-U attaches files (M70).
   {
-    id: "desktop.close",
-    label: "Close pane",
-    ...appKey("KeyW"),
+    ...appKey("desktop.close"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -146,9 +115,7 @@ addBindings([
     },
   },
   {
-    id: "desktop.tab",
-    label: "New tab",
-    ...appKey("KeyT"),
+    ...appKey("desktop.tab"),
     when: () => mac && !!appClient(),
     run: () => {
       const c = appClient()!;
@@ -156,16 +123,12 @@ addBindings([
     },
   },
   {
-    id: "desktop.window",
-    label: "New window",
-    ...appKey("KeyN"),
+    ...appKey("desktop.window"),
     when: () => mac && !!appClient(),
     run: () => openInNewWindow(),
   },
   {
-    id: "desktop.attach",
-    label: "Attach file",
-    ...appKey("KeyU"),
+    ...appKey("desktop.attach"),
     when: () => mac && !!appClient(),
     run: () => {
       // A chat composer's 📎 when focus is in one (the thread's, else the

@@ -7,7 +7,8 @@
 import { useRef } from "preact/hooks";
 import { chat } from "../chat-store";
 import type { LayoutNewPane } from "../proto";
-import { both, useBinding } from "../keys";
+import { control } from "../controls";
+import { useBinding } from "../keys";
 import { useSubscribe } from "../ui/hooks";
 import type { MenuItem } from "../ui/menu";
 import { ChatApp } from "./app";
@@ -47,6 +48,6 @@ export function AgentsPaneKey({ project, show }: { project: string; show: (p: La
   const agents = chat.on ? chat.rooms.find((r) => isAgentsRoom(r, project)) : undefined;
   const latest = useRef(show);
   latest.current = show;
-  useBinding(agents ? { id: "board.agents-pane", label: "#agents, beside the board", group: "go", keys: both("key:g key:a"), run: () => latest.current(pane(agents.id, "#agents")) } : null, [agents?.id]);
+  useBinding(agents ? { ...control("board.agents-pane"), run: () => latest.current(pane(agents.id, "#agents")) } : null, [agents?.id]);
   return null;
 }

@@ -10,7 +10,8 @@
 
 import type { ComponentChildren } from "preact";
 import { useRef } from "preact/hooks";
-import { both, useBindings } from "../../keys";
+import { control, type ControlId } from "../../controls";
+import { useBindings } from "../../keys";
 import { MoreIcon } from "../../ui/icons";
 import { initials } from "../avatar";
 import "../kit.css";
@@ -44,21 +45,18 @@ export interface ProjectMark {
   go: () => void;
 }
 
-/** Each place's `g` key (v6's). */
-const GO: Record<string, string> = { overview: "o", boards: "b", docs: "d", machines: "m", chat: "c", inbox: "i" };
+/** The places with a `g` key (the controls', v6's). */
+const GO = new Set(["overview", "boards", "docs", "machines", "chat", "inbox"]);
 
 /** `g o`, `g b`…: the places by key, as a click on each (as last drawn). */
 function useGoKeys(places: RailPlace[]) {
   const latest = useRef(places);
   latest.current = places;
-  const keys = places.map((p) => p.key).filter((k) => GO[k]);
+  const keys = places.map((p) => p.key).filter((k) => GO.has(k));
   useBindings(
     keys.map((key) => ({
-      id: `go.${key}`,
+      ...control(`go.${key}` as ControlId),
       label: places.find((p) => p.key === key)!.label,
-      group: "go" as const,
-      context: "everywhere" as const,
-      keys: both(`key:g key:${GO[key]}`),
       run: () => {
         const p = latest.current.find((x) => x.key === key);
         if (p?.onClick) p.onClick();

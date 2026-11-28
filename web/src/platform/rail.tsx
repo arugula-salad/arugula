@@ -10,6 +10,9 @@
 import type { ComponentChildren } from "preact";
 import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
+import { isAgentsRoom } from "../shared/chat/agent-rooms";
+import { control } from "../shared/controls";
+import { useBinding } from "../shared/keys";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, Mark, OverviewIcon, SettingsIcon } from "../shared/ui/icons";
@@ -22,7 +25,7 @@ import { useInboxCounts } from "./inbox";
 import { leftAt } from "./goto-source";
 import { owners } from "./owners";
 import { placeOf } from "./places-kept";
-import { names } from "./links";
+import { names, roomPath } from "./links";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { openGoTo } from "../shared/kit/frame/goto";
@@ -128,8 +131,11 @@ function useMarks(shown: string | undefined): ProjectMark[] {
 }
 
 export function PlatformRail() {
-  const { places, foot, shown } = usePlaces();
+  const { places, foot, project, shown } = usePlaces();
   const marks = useMarks(shown);
+  // `g a`: the project's #agents, from anywhere (a board and Chat have their own).
+  const agents = project && chat.on !== false ? chat.rooms.find((r) => isAgentsRoom(r, project.id)) : undefined;
+  useBinding(agents ? { ...control("go.agents"), run: () => go(roomPath(agents.id)) } : null, [agents?.id]);
   const brand = (
     <a class="k-rail-brand" data-rail-brand href="/" title="Arugula: your projects" aria-label="Arugula" onClick={(e) => follow(e, "/")}>
       <Mark />

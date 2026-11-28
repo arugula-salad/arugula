@@ -14,7 +14,8 @@
 //
 // The page gives it its router (`installStack`); it knows nothing else.
 
-import { addBindings, both, typingIn } from "../../keys";
+import { control } from "../../controls";
+import { addBindings, typingIn } from "../../keys";
 import { escapeTaken } from "../../ui/menu";
 import { dialogUp } from "../../ui/modal";
 
@@ -140,8 +141,8 @@ export function installStack(r: StackRouter): () => void {
   };
   const keys = addBindings([
     // Listed for `?`: Escape goes back a place when nothing else takes it (lastEscape).
-    { id: "back", label: "Back a place, across projects", group: "switch", context: "everywhere", keys: both("key:escape"), when: () => false, run: () => {} },
-    { id: "flip", label: "Flip to your last place in another project", group: "switch", context: "everywhere", chip: "flip back", keys: both("Ctrl+Tab", "key:g key:;"), when: () => !!flipTarget(), run: flip },
+    { ...control("back"), when: () => false, run: () => {} },
+    { ...control("flip"), when: () => !!flipTarget(), run: flip },
   ]);
   return () => {
     off();

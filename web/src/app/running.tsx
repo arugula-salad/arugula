@@ -4,7 +4,7 @@
 // has been red for 3 hours"). The arrow keys move through it; a pane's last
 // lines peek under the list, and over a board, Pin to desk opens it beside
 // the board (the place layout's `show`, #1496). Opened from the top bar's
-// "N running"; it has no key of its own until #1534's list (`g r`, `p`).
+// "N running"; it has no key by default (#1534: `g r` and `p` are unbound).
 
 import { useEffect, useState } from "preact/hooks";
 import type { CiAlerts, RunView } from "../shared/proto";

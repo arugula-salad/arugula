@@ -1,6 +1,7 @@
 // The page's keys, in one table (M107, #1022; every key since Lift 3,
 // #1479): each binding's id, its chords per OS, when it applies and what it
-// does. One capture-phase listener on the window reads the table, so a
+// does. Its chords are the controls' (shared/controls.ts, Arugula #1534):
+// a key goes in only through that list. One capture-phase listener on the window reads the table, so a
 // chord is the page's before the terminal sees it; a key no binding takes
 // goes on to xterm untouched. The footer's chips, the `?` sheet, menus and
 // tooltips read their hints from here (`keyHint`), so a key is written once.
@@ -51,9 +52,8 @@ export interface Binding {
   /** Where it applies, for which binding a shared key runs (default: this
    * screen's). */
   context?: Context;
-  /** Off the `?` sheet and hints: a screen's own key the sheet doesn't list
-   * yet (#1534's list will). */
-  unlisted?: boolean;
+  /** One of the first hour's keys, at the top of the `?` card. */
+  core?: boolean;
   /** Its words as a footer chip ("move", "go to"); without, no chip. */
   chip?: string;
   /** Its chords on each OS; the first is the one hints show. */
@@ -198,7 +198,7 @@ export function useEscape(id: string, close: (() => void) | null, deps: unknown[
 
 /** Every binding this page has, for lists of shortcuts. */
 export function bindings(): readonly Binding[] {
-  return table.filter((b) => !b.unlisted && (!b.here || b.here()));
+  return table.filter((b) => b.keys[os].length && (!b.here || b.here()));
 }
 
 /** Told when bindings come or go (a screen's keys). */
@@ -211,7 +211,7 @@ export function subscribeKeys(fn: () => void): () => void {
  * it ("Ctrl+Shift+P", "⌘U", "g o"); undefined when it has none on this OS. */
 export function keyHint(id: string): string | undefined {
   const b = table.find((x) => x.id === id);
-  if (!b || b.unlisted || (b.here && !b.here())) return undefined;
+  if (!b || (b.here && !b.here())) return undefined;
   return hintOf(b);
 }
 

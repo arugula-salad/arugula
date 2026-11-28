@@ -21,7 +21,8 @@ import type { ChatAsk, InboxItem } from "../shared/proto";
 import { Button } from "../shared/kit/button";
 import { NeedRow, type Need, type NeedOption, type Receipt } from "../shared/kit/need-row";
 import type { State } from "../shared/kit/state-mark";
-import { both, useBindings, type Binding } from "../shared/keys";
+import { control } from "../shared/controls";
+import { useBindings, type Binding } from "../shared/keys";
 import { platformFetch } from "../shared/maintenance";
 import { needAge } from "../shared/needs-you";
 import type { Ask } from "../shared/ask";
@@ -307,26 +308,18 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
     pick(r[i === -1 ? (by > 0 ? 0 : r.length - 1) : Math.min(r.length - 1, Math.max(0, i + by))]);
   };
   const keys: Binding[] = [
-    { id: "needs-down", label: "Next row", group: "needs", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => step(1) },
-    { id: "needs-up", label: "Previous row", group: "needs", keys: both("key:k"), run: () => step(-1) },
+    { ...control("needs-down"), run: () => step(1) },
+    { ...control("needs-up"), run: () => step(-1) },
     {
-      id: "needs-expand",
-      label: "Expand or collapse the row",
-      group: "needs",
-      chip: "expand",
-      keys: both("key:e"),
+      ...control("needs-expand"),
       when: () => !!now.current.selected,
       run: () => setOpen((o) => (o === now.current.selected ? null : now.current.selected)),
     },
-    { id: "needs-yes", label: "Answer the first way", group: "needs", chip: "answer", keys: both("key:y"), hint: { mac: "y x", other: "y x" }, when: () => !!(now.current.open ?? now.current.selected), run: () => press(0) },
-    { id: "needs-no", label: "Answer the second way", group: "needs", keys: both("key:x"), when: () => !!(now.current.open ?? now.current.selected), run: () => press(1) },
-    { id: "needs-done", label: "Done, on a to-do", group: "needs", keys: both("Shift+key:d"), hint: { mac: "D", other: "D" }, when: () => find(now.current.selected)?.kind === "todo", run: () => press(0) },
+    { ...control("needs-yes"), when: () => !!(now.current.open ?? now.current.selected), run: () => press(0) },
+    { ...control("needs-no"), when: () => !!(now.current.open ?? now.current.selected), run: () => press(1) },
+    { ...control("needs-done"), when: () => find(now.current.selected)?.kind === "todo", run: () => press(0) },
     {
-      id: "needs-next",
-      label: "Next thing that needs you",
-      group: "needs",
-      chip: "next",
-      keys: both("key:n"),
+      ...control("needs-next"),
       run: () => {
         const r = now.current.rows.filter((i) => decides(i) && !forTeammate(i, me) && !now.current.receipts.has(i.id));
         const i = r.findIndex((x) => x.id === now.current.selected);
@@ -334,11 +327,8 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
       },
     },
     {
-      id: "needs-open",
-      label: "Open it where it is",
-      group: "needs",
-      ...(goes ? { chip: "go there", hint: { mac: "↵", other: "↵" } } : {}),
-      keys: both("Enter"),
+      ...control("needs-open"),
+      ...(goes ? {} : { chip: undefined }),
       // Not from a button of its own (Copy, an answer), which Enter presses.
       when: () => {
         const a = document.activeElement;

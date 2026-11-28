@@ -95,12 +95,12 @@ test("Grid, Tamed and Focus keep the panes and what they printed", async ({ page
   await expect.poll(() => panes(page)).toHaveLength(6);
   await kept(page, marks);
 
-  // Another pane's, and Ctrl+Shift+Enter, the same.
+  // Another pane's, and Ctrl+Shift+Z, the same.
   const other = ids[1];
   await page.locator(`[data-pane-expand="${other}"]`).click();
   await expect.poll(async () => (await tab(page)).focus).toBe(other);
   await paneEl(page, other).click({ position: { x: 40, y: 40 } });
-  await page.keyboard.press("Control+Shift+Enter");
+  await page.keyboard.press("Control+Shift+KeyZ");
   await expect.poll(async () => (await tab(page)).focus).toBeNull();
   expect(await shape(page)).toEqual(before);
   await kept(page, marks);

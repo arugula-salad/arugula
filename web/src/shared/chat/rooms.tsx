@@ -47,7 +47,8 @@ import { AgentAbout } from "./agent-about";
 import { composerLine } from "./tags";
 import { placeLayouts } from "../place-layout";
 import { Kbd } from "../kit/kbd";
-import { both, useBinding } from "../keys";
+import { control } from "../controls";
+import { useBinding } from "../keys";
 import { Bar as HeadBar, BarTitle, BarWhere } from "../ui/bar";
 import { attachSwipe } from "../ui/swipe";
 import { sessionLabel } from "../chief-of-staff";
@@ -733,7 +734,7 @@ function RoomView({
   // A board's channel opens as a pane on its board (Arugula #1522): `o`.
   const asPane = useRef<HTMLAnchorElement>(null);
   const paneHref = !phone && !pinned && isBoardChannel(room) && room.project && room.target ? api.nav.boardHref?.(room.project, room.target) : undefined;
-  useBinding(paneHref ? { id: "chat.as-pane", label: "Open as a pane", chip: "open as a pane", keys: both("key:o"), run: () => asPane.current?.click() } : null, [paneHref]);
+  useBinding(paneHref ? { ...control("chat.as-pane"), run: () => asPane.current?.click() } : null, [paneHref]);
   // The bell's moon follows a snooze, here or in Settings.
   useSubscribe(subscribeNotify);
   useEffect(() => void loadNotify(), []);
@@ -1042,19 +1043,8 @@ function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => vo
   latest.current = { rooms, picked, markAll, nav };
   const free = () => !document.querySelector(".menu, .prompt") && (!within || !!within.current?.contains(document.activeElement));
   // In the key table, so Go to…'s ⌘K doesn't run too (#1535): on Chat the
-  // switcher has it.
-  useBinding(
-    {
-      id: "chat.rooms",
-      label: "Jump to a room",
-      unlisted: true,
-      keys: both("Meta+key:k", "Ctrl+key:k"),
-      // A block answers only while focus is in it.
-      when: free,
-      run: openSwitcher,
-    },
-    [],
-  );
+  // switcher has it (#1534). A block answers only while focus is in it.
+  useBinding({ ...control("chat.rooms"), when: free, run: openSwitcher }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (!free()) return;
