@@ -77,6 +77,38 @@ test.describe("computer", () => {
     await expect(thread).toHaveCount(0);
   });
 
+  test("a thread's reply box takes files as the room's does (#1557): a drop on it or on its replies is outlined, then a chip in the reply, never the room's; a paste too", async ({ page }) => {
+    let n = 0;
+    await page.route(/\/api\/chat\/rooms\/[^/]+\/files/, (r) => r.fulfill({ json: { id: `fl_${++n}`, name: new URL(r.request().url()).searchParams.get("name"), mime: "image/png", kind: "file", size: 8, url: "/x" } }));
+    await open(page, `/p/${P}/chat/${GENERAL}?thread=1`);
+    const thread = page.locator('[data-thread-panel="1"]');
+    const room = page.locator(`[data-room-view="${GENERAL}"] form.thread-compose`);
+    const reply = thread.locator("form.thread-compose");
+    await expect(reply).toBeVisible();
+    const send = (sel: string, type: string, name: string) =>
+      page.locator(sel).first().evaluate(
+        (el, { type, name }) => {
+          const dt = new DataTransfer();
+          dt.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: "image/png" }));
+          const e = type === "paste" ? new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }) : new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+          el.dispatchEvent(e);
+        },
+        { type, name },
+      );
+    const box = '[data-thread-panel="1"] form.thread-compose';
+    await send(box, "dragover", "a.png");
+    await expect(reply).toHaveClass(/dropping/);
+    await send(box, "drop", "a.png");
+    await expect(reply).not.toHaveClass(/dropping/);
+    await expect(reply.locator('[data-attach-chip="a.png"]')).toBeVisible();
+    // On its replies, the reply box takes it too.
+    await send('[data-thread-panel="1"] .thread-replies', "drop", "b.png");
+    await expect(reply.locator('[data-attach-chip="b.png"]')).toBeVisible();
+    await send('[data-thread-panel="1"] textarea', "paste", "c.png");
+    await expect(reply.locator('[data-attach-chip="c.png"]')).toBeVisible();
+    await expect(room.locator("[data-attach-chip]")).toHaveCount(0);
+  });
+
   test("a dialog of Chat's (New direct message) opens over the stream, and a click on it reaches it", async ({ page }) => {
     await open(page, `/p/${P}/chat/${GENERAL}`);
     await page.locator('[data-room-new="tm_1/dms"]').click();

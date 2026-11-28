@@ -42,6 +42,8 @@ import { call, saidOf } from "../shared/chat/session-card";
 import { TodoAnswer } from "../shared/chat/todo-answer";
 import { followThread, followingThread, ThreadPanel } from "../shared/chat/thread-panel";
 import { Button } from "../shared/kit/button";
+import { pastedName } from "../shared/chat/files";
+import { upload } from "../shared/chat/files-upload";
 import { Composer } from "../shared/kit/composer";
 import { receiptLine, type Receipt } from "../shared/kit/need-row";
 import { CHIEF_KEY, Panel, PanelNote, panelKey, Transcript, type AgentPanelProps, type PanelHead, type PanelTarget, type PanelView } from "../shared/kit/panel";
@@ -58,6 +60,7 @@ import type { MenuItem } from "../shared/ui/menu";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, kindOf, shortHost } from "../shell/fleet-model";
 import { boardLead, leadAwake, type LeadAwake, type OvPane, type Standing } from "../shell/fleet-overview";
+import { store } from "../shell/upload";
 import { answerItem, readInbox } from "../platform/inbox";
 import { boot } from "./machine-page";
 import { paneOwner, receiptOf, sessionName, yours } from "./needs";
@@ -473,7 +476,25 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
     const up = fleet.host(pane.host)?.state === "connected" && !pane.stale;
     const off = !!pane.info.mentions_off;
     // An agent block takes it as its composer does; a terminal has it typed, with Enter.
-    const send = (text: string) => (isBlock ? post(`/api/blocks/${pane.id}/call/send`, { text }, "Sent: it goes in at its next tool call.") : post(`/api/panes/${pane.id}/send`, { text, enter: true }, "Typed, with Enter."));
+    // Files go to its machine first (M70): an agent block gets their paths with
+    // the text, a terminal has them pasted before it.
+    const send = async (text: string, files: File[]) => {
+      let paths: string[] = [];
+      if (files.length) {
+        setBusy(true);
+        try {
+          paths = await store((m, p, b) => fleet.request(pane.host, m, p, b), pane.id, files, say);
+        } catch (e) {
+          say((e as Error).message);
+          return false;
+        } finally {
+          setBusy(false);
+        }
+        if (!isBlock && !(await post(`/api/panes/${pane.id}/paste`, { paths, force: true }, "Pasted."))) return false;
+      }
+      if (isBlock) return post(`/api/blocks/${pane.id}/call/send`, { text, files: paths }, "Sent: it goes in at its next tool call.");
+      return post(`/api/panes/${pane.id}/send`, { text, enter: true }, "Typed, with Enter.");
+    };
     // Stop as the strip's does: an agent block's turn is cancelled, Claude Code gets Escape; a shell, Ctrl-C.
     const stop = () => (isBlock ? post(`/api/blocks/${pane.id}/call/cancel`, {}, "Stopped.") : post(`/api/panes/${pane.id}/keys`, { keys: [agent ? "Escape" : "C-c"] }, "Stopped."));
     foot = (
@@ -481,6 +502,7 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
         placeholder={!up ? `${shortHost(pane.host)} isn't reachable now` : isBlock || agent ? `Reply to ${name}: it reads it at its next tool call` : `Type a command for the shell on ${shortHost(pane.host)}`}
         target={`to ${shortHost(pane.host)}`}
         disabled={!up}
+        files
         onSend={send}
         actions={
           <>
@@ -510,9 +532,10 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
       }
     };
     // Its box reads its thread: a reply there is its next prompt.
-    const send = async (text: string) => {
+    const send = async (text: string, files: File[]) => {
       try {
-        await chat.reply(hosted.card.room, hosted.card.parent, text, false);
+        const ids = await Promise.all(files.map((f) => upload(hosted.card.room, f, pastedName(f), () => {}).done.then((x) => x.id)));
+        await chat.reply(hosted.card.room, hosted.card.parent, text, false, ids);
         say("Sent in its thread: it goes in at its next turn.");
         return true;
       } catch (e) {
@@ -525,6 +548,7 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
         <Composer
           placeholder="Reply in its thread"
           target="its thread"
+          files
           onSend={send}
           actions={
             <Button disabled={busy} data-panel-stop onClick={() => void stop()}>

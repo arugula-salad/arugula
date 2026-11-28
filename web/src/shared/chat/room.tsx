@@ -36,7 +36,7 @@ import { MessagePreviews } from "./previews";
 import { closeMenu, MenuHost, pressedShut, type MenuItem } from "../ui/menu";
 import { hookFor, itemsOf, openMsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
-import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
+import { AttachButton, attachKey, AttachChips, dropTarget, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
@@ -448,7 +448,7 @@ export function RoomBody({
         tabIndex={0}
         data-room={room.id}
         onScroll={() => anchor.onScroll()}
-        {...(current.writable ? dropTarget(setDropping) : {})}
+        {...(current.writable ? dropTarget(setDropping, (f) => composeRef.current?.attach(f)) : {})}
       >
         {loaded?.older && (
           <button class="chat-older" onClick={more} data-room-older>
@@ -822,29 +822,6 @@ export function RoomMessage({
   );
 }
 
-/** A room accepts files dropped on it (#107): the handlers for a drop
- * target, and whether a drag is over it. */
-function dropTarget(over: (v: boolean) => void) {
-  return {
-    onDragOver: (e: DragEvent) => {
-      if (!dragsFiles(e)) return;
-      e.preventDefault();
-      over(true);
-    },
-    onDragLeave: (e: DragEvent) => {
-      // Moving between the target's children isn't leaving it.
-      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) over(false);
-    },
-    onDrop: (e: DragEvent) => {
-      over(false);
-      const dropped = filesOf(e.dataTransfer);
-      if (!dropped.length) return;
-      e.preventDefault();
-      composeRef.current?.attach(dropped);
-    },
-  };
-}
-
 /** Whether the caret is inside a ``` block that hasn't closed: Enter there is
  * a new line in the code, and Ctrl/Cmd+Enter sends. */
 function inOpenFence(text: string, caret: number): boolean {
@@ -1215,7 +1192,7 @@ export function RoomCompose({
   return (
     <form
       class={`thread-compose${dropping ? " dropping" : ""}`}
-      {...dropTarget(setDropping)}
+      {...dropTarget(setDropping, files.add)}
       onKeyDown={attachKey}
       onSubmit={(e) => {
         e.preventDefault();
