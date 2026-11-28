@@ -455,7 +455,9 @@ export function pointerToSend(text: string, start: string, picked: BoardPointer 
 
 /** What a card's state tag says: a tracker's own name for the state
  * (`In Progress`), else `LIVE_LABEL`'s. */
-export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
+export function liveWord(l: Pick<BoardLive, "state" | "state_name"> & Partial<Pick<BoardLive, "draft">>): string {
+  // A draft says so while open, as GitHub does (Arugula #1570).
+  if (l.draft && l.state === "open") return "draft";
   return l.state_name || LIVE_LABEL[l.state];
 }
 
