@@ -180,6 +180,34 @@ test.describe("Agents (Arugula #1522)", () => {
     await expect(view).toBeVisible();
   });
 
+  for (const width of [1440, 1100])
+    test(`Who a post reaches is a row a rule, none over another, at ${width} wide (Arugula #1564)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      for (const room of [AGENTS, "ob_00000002"]) {
+        await open(page, `/p/${P}/chat/${room}`);
+        const reach = page.locator("[data-reach-rules]");
+        await expect(reach).toBeVisible();
+        const list = (await reach.boundingBox())!;
+        const rows = await reach.locator("> div").evaluateAll((els) =>
+          els.map((el) => {
+            const r = el.getBoundingClientRect();
+            const [dt, dd] = [el.querySelector("dt")!, el.querySelector("dd")!].map((x) => x.getBoundingClientRect());
+            return { top: r.top, bottom: r.bottom, left: r.left, width: r.width, dtRight: dt.right, ddLeft: dd.left, inside: dt.bottom <= r.bottom + 0.5 && dd.bottom <= r.bottom + 0.5 };
+          }),
+        );
+        expect(rows.length).toBeGreaterThan(3);
+        for (const [i, r] of rows.entries()) {
+          // Each row spans the list, its words beside its reach, inside it.
+          expect(Math.abs(r.width - list.width)).toBeLessThan(1);
+          expect(r.dtRight).toBeLessThanOrEqual(r.ddLeft);
+          expect(r.inside).toBe(true);
+          if (i) expect(r.top).toBeGreaterThanOrEqual(rows[i - 1]!.bottom - 0.5);
+        }
+        // A long name is cut short; its tooltip has it whole.
+        for (const name of await page.locator(".chat-about-name").all()) expect(await name.getAttribute("title")).toBe(await name.textContent());
+      }
+    });
+
   test("a board's channel is made on its first click, and opens on the board", async ({ page }) => {
     await open(page, `/p/${P}/chat/${GENERAL}`);
     const a2p = page.locator('[data-agents-board="brd_00000000000000000000000000000002"]');

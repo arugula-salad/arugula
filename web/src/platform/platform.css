@@ -260,10 +260,13 @@ html[data-native-tabs] .platform {
   color: var(--ink-dim);
   font-size: var(--text-meta);
 }
-.chat-about-reach,
+/* A row a rule: who posts, and whom it reaches (Arugula #1564). */
+.chat-about-reach {
+  margin: 0;
+}
 .chat-about-reach > div {
   display: grid;
-  grid-template-columns: 11em 1fr;
+  grid-template-columns: minmax(0, 11em) minmax(0, 1fr);
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
