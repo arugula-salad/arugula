@@ -1,7 +1,7 @@
 ---
 section: Fixed
 title: A Doc's agent panel opens its chief of staff
-line: On a Doc, the agent panel's chief of staff is the ✦ tab, as on a board, and opens the chief of staff that's running now; its tabs switch when clicked, and names read "Chief of staff" instead of the project's id.
+line: On a Doc, the agent panel's ✦ tab opens the chief of staff running now, its tabs switch, and it reads "Chief of staff", never the project's id.
 headline: no
 ---
 On a Doc your chief of staff wrote, the agent panel used to open the session
