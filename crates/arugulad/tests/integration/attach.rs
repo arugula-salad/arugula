@@ -691,6 +691,43 @@ async fn only_the_button_takes_the_size_from_a_connected_holder() {
     panic!("B never took the size after A left");
 }
 
+/// #1572: the person's latest window takes the size, as tmux's
+/// latest-client does. A window coming to the front (`Focus`) takes the tab
+/// it shows, and its resize sizes the tab; the window behind doesn't, until
+/// it comes to the front again. A window that never came to the front (an
+/// older client) still needs the button.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_latest_window_takes_the_size() {
+    let d = start().await;
+    let (mut a, state) = connect_state(&d).await;
+    let tab = state.tabs[0].id;
+    let view = |cols, claim| ClientMsg::View { tab, cols, rows: 20, zoom: None, claim, typed: false, asked: false };
+    send(&mut a, ClientMsg::Focus { pane: Some(1) }).await;
+    send(&mut a, view(101, true)).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (101, 20));
+
+    // B (a narrow view) comes to the front after A: it takes the size.
+    let (mut b, _) = connect_state(&d).await;
+    send(&mut b, view(45, true)).await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (101, 20), "B's view before it came to the front");
+    send(&mut b, ClientMsg::Focus { pane: Some(1) }).await;
+    assert_eq!(tab_size(&mut b, tab).await.0, (45, 20), "B came to the front");
+
+    // A, behind, resizing doesn't; coming to the front does, at its size.
+    send(&mut a, view(102, true)).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (45, 20), "A's resize from behind");
+    send(&mut a, ClientMsg::Focus { pane: None }).await;
+    send(&mut a, ClientMsg::Focus { pane: Some(1) }).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (102, 20), "A came to the front");
+    send(&mut a, view(110, false)).await;
+    assert_eq!(tab_size(&mut a, tab).await.0, (110, 20), "the latest window's resize");
+
+    // A window that never says it's in front takes nothing from A.
+    let (mut c, _) = connect_state(&d).await;
+    send(&mut c, view(60, true)).await;
+    assert_eq!(tab_size(&mut c, tab).await.0, (110, 20), "an older client");
+}
+
 /// #1502: switching to a tab or typing in it takes the size from nobody,
 /// never from another person's window (nor, since #473, the same person's).
 /// Only "use this size" (`asked`) does. The daemon decides, so these are raw `View`s
@@ -731,6 +768,11 @@ async fn only_asking_takes_the_size_from_another_person() {
     send(&mut f, view(61, true, false, false)).await;
     send(&mut f, view(62, true, true, false)).await;
     assert_eq!(size(&mut f, tab).await.0, (101, 20), "A's size holds");
+
+    // Nor does their window coming to the front (#1572: that's one person's).
+    send(&mut f, ClientMsg::Focus { pane: Some(1) }).await;
+    send(&mut f, view(60, true, false, false)).await;
+    assert_eq!(size(&mut f, tab).await.0, (101, 20), "F in front");
 
     // The button takes it.
     send(&mut f, view(63, true, false, true)).await;

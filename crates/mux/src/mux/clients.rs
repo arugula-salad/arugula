@@ -76,14 +76,7 @@ impl Daemon {
                     self.soon();
                 }
                 // Only editors size a tab; viewers letterbox.
-                let editor = who.is_owner()
-                    || self
-                        .mux
-                        .session_of_tab(tab)
-                        .ok()
-                        .and_then(|s| self.config.acl.role(&who, s))
-                        .is_some_and(|r| r >= Role::Editor);
-                if !editor {
+                if !self.sizes(&who, tab) {
                     return;
                 }
                 // `typed` is from older clients, whose typing claimed the size.
@@ -170,6 +163,19 @@ impl Daemon {
                 match pane.filter(|p| self.sees(&who, *p)) {
                     Some(p) => {
                         self.focus.insert(client, p);
+                        // Its window came to the front: the tab it shows
+                        // takes its size, if it may (#1572).
+                        self.fronted.insert(client, Instant::now());
+                        if let (Some(&tab), Some(&(cols, rows))) =
+                            (self.viewing.get(&client), self.view_size.get(&client))
+                            && self.sizes(&who, tab)
+                            && self.may_take(client, tab, true, false)
+                        {
+                            let zoom = self.zoomed.get(&client).copied();
+                            if matches!(self.mux.view(client, tab, cols, rows, zoom, true), Ok(true)) {
+                                self.changed();
+                            }
+                        }
                         // Seeing a finished command is enough.
                         if self.attention.get(&p) == Some(&Attention::Done) {
                             // A program's done or error (#720) too.
@@ -547,10 +553,38 @@ impl Daemon {
     /// `asked` (the button) takes it: typing, mouse and focus reports, showing
     /// the tab and zooming don't, whoever the holder is. An owner whose client
     /// has gone is nobody's.
+    ///
+    /// The person's latest window (#1572): a claim from the window of the
+    /// same person that came to the front after the holder's takes it, as
+    /// tmux's latest-client does. A window that never said it's in front
+    /// (an older client) never takes it this way.
     fn may_take(&self, client: ClientId, tab: TabId, claim: bool, asked: bool) -> bool {
-        let held =
-            self.mux.tab(tab).ok().and_then(|t| t.owner).is_some_and(|o| o != client && self.clients.contains_key(&o));
+        let held = self
+            .mux
+            .tab(tab)
+            .ok()
+            .and_then(|t| t.owner)
+            .is_some_and(|o| o != client && self.clients.contains_key(&o) && !self.later(client, o));
         claim && (asked || !held)
+    }
+
+    /// Whether `client` is a window of `holder`'s person that came to the
+    /// front after `holder` did.
+    fn later(&self, client: ClientId, holder: ClientId) -> bool {
+        let person = |c| self.clients.get(&c).map(|s| s.principal.id().to_owned());
+        person(client).is_some_and(|p| person(holder) == Some(p))
+            && self.fronted.get(&client).is_some_and(|at| self.fronted.get(&holder).is_none_or(|h| at > h))
+    }
+
+    /// Whether `who` may size `tab`: editors do; viewers letterbox.
+    fn sizes(&self, who: &Principal, tab: TabId) -> bool {
+        who.is_owner()
+            || self
+                .mux
+                .session_of_tab(tab)
+                .ok()
+                .and_then(|s| self.config.acl.role(who, s))
+                .is_some_and(|r| r >= Role::Editor)
     }
 
     /// A focus is its holder's view, so `client` takes the tab first, under

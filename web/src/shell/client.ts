@@ -489,6 +489,22 @@ export class Client {
     this.send({ type: "focus", pane });
   }
 
+  /** Say `pane` is looked at while this window is in front, until what
+   * this returns is called: the daemon doesn't notify you about the pane
+   * in front of you, and gives your latest window the size (#1572). */
+  reportFocus(pane: PaneId | null, phone: boolean): () => void {
+    const report = () => this.focusPane(document.visibilityState === "visible" && (phone || document.hasFocus()) ? pane : null);
+    report();
+    window.addEventListener("focus", report);
+    window.addEventListener("blur", report);
+    document.addEventListener("visibilitychange", report);
+    return () => {
+      window.removeEventListener("focus", report);
+      window.removeEventListener("blur", report);
+      document.removeEventListener("visibilitychange", report);
+    };
+  }
+
   /** Set by the UI: make this client's size the tab's size. `asked`: the
    * person pressed "Use this window's size", the only claim that takes the
    * size from another connected screen (#473). */

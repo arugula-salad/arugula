@@ -139,6 +139,10 @@ export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pan
     for (const k of kinds) slot.addEventListener(k, stop, true);
     return () => kinds.forEach((k) => slot.removeEventListener(k, stop, true));
   }, [readOnly, !!view]);
+  // Its window in front says so (#1572): the daemon gives your latest
+  // window the size, so a view left narrow elsewhere doesn't keep it.
+  const phone = usePhone();
+  useEffect(() => (info ? client!.reportFocus(id, phone) : undefined), [client, !!info, id, phone]);
   // The pane fits its slot (#1555): it takes the slot's size in cells, so
   // its program redraws there, where it may (yours, and no other screen
   // holds its tab's size); else it's drawn smaller to fit. The slot never

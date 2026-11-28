@@ -589,6 +589,10 @@ struct Daemon {
     clients: HashMap<ClientId, Subscriber>,
     /// The pane each client's focused window is looking at.
     focus: HashMap<ClientId, PaneId>,
+    /// When each client's window last came to the front (#1572): the
+    /// person's latest window takes their tabs' sizes, as tmux's
+    /// latest-client does.
+    fronted: HashMap<ClientId, Instant>,
     /// When each client was last told it can't type somewhere (once is
     /// enough while it keeps trying).
     refused: HashMap<ClientId, Instant>,
@@ -797,6 +801,7 @@ pub fn start(
         restored: Default::default(),
         clients: HashMap::new(),
         focus: HashMap::new(),
+        fronted: HashMap::new(),
         refused: HashMap::new(),
         viewing: HashMap::new(),
         zoomed: HashMap::new(),
@@ -1650,6 +1655,7 @@ impl Daemon {
                 self.blocks_due.remove(&client);
                 self.patched.remove(&client);
                 self.focus.remove(&client);
+                self.fronted.remove(&client);
                 self.refused.remove(&client);
                 self.viewing.remove(&client);
                 self.zoomed.remove(&client);

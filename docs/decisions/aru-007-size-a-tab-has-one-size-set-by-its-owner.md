@@ -83,6 +83,18 @@ client to show the tab takes it. This replaces the typing claim and its 3 s
 hold (#333, `SIZE_HOLD`), which are gone; `typed` stays on the wire for older
 clients and the daemon ignores it. The holder's own window resize or rotation
 still updates the size. Where: `crates/mux/src/mux/clients.rs` (`may_take`).
+The person's latest window (#1572): one exception to "only the button", for
+the same person's windows. A window that comes to the front (`Focus` with a
+pane) after the holder did takes the tab it shows at once, and its views and
+resizes size it, as tmux's latest-client does; a window behind draws the tab
+scaled or letterboxed until it comes to the front again. Another person's
+window still needs the button (#1502), and a client that never sends
+`Focus` (an older one, `illogical attach`) never takes it this way, so
+no wire change. Why: a narrow view left open (the board panel at 45 columns)
+kept a wide window's terminal narrow until someone found the button.
+Where: `crates/mux/src/mux/clients.rs` (`may_take`, `later`), and the
+agent panel's terminal saying its window is in front
+(`web/src/app/live-pane.tsx`, `Client.reportFocus`).
 
 Where: `crates/core/src/mux.rs` (`Mux::view`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
 From: [Size arbitration](docs/plan-archive.md#size-arbitration), [M1](docs/plan-archive.md#m1-multiplexer), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end), #333.
