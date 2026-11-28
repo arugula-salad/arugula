@@ -106,10 +106,26 @@ fn the_chief_of_staff_on_a_machine_names_an_agent_blocks_tools() {
         "link",
         "doc",
         "ask_approval",
+        "show",
     ];
     for tool in works {
         assert!(named.iter().any(|n| n == tool), "it names {tool}: {named:?}");
     }
+}
+
+/// The chief of staff arranges its person's Overview (Arugula #1498): with
+/// `show` kind `place`, beside for the conversation now, `for_you` for what
+/// waits on them, and an agent's prompt in a tab of its own.
+#[test]
+fn the_chief_of_staff_puts_what_waits_on_its_person_in_a_tab_of_the_overview() {
+    register();
+    let text = arugulad_control_tools::chief_of_staff_on_a_machine(None);
+    let from = text.find("## Put it in front of them on the Overview").expect("the Overview section");
+    let section = &text[from..text[from..].find("\n## Never").map_or(text.len(), |n| from + n)];
+    assert!(section.contains("`show` kind `place`, `place` `overview`"), "{section}");
+    let prompt = section.lines().find(|l| l.contains("`session.needs_input`")).expect("the prompt line");
+    assert!(prompt.contains("`pane` `prompt`") && prompt.contains("`intent` `for_you`"), "{prompt}");
+    assert!(section.contains("`in_place_of` `boards`"), "{section}");
 }
 
 /// A board's lead that asks for a wider grant hears the answer in the
