@@ -6,6 +6,7 @@
 // rows out, so `scripts/chat-agents.test.mjs` runs it without a browser.
 
 import type { ChatRoom, ProjectBoard } from "../proto";
+import type { RoomTags } from "./tags";
 
 /** #agents: the project's own thread. */
 export const isAgentsRoom = (r: ChatRoom, project?: string): boolean => r.kind === "object" && !!r.target?.startsWith("prj_") && (!project || r.target === project);
@@ -19,6 +20,14 @@ export const isStaffRoom = (r: ChatRoom, project?: string): boolean => r.kind ==
 /** A room of the Agents section: its threads open in place, beside its
  * About (who's in it, who a post reaches). */
 export const isAgentRoom = (r: ChatRoom): boolean => isAgentsRoom(r) || isBoardChannel(r);
+
+/** Which tags `r`'s composer offers and its messages draw (Arugula #1582). */
+export const roomTags = (r: ChatRoom): RoomTags => (isAgentsRoom(r) ? "agents" : isBoardChannel(r) ? "board" : "room");
+
+/** The projects whose boards a post in `r` may tag: control's list. From a
+ * server before it, an agents' room's own project, and no other room's:
+ * that server tells no lead of a tag there. */
+export const tagProjects = (r: ChatRoom): string[] => (r.tag_projects?.length ? r.tag_projects : isAgentRoom(r) && r.project ? [r.project] : []);
 
 /** A board's row: the board, and its channel once someone has opened it. */
 export interface BoardChannel {

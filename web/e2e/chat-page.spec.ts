@@ -226,7 +226,7 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect(icon).toHaveAttribute("data-tone", "warn");
     await icon.hover();
     const card = view.locator('[data-msg="2"] [data-receipt-card]');
-    await expect(card.locator(".mention-line")).toHaveText(["dust/Design lift read", "dust/A2P waiting: no session took it"]);
+    await expect(card.locator(".mention-line")).toHaveText(["Design lift lead read", "A2P lead waiting: no session took it"]);
     await expect(card).not.toBeFocused();
     await page.mouse.move(0, 0);
     await expect(card).toHaveCount(0);
@@ -267,20 +267,20 @@ test.describe("Tags (Arugula #1522)", () => {
     const icon = page.locator('[data-msg="1"] .receipt-icon');
     await expect(icon).toHaveAttribute("data-tone", "quiet");
     await icon.click();
-    await expect(card(1)).toHaveText(["dust/Design lift lead read"]);
+    await expect(card(1)).toHaveText(["Design lift lead read"]);
     await page.keyboard.press("Escape");
     // The lead's own post went to nobody else: no icon.
     await expect(page.locator('[data-msg="2"] .receipt-icon')).toHaveCount(0);
     // A plain post has no status: the lead got it by leading the channel.
     await page.locator('[data-msg="3"] .receipt-icon').click();
-    await expect(card(3)).toHaveText(["dust/Design lift lead reached"]);
+    await expect(card(3)).toHaveText(["Design lift lead reached"]);
     await page.keyboard.press("Escape");
     // Working is a dim pulse, not the accent: the worst of the lead's and geek's.
     const working = page.locator('[data-msg="4"] .receipt-icon');
     await expect(working).toHaveAttribute("data-tone", "pending");
     await expect(working).toHaveAttribute("data-receipt", "2");
     await working.click();
-    await expect(card(4)).toHaveText(["dust/Design lift lead reached", "geek/lab working…"]);
+    await expect(card(4)).toHaveText(["Design lift lead reached", "lab working…"]);
   });
 
   test("a thread agent's read mark is a row in its reply's receipt, not a pill of its own (#1560)", async ({ page }) => {
@@ -290,23 +290,69 @@ test.describe("Tags (Arugula #1522)", () => {
     const icon = thread.locator('[data-msg="9"] .receipt-icon');
     await expect(icon).toHaveAttribute("data-tone", "quiet");
     await icon.click();
-    await expect(thread.locator('[data-msg="9"] [data-receipt-card] .mention-line')).toHaveText(["dust/Design lift read"]);
+    await expect(thread.locator('[data-msg="9"] [data-receipt-card] .mention-line')).toHaveText(["Design lift lead read"]);
     await expect(page.locator("[data-thread-seen], .thread-seen")).toHaveCount(0);
     // Design lift wrote 7: nothing read it there.
     await expect(thread.locator('[data-msg="7"] .receipt-icon')).toHaveCount(0);
     // The To row reads a chief of staff by its role, never its project's id (#1561), and still sends its name.
-    await expect(thread.locator("[data-thread-to-agent]")).toHaveText(["Design lift", "Chief of staff · lead"]);
+    await expect(thread.locator("[data-thread-to-agent]")).toHaveText(["Design lift lead", "Chief of staff · lead"]);
     await expect(thread.locator("[data-thread-to]")).not.toContainText("prj_");
   });
 
-  test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {
+  test("a board's channel says its lead gets a post; another room's @ lists only its projects' boards (#1582)", async ({ page }) => {
     await open(page, `/p/${P}/chat/ob_00000003`);
     await expect(page.locator('[data-room-view="ob_00000003"] .k-composer-to')).toHaveText("Its lead gets this · @here adds active workers");
     await page.goto(`/p/${P}/chat/${GENERAL}`);
     const box = page.getByRole("textbox", { name: "Message #general" });
     await box.fill("@");
     await expect(page.locator("[data-tag-list]")).toHaveCount(0);
-    await expect(page.locator("[data-tag-option]")).toHaveCount(0);
+    await expect(page.locator("[data-tag-option] b")).toHaveText(["@Design lift", "@A2P", "@Product improvements", "@Rail and Machines"]);
+    await expect(page.locator('[data-tag-option="here"], [data-tag-option="cos"]')).toHaveCount(0);
+  });
+});
+
+test.describe("Board tags everywhere, agents by what they are (Arugula #1582)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("@Design lift in a team channel: picked from the list, sent by id, drawn as a tag, and its receipt is the lead", async ({ page }) => {
+    await open(page, `/p/${P}/chat/ch_00000002`);
+    const view = page.locator('[data-room-view="ch_00000002"]');
+    const box = view.getByRole("textbox", { name: "Message #design" });
+    await box.fill("Ready for review @des");
+    await expect(page.locator("[data-tag-option]")).toHaveCount(1);
+    await expect(page.locator('[data-tag-option="board"] span').last()).toHaveText("its lead");
+    await box.press("Enter");
+    await expect(box).toHaveValue("Ready for review @Design lift ");
+    await box.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.__fx.posted.at(-1))).toEqual({ text: "Ready for review @Design lift ", tags: [{ kind: "board", board: "brd_00000000000000000000000000000001", text: "Design lift" }] });
+    const sent = view.locator('[data-msg="3"]');
+    await expect(sent.locator('[data-tag="board"]')).toHaveText("@Design lift");
+    await sent.locator(".receipt-icon").click();
+    await expect(sent.locator("[data-receipt-card] .mention-line")).toHaveText(["Design lift lead read"]);
+    await expect(page.getByText(/Nobody here called/)).toHaveCount(0);
+  });
+
+  test("an agent's post in a team channel: its @Design lift, read by control from its text, draws as the board's tag", async ({ page }) => {
+    await open(page, `/p/${P}/chat/ch_00000002`);
+    const post = page.locator('[data-room-view="ch_00000002"] [data-msg="1"]');
+    await expect(post.locator('[data-tag="board"]')).toHaveText("@Design lift");
+    await expect(post.locator(".receipt-icon")).toHaveAttribute("data-receipt", "1");
+  });
+
+  test("no author line says machine/…: a lead by its board, the chief of staff by its role, others by their session; a hover shows the machine", async ({ page }) => {
+    for (const [room, names] of [
+      [AGENTS, ["Chief of staff", "Launch: engineering", "Onboarding", "Rail and Machines", "Chief of staff"]],
+      ["ob_00000002", ["Design lift lead"]],
+      ["ch_00000002", ["ux pass", "Design lift lead"]],
+    ] as const) {
+      await page.goto("about:blank");
+      await open(page, `/p/${P}/chat/${room}`);
+      const authors = page.locator(`[data-room-view="${room}"] .chat-agent-name`);
+      await expect(authors).toHaveText([...names]);
+      for (const t of await authors.allTextContents()) expect(t).not.toContain("/");
+      await expect(authors.first()).toHaveAttribute("title", /on dust · dust\//);
+      await expect(authors.first()).toHaveAttribute("data-agent-name", /^dust\//);
+    }
   });
 
   // Arugula #1569: a person starts a thread in #agents and a board's channel

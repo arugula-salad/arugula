@@ -1519,7 +1519,7 @@ also: boolean,
  */
 thread?: ChatThread, 
 /**
- * Its tags, in #agents or a board's channel (Arugula #1536).
+ * Its tags, in any room (Arugula #1536, #1582).
  */
 tags?: Array<ChatTag>, 
 /**
@@ -1673,7 +1673,7 @@ session?: string,
  */
 conversation?: string, 
 /**
- * Its tags, in #agents or a board's channel (Arugula #1536): who it's
+ * Its tags, in any room (Arugula #1536, #1582): who it's
  * for, by id. An agent's are read from its text instead (`@<board>`,
  * `@here`, `@channel`, `@cos`).
  */
@@ -1729,7 +1729,7 @@ mention_status?: Array<ChatMentionStatus>,
  */
 nobody?: string, 
 /**
- * In #agents or a board's channel (Arugula #1536): who it's for, as its
+ * In any room that tags (Arugula #1536, #1582): who it's for, as its
  * tags resolved when it was posted; the message's own `reached` says
  * whom the bus delivered it to.
  */
@@ -1995,7 +1995,13 @@ staff: boolean,
  * #1439): the posts there are delivered to it, never its own, as a
  * board thread's are to the board's lead (#414).
  */
-lead?: ChatRoomLead, };
+lead?: ChatRoomLead, 
+/**
+ * The projects whose boards a post here may tag as `@<board>`, each
+ * its lead (Arugula #1582): the room's own project, or a team
+ * channel's or DM's team's projects. Empty from a server before it.
+ */
+tag_projects?: Array<string>, };
 
 /**
  * A machine whose agents reach a room through its owner's grant (M197).

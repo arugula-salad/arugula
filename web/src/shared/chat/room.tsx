@@ -12,8 +12,8 @@
 // reader may reach that machine); one that doesn't is inert, and the quote
 // is all they see.
 
-import { isAgentRoom, isAgentsRoom, isBoardChannel } from "./agent-rooms";
-import { boardTitle, useProjectBoards } from "./project-boards";
+import { isAgentRoom, isAgentsRoom, isBoardChannel, roomTags, tagProjects } from "./agent-rooms";
+import { boardTitle, useLedBoards, useProjectsBoards } from "./project-boards";
 import { TAG_RULE, tagAt, tagOptions, tagsIn, type RoomTags, type TaggedMessage } from "./tags";
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -26,6 +26,7 @@ import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { AuthorName } from "./agent-name";
+import { chatAgentName } from "../agent-name";
 import { TypingLine } from "./typing";
 import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
@@ -534,23 +535,21 @@ export const threadComposeRef: ComposeHandle = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
-/** An agents' room's message (Arugula #1522): its tags drawn as pills
- * (its own, by id, else today's names). Null in any other room. */
-function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { len: number; node: ComponentChildren } | null } | null {
-  const on = isAgentRoom(room);
-  const boards = useProjectBoards(on ? (room.project ?? undefined) : undefined);
+/** A message's tags drawn as pills (Arugula #1522): its own, by id, else
+ * today's names. Every room has its projects' boards' (Arugula #1582). */
+function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { len: number; node: ComponentChildren } | null } {
+  const boards = useProjectsBoards(tagProjects(room));
   return useMemo(() => {
-    if (!on) return null;
     const t = m as TaggedMessage;
     const title = (b: string) => boardTitle(room.project, b);
-    const known = t.tags ?? tagOptions(isAgentsRoom(room) ? "agents" : "board", (boards ?? []).map((b) => ({ id: b.id, title: b.title, lead: !!b.lead })), "").map((o) => o.tag);
+    const known = t.tags ?? tagOptions(roomTags(room), boards.map((b) => ({ id: b.id, title: b.title, lead: !!b.lead })), "").map((o) => o.tag);
     return {
       tag: (from: string) => {
         const at = tagAt(from, known, title);
         return at ? { len: at.len, node: <span class="mention" data-tag={at.kind}>@{at.name}</span> } : null;
       },
     };
-  }, [on, m, boards]);
+  }, [m, boards.map((b) => `${b.id}:${b.title}`).join(" ")]);
 }
 
 export function RoomMessage({
@@ -745,7 +744,7 @@ export function RoomMessage({
             }}
           />
         ) : (
-          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} machine={machineIcon} tag={tagged?.tag} />
+          m.text && <ChatMarkdown text={m.text} isMe={chat.isMe} landed={landed} machine={machineIcon} tag={tagged.tag} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         <PinnedMark m={m} />
@@ -1044,20 +1043,25 @@ export function RoomCompose({
   useEffect(() => {
     for (const m of hearing) presence.machine(m);
   }, [hearing.join(" ")]);
+  const led = useLedBoards();
   const machineOptions: Mentionable[] = typing
     ? machineMentions(agents, typing[1])
         .slice(0, MACHINE_ROWS)
         .map((m) => {
           const a = agents.find((x) => x.machine === m.machine)!;
-          return { token: m.token, name: m.name, who: "", machine: m.machine, session: m.session, note: m.session ? `@${m.token}` : a.owner === chat.me ? "yours" : a.owner_name };
+          // A session by what it is (Arugula #1582): "Design lift lead", not its tab.
+          const name = m.session ? chatAgentName({ machine: m.machine, session: m.name }, led) : m.name;
+          return { token: m.token, name, who: "", machine: m.machine, session: m.session, note: m.session ? `@${m.token}` : a.owner === chat.me ? "yours" : a.owner_name };
         })
     : [];
-  // An agents' room's tags (Arugula #1522): @channel, @here, @cos and each
-  // board's lead, first, by id.
-  const tagRoom: RoomTags | null = isAgentRoom(room) ? (isAgentsRoom(room) ? "agents" : "board") : null;
-  const boards = useProjectBoards(tagRoom ? (room.project ?? undefined) : undefined);
-  const tagBoards = (boards ?? []).filter((b) => !b.closed_at).map((b) => ({ id: b.id, title: b.title, lead: !!b.lead }));
-  const tags = tagRoom && !thread ? tagOptions(tagRoom, tagBoards, typing ? typing[1] : "") : [];
+  // Tags, first, by id: an agents' room's @channel, @here, @cos and each
+  // board's lead (Arugula #1522); any other room's, a reply's too, its
+  // projects' boards' leads (Arugula #1582).
+  const tagKind = roomTags(room);
+  const tagRoom: RoomTags | null = tagKind === "room" ? null : tagKind;
+  const boards = useProjectsBoards(tagProjects(room));
+  const tagBoards = boards.filter((b) => !b.closed_at).map((b) => ({ id: b.id, title: b.title, lead: !!b.lead }));
+  const tags = !tagRoom || !thread ? tagOptions(tagKind, tagBoards, typing ? typing[1] : "") : [];
   const options: Mentionable[] = typing
     ? [
         ...tags.map((o) => ({ token: o.tag.text, name: `@${o.tag.text}`, who: "", note: o.note, tag: o.tag.kind })),
@@ -1152,11 +1156,11 @@ export function RoomCompose({
     try {
       const posted = thread
         ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text, chat.agents(room.id))) : undefined)
-        : await chat.post(room.id, text, quote, files.ids, paused && anyway, tagRoom ? tagsIn(text, tagOptions(tagRoom, tagBoards, "")) : undefined);
+        : await chat.post(room.id, text, quote, files.ids, paused && anyway, tagsIn(text, tagOptions(tagKind, tagBoards, "")));
       // `@wake` names a chip here, though it's no machine or person to control.
       const reached = new Set((threadAgents ?? []).map((a) => sessionSlug(a.name)));
       // A tag's first word is no one control knows: the tag says who.
-      if (tagRoom) for (const o of tagOptions(tagRoom, tagBoards, "")) reached.add(o.tag.text.split(/\s+/)[0]!.toLowerCase());
+      for (const o of tagOptions(tagKind, tagBoards, "")) reached.add(o.tag.text.split(/\s+/)[0]!.toLowerCase());
       setMissed(posted.unreached.filter((w) => !reached.has(w.toLowerCase())).map((w) => `Nobody here called ${w} can read this room`));
       setChosen(null);
       setToGithub(posted.github ? { seq: posted.seq, github: posted.github } : null);

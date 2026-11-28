@@ -41,3 +41,10 @@ test("the composer's line", () => {
   assert.equal(composerLine("board", false), "Its lead gets this · @here adds active workers");
   assert.equal(composerLine("agents", true), "Replies reach whoever the post reached");
 });
+
+test("any other room's @ list is its projects' boards only (Arugula #1582)", () => {
+  assert.deepEqual(tagOptions("room", boards, "").map((o) => o.tag.text), ["Design lift", "A2P", "A2P follow-ups"]);
+  assert.deepEqual(tagOptions("room", boards, "des").map((o) => o.tag.text), ["Design lift"]);
+  assert.deepEqual(tagOptions("room", boards, "here"), []);
+  assert.deepEqual(tagsIn("@Design lift can you look?", tagOptions("room", boards, "")), [{ kind: "board", board: "brd_1", text: "Design lift" }]);
+});
