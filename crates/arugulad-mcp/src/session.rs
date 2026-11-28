@@ -360,7 +360,7 @@ fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
         let r = arugulad_base::forge_wait::PrRef::parse(&p)
             .filter(|r| r.host == "github.com")
             .ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
-        out.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
+        out.push(WatchTarget::Pr { repo: r.repo, number: r.number, until, head: None });
     }
     for id in ids(&a.agent_session) {
         if !id.starts_with("ses_") {

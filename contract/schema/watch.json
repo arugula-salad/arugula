@@ -406,6 +406,13 @@
         {
           "description": "A pull request on github.com, in a repo linked through Arugula's\nGitHub App.",
           "properties": {
+            "head": {
+              "description": "Only this commit's checks count: a sha, or a prefix of at least\n[`HEAD_MIN`] hex digits (#1553). Left out, a PR whose head just\nmoved waits for the new head. Old controls read a watch\nwithout it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "kind": {
               "const": "pr",
               "type": "string"

@@ -40,8 +40,8 @@
 
 use arugula_control_wire::events::{self, AGENT_EVENTS, EventsPage};
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, TARGET_TYPES, TARGETS_MAX, WatchCancel,
-    WatchCancelled, WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, HEAD_MIN, TARGET_TYPES, TARGETS_MAX,
+    WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target,
     event_types as types, every_ms, every_word, expires_ms as expires, until_word_parse as until,
 };
 use std::time::Duration;
@@ -60,7 +60,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it). When it fires, you get a follow-up saying what happened. It fires once, unless standing: an event watch that stays live, firing at most once per every (5m) with every event since; exclude_self skips your own block's. It expires after 24h (expires, at most 7d). Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed, dequeued (left the merge queue unmerged) or ready (green, mergeable), in a repo linked to Arugula's GitHub App (else wait with pr); session (ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of its match fields, like {\"issue\": \"#12\"}). note (why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new lines) need no account. If it already happened, create says so and makes no watch. A watch belongs to this Claude Code session, not its pane. Works from a terminal with Arugula's hooks, or an agent block.";
+pub(crate) const DESCRIPTION: &str = "Wake this session when something happens: create a watch, then end your turn (wait blocks instead). It arrives as a follow-up when it fires, once unless standing: an event watch that stays live, firing at most once per every (5m) with every event since; exclude_self skips your own block's. It expires after 24h (expires, at most 7d). Targets (any fires it): pr (OWNER/REPO#N or its link, or several) until merged, closed, checks_done, checks_failed, dequeued or ready (green, mergeable), in a repo linked to Arugula's GitHub App, else wait with pr; head (a sha): only that commit's checks count; without it, a PR whose head just moved waits for the new head; session (ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id; parent: one thread; from: one person) until a reply you didn't write; event (a type from kind types) with match (its match fields, like {\"issue\": \"#12\"}). note (why, 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new lines) need no account. If it already happened, create says so, no watch. A watch belongs to this Claude Code session, not its pane. Needs Arugula's hooks in a terminal, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -119,6 +119,11 @@ pub struct CreateArgs {
     /// With room: only a reply by this person (login or name).
     #[serde(default)]
     pub from: Option<String>,
+    /// With pr: only this commit's checks count (a sha, or its first 7 or
+    /// more hex digits). Without it, a PR whose head just moved waits for
+    /// the new head.
+    #[serde(default)]
+    pub head: Option<String>,
     /// merged (the default), closed (merged or not), checks_done (none
     /// queued or running), checks_failed (a merge-group run's failure counts
     /// for a queued PR), dequeued (left the merge queue without merging), or
@@ -347,6 +352,18 @@ fn when(ms: i64) -> String {
 
 /// What `create` asks for: its targets, event and expiry, checked here,
 /// before the session is known.
+/// `head`'s words: a commit's sha or a prefix of it, lowercase, for one PR.
+fn head_word(head: Option<&str>, prs: usize) -> Result<Option<String>, String> {
+    let Some(h) = head.map(str::trim) else { return Ok(None) };
+    if prs != 1 {
+        return Err("head goes with one pr: a commit belongs to one PR".into());
+    }
+    if h.len() < HEAD_MIN || h.len() > 40 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("head {h}: a commit's sha, or its first {HEAD_MIN} or more hex digits"));
+    }
+    Ok(Some(h.to_ascii_lowercase()))
+}
+
 fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
     let until = until(a.until.as_deref())?;
     let list = |l: Option<PrList>| match l {
@@ -379,12 +396,13 @@ fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
     if prs.is_empty() && targets.is_empty() && event.is_none() {
         return Err("create needs something to watch: pr, session, run, room, or event".into());
     }
+    let head = head_word(a.head.as_deref(), prs.len())?;
     for p in &prs {
         let r = PrRef::parse(p).ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
         if r.host != "github.com" {
             return Err(format!("pr {p}: a watch is on github.com only; use wait with pr"));
         }
-        targets.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
+        targets.push(WatchTarget::Pr { repo: r.repo, number: r.number, until, head: head.clone() });
     }
     let expires_in_ms = a.expires.as_deref().map(expires).transpose()?;
     let every_ms = match (a.standing, a.every.as_deref()) {
@@ -994,6 +1012,31 @@ mod tests {
         assert!(expires("0h").is_err());
         assert!(expires("soon").is_err());
         assert!(expires("6").is_err());
+    }
+
+    #[test]
+    fn a_pr_watch_takes_a_head_for_one_pr() {
+        let body = |v| create_body(args(v));
+        let pr = |b: WatchCreate| match &b.targets[0] {
+            WatchTarget::Pr { head, .. } => head.clone(),
+            t => panic!("{t:?}"),
+        };
+        assert_eq!(pr(body(json!({ "pr": "o/r#1" })).unwrap()), None);
+        assert_eq!(pr(body(json!({ "pr": "o/r#1", "head": " ABCDEF1234 " })).unwrap()), Some("abcdef1234".into()));
+        // A watch without one reads as before: the field isn't sent.
+        let plain = serde_json::to_value(body(json!({ "pr": "o/r#1" })).unwrap()).unwrap();
+        assert!(plain["targets"][0].get("head").is_none(), "{plain}");
+        for bad in ["abc123", "abcdefg", &"a".repeat(41)] {
+            let e = body(json!({ "pr": "o/r#1", "head": bad })).err().unwrap();
+            assert!(e.contains("hex digits"), "{bad}: {e}");
+        }
+        let e = body(json!({ "pr": ["o/r#1", "o/r#2"], "head": "abcdef1" })).err().unwrap();
+        assert!(e.contains("one pr"), "{e}");
+        let e = body(json!({ "session": "ses_1", "head": "abcdef1" })).err().unwrap();
+        assert!(e.contains("one pr"), "{e}");
+        // Several PRs, one watch: each its own target.
+        let many = body(json!({ "pr": ["o/r#1", "o/r#2"] })).unwrap();
+        assert_eq!(many.targets.len(), 2);
     }
 
     #[test]

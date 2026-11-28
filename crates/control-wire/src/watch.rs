@@ -43,6 +43,9 @@ pub const EVERY_MIN_MS: u64 = 60 * 1000;
 /// The longest gap a standing watch may have: a day.
 pub const EVERY_MAX_MS: u64 = 24 * 60 * 60 * 1000;
 
+/// The fewest hex digits of a commit a pr watch's `head` takes.
+pub const HEAD_MIN: usize = 7;
+
 /// What a watch waits for: one of these happening fires it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -55,6 +58,12 @@ pub enum WatchTarget {
         repo: String,
         number: u64,
         until: PrUntil,
+        /// Only this commit's checks count: a sha, or a prefix of at least
+        /// [`HEAD_MIN`] hex digits (#1553). Left out, a PR whose head just
+        /// moved waits for the new head. Old controls read a watch
+        /// without it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        head: Option<String>,
     },
     /// A hosted agent session (`ses_…`, Arugula #1034), until it settles as
     /// `wait` with `agent_session` says: done with nothing queued, waiting
