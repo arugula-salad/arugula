@@ -266,9 +266,9 @@ test("a chief of staff leading its staff room by its project's id is found by it
   assert.deepEqual(l.peek.panes.map((p) => p.key), ["workstation:4"]);
   // It routes by its own name still.
   assert.equal(l.session, "Chief of staff · prj_1");
-  // The project not loaded: its name as it is, and its pane by that name alone.
+  // The project not loaded: Chief of staff, never its id (Arugula #1561), and its pane by its name alone.
   const raw = boardLead(lead, [chief], null, hostOf);
-  assert.equal(raw.peek.name, "Chief of staff · prj_1");
+  assert.equal(raw.peek.name, "Chief of staff");
   // Another project's chief of staff isn't this one's, though both projects are "Launch crew".
   const other = pane("workstation", 5, { machine: "m_ws", session: { id: 4, name: "other" }, project: "prj_3", title: "Chief of staff · Launch crew", agent: true });
   const ours = { ...chief, project: "prj_1" };

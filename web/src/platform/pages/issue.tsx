@@ -15,7 +15,7 @@ import { useEffect, useState } from "preact/hooks";
 import { panelKey, usePanel } from "../../shared/kit/panel";
 import type { BoardRow, BoardView } from "../../shared/proto";
 import { usePlatformApi } from "../../shared/platform-api";
-import { sessionLabel } from "../../shared/chief-of-staff";
+import { shownSession } from "../../shared/chief-of-staff";
 import { chat } from "../../shared/chat-store";
 import type { Between } from "../../shared/chat/room";
 import { askNeed, workerOf } from "../../shared/boards/desk";
@@ -138,7 +138,7 @@ function CardProps({ c }: { c: Card }) {
       )}
       {b.lead && (
         <Prop name="Lead" data="lead">
-          {sessionLabel(b.lead.session, api.projectName)}
+          {shownSession(b.lead.session)}
         </Prop>
       )}
       {block?.block?.branch && (

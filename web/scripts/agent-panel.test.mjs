@@ -14,6 +14,10 @@ test("an agent is named by its work, else its session, else its machine; the chi
   assert.equal(agentName({ machine: "dust" }), "an agent on dust");
   assert.equal(agentName({}), "An agent");
   assert.equal(agentName({ role: "chief", title: "cos", machine: "dust" }), "Chief of staff");
+  // By its session's name, its title or its handle's slug too, never its project's id (Arugula #1561).
+  assert.equal(agentName({ role: "agent", session: "Chief of staff · prj_3e5d80aa", machine: "dust" }), "Chief of staff");
+  assert.equal(agentName({ title: "Chief of staff · Arugula", session: "main" }), "Chief of staff");
+  assert.equal(agentName({ machine: "dust", session: "chief-of-staff-arugula" }, { handle: true }), "Chief of staff");
 });
 
 test("as chat tags it, `machine/tab`, or the machine alone", () => {

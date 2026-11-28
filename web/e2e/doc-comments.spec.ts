@@ -31,6 +31,18 @@ test("on the Doc's page, a comment on a paragraph is posted to its thread for th
   expect(c!.x).toBeGreaterThan(p!.x + p!.width);
 });
 
+test("a Doc its chief of staff wrote says the Chief of staff sees a comment, never its project's id, and the mention still reaches its tab (Arugula #1561)", async ({ page }) => {
+  const posted = await answers(page, `Chief of staff · ${SITE}`);
+  const body = await fixturePage("./move-to-project-page.tsx");
+  await page.route(/\/p\/prj_/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
+  await page.goto(`/p/${SITE}/docs/${DOC}`);
+  const margin = page.locator("[data-doc-margin]");
+  await expect(margin).toContainText("Tap a paragraph to comment. Chief of staff sees it.");
+  await expect(margin).not.toContainText("prj_");
+  await comment(page, "Even photos?");
+  expect(posted[0]!.text).toMatch(new RegExp(`@geek/chief-of-staff-${SITE.replace("_", "-")}$`));
+});
+
 test("the embed page is the Doc alone, its links go to the app, and a comment saves", async ({ page }) => {
   const posted = await answers(page);
   await embed(page, 1024);

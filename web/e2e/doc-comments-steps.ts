@@ -13,8 +13,8 @@ interface Posted {
   text: string;
 }
 
-/** The platform's answers for one Doc an agent session wrote, and its thread; what's posted is kept. */
-export async function answers(page: Page): Promise<Posted[]> {
+/** The platform's answers for one Doc an agent session wrote (`session`), and its thread; what's posted is kept. */
+export async function answers(page: Page, session = "Docs Agent"): Promise<Posted[]> {
   const posted: Posted[] = [];
   const now = Date.now();
   const doc = {
@@ -22,7 +22,7 @@ export async function answers(page: Page): Promise<Posted[]> {
     project: SITE,
     title: "Chat on a bad network",
     author: "acct_a",
-    agent: { machine: "m_geek", machine_name: "geek", session: "Docs Agent" },
+    agent: { machine: "m_geek", machine_name: "geek", session },
     sections: 2,
     written: 2,
     rev: 1,
