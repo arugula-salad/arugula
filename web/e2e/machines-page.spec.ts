@@ -17,7 +17,7 @@ test.use({ permissions: ["local-network-access"], serviceWorkers: "block" });
 
 /** `[id, project, [[tab, [pane...], name?]...]]`: a made-up machine's session. */
 type FakeSession = [number, string, [number, number[], string?][]];
-type FakeHost = { name: string; id: string; online: boolean; owner?: string; sessions: FakeSession[]; asks?: number[]; agents?: number[] };
+type FakeHost = { name: string; id: string; online: boolean; owner?: string; sessions: FakeSession[]; asks?: number[]; agents?: number[]; prs?: Record<number, string> };
 
 const HOSTS: FakeHost[] = [
   // Yours, online: a session of two tabs, one of Site's (not shown) and one asking.
@@ -86,7 +86,7 @@ async function addMachines(page: Page, hosts: FakeHost[]) {
               key: `${h.name}:${id}`,
               host: h.name,
               id,
-              info: { id, type: "terminal", attention: h.asks?.includes(id) ? "needs_input" : "idle", command: `job-${h.name}-${id}`, branch: "main", session_project: project(p) },
+              info: { id, type: h.prs?.[id] ? "forge" : "terminal", title: h.prs?.[id], attention: h.asks?.includes(id) ? "needs_input" : "idle", command: `job-${h.name}-${id}`, branch: "main", session_project: project(p) },
               session: { id: sid, name: `${h.name.split("-")[0]}-${sid}` },
               stale: !h.online,
               owner: h.owner,
@@ -195,6 +195,40 @@ test.describe("on a computer", () => {
     await expect(two.locator("[data-machines-session-link]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines/a11a000000000001[^?]*\\?pane=1$`));
   });
 });
+
+// Arugula #1568: a pane's line under its session (a PR with a long title,
+// asking) stays in its card at any width and in either theme: its title
+// gives way, its mark is the session rows', and it says one word and its kind.
+for (const width of [1440, 2000]) {
+  for (const theme of ["light", "dark"] as const) {
+    test.describe(`at ${width}, ${theme}`, () => {
+      test.use({ viewport: { width, height: 900 }, colorScheme: theme });
+
+      test("a pane's line under its session stays inside the card", async ({ page }, info) => {
+        // The Look's System palette, so the theme is colorScheme's.
+        await page.addInitScript(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "system" })));
+        await stubPins(page, []);
+        await openApp(page, () => `/p/${P}/machines`);
+        const long = "arugula-salad/arugula#2999 A Doc's panel opens the live chief of staff, its tabs switch, and a chief of staff reads it, then much more ".repeat(2);
+        await addMachines(page, [{ name: "amy-laptop", id: "a11a000000000001", online: true, sessions: [[1, P, [[10, [1, 2]]]]], asks: [2], prs: { 2: long } }]);
+        const card = page.locator('[data-machines-list] > [data-machines-group="a11a000000000001"]');
+        const row = card.locator('[data-panes-pane="2"]');
+        await expect(row).toContainText("Needs you · Pull request");
+        await expect(row.locator('[data-state="asks"]')).toHaveCount(1);
+        await expect(row).not.toContainText("where you were");
+        const fits = await card.evaluate((c) => {
+          const edge = c.getBoundingClientRect().right;
+          return [...c.querySelectorAll<HTMLElement>(".panes-row, .k-row-line")].map((r) => ({ scroll: r.scrollWidth, room: c.clientWidth, over: r.getBoundingClientRect().right - edge }));
+        });
+        for (const f of fits) {
+          expect(f.scroll).toBeLessThanOrEqual(f.room);
+          expect(f.over).toBeLessThanOrEqual(0);
+        }
+        await page.screenshot({ path: info.outputPath(`machines-${width}-${theme}.png`) });
+      });
+    });
+  }
+}
 
 test.describe("on a laptop", () => {
   test.use({ viewport: { width: 1280, height: 800 } });

@@ -57,6 +57,12 @@
   flex: 1;
   min-width: 0;
 }
+/* The panes under a session: a grid track that shrinks to the card, not one
+   as wide as a long title (#1568), the meta under the session's own. */
+.machines-session-item .k-row-body {
+  grid-template-columns: minmax(0, 1fr);
+  padding-right: 0;
+}
 .panes-rows {
   margin: 0;
   padding: 0;
@@ -69,7 +75,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-1) 10px var(--space-1) var(--space-2);
   border-radius: var(--radius-control);
   color: inherit;
   font: var(--text-meta) / 1.4 var(--font-sans);
@@ -96,14 +102,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: var(--text-label);
-}
-.panes-row-where {
-  flex: none;
-  font-size: var(--text-label);
-}
-/* The pane you had open last: where you were. */
-.panes-row.last {
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* The sessions you pinned, first. */
