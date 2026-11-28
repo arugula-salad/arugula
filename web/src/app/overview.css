@@ -272,6 +272,36 @@
 .ov-main:focus {
   outline: 0;
 }
+/* The tabs, then "↺ N closed overnight" (the next-morning tidy) at the strip's end. */
+.ov-tabs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ov-overnight {
+  margin-left: auto;
+  white-space: nowrap;
+}
+/* The empty space's invitation: what the chief of staff can put here, as asks. */
+.ov-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: var(--gap);
+  padding: 16px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+}
+.ov-invite > p {
+  margin: 0;
+  color: var(--ink-dim);
+}
+.ov-invite-asks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Each pane is its content's container: a Doc lays out to the pane's width. */
 .ov-main .k-pane-body {
   container-type: inline-size;

@@ -6,12 +6,14 @@
 // arrives quietly with a dot; a review moves to a tab of its own with a
 // Needs-you row pointing at it; a fourth pane closes its oldest untouched
 // one; a failing run stands in place of Boards for a while, ↺ puts Boards
-// back; Reset puts tab 1 back; a closed default pane stays closed; and an
-// agent's prompt waits in a tab of its own, answered there. On the
+// back; Reset puts tab 1 back; a closed default pane stays closed; an
+// agent's prompt waits in a tab of its own, answered there; the next
+// morning yesterday's panes go to the closed list; and an empty tab 1
+// invites you to ask the chief of staff for something. On the
 // Overview's fixture (./overview-fixture.ts), with the platform's layouts
 // made up here (./place-layout-fake.ts).
 import { expect, test, type Page } from "@playwright/test";
-import { overview, P } from "./overview-fixture";
+import { overview, P, staffRoomOn } from "./overview-fixture";
 import { fakeLayouts, type FakeLayouts } from "./place-layout-fake";
 
 test.use({ permissions: ["local-network-access"], viewport: { width: 1440, height: 900 } });
@@ -167,4 +169,52 @@ test("a blocked agent's prompt waits in a tab of its own while you're away, and 
   await expect(tabs(page)).toHaveCount(1);
   await expect(tabs(page).first()).toHaveAttribute("aria-selected", "true");
   await expect(row).toHaveCount(0);
+});
+
+test("the next morning, what the chief of staff opened before today and you haven't touched goes to the closed list; a prompt's tab and today's pane stay; the strip offers them back", async ({ page }, info) => {
+  const yesterday = new Date(new Date().setHours(0, 0, 0, 0)).getTime() - 3 * 3_600_000;
+  const cos = { account: "acct_a", machine: "mch_dust" };
+  const p = (id: string, kind: "doc" | "pr" | "prompt", title: string, at: number) => ({ id, kind, ref: kind === "prompt" ? "%7" : id, title, machine: kind === "prompt" ? "dust" : null, state: null, opened_by: cos, opened_at: at, touched: false, in_place_of: null, size: null, offline: false });
+  const tab = (id: string, pane: ReturnType<typeof p>, forYou: boolean) => ({ id, title: pane.title, opened_by: cos, opened_at: yesterday, for_you: forYou, panes: [pane] });
+  const l = await open(page, (l) => {
+    l.layout.tabs[0]!.panes = [p("pan_old", "doc", "Yesterday's thread", yesterday), p("pan_standup", "doc", "Standup", Date.now())];
+    l.layout.tabs.push(tab("tab_review", p("pan_review", "doc", "Review: Needs you on boards", yesterday), false), tab("tab_prompt", p("pan_prompt", "prompt", "Allow git clone", yesterday), true));
+    l.layout.changed = { by: cos, at: yesterday };
+    l.layout.rev = 3;
+  });
+  await expect.poll(() => l.posted).toEqual([
+    { op: "close", pane: "pan_old" },
+    { op: "close_tab", tab: "tab_review" },
+  ]);
+  await expect(tabs(page)).toHaveCount(2);
+  await expect(pane(page, "Standup")).toBeVisible();
+  await expect(pane(page, "Yesterday's thread")).toHaveCount(0);
+  const overnight = page.locator("[data-ov-overnight]");
+  await expect(overnight).toHaveText("↺ 2 closed overnight");
+  // The tidy is yours, but the layout is still the chief of staff's change.
+  await expect(page.locator("[data-board-changed]")).toContainText("changed by chief of staff");
+  await page.screenshot({ path: info.outputPath("overview-layout-next-morning.png") });
+  // Once a day: a reload tidies nothing more.
+  await page.reload();
+  await expect(pane(page, "Standup")).toBeVisible();
+  expect(l.posted).toHaveLength(2);
+  await expect(page.locator("[data-ov-overnight]")).toHaveCount(0);
+});
+
+test("while tab 1 has nothing beside Boards and Running, an invitation's asks fill the chief of staff's composer; it goes once something opens", async ({ page }, info) => {
+  await page.route(`**/api/projects/${P}/docs/*`, (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
+  const l = await fakeLayouts(page, PLACE);
+  await staffRoomOn(page, { machine: "m_suite", machine_name: "suite", session: "Chief of staff · Arugula" });
+  const invite = page.locator("[data-ov-invite]");
+  await expect(invite).toBeVisible();
+  await expect(invite.locator("[data-ov-ask]")).toHaveCount(4);
+  await page.screenshot({ path: info.outputPath("overview-layout-invite.png") });
+  await invite.locator('[data-ov-ask="Show me what merged today"]').click();
+  const composer = page.locator("[data-kit=panel] textarea");
+  await expect(composer).toHaveValue("Show me what merged today");
+  await expect(composer).toBeFocused();
+  expect(l.posted).toEqual([]);
+  await l.lead(doc(1));
+  await expect(pane(page, "Doc 1")).toBeVisible();
+  await expect(invite).toHaveCount(0);
 });

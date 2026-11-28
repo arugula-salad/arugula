@@ -92,9 +92,11 @@ export async function fakeLayouts(page: Page, place: string): Promise<FakeLayout
       }
       case "close": {
         const w = where(c.pane);
+        // You closing a pane an agent opened and nobody touched keeps who changed it (the tidy, #1498).
+        const tidies = !agent && !!w && !!w[1].opened_by.machine && !w[1].touched;
         if (w) closeOne(w[0], w[1]);
         else l.closed_defaults.push(c.pane);
-        if (!w || w[0].id === "home") changed(agent);
+        if ((!w || w[0].id === "home") && !tidies) changed(agent);
         break;
       }
       case "close_tab": {

@@ -529,8 +529,14 @@ export function RoomBody({
 
 // The composer's handle for "Quote in reply" (one is shown at a time), and
 // the thread panel's own beside it (#106).
-type ComposeHandle = { current: { reply(text: string): void; focus(): void; attach(files: File[]): void; insert(text: string): void } | null };
+type ComposeHandle = { current: { reply(text: string): void; focus(): void; attach(files: File[]): void; insert(text: string): void; fill(text: string): void } | null };
 const composeRef: ComposeHandle = { current: null };
+
+/** Put `text` in the open room's composer, in place of its draft, to edit and send (the Overview's invitation, Lift 9). False with no room open. */
+export function fillComposer(text: string): boolean {
+  composeRef.current?.fill(text);
+  return !!composeRef.current;
+}
 export const threadComposeRef: ComposeHandle = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
@@ -1027,6 +1033,10 @@ export function RoomCompose({
       // At the end, after a space, with the caret after it (#1167).
       insert(t: string) {
         setText((x) => `${x}${x && !/\s$/.test(x) ? " " : ""}${t}`);
+        placeCaret(Infinity, true);
+      },
+      fill(t: string) {
+        setText(t);
         placeCaret(Infinity, true);
       },
     };
