@@ -60,7 +60,6 @@ import { Panes, type PaneItem } from "../kit/panes/panes";
 import { AgentsPaneKey, roomPaneItems } from "../chat/room-pane";
 import { control } from "../controls";
 import { useBindings } from "../keys";
-import { Avatar } from "../kit/avatar";
 import { NeedRow } from "../kit/need-row";
 import { Mark } from "../kit/state-mark";
 import { Surface } from "../kit/surface";
@@ -850,12 +849,10 @@ function ProgressBar({ b, words }: { b: ProjectBoard; words: string }) {
   );
 }
 
-/** The desk's title block (Lift 5a): the title, the meta line (`140/191 · 2 ask you · #2868 queued`) and the actions (Filter, Add row, ⋯), with the lead and its machine at the right; the grant, the goal, and the progress line under it. */
+/** The desk's title block (Lift 5a): the title, the meta line (`140/191 · 2 ask you · #2868 queued`) and the actions (Filter, Add row, ⋯) at the right (the lead is the panel's Lead tab, #1571); the grant, the goal, and the progress line under it. */
 function DeskHead({ view, write, more: items, actions, prs, goal: draft, setGoal: setDraft, act, id }: { view: BoardView; write: boolean; more: MenuItem[]; actions: preact.ComponentChildren; prs: OpenPr[]; goal: string | null; setGoal: (g: string | null) => void; act: Act; id: string }) {
-  const api = usePlatformApi();
   const b = view.board;
   const mine = view.zones.flatMap((z) => z.rows).filter((r) => r.ask?.mine && !r.ask.raised).length;
-  const machine = b.lead ? b.lead.machine_name || api.machine(b.lead.machine)?.name || "" : "";
   const words = progressWords(b.progress);
   return (
     <header class="board-desk-head" data-board-head>
@@ -870,22 +867,6 @@ function DeskHead({ view, write, more: items, actions, prs, goal: draft, setGoal
             ))}
           </p>
         </div>
-        {b.lead && (
-          <dl class="board-desk-facts" data-board-lead-facts={b.lead.session}>
-            <div>
-              <dt class="m-meta">lead</dt>
-              <dd>
-                <Avatar name={shownSession(b.lead.session)} agent /> {shownSession(b.lead.session)}
-              </dd>
-            </div>
-            {machine && (
-              <div>
-                <dt class="m-meta">machine</dt>
-                <dd>{machine}</dd>
-              </div>
-            )}
-          </dl>
-        )}
         <div class="board-desk-actions">
           {actions}
           {items.length > 0 && (
