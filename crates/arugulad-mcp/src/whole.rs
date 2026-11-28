@@ -209,6 +209,16 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 
+/// A wrong kind on a control tool (`watch` given `pr`, `issue_write` given
+/// `update`) says which kinds the tool has, in one line (#1554).
+pub fn a_wrong_kind_lists_the_valid_ones() {
+    let e = route("watch", json!({ "kind": "pr", "pr": "o/r#1" }), fl(true)).err().unwrap();
+    assert!(e.contains("no kind \"pr\"") && e.contains("create, list, cancel, types, events"), "{e}");
+    let e = route("issue_write", json!({ "kind": "update" }), fl(true)).err().unwrap();
+    assert!(e.contains("create, comment, edit, label, assign, close, reopen"), "{e}");
+    assert!(!e.contains('\n'), "{e}");
+}
+
 /// docs/mcp-permissions.json allows the read-only tools and asks for the
 /// rest, every one of them: a new tool fails this until it's listed there
 /// (#114). docs.arugula.io shows the same snippet, and the site repo's

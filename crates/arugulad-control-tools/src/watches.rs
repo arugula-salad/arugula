@@ -40,9 +40,9 @@
 
 use arugula_control_wire::events::{self, AGENT_EVENTS, EventsPage};
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled,
-    WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, every_ms,
-    every_word, expires_ms as expires, until_word_parse as until,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EVERY_DEFAULT_MS, EventTarget, TARGET_TYPES, TARGETS_MAX, WatchCancel,
+    WatchCancelled, WatchCreate, WatchList, WatchMade, WatchState, WatchTarget, Watcher, event_target,
+    event_types as types, every_ms, every_word, expires_ms as expires, until_word_parse as until,
 };
 use std::time::Duration;
 
@@ -305,6 +305,11 @@ fn new_fields(e: CloudRefused) -> String {
 }
 
 /// `watch`.
+/// `types`' answer: the bus events, then the targets that aren't events.
+fn types_text(joined: bool) -> String {
+    format!("{}\n{TARGET_TYPES}", types(Watcher::Machine, joined))
+}
+
 pub(crate) async fn watch(c: &Call<'_>, kind: &str, args: Value) -> Out {
     c.owners_own(TOOL).await?;
     match kind {
@@ -313,7 +318,7 @@ pub(crate) async fn watch(c: &Call<'_>, kind: &str, args: Value) -> Out {
         "cancel" => cancel(c, parse(args)?).await,
         "types" => {
             let _: TypesArgs = parse(args)?;
-            let text = types(Watcher::Machine, c.app().control.enrolled().is_some());
+            let text = types_text(c.app().control.enrolled().is_some());
             done(text.clone(), serde_json::json!({ "types": text }))
         }
         "events" => read_events(c, parse(args)?).await,
@@ -1153,6 +1158,14 @@ mod tests {
         // With no account, this machine's own types are still watchable.
         assert!(alone.contains("agent.idle: An agent on this machine finished its turn and waits for a prompt. [watchable now, by this machine]"), "{alone}");
         assert_eq!(alone.matches("watchable now").count(), 5, "{alone}");
+    }
+
+    #[test]
+    fn target_types_name_each_non_event_target_with_an_example() {
+        let text = types_text(true);
+        for want in ["\npr: ", "\nsession: ", "\nrun: ", "{room: \"…\", parent: 3, from: \"aaron\"}"] {
+            assert!(text.contains(want), "{want}: {text}");
+        }
     }
 
     #[test]

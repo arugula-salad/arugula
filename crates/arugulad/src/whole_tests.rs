@@ -27,6 +27,12 @@ fn every_description_and_the_instructions_fit_the_cut() {
 }
 
 #[test]
+fn a_wrong_kind_lists_the_valid_ones() {
+    register();
+    tools::a_wrong_kind_lists_the_valid_ones();
+}
+
+#[test]
 fn annotations_are_honest() {
     register();
     tools::annotations_are_honest();

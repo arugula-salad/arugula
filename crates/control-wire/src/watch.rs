@@ -448,6 +448,15 @@ pub fn event_types(watcher: Watcher, joined: bool) -> String {
     lines.join("\n")
 }
 
+/// What `watch types` lists after the bus events: the targets that aren't
+/// events, a line each with an example (#1554).
+pub const TARGET_TYPES: &str = "\
+Other targets (not events; give them to create as arguments):
+pr: until merged, closed, checks_done, checks_failed, dequeued or ready. {pr: \"OWNER/REPO#12\", until: \"checks_done\"}
+session: a hosted agent session, until it settles. {session: \"ses_…\"}
+run: a run or a deploy, until it ends. {run: \"run_…\"} or {run: \"dep_…\"}
+room: a reply you didn't write in a chat room; parent for one thread, from for one person. To be woken when Aaron replies: {room: \"…\", parent: 3, from: \"aaron\"}";
+
 /// `expires`' words, in ms: `30m`, `6h`, `3d`, at most [`EXPIRES_MAX_MS`].
 pub fn expires_ms(word: &str) -> Result<u64, String> {
     let w = word.trim();
