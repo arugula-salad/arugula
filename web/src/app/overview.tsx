@@ -39,9 +39,10 @@ import { ChevronIcon, IconButton, MoreIcon, PlusIcon } from "../shared/ui/icons"
 import { openMenu, type MenuItem } from "../shared/ui/menu";
 import { Tabs, type TabItem } from "../shared/kit/tabs";
 import { Panes, type PaneItem } from "../shared/kit/panes/panes";
-import { ChangedLine, layoutItems, PaneBody, paneItem, paneMeta, PromptAsk, tabTitle } from "../shared/boards/arranged";
+import { ChangedLine, forYou, layoutItems, PaneBody, paneItem, paneMeta, PromptAsk, tabTitle } from "../shared/boards/arranged";
 import { busyNow, HOME, usePlaceLayout } from "../shared/place-layout";
 import { agentsPane } from "../shared/chat/room-pane";
+import { fillComposer } from "../shared/chat/room";
 import { control } from "../shared/controls";
 import { useBindings } from "../shared/keys";
 import type { Fleet } from "../shell/fleet";
@@ -303,7 +304,10 @@ const moving = (b: OvBoard) => b.doing.length + b.review.length > 0 || b.standin
 /** The Overview's default panes, by the names its layout record keeps. */
 const BOARDS = "boards";
 const RUNNING = "running";
+const INVITE = "invite";
 const defaultTitle = (name: string) => (name === BOARDS ? "Boards" : name === RUNNING ? "Running" : name);
+/** The invitation's example asks (#1498, Jake's): each fills the chief of staff's composer, to edit and send. */
+const ASKS = ["Show me what merged today", "Put the failing runs beside Boards", "Open the Docs that wait on me", "Keep a standup Doc here each morning"];
 /** Who the Overview's agent is, as a pane's title row and the header say it. */
 const CHIEF_WORD = "chief of staff";
 /** The narrowest a pane gets before panes stack. */
@@ -537,6 +541,38 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   // A default pane you closed stays closed until Reset; one the chief of staff stands something in place of is hidden, ↺ puts it back.
   const gone = new Set([...layout.closed_defaults, ...layout.tabs[0]!.panes.flatMap((x) => (x.in_place_of ? [x.in_place_of] : []))]);
 
+  // The next-morning tidy (§3.12): your first look on a new day sends what
+  // the chief of staff opened before today, and you haven't touched, to the
+  // closed list: its panes in tab 1, and its tabs that no longer wait on you
+  // (a prompt's tab waits until it's answered). The header offers them back.
+  const place = `overview:${project}`;
+  const [overnight, setOvernight] = useState<LayoutPane[]>([]);
+  const tidiedOn = useRef(0);
+  useEffect(() => {
+    if (phone || !arranged.read || !inbox) return;
+    const since = today();
+    if (tidiedOn.current >= since) return;
+    tidiedOn.current = since;
+    const key = `arugula.ov-tidied:${project}`;
+    try {
+      if (Number(localStorage.getItem(key)) >= since) return;
+      localStorage.setItem(key, String(since));
+    } catch {
+      // Not kept: once a day while the page is up.
+    }
+    const old = (x: { opened_by: { machine?: string | null }; opened_at: number }) => !!x.opened_by.machine && x.opened_at < since;
+    const waiting = new Set(forYou(inbox.items, place).map((i) => i.subject.tab));
+    const panes = layout.tabs[0]!.panes.filter((x) => old(x) && !x.touched);
+    const tabs = layout.tabs.slice(1).filter((t) => old(t) && t.panes.every((x) => !x.touched) && !waiting.has(t.id) && !t.panes.some((x) => x.kind === "prompt"));
+    if (!panes.length && !tabs.length) return;
+    setOvernight([...panes, ...tabs.flatMap((t) => t.panes)]);
+    void (async () => {
+      for (const x of panes) await arranged.change({ op: "close", pane: x.id });
+      for (const t of tabs) await arranged.change({ op: "close_tab", tab: t.id });
+    })();
+  }, [phone, arranged.read, !!inbox, project, refocus]);
+  const reopen = (pane: string) => (setOvernight((xs) => xs.filter((x) => x.id !== pane)), void arranged.change({ op: "reopen", pane }));
+
   const title = (
     <header class="ov-title" data-ov-title>
       <h1>{p?.name ?? "Overview"}</h1>
@@ -615,6 +651,23 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
       <span class="ov-head-end m-meta">open</span>
     </a>
   );
+  // While tab 1 has nothing beside Boards and Running, its empty space invites you to arrange it (#1498, Jake's idea).
+  const ask = (text: string) => {
+    panelTabs.pick(CHIEF);
+    requestAnimationFrame(() => fillComposer(text));
+  };
+  const invite = !opened.length && !!staffRoom && (
+    <div class="ov-invite" data-ov-invite>
+      <p class="m-meta">Your chief of staff can arrange this space: ask it to put a Doc, a run or a review here.</p>
+      <div class="ov-invite-asks">
+        {ASKS.map((a) => (
+          <button key={a} type="button" class="secondary small" data-ov-ask={a} onClick={() => ask(a)}>
+            {a}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
   const defaults: PaneItem[] =
     tabNow.id !== HOME
       ? []
@@ -623,7 +676,8 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           { id: RUNNING, body: runningLine },
         ]
           .filter((d) => !gone.has(d.id))
-          .map((d) => ({ ...d, title: defaultTitle(d.id), default: true, size: layout.default_sizes[d.id], max: () => maxPane(d.id, true), close: () => closePane(d.id), data: { "data-ov-default": d.id } }));
+          .map((d): PaneItem => ({ ...d, title: defaultTitle(d.id), default: true, size: layout.default_sizes[d.id], max: () => maxPane(d.id, true), close: () => closePane(d.id), data: { "data-ov-default": d.id } }))
+          .concat(invite ? [{ id: INVITE, title: "Arrange this space", default: true, body: invite, data: { "data-ov-default": INVITE } }] : []);
   const main = phone ? (
     <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
       {title}
@@ -634,6 +688,11 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
       <div class="ov-tabs" data-ov-tabs>
         <Tabs label="The Overview's tabs" tabs={tabs} current={tabNow.id} onPick={setTab} onClose={(t) => (void arranged.change({ op: "close_tab", tab: t }), t === tab && setTab(HOME))} />
+        {overnight.length > 0 && (
+          <button type="button" class="link m-meta ov-overnight" data-ov-overnight onClick={(e) => menuAt(e, overnight.map((x) => ({ label: `Reopen ${x.title}`, run: () => reopen(x.id), attrs: { "data-ov-reopen": x.id } })))}>
+            ↺ {overnight.length} closed overnight
+          </button>
+        )}
       </div>
       {tabNow.id === HOME && title}
       <Panes
@@ -649,7 +708,6 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     </Surface>
   );
   // What waits on you in a tab here: its row says which, and opens it.
-  const place = `overview:${project}`;
   const tabOf = (i: InboxItem) => {
     if (i.subject.place !== place || !i.subject.tab) return null;
     const n = layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1;
