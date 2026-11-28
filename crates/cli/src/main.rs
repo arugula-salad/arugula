@@ -1448,6 +1448,6 @@ mod tests {
         }
         let readme = docs[0].1;
         let first = readme.lines().skip(2).take_while(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
-        assert!(first.starts_with("Every agent on every machine in one view."), "{first}");
+        assert!(first.starts_with("Any agent, on any machine."), "{first}");
     }
 }
