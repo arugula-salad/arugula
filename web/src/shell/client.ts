@@ -478,15 +478,36 @@ export class Client {
   readonly blocks = new Map<PaneId, BlockEntry>();
   /** Sticky modifiers from the phone key bar, applied to the next key. */
   modifiers: Modifiers = { ctrl: false, alt: false };
-  private focused: PaneId | null | undefined = undefined;
+  private focused: string | undefined = undefined;
 
   /** Tell the daemon which pane this client is looking at (`null`: none,
    * the window is in the background). Attention skips panes being looked
-   * at. */
-  focusPane(pane: PaneId | null) {
-    if (pane === this.focused || !this.connected) return;
-    this.focused = pane;
-    this.send({ type: "focus", pane });
+   * at. `front`: a desktop window has the keyboard (#1572). */
+  focusPane(pane: PaneId | null, front?: boolean) {
+    const said = `${pane}/${front}`;
+    if (said === this.focused || !this.connected) return;
+    this.focused = said;
+    this.send({ type: "focus", pane, ...(front === undefined ? {} : { front }) });
+  }
+
+  /** Say `pane` is looked at while this window is in front, until what
+   * this returns is called: the daemon doesn't notify you about the pane
+   * in front of you, and gives a desktop window with the keyboard the size
+   * (#1572; a phone keeps #473's button). */
+  reportFocus(pane: PaneId | null, phone: boolean): () => void {
+    const report = () => {
+      const front = document.visibilityState === "visible" && (phone || document.hasFocus());
+      this.focusPane(front ? pane : null, phone ? undefined : front);
+    };
+    report();
+    window.addEventListener("focus", report);
+    window.addEventListener("blur", report);
+    document.addEventListener("visibilitychange", report);
+    return () => {
+      window.removeEventListener("focus", report);
+      window.removeEventListener("blur", report);
+      document.removeEventListener("visibilitychange", report);
+    };
   }
 
   /** Set by the UI: make this client's size the tab's size. `asked`: the

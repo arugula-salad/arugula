@@ -24,6 +24,11 @@ async function suiteIsListed(page: Page) {
 async function ledBoard(page: Page): Promise<{ panel: Locator; pane: number }> {
   await reset(page);
   const [pane] = await panes(page);
+  return { panel: await boardLedBy(page, pane), pane };
+}
+
+/** The board, led by `pane`: its panel. */
+async function boardLedBy(page: Page, pane: number): Promise<Locator> {
   await suiteIsListed(page);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
@@ -31,7 +36,7 @@ async function ledBoard(page: Page): Promise<{ panel: Locator; pane: number }> {
   const board = { id: B, project: P, title: "Launch", created_by: "acct_a", created_at: 1, updated_at: 1, goal: "", done_note: "", closed_by: "", progress: { done: 0, total: 0, proven: 0, review: 0, doing: 0 }, lead };
   await page.route(new RegExp(`/api/boards/${B}$`), (r) => r.fulfill({ json: { board, zones: [], groups: [], docs: [] } }));
   await page.goto(`/p/${P}/boards/${B}`);
-  return { panel: page.locator(".board-desk-side [data-kit=panel]"), pane };
+  return page.locator(".board-desk-side [data-kit=panel]");
 }
 
 /** What overflows: each box from the terminal (or the transcript) up to the page, and the tab row. */
@@ -75,6 +80,8 @@ const slider = (panel: Locator) => panel.evaluate((p) => p.querySelector<HTMLEle
 async function oneScroller(page: Page, panel: Locator, pane: number, shot: string) {
   await panel.locator('[data-panel-view="terminal"]').click();
   await expect(panel.locator("[data-panel-terminal] .xterm")).toBeVisible({ timeout: 20_000 });
+  // The head names its machine; the terminal's frame doesn't again (#1572).
+  await expect(panel.locator(".k-well-label")).toHaveCount(0);
   await expect.poll(() => overflows(panel), { timeout: 15_000 }).toEqual([]);
   await expect.poll(() => fits(panel).then(() => true, () => false), { timeout: 15_000 }).toBe(true);
   // The program sees the slot's size: its PTY took as many columns as fit, drawn at full size.
@@ -121,3 +128,68 @@ for (const width of [1440, 1200]) {
   });
 }
 
+/** The pane's columns as its program sees them, asked afresh: each answer is numbered. */
+let asked = 0;
+async function stty(page: Page, pane: number) {
+  const n = ++asked;
+  await send(page, pane, `clear; echo "size-${n} $(stty size)"`);
+  const at = new RegExp(`^size-${n} \\d+ (\\d+)$`, "m");
+  let cols = 0;
+  await expect.poll(async () => (cols = Number((await screenOf(page, pane)).match(at)?.[1] ?? 0))).toBeGreaterThan(0);
+  return cols;
+}
+/** The columns of the panel's terminal slot, in cells `cell` px wide. */
+const slotCols = (panel: Locator, cell: number) => panel.evaluate((p, cell) => Math.floor(p.querySelector<HTMLElement>(".work-slot")!.clientWidth / cell), cell);
+
+// #1572: the person's latest window takes the size, as tmux's
+// latest-client does. Each window here only says it came to the front, as
+// a window does when you switch to it; nobody clicks.
+test("a board's lead: narrow, then wide, then narrow, the window in front sizes the terminal", async ({ page }) => {
+  await page.context().addInitScript(() => {
+    let front = false;
+    Document.prototype.hasFocus = () => front;
+    (window as unknown as { front: (on: boolean) => void }).front = (on) => {
+      front = on;
+      window.dispatchEvent(new Event(on ? "focus" : "blur"));
+    };
+  });
+  const front = (p: Page, on: boolean) => p.evaluate((on) => (window as unknown as { front: (on: boolean) => void }).front(on), on);
+  const terminal = async (panel: Locator) => {
+    await panel.locator('[data-panel-view="terminal"]').click();
+    await expect(panel.locator("[data-panel-terminal] .xterm")).toBeVisible({ timeout: 20_000 });
+  };
+
+  // Narrow: a 1200px window, in front.
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const { panel: narrow, pane } = await ledBoard(page);
+  await terminal(narrow);
+  await front(page, true);
+  await expect.poll(() => fits(narrow).then(() => true, () => false), { timeout: 15_000 }).toBe(true);
+  const cols = await stty(page, pane);
+  const cell = await narrow.evaluate((p, cols) => p.querySelector<HTMLElement>(".work-slot .xterm-screen")!.offsetWidth / cols, cols);
+  expect(await slotCols(narrow, cell)).toBe(cols);
+
+  // Wide: a 1800px window comes to the front while the narrow one stays open.
+  const other = await page.context().newPage();
+  await other.setViewportSize({ width: 1800, height: 900 });
+  const wide = await boardLedBy(other, pane);
+  await terminal(wide);
+  await front(page, false);
+  await front(other, true);
+  const wideCols = await slotCols(wide, cell);
+  expect(wideCols).toBeGreaterThan(cols + 10);
+  await expect.poll(() => stty(other, pane), { timeout: 15_000 }).toBe(wideCols);
+  // The narrow window, behind, draws it smaller.
+  await expect.poll(() => narrow.evaluate((p) => p.querySelector<HTMLElement>(".work-slot .term-host")!.style.transform)).toMatch(/^scale\(/);
+
+  // Narrow again: its window comes back to the front.
+  await front(other, false);
+  await front(page, true);
+  await expect.poll(() => stty(page, pane), { timeout: 15_000 }).toBe(cols);
+
+  // And the window in front, widened, takes its new width.
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await expect.poll(() => stty(page, pane), { timeout: 15_000 }).toBe(wideCols);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await expect.poll(() => stty(page, pane), { timeout: 15_000 }).toBe(cols);
+});

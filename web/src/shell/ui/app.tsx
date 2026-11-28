@@ -370,25 +370,10 @@ function useTabTitle(client: Client) {
   useEffect(() => void (document.title = title), [title]);
 }
 
-/** Tell the daemon which pane this window is looking at, so it doesn't
- * notify you about the pane in front of you. */
+/** Tell the daemon which pane this window is looking at. */
 function useReportFocus(client: Client, phone: boolean) {
   const active = client.active();
-  useEffect(() => {
-    const report = () => {
-      const looking = document.visibilityState === "visible" && (phone || document.hasFocus());
-      client.focusPane(looking ? (client.active() ?? null) : null);
-    };
-    report();
-    window.addEventListener("focus", report);
-    window.addEventListener("blur", report);
-    document.addEventListener("visibilitychange", report);
-    return () => {
-      window.removeEventListener("focus", report);
-      window.removeEventListener("blur", report);
-      document.removeEventListener("visibilitychange", report);
-    };
-  }, [client, active, phone, client.connected]);
+  useEffect(() => client.reportFocus(active ?? null, phone), [client, active, phone, client.connected]);
 }
 
 /** The Settings page (Arugula #695), while its route is up. Where the

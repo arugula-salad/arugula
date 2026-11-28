@@ -76,14 +76,7 @@ impl Daemon {
                     self.soon();
                 }
                 // Only editors size a tab; viewers letterbox.
-                let editor = who.is_owner()
-                    || self
-                        .mux
-                        .session_of_tab(tab)
-                        .ok()
-                        .and_then(|s| self.config.acl.role(&who, s))
-                        .is_some_and(|r| r >= Role::Editor);
-                if !editor {
+                if !self.sizes(&who, tab) {
                     return;
                 }
                 // `typed` is from older clients, whose typing claimed the size.
@@ -165,7 +158,15 @@ impl Daemon {
             }
             // The server hands these to `App::hands` (S33).
             ClientMsg::Hand { .. } | ClientMsg::HandReply { .. } => {}
-            ClientMsg::Focus { pane } => {
+            ClientMsg::Focus { pane, front } => {
+                // A window taking or losing the keyboard (#1572): the tab it
+                // shows goes to the window in front.
+                if let Some(front) = front {
+                    self.front.insert(client, front);
+                    if let Some(&tab) = self.viewing.get(&client) {
+                        self.give_to_front(tab);
+                    }
+                }
                 let before = self.focus.get(&client).copied();
                 match pane.filter(|p| self.sees(&who, *p)) {
                     Some(p) => {
@@ -547,10 +548,63 @@ impl Daemon {
     /// `asked` (the button) takes it: typing, mouse and focus reports, showing
     /// the tab and zooming don't, whoever the holder is. An owner whose client
     /// has gone is nobody's.
+    ///
+    /// The window in front (#1572): a claim from a desktop window that has
+    /// the keyboard takes it from the same person's desktop window that
+    /// doesn't, as tmux's latest-client does. Phones and older clients
+    /// never say (`front`), so they neither take it nor lose it this way;
+    /// nor does typing, and two windows that both say they have the
+    /// keyboard (two machines) leave it with the holder.
     fn may_take(&self, client: ClientId, tab: TabId, claim: bool, asked: bool) -> bool {
-        let held =
-            self.mux.tab(tab).ok().and_then(|t| t.owner).is_some_and(|o| o != client && self.clients.contains_key(&o));
+        let held = self
+            .mux
+            .tab(tab)
+            .ok()
+            .and_then(|t| t.owner)
+            .is_some_and(|o| o != client && self.clients.contains_key(&o) && !self.in_front_of(client, o));
         claim && (asked || !held)
+    }
+
+    /// Whether `client` is a desktop window with the keyboard and `holder`
+    /// the same person's desktop window without it.
+    fn in_front_of(&self, client: ClientId, holder: ClientId) -> bool {
+        let person = |c| self.clients.get(&c).map(|s| s.principal.id().to_owned());
+        self.front.get(&client) == Some(&true)
+            && self.front.get(&holder) == Some(&false)
+            && person(client).is_some_and(|p| person(holder) == Some(p))
+    }
+
+    /// `tab` goes to a window in front that shows it, at the size it last
+    /// said, when its holder isn't in front (#1572).
+    fn give_to_front(&mut self, tab: TabId) {
+        let owner = self.mux.tab(tab).ok().and_then(|t| t.owner);
+        let Some((c, (cols, rows))) = self
+            .viewing
+            .iter()
+            .filter(|&(c, t)| *t == tab && Some(*c) != owner && self.front.get(c) == Some(&true))
+            .filter_map(|(c, _)| Some((*c, *self.view_size.get(c)?)))
+            .find(|(c, _)| {
+                self.may_take(*c, tab, true, false)
+                    && self.clients.get(c).is_some_and(|s| self.sizes(&s.principal, tab))
+            })
+        else {
+            return;
+        };
+        let zoom = self.zoomed.get(&c).copied();
+        if matches!(self.mux.view(c, tab, cols, rows, zoom, true), Ok(true)) {
+            self.changed();
+        }
+    }
+
+    /// Whether `who` may size `tab`: editors do; viewers letterbox.
+    fn sizes(&self, who: &Principal, tab: TabId) -> bool {
+        who.is_owner()
+            || self
+                .mux
+                .session_of_tab(tab)
+                .ok()
+                .and_then(|s| self.config.acl.role(who, s))
+                .is_some_and(|r| r >= Role::Editor)
     }
 
     /// A focus is its holder's view, so `client` takes the tab first, under

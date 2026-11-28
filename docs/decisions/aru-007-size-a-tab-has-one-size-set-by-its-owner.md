@@ -83,6 +83,20 @@ client to show the tab takes it. This replaces the typing claim and its 3 s
 hold (#333, `SIZE_HOLD`), which are gone; `typed` stays on the wire for older
 clients and the daemon ignores it. The holder's own window resize or rotation
 still updates the size. Where: `crates/mux/src/mux/clients.rs` (`may_take`).
+The window in front (#1572): one exception to "only the button", between
+the same person's desktop windows. A desktop window says whether it has the
+keyboard (`Focus`'s optional `front`). One that has it takes the tab it
+shows from the same person's desktop window that doesn't, at once, and its
+resizes size it, as tmux's latest-client does; the window behind draws the
+tab scaled or letterboxed. Typing never moves the size. Two windows that
+both say they have the keyboard (two machines) leave it with the holder.
+Phones and older clients never send `front`, so they neither take the size
+this way nor lose it; another person's window still needs the button
+(#1502). An older daemon ignores the field. Why: a narrow view left open
+(the board panel at 45 columns) kept a wide window's terminal narrow until
+someone found the button. Where: `crates/mux/src/mux/clients.rs`
+(`may_take`, `in_front_of`, `give_to_front`), `Client.reportFocus` in
+`web/src/shell/client.ts`, used by the shell and the agent panel's terminal.
 
 Where: `crates/core/src/mux.rs` (`Mux::view`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
 From: [Size arbitration](docs/plan-archive.md#size-arbitration), [M1](docs/plan-archive.md#m1-multiplexer), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end), #333.
