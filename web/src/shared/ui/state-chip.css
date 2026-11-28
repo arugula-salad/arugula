@@ -74,8 +74,8 @@ button.chip:is(:hover, :focus-visible) {
 }
 
 .chip-merged {
-  --c: var(--done);
-  --ct: var(--done);
+  --c: var(--gh-merged);
+  --ct: var(--gh-merged);
 }
 
 .chip-muted {

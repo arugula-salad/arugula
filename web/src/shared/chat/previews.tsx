@@ -16,6 +16,7 @@ import { Time } from "../ui/time";
 import "../boards/bar.css";
 import { epicLine } from "../boards/text";
 import { CloseIcon } from "../ui/icons";
+import { isPrState, PrMark } from "../kit/pr-mark";
 
 export type Tone = "open" | "done" | "bad" | "wait" | "off";
 
@@ -179,10 +180,17 @@ function ObjectCard({ c }: { c: Extract<Preview, { kind: "object" }> }) {
   return (
     <a class="link-card object" href={c.url} data-link-card-object data-what={c.what}>
       <span class="link-card-top">
-        <span class="link-card-what">{c.what}</span>
-        <span class={`link-card-state tone-${c.tone}`} data-link-card-state>
-          {c.state}
-        </span>
+        {c.what === "pull request" && isPrState(c.state) ? (
+          // A PR wears GitHub's mark and colour (#1566), which say what it is.
+          <PrMark state={c.state} size="xs" word={c.state} data-link-card-state />
+        ) : (
+          <>
+            <span class="link-card-what">{c.what}</span>
+            <span class={`link-card-state tone-${c.tone}`} data-link-card-state>
+              {c.state}
+            </span>
+          </>
+        )}
       </span>
       <span class="link-card-title">{c.title}</span>
       <span class="link-card-meta">

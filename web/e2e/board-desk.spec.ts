@@ -205,6 +205,9 @@ test("the board's own tab first; its PRs fold one row each, and + pane offers it
   const fold = page.locator('[data-board-pr="fi_2868"]');
   await expect(fold).toContainText("#2868 Sidebar caret sits beside the crumb");
   await expect(fold).toContainText("queued");
+  // GitHub's mark for its state (#1566): queued, and no "PR" word beside it.
+  await expect(fold.locator('[data-pr="queued"]')).toBeVisible();
+  await expect(fold.locator(".k-row-kind")).toHaveCount(0);
   await page.locator("[data-board-add-pane-menu]").click();
   await expect(page.locator('[role=menu] [data-board-add-pane="bdc_1"]')).toHaveText("Design pass");
   await expect(page.locator('[role=menu] [data-board-add-pane="fi_2868"]')).toContainText("#2868");

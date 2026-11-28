@@ -416,6 +416,8 @@ export function paint(dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record
     fail: toHex(b.fail),
     review: toHex(b.review),
     done: hue("green"),
+    // A PR's state (#1566): GitHub's own colours (Primer's, dark and light), lifted to read.
+    ...Object.fromEntries(Object.entries(GH).map(([k, [d, l]]) => [`gh-${k}`, toHex(lift(channels(dark ? d : l), b.on, dark))])),
     // Flat to deep: the shadows, a top highlight and a sheen, none at 0.
     "shadow-card": `0 1px 2px rgb(0 0 0 / ${n(0.22 * dp * k)}), 0 ${n(1 + 4 * dp)}px ${n(4 + 8 * dp)}px -${n(2 + 2 * dp)}px rgb(0 0 0 / ${n(0.4 * dp * k)})`,
     "shadow-raised": `0 2px 6px rgb(0 0 0 / ${n(0.3 * k)}), 0 18px 40px -10px rgb(0 0 0 / ${n(0.6 * k)})`,
@@ -423,6 +425,16 @@ export function paint(dark: boolean, s: Sliders, p: Preset = PRESETS[0]): Record
     sheen: `linear-gradient(180deg, rgb(255 255 255 / ${n((dark ? 0.025 : 0.4) * dp)}), transparent 90px)`,
   };
 }
+
+/** GitHub's PR colours (Primer's), dark then light: open, merged, closed,
+ * in the merge queue, a draft (#1566). */
+const GH = {
+  open: ["#3fb950", "#1a7f37"],
+  merged: ["#ab7df8", "#8250df"],
+  closed: ["#f85149", "#cf222e"],
+  queued: ["#d29922", "#9a6700"],
+  draft: ["#9198a1", "#59636e"],
+} as const;
 
 /** Halfway between two colors. */
 const N2 = (a: Rgb, b: Rgb): Rgb => a.map((v, i) => Math.round((v + b[i]) / 2));

@@ -374,6 +374,40 @@ a.k-row-line {
   }
 }
 
+/* PrMark (#1566): a PR's state in GitHub's icon and colour, its checks
+   beside it. In a row it keeps the checks' place, so the titles line up. */
+.k-pr {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--gh-open);
+  vertical-align: middle;
+}
+.k-row-line > .k-pr {
+  min-width: 29px;
+}
+.k-pr[data-pr="draft"] {
+  color: var(--gh-draft);
+}
+.k-pr[data-pr="queued"],
+.k-pr[data-checks="running"] > .k-pr-checks {
+  color: var(--gh-queued);
+}
+.k-pr[data-pr="merged"] {
+  color: var(--gh-merged);
+}
+.k-pr[data-pr="closed"],
+.k-pr[data-checks="failed"] > .k-pr-checks {
+  color: var(--gh-closed);
+}
+.k-pr[data-checks="passed"] > .k-pr-checks {
+  color: var(--gh-open);
+}
+.k-pr-checks {
+  display: inline-flex;
+}
+
 /* ---- 6. Crumb: a path you can climb; the first segment is the project. */
 
 .k-crumb {

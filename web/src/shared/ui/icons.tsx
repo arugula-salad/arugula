@@ -242,6 +242,38 @@ export const PrIcon = ({ size = "md" }: Sized) => (
   </Svg>
 );
 
+// A PR's states (#1566), Octicons' shapes drawn on this grid: a draft's
+// dotted branch, a closed one's cross, and the merge queue's line and ring.
+// Open is PrIcon, merged MergeIcon.
+
+export const PrDraftIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="18" r="2.5" />
+    <path d="M6 8.5v7M18 5.5v.5M18 10.5v1" />
+  </Svg>
+);
+
+export const PrClosedIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <circle cx="6" cy="6" r="2.5" />
+    <circle cx="6" cy="18" r="2.5" />
+    <circle cx="18" cy="18" r="2.5" />
+    <path d="M6 8.5v7M18 11v4.5M15.5 3.5l5 5M20.5 3.5l-5 5" />
+  </Svg>
+);
+
+export const MergeQueueIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
+    <circle cx="6" cy="5" r="1.5" fill="currentColor" />
+    <circle cx="6" cy="19" r="1.5" fill="currentColor" />
+    <circle cx="16" cy="12" r="5" />
+    <circle cx="16" cy="12" r="1.5" fill="currentColor" />
+    <path d="M6 9.5v5" />
+  </Svg>
+);
+
 export const IssueIcon = ({ size = "md" }: Sized) => (
   <Svg size={size}>
     <circle cx="12" cy="12" r="9" />

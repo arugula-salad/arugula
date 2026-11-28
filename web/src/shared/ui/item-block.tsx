@@ -9,21 +9,23 @@
 
 import type { ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { CheckIcon, CloseIcon, ExternalIcon, IconButton, IssueIcon, MergeIcon, PrIcon, ReloadIcon, SourceGlyph } from "./icons";
+import { CheckIcon, CloseIcon, DotIcon, ExternalIcon, IconButton, IssueIcon, MergeIcon, ReloadIcon, SourceGlyph } from "./icons";
 import { StateChip, type Tone } from "./state-chip";
 import { Card } from "./card";
 import { Avatar } from "../kit/avatar";
+import { PrMark } from "../kit/pr-mark";
 import "./item-block.css";
 
 export type ItemKind = "pr" | "issue";
-/** The state pill: Open green, Draft grey, Queued blue (in the merge queue,
- * Arugula #878), Merged purple, Closed red. */
+/** The state pill, in GitHub's colours as its mark (#1566): Open green,
+ * Draft grey, Queued amber (in the merge queue, Arugula #878), Merged
+ * purple, Closed red. */
 export type ItemState = "open" | "draft" | "queued" | "merged" | "closed";
 
 const STATE: Record<ItemState, { tone: Tone; word: string }> = {
   open: { tone: "ok", word: "Open" },
   draft: { tone: "muted", word: "Draft" },
-  queued: { tone: "info", word: "Queued" },
+  queued: { tone: "warn", word: "Queued" },
   merged: { tone: "merged", word: "Merged" },
   closed: { tone: "danger", word: "Closed" },
 };
@@ -108,7 +110,7 @@ function Fact({ fact }: { fact: ItemFact }) {
           )}
           {pending > 0 && (
             <span class="item-warn" title={`${pending} running`}>
-              ● {pending}
+              <DotIcon size="xs" /> {pending}
             </span>
           )}
           {failed > 0 && (
@@ -257,9 +259,13 @@ export function ItemBlock({
       class="item-block"
       head={
           <header class="item-head" data-item-head>
-            <span class="item-kind" title={kind === "pr" ? "Pull request" : "Issue"}>
-              {kind === "pr" ? <PrIcon /> : <IssueIcon />}
-            </span>
+            {kind === "pr" ? (
+              <PrMark state={state} size="md" />
+            ) : (
+              <span class="item-kind" title="Issue">
+                <IssueIcon />
+              </span>
+            )}
             <span class="item-number">#{number}</span>
             <span class="item-title">{title}</span>
             <StateChip tone={tone} data-item-pill>

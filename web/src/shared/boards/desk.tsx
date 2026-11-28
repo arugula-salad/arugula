@@ -23,6 +23,7 @@ import { useSubscribe } from "../ui/hooks";
 import { Avatar } from "../kit/avatar";
 import { NeedList, NeedRow, type Need, type NeedOption } from "../kit/need-row";
 import { CHIEF_KEY, Panel, panelKey, usePanel, type PanelTarget } from "../kit/panel";
+import { PrMark, prMarkOf } from "../kit/pr-mark";
 import { Row } from "../kit/row";
 import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
@@ -75,7 +76,7 @@ export function AlertStrip({ project, platform }: { project: string; platform: (
   );
 }
 
-/** The board's open PRs, one row each above its lanes: its number and title, then its queue or state and the row it's on. A click opens it as a tab. */
+/** The board's open PRs, one row each above its lanes: GitHub's mark for its state and checks, its number and title, then its queue or state. A click opens it as a tab. */
 export function PrFold({ prs, open }: { prs: OpenPr[]; open: (pr: OpenPr) => void }) {
   if (!prs.length) return null;
   return (
@@ -83,8 +84,7 @@ export function PrFold({ prs, open }: { prs: OpenPr[]; open: (pr: OpenPr) => voi
       {prs.map((p) => (
         <Row
           key={p.id}
-          mark={p.live.state === "checks_failed" ? "failing" : p.live.state === "checks_running" ? "working" : "waits"}
-          label="PR"
+          mark={<PrMark {...prMarkOf(p.live)} />}
           title={`${p.label} ${p.live.title}`}
           meta={[prWord(p.live)]}
           onClick={() => open(p)}

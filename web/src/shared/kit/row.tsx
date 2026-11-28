@@ -1,5 +1,6 @@
 // Row (kit §4.1, 2): one flat line, mark · kind · title · who and meta ·
-// age, on a section or a card (never a card of its own). Plain, a need
+// age, on a section or a card (never a card of its own). The mark is a
+// state's, or a PR's (`PrMark`). Plain, a need
 // (a thin amber tick at its left, never a fill) or selected. A row that
 // expands holds its body under the line, and its line says so
 // (`aria-expanded`); a NeedRow is one. A row nothing clicks (an ask that is
@@ -43,7 +44,8 @@ export function Row({
   kind?: RowKind;
   /** Before the mark: a control of the row's own (its select box). */
   lead?: ComponentChildren;
-  mark?: State;
+  /** A state's mark, or a mark of its own (a PR's `PrMark`). */
+  mark?: State | JSX.Element;
   /** The kind of thing, a word: "ask", "board", "doc". */
   label?: string;
   /** The label's tooltip: the whole of a label cut short. */
@@ -66,7 +68,7 @@ export function Row({
   const line = (
     <>
         {lead}
-        {mark ? <Mark state={mark} /> : null}
+        {typeof mark === "string" ? <Mark state={mark} /> : mark}
         {label ? <span class="k-row-kind m-meta" title={labelTip}>
             {label}
           </span> : null}
