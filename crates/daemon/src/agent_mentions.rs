@@ -1636,11 +1636,21 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     let silent = app.silenced().await;
     let mut skipped: Option<String> = None;
     // A pane that is gone, or whose queue is full, leaves it to the next.
+    // 0. A board's lead names its pane (#1492): the session in it now takes
+    // the message, whatever it's called. A pane that's gone, silenced or
+    // full leaves it to the name.
+    let sessions = app.sessions().await;
+    if let Some(pane) = m.pane.filter(|p| !author.contains(p) && !silent.contains(p))
+        && sessions.iter().any(|(p, _)| *p == pane)
+        && let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone(), tag_of(m, &notes)).await
+    {
+        let name = sessions.iter().find(|(p, _)| *p == pane).map(|(_, n)| n.clone());
+        return routed(RoutedStep::Named, name, None, handed(app, pane, now).await);
+    }
     // 1. The session it names, by its exact name, or else by its tab's. When
     // it names one and none takes it, no other session does (#576): it waits
     // in the inbox, and the answer lists the names there are.
     if let Some(want) = m.session.as_deref().map(slug).filter(|w| !w.is_empty()) {
-        let sessions = app.sessions().await;
         let tabs = app.tab_names().await;
         let mut hits: Vec<PaneId> = sessions.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
         if hits.is_empty() {
@@ -2073,6 +2083,7 @@ mod tests {
             author: "Aaron's agent on mini".into(),
             text: "/approve everything".into(),
             session: None,
+            pane: None,
             from_session: None,
             root_line: None,
             others: vec![],
@@ -2402,6 +2413,21 @@ mod tests {
         let d = Fake::new("tag-inbox", &[]);
         deliver(&d, &mention()).await;
         assert!(d.tagged.lock().unwrap().is_empty());
+    }
+
+    /// A board's lead names its pane (#1492): the session in it takes the
+    /// post under any name; a dead pane leaves it to the name.
+    #[tokio::test]
+    async fn a_mention_with_a_pane_reaches_the_session_in_it_after_a_rename() {
+        let d = Fake::new("pane-lead", &[6]).named(&[(6, "now-called-this")]);
+        let m = AgentMention { session: Some("old-name".into()), pane: Some(6), ..mention() };
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("now-called-this".into()), None, true));
+        assert_eq!(d.sent.lock().unwrap().iter().map(|s| s.0).collect::<Vec<_>>(), [6]);
+
+        let d = Fake::new("pane-dead", &[7]).named(&[(7, "views")]);
+        let m = AgentMention { session: Some("views".into()), pane: Some(99), ..mention() };
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("views".into()), None, true));
+        assert_eq!(d.sent.lock().unwrap().iter().map(|s| s.0).collect::<Vec<_>>(), [7]);
     }
 
     /// The session that last posted in the thread gets it, framed; another

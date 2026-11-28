@@ -87,6 +87,15 @@
           },
           "type": "array"
         },
+        "pane": {
+          "description": "The pane a board's lead leads from (Arugula #1492), for a post on the\nboard's thread. While it's alive the daemon gives the message to the\nsession in it now, whatever that session is called; with no such pane\nit goes by `session`, as before. An older daemon ignores it (nothing\nhere refuses an unknown field), so control may send it to any daemon.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
           "format": "int64",

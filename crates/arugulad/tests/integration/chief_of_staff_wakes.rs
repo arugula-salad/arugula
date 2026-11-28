@@ -163,6 +163,45 @@ fn a_chief_of_staff_of_a_renamed_project_still_gets_its_staff_posts() {
     let _ = std::fs::remove_dir_all(&sessions);
 }
 
+/// A board's lead (Arugula #1492): control names the lead's pane with the
+/// session's old name. The session was renamed since, so the name finds
+/// nothing, and the pane still takes the post. A pane that's gone leaves it
+/// to the name, as before.
+#[test]
+fn a_board_threads_post_follows_its_leads_pane_not_its_old_name() {
+    let (_rt, f, d, block, sessions) = boot("coslead");
+    let lead_post = |id: &str, seq: i64, session: &str, pane: u64| {
+        json!({ "t": "op", "id": id, "op": { "op": "agents.mention", "room": "brd_1", "room_name": "One Inbox",
+            "seq": seq, "author": "Jake", "text": "status?", "session": session, "pane": pane, "from_owner": true } })
+        .to_string()
+    };
+
+    // Led as "Rail and Machines"; the session answers to "Chief of staff" now.
+    f.outbox.lock().unwrap().push(lead_post("l1", 5, "Rail and Machines", block));
+    d.wait_for("the daemon's answer", || answer(&f, "l1").is_some());
+    let a = answer(&f, "l1").unwrap();
+    assert_eq!((&a["routed"]["step"], &a["routed"]["session"]), (&json!("named"), &json!("Chief of staff")), "{a}");
+    d.wait_for("a second turn", || turns(&d, block) == 2);
+    assert!(last_prompt(&d, block).contains("status?"));
+    d.wait_for("idle again", || idle(&d, block));
+
+    // The pane is gone (a restart gave the session another): the name does it.
+    f.outbox.lock().unwrap().push(lead_post("l2", 6, "Chief of staff", 9999));
+    d.wait_for("the daemon's answer", || answer(&f, "l2").is_some());
+    let a = answer(&f, "l2").unwrap();
+    assert_eq!((&a["routed"]["step"], &a["routed"]["session"]), (&json!("named"), &json!("Chief of staff")), "{a}");
+    d.wait_for("a third turn", || turns(&d, block) == 3);
+
+    // Neither: the inbox, as before.
+    d.wait_for("idle again", || idle(&d, block));
+    f.outbox.lock().unwrap().push(lead_post("l3", 7, "Rail and Machines", 9999));
+    d.wait_for("the daemon's answer", || answer(&f, "l3").is_some());
+    assert_eq!(answer(&f, "l3").unwrap()["routed"]["step"], "inbox");
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&sessions);
+}
+
 /// Its machine was away: control kept the person's posts in staff and a
 /// watch's message, and sends them all at once when the daemon is back (as
 /// its `redeliver` does, concurrently). The chief of staff wakes once, with

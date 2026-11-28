@@ -544,6 +544,15 @@ pub const CATALOG: &[EventType] = &[
         home: Home::Cloud,
         power: Some("boards.read"),
     },
+    // Cloud emits it when a thread post finds no lead, or a lead's machine
+    // has been offline a while (Arugula #1492).
+    EventType {
+        name: "board.lead.lost",
+        meaning: "A board's lead can't be reached: its pane is gone, or its machine has been offline a while.",
+        matches: &[BOARD, m("machine", "the lead's machine")],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
     EventType {
         name: "agent.idle",
         meaning: "An agent on this machine finished its turn and waits for a prompt.",
@@ -790,6 +799,15 @@ mod tests {
         // `unblocked` rides in data, which stays metadata only.
         let data = json!({ "board": "brd_1", "item": "#7", "blocker": "#3", "pr": "o/r#9", "what": "merged", "unblocked": true });
         assert!(data_check(&data).is_ok());
+    }
+
+    #[test]
+    fn a_boards_lost_lead_is_a_cloud_event_a_board_can_be_watched_on() {
+        let t = lookup("board.lead.lost").expect("in the catalog");
+        let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
+        assert_eq!(fields, ["board", "machine"]);
+        assert_eq!((t.home, t.power), (Home::Cloud, Some("boards.read")));
+        assert!(data_check(&json!({ "board": "brd_1", "machine": "dust" })).is_ok());
     }
 
     #[test]
