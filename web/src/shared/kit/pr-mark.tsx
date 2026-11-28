@@ -18,13 +18,13 @@ const SAID: Record<PrState, string> = { open: "open", draft: "draft", queued: "i
 
 /** A PR's mark from what the wire says of it: a board's live item, a
  * forge item. A PR that left the queue unmerged failed its checks there.
- * The board's says no more than running or failed: an `open` PR's checks
- * passed or it has none, so it gets no checks mark. */
-export function prMarkOf(l: { state: string; queued?: boolean; left_queue?: unknown; draft?: boolean }): { state: PrState; checks?: Checks } {
+ * `checks` is the board's (Arugula #1570): `none` gets no mark. A platform
+ * from before it says only running or failed, in `state`. */
+export function prMarkOf(l: { state: string; queued?: boolean; left_queue?: unknown; draft?: boolean; checks?: Checks | "none" }): { state: PrState; checks?: Checks } {
   if (l.state === "merged" || l.state === "closed") return { state: l.state };
   const state: PrState = l.queued ? "queued" : l.draft ? "draft" : "open";
-  const checks: Checks | undefined = l.state === "checks_failed" || l.left_queue ? "failed" : l.state === "checks_running" ? "running" : undefined;
-  return { state, checks };
+  const said = l.checks === "none" ? undefined : (l.checks ?? (l.state === "checks_failed" ? "failed" : l.state === "checks_running" ? "running" : undefined));
+  return { state, checks: l.left_queue ? "failed" : said };
 }
 
 /** Whether a word is a PR's state, as control's chat cards say it. */

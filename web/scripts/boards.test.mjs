@@ -55,6 +55,9 @@ test("a pointer is labelled by its item when the platform read it", () => {
   assert.equal(pointerLabel({ kind: "forge_item", id: "fi_abc123" }, plane), "ARUGU-12");
   assert.equal(liveWord(plane), "In Progress");
   assert.equal(liveWord({ state: "open" }), "open");
+  // A draft says so while it's open (Arugula #1570); merged or closed, not.
+  assert.equal(liveWord({ state: "open", draft: true }), "draft");
+  assert.equal(liveWord({ state: "merged", draft: true }), "merged");
   assert.equal(workLabel({ source: "plane", repo: "Arugula", identifier: "ARUGU", number: 12, title: "x" }), "ARUGU-12");
   assert.equal(pointerLabel({ kind: "block", machine: "m1", pane: "p2" }), "agent");
   assert.equal(pointerLabel({ kind: "none" }), "");

@@ -1233,6 +1233,20 @@ pub enum LiveState {
     Other,
 }
 
+/// Where a PR's checks are on its head (Arugula #1570), for GitHub's mark:
+/// `none` when it has none, which `LiveState::Open` alone can't tell from
+/// passed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardChecks"))]
+#[serde(rename_all = "snake_case")]
+pub enum Checks {
+    Running,
+    Passed,
+    Failed,
+    None,
+}
+
 /// The item a row points at, as it is now: what the page draws beside the
 /// row's own status, and the label of its link.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1299,6 +1313,16 @@ pub struct Live {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub left_queue: Option<crate::projects::LeftQueue>,
+    /// A PR that is a draft (Arugula #1570). Every other kind, and a
+    /// platform from before it, say false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub draft: bool,
+    /// An open PR's checks on its head (Arugula #1570); absent for every
+    /// other kind, a merged or closed PR, and a platform from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub checks: Option<Checks>,
 }
 
 impl Live {
@@ -3170,6 +3194,8 @@ mod tests {
                 queued: false,
                 queued_since: None,
                 left_queue: None,
+                draft: false,
+                checks: None,
             });
             r
         };
@@ -3326,6 +3352,8 @@ mod tests {
             queued: false,
             queued_since: None,
             left_queue: None,
+            draft: false,
+            checks: None,
         };
         let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Doing, "x");
         r.live = Some(live.clone());
@@ -3582,6 +3610,8 @@ Done: People can sign up.
                 queued: false,
                 queued_since: None,
                 left_queue: None,
+                draft: false,
+                checks: None,
             });
             r
         };
@@ -3622,6 +3652,8 @@ Done: People can sign up.
             queued: false,
             queued_since: None,
             left_queue: None,
+            draft: false,
+            checks: None,
         });
         let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
         assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
@@ -3654,6 +3686,8 @@ Done: People can sign up.
                 queued: false,
                 queued_since: None,
                 left_queue: None,
+                draft: false,
+                checks: None,
             });
             render(&view(lanes(vec![(Lane::Done, vec![r])])))
         };
@@ -3689,6 +3723,8 @@ Done: People can sign up.
                 queued,
                 queued_since: since,
                 left_queue: left.map(|(reason, at)| crate::projects::LeftQueue { reason: reason.into(), at }),
+                draft: false,
+                checks: None,
             });
             r
         };
@@ -3762,6 +3798,8 @@ Done: People can sign up.
             queued: false,
             queued_since: None,
             left_queue: None,
+            draft: false,
+            checks: None,
         };
         let titled = |note: &str, title: &str, labels: Vec<String>| {
             let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
@@ -4058,6 +4096,8 @@ Done: People can sign up.
             queued: false,
             queued_since: None,
             left_queue: None,
+            draft: false,
+            checks: None,
         });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
@@ -4102,6 +4142,8 @@ Done: People can sign up.
                 queued: false,
                 queued_since: None,
                 left_queue: None,
+                draft: false,
+                checks: None,
             });
             r
         };

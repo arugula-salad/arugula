@@ -1848,6 +1848,16 @@
       ],
       "type": "object"
     },
+    "Checks": {
+      "description": "Where a PR's checks are on its head (Arugula #1570), for GitHub's mark:\n`none` when it has none, which `LiveState::Open` alone can't tell from\npassed.",
+      "enum": [
+        "running",
+        "passed",
+        "failed",
+        "none"
+      ],
+      "type": "string"
+    },
     "Decision": {
       "description": "Approve it once, or deny it.",
       "enum": [
@@ -3073,6 +3083,17 @@
           ],
           "description": "An issue's status category; a PR and a run have none."
         },
+        "checks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Checks"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An open PR's checks on its head (Arugula #1570); absent for every\nother kind, a merged or closed PR, and a platform from before it."
+        },
         "closed_by": {
           "description": "With `closed_with`, the words of the PR that closed it: `\"(#12)\" in\nthe title`, `\"Closes #12\" in the body`, `the branch feat/12-x`,\n`attached to its board row as work`. Absent for a close from before\nthey were kept.",
           "type": [
@@ -3086,6 +3107,10 @@
             "string",
             "null"
           ]
+        },
+        "draft": {
+          "description": "A PR that is a draft (Arugula #1570). Every other kind, and a\nplatform from before it, say false.",
+          "type": "boolean"
         },
         "identifier": {
           "description": "A tracker item's project key (`ARUGU`: the card reads `ARUGU-12`).",

@@ -430,6 +430,13 @@ export type BoardBlockWord = "working" | "needs_input" | "idle" | "closed";
 export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "completed" | "canceled";
 
 /**
+ * Where a PR's checks are on its head (Arugula #1570), for GitHub's mark:
+ * `none` when it has none, which `LiveState::Open` alone can't tell from
+ * passed.
+ */
+export type BoardChecks = "running" | "passed" | "failed" | "none";
+
+/**
  * A `git diff --stat` summary line as numbers: nothing of the files.
  */
 export type BoardDiffstat = { files: number, added: number, removed: number, };
@@ -649,7 +656,17 @@ queued_since?: number,
 /**
  * A PR that left the queue unmerged, and why (`ForgeItem::left_queue`).
  */
-left_queue?: LeftQueue, };
+left_queue?: LeftQueue, 
+/**
+ * A PR that is a draft (Arugula #1570). Every other kind, and a
+ * platform from before it, say false.
+ */
+draft?: boolean, 
+/**
+ * An open PR's checks on its head (Arugula #1570); absent for every
+ * other kind, a merged or closed PR, and a platform from before it.
+ */
+checks?: BoardChecks, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control
