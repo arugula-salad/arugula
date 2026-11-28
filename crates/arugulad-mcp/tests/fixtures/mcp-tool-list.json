@@ -5900,7 +5900,7 @@
           },
           "permission_mode": {
             "default": null,
-            "description": "The permission mode its session starts in: `default`, `acceptEdits`,\n`plan`, `auto` (Claude Code's), or the agent's own. Not one that\nskips every check: the user picks that.",
+            "description": "The permission mode its session starts in: `default`, `acceptEdits`,\n`plan`, `auto` (Claude Code's), or the agent's own. Codex's are\n`read-only` and `agent`; `auto` there is `agent`,\nwhich keeps Codex's own limits. A mode the agent doesn't offer is said\non its block, not sent. Not one that skips every check: the user\npicks that.",
             "type": [
               "string",
               "null"
@@ -6325,7 +6325,7 @@
           },
           "permission_mode": {
             "default": null,
-            "description": "The permission mode its session starts in: `default`, `acceptEdits`,\n`plan`, `auto` (Claude Code's), or the agent's own. Not one that\nskips every check: the user picks that.",
+            "description": "The permission mode its session starts in: `default`, `acceptEdits`,\n`plan`, `auto` (Claude Code's), or the agent's own. Codex's are\n`read-only` and `agent`; `auto` there is `agent`,\nwhich keeps Codex's own limits. A mode the agent doesn't offer is said\non its block, not sent. Not one that skips every check: the user\npicks that.",
             "type": [
               "string",
               "null"

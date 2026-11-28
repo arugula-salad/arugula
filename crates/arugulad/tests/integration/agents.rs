@@ -174,9 +174,13 @@ fn a_block_starts_with_the_rules_and_mode_it_was_given() {
     // A mode the agent doesn't have is said, not swallowed.
     let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "mode", "permission_mode": "yolo" });
     let id = d.open_with(json!({ "type": "agent", "config": config }));
-    d.wait(id, "idle");
+    // #1584: a refused mode is a warning on the block, and its turn still
+    // ends done, not needs_input.
+    assert_eq!(d.wait(id, "idle"), "done");
     let s = d.state(id);
     assert!(entries(&s).iter().any(|e| e["text"] == "Couldn't switch to permission mode yolo: Invalid Mode"), "{s}");
+    assert_eq!(s["permission_mode_warning"], "Couldn't switch to permission mode yolo: Invalid Mode");
+    assert_eq!(s["error"], Value::Null, "{s}");
     assert!(entries(&s).iter().any(|e| e["text"] == "Mode: default"), "{s}");
 }
 
