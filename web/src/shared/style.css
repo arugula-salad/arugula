@@ -10097,7 +10097,8 @@ button.chat-agent-name:hover {
 
 /* Files and images in chat (#107). */
 .thread-list.dropping,
-.thread-compose.dropping .compose-box {
+.thread-compose.dropping .compose-box,
+.k-composer.dropping {
   outline: 2px dashed var(--accent);
   outline-offset: -4px;
 }

@@ -4,7 +4,8 @@
 // remembered), `l` and `h` moving focus, the Terminal (`v`) live in a well,
 // the floor (`f`: the body over the page; ⤢ or Esc out), an ended session
 // read only, a message's replies opening in the panel (one Back, Follow in
-// its ⋯) and back to the same place, and a tab's ×.
+// its ⋯) and back to the same place, a tab's ×, and a picture dropped on
+// an agent's composer reaching it (#1557).
 import { expect, test, type Page } from "@playwright/test";
 import { overview, P, paneItem, proposing, say, START, suiteHost } from "./overview-fixture";
 
@@ -108,6 +109,32 @@ test("the peek follows the selection: j and k put each asker in front, the chief
   await page.keyboard.press("k");
   await expect(panel(page).locator(`[data-tab="${s}"]`)).toHaveAttribute("aria-selected", "true");
   expect(page.url()).toBe(url);
+});
+
+test("a picture dropped on an agent's composer is outlined while it's dragged, then goes with the message to the agent (#1557)", async ({ page }) => {
+  const { agent } = await overview(page);
+  const host = await suiteHost(page);
+  const a = await keyOf(page, agent);
+  await say(page, [{ ...paneItem(host, agent), title: "Which colour?", since: 1 }]);
+  await row(page, `${host}.${agent}:1`).locator("button[aria-expanded]").first().click();
+  await expect(panel(page).locator(`[data-tab="${a}"]`)).toHaveAttribute("aria-selected", "true");
+  const box = panel(page).locator("[data-kit=composer]");
+  const drag = (type: string) =>
+    box.evaluate((el, type) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "shot.png", { type: "image/png" }));
+      el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+    }, type);
+  await drag("dragover");
+  await expect(box).toHaveClass(/dropping/);
+  await drag("drop");
+  await expect(box).not.toHaveClass(/dropping/);
+  await expect(box.locator('[data-attach-chip="shot.png"]')).toBeVisible();
+  await box.locator("textarea").fill("look");
+  await box.locator("textarea").press("Enter");
+  // The fake agent takes no images, so it's given the file's path on its machine.
+  await expect(panel(page).locator("[data-panel-transcript]")).toContainText(/Saw 0 image\(s\) \[\]; text \[.*\.png/, { timeout: 20_000 });
+  await expect(box.locator("[data-attach-chip]")).toHaveCount(0);
 });
 
 test("widths: 420 by default, [ narrower to 320, ] wider to 600, \\ a strip and back; kept across a reload", async ({ page }) => {
