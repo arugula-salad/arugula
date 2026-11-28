@@ -27,8 +27,9 @@
    order below is the picture only: focus and the screen reader keep the DOM's). */
 /* The board's desk (Lift 5a, ./desk.tsx): the board on the left two thirds
    (its tabs, the alert strip, the PR fold, the title block and the lanes),
-   Needs you and the lead's panel on the right third. Each side scrolls on
-   its own; under 1100px the right third goes under the board. */
+   Needs you and the lead's panel on the right third, on the Overview's
+   lines (#1588). Each side scrolls on its own; under 1100px the right third
+   goes under the board. */
 .board-desk {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
@@ -36,7 +37,6 @@
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
-  padding: var(--gap);
 }
 
 /* Panes open beside the board (Lift 5b): its right column narrows to a quarter. */
@@ -89,7 +89,7 @@
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) + 4px);
   background: var(--section);
   box-shadow: var(--shadow-card);
 }
