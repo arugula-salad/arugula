@@ -1505,7 +1505,7 @@
           "description": "Not something said but something that happened (#119): `author` set\nthe topic or pinned a message. Drawn dim and centered; never\ncounted unread, pushed, edited or reacted to."
         },
         "tags": {
-          "description": "Its tags, in #agents or a board's channel (Arugula #1536).",
+          "description": "Its tags, in any room (Arugula #1536, #1582).",
           "items": {
             "$ref": "#/$defs/ChatTag"
           },

@@ -7,10 +7,11 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
-import { shownSession } from "../chief-of-staff";
+import { chatAgentName, type LedBoard } from "../agent-name";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
 import { machineHandle, sessionSlug } from "./agents";
+import { useLedBoards } from "./project-boards";
 import "./thread-agents.css";
 import { Chip, ObjectChip } from "../ui/state-chip";
 import { ChevronIcon } from "../ui/icons";
@@ -37,11 +38,12 @@ export function stateOf(a: ChatThreadAgent): { cls: string; word: string } {
   return { cls: a.state, word: STATE[a.state] };
 }
 
-/** What an agent goes by: a machine told with no session yet has no name,
- * and a chief of staff is "Chief of staff", never its project's id (Arugula
- * #1561). Display only: posts route by `name`. */
-export function agentName(a: ChatThreadAgent): string {
-  return a.name ? shownSession(a.name) : `an agent on ${a.machine_name}`;
+/** What an agent goes by (../agent-name.ts `chatAgentName`, Arugula
+ * #1582): a board's lead by its board, a chief of staff as "Chief of
+ * staff", any other by its session; a machine told with no session yet
+ * has no name. Display only: posts route by `name`. */
+export function agentName(a: ChatThreadAgent, boards: readonly LedBoard[] = []): string {
+  return a.name ? chatAgentName({ machine: a.id, machine_name: a.machine_name, session: a.name }, boards) : `an agent on ${a.machine_name}`;
 }
 
 /** Its last line: what's waiting for it, or how far it has read. */
@@ -104,6 +106,7 @@ function Detail({ a }: { a: ChatThreadAgent }) {
   useSubscribe((fn) => api.subscribe(fn));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const led = useLedBoards();
   const mine = a.owner === chat.me;
   const who = a.hosted
     ? `The project's agent on ${a.machine_name}. Its owners and editors can stop it.`
@@ -118,7 +121,7 @@ function Detail({ a }: { a: ChatThreadAgent }) {
     const why = await api.agentAct!(a.id, pane!.pane, what);
     setBusy(false);
     setErr(why);
-    if (!why && what === "stop") api.toast(`Stopped ${agentName(a)}'s turn`);
+    if (!why && what === "stop") api.toast(`Stopped ${agentName(a, led)}'s turn`);
   };
   return (
     <div class="thread-agent-detail" data-thread-agent-detail>
@@ -167,6 +170,7 @@ function Detail({ a }: { a: ChatThreadAgent }) {
 export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgent[]; newest: number | undefined; phone?: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState(false);
+  const led = useLedBoards();
   if (!agents.length || (agents.length === 1 && agents[0].hosted)) return null;
   const key = (a: ChatThreadAgent) => `${a.id}/${a.name}`;
   const shown = agents.find((a) => key(a) === open);
@@ -178,7 +182,7 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
       <section class="thread-agents thread-agents-one" aria-label="The agent in this thread" data-thread-agents="one">
         <button class={`thread-agent ${stateOf(a).cls}`} aria-expanded={!!shown} data-thread-agent={key(a)} onClick={() => toggle(a)}>
           <span class="thread-agent-state">{stateOf(a).word}</span>
-          <span class="thread-agent-name">{agentName(a)}</span>
+          <span class="thread-agent-name" title={`on ${a.machine_name}`}>{agentName(a, led)}</span>
           <Now a={a} />
           {line && <span class={a.waiting ? "thread-agent-read waits" : "thread-agent-read"}>{line}</span>}
         </button>
@@ -201,7 +205,7 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
             return (
               <button key={key(a)} class={`thread-agent ${stateOf(a).cls}`} aria-expanded={shown === a} data-thread-agent={key(a)} onClick={() => toggle(a)}>
                 <div class="thread-agent-top">
-                  <span class="thread-agent-name">{agentName(a)}</span>
+                  <span class="thread-agent-name" title={`on ${a.machine_name}`}>{agentName(a, led)}</span>
                   {a.lead && <span class="thread-agent-lead">LEAD</span>}
                   <span class="thread-agent-state">{stateOf(a).word}</span>
                 </div>
@@ -277,6 +281,7 @@ export function targets(list: ChatThreadAgent[]): ChatPostTarget[] {
  * Naming an agent in the text picks it, for that message only, and one that
  * isn't in the thread yet gets a chip of its own while it's named. */
 export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: ChatThreadAgent[]; chosen: string[] | null; setChosen: (c: string[]) => void; text: string; room?: ChatRoomAgent[] }) {
+  const led = useLedBoards();
   if (!agents.length) return null;
   const on = wakes(agents, chosen, text, room);
   const outside = namedOutside(room, agents, text);
@@ -293,11 +298,11 @@ export function ToRow({ agents, chosen, setChosen, text, room = [] }: { agents: 
           key={keyOf(a)}
           pressed={on.includes(a)}
           disabled={named}
-          title={named ? "Named in your message" : undefined}
+          title={named ? "Named in your message" : `on ${a.machine_name}`}
           data-thread-to-agent={keyOf(a)}
           onClick={() => toggle(a)}
         >
-          {agentName(a)}
+          {agentName(a, led)}
           {a.lead && agents.length > 1 ? " · lead" : ""}
           {a.state === "offline" ? " · offline" : ""}
         </ObjectChip>

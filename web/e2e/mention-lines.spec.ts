@@ -15,11 +15,13 @@ test("a line per session a post names", async ({ page }) => {
   await icon.click();
   const lines = page.locator("[data-receipt-card] .mention-line");
   await expect(lines).toHaveText([
-    "geek/chat working…", "geek/review sending…", "mini/build answered ↗", "studio/launch lead answered ↗", "air offline or didn't answer",
+    // By session, never `machine/…` (Arugula #1582): the machine is the name's hover.
+    "chat working…", "review sending…", "build answered ↗", "launch lead answered ↗", "air offline or didn't answer",
     "box not delivered: its owner turned agent mentions off",
     /^Aarons-Mac-mini\.local no session named v1-engineering-done-board/,
   ]);
   await expect(page.locator('.mention-line[data-machine="mch_geek"]')).toHaveCount(2);
+  await expect(page.locator('.mention-line[data-machine="mch_geek"] b').first()).toHaveAttribute("title", "on geek");
   await expect(page.locator('.mention-line[data-machine="mch_geek"][data-session="review"]')).toHaveAttribute("data-mention-status", "sending");
 });
 

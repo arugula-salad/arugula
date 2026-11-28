@@ -85,8 +85,9 @@ const boardList: ProjectBoard[] = [
 ];
 
 const rooms: ChatRoom[] = [
-  room("ch_00000001", "general", { topic: "everyone on the team" }),
-  room("ch_00000002", "design"),
+  // A team channel tags its team's projects' boards (Arugula #1582).
+  room("ch_00000001", "general", { topic: "everyone on the team", tag_projects: [P] }),
+  room("ch_00000002", "design", { tag_projects: [P] }),
   room("ch_00000003", "launch", { unread: 2, mentions: 1, last: 5 }),
   room("dm_00000001", "Jake", { kind: "dm", with: person("acct_b", "Jake"), others: [person("acct_b", "Jake")] }),
   room("dm_00000002", "Mira", { kind: "dm", with: person("acct_c", "Mira"), others: [person("acct_c", "Mira")] }),
@@ -154,6 +155,11 @@ function reachedBy(r: ChatRoom, tags: ChatTag[]): ChatReached {
 
 const messages: Record<string, ChatMessage[]> = {
   ch_00000001: [msg(1, "Jake", "Morning. The pin goes out at noon.", { thread: { replies: 1, last: T0 + 20 * 60_000, repliers: [], following: false, read: 0, unread: 0, mentions: 0 } }), msg(2, "Sam", "Thanks. I'll watch the cloud specs."), msg(3, "Mira", "Docs are ready for review.")],
+  // An agent's post in a team channel: control read its `@Design lift` from its text (Arugula #1582).
+  ch_00000002: [
+    msg(1, "ux pass", "@Design lift the rail spacing is ready for a look.", { agent: agent("ux pass"), ...said([{ kind: "board", board: B1, text: "Design lift" }], { leads: [B1] }) }),
+    msg(2, "Design lift", "Looking now.", { agent: agent("Design lift") }),
+  ],
   ob_00000001: [
     msg(1, "Chief of staff", "**Holding merges** 10:00–12:00 for CI lab maintenance. Keep queueing PRs; I'll lift the hold at 12.", { agent: agent("Chief of staff"), ...said([], { leads: LEADS, all: true }) }),
     msg(2, "Launch: engineering", "@Design lift @A2P the cloud pin waits on `cloud#305`. Merge order once the hold lifts: #2920, then #2929.", {
@@ -233,7 +239,8 @@ window.fetch = async (input, init) => {
       }
       const seq = (list.at(-1)?.seq ?? 0) + 1;
       const tags = body.tags ?? [];
-      list.push(msg(seq, "Sam", body.text, r.kind === "object" && /^(prj|brd)_/.test(r.target ?? "") ? said(tags, reachedBy(r, tags)) : {}));
+      // An agents' room's post, or any room's that tags a board (Arugula #1582).
+      list.push(msg(seq, "Sam", body.text, (r.kind === "object" && /^(prj|brd)_/.test(r.target ?? "")) || tags.length ? said(tags, reachedBy(r, tags)) : {}));
       r.last = r.read = seq;
       return json({ seq, mentions: [], unreached: [], pushed: [] });
     }

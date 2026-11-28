@@ -1306,7 +1306,7 @@
           "description": "Not something said but something that happened (#119): `author` set\nthe topic or pinned a message. Drawn dim and centered; never\ncounted unread, pushed, edited or reacted to."
         },
         "tags": {
-          "description": "Its tags, in #agents or a board's channel (Arugula #1536).",
+          "description": "Its tags, in any room (Arugula #1536, #1582).",
           "items": {
             "$ref": "#/$defs/ChatTag"
           },
@@ -1698,7 +1698,7 @@
           ]
         },
         "tags": {
-          "description": "Its tags, in #agents or a board's channel (Arugula #1536): who it's\nfor, by id. An agent's are read from its text instead (`@<board>`,\n`@here`, `@channel`, `@cos`).",
+          "description": "Its tags, in any room (Arugula #1536, #1582): who it's\nfor, by id. An agent's are read from its text instead (`@<board>`,\n`@here`, `@channel`, `@cos`).",
           "items": {
             "$ref": "#/$defs/ChatTag"
           },
@@ -1793,7 +1793,7 @@
               "type": "null"
             }
           ],
-          "description": "In #agents or a board's channel (Arugula #1536): who it's for, as its\ntags resolved when it was posted; the message's own `reached` says\nwhom the bus delivered it to."
+          "description": "In any room that tags (Arugula #1536, #1582): who it's for, as its\ntags resolved when it was posted; the message's own `reached` says\nwhom the bus delivered it to."
         },
         "seq": {
           "format": "int64",
@@ -2258,6 +2258,13 @@
           "default": false,
           "description": "A staff room (Arugula #1275): a DM of one person and their own\nagents, one per person per project (`project`), the chief of\nstaff's. Only that person and the agents their grants over their\nDMs reach read it.",
           "type": "boolean"
+        },
+        "tag_projects": {
+          "description": "The projects whose boards a post here may tag as `@<board>`, each\nits lead (Arugula #1582): the room's own project, or a team\nchannel's or DM's team's projects. Empty from a server before it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "target": {
           "description": "The pane or session id there, or an object thread's global id.",

@@ -3,8 +3,9 @@
 // agent's message (./chat/agent-name.tsx), ask here, so `names: "role"`
 // (surfacesFor) can one day show Lead and Worker everywhere at once. Today
 // everyone gets the engineer's set: an agent by its work's title or its
-// session, a message's agent by `machine/tab`. Run with
-// `node --experimental-strip-types`.
+// session. In chat (Arugula #1582) an agent reads by what it is, a board's
+// lead by its board, never `machine/tab`: that's only the handle `@` routes
+// by. Run with `node --experimental-strip-types`.
 
 import { shownSession } from "./chief-of-staff.ts";
 import { surfacesFor, type Surfaces } from "./surfaces.ts";
@@ -40,3 +41,27 @@ export function agentName(a: Agent, o: { handle?: boolean; names?: Surfaces["nam
   }
   return a.title?.trim() || session || (a.machine?.trim() ? `an agent on ${a.machine.trim()}` : "An agent");
 }
+
+/** A board whose lead an agent in chat may be (a project's board as read). */
+export interface LedBoard {
+  title: string;
+  closed_at?: number;
+  lead?: { machine: string; session: string } | null;
+}
+
+/** An agent in chat as people read it (Arugula #1582): a board's lead by its
+ * board ("Design lift lead"), the chief of staff as "Chief of staff", any
+ * other by its session's name. Never `machine/…`: the machine goes in the
+ * name's hover card. Chat's author lines, `@`'s rows, receipts and a
+ * thread's To chips all ask here. `boards`: those whose lead it may be. */
+export function chatAgentName(a: { machine: string; machine_name?: string | null; session?: string | null }, boards: readonly LedBoard[] = []): string {
+  const session = a.session?.trim() ?? "";
+  const led = session ? boards.find((b) => !b.closed_at && b.lead?.machine === a.machine && slug(b.lead.session) === slug(session)) : undefined;
+  if (led?.title.trim()) return `${led.title.trim()} lead`;
+  // `cos` is the handle that follows its owner's chief of staff (Arugula #1515).
+  if (session === "cos") return ROLE.chief;
+  return agentName({ session, machine: a.machine_name }, { names: "agent" });
+}
+
+/** A session's name as `@` routes it (chat/agents.ts `sessionSlug`). */
+const slug = (name: string) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");

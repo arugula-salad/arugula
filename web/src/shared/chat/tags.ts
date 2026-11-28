@@ -23,7 +23,10 @@ export interface TagBoard {
   lead: boolean;
 }
 
-export type RoomTags = "agents" | "board";
+/** Which tags a room offers: #agents' and a board channel's all of them;
+ * any other room (a team channel, a DM, the staff room, an issue's or a
+ * PR's thread) its projects' boards only (Arugula #1582). */
+export type RoomTags = "agents" | "board" | "room";
 
 /** What the `@` list offers in an agents' room, `typed` being what follows
  * the `@` so far: @channel, @here, @cos, then a board's lead each. */
@@ -34,11 +37,12 @@ export interface TagOption {
 
 export function tagOptions(room: RoomTags, boards: TagBoard[], typed: string): TagOption[] {
   const t = typed.toLowerCase();
-  const all: TagOption[] = [
+  const leads = boards.map((b) => ({ tag: { kind: "board" as const, board: b.id, text: b.title }, note: b.lead ? "its lead" : "no lead yet" }));
+  const all: TagOption[] = room === "room" ? leads : [
     { tag: { kind: "channel", text: "channel" }, note: room === "agents" ? "every agent here" : "the lead and every worker" },
     { tag: { kind: "here", text: "here" }, note: room === "agents" ? "the active ones" : "its active workers" },
     { tag: { kind: "cos", text: "cos" }, note: "your chief of staff" },
-    ...boards.map((b) => ({ tag: { kind: "board" as const, board: b.id, text: b.title }, note: b.lead ? "its lead" : "no lead yet" })),
+    ...leads,
   ];
   return all.filter((o) => o.tag.text.toLowerCase().startsWith(t) || o.tag.text.toLowerCase().split(/\s+/).some((w) => w.startsWith(t)));
 }
@@ -78,7 +82,7 @@ export function tagAt(from: string, tags: ChatTag[], title: (board: string) => s
 }
 
 /** The line under the composer: who a post here reaches. */
-export function composerLine(room: RoomTags, reply: boolean): string {
+export function composerLine(room: Exclude<RoomTags, "room">, reply: boolean): string {
   if (reply) return "Replies reach whoever the post reached";
   return room === "agents" ? "Every lead gets this, no tag needed" : "Its lead gets this · @here adds active workers";
 }

@@ -10,7 +10,7 @@
 
 import { useRef, useState } from "preact/hooks";
 import type { ChatMentionStatus, ChatMessage, ChatRoom, ChatThreadAgent, ProjectBoard } from "../proto";
-import { sessionLabel } from "../chief-of-staff";
+import { chatAgentName, type LedBoard } from "../agent-name";
 import { usePlatformApi } from "../platform-api";
 import { CheckIcon, DotIcon, MachineIcon } from "../ui/icons";
 import { Popover, pressedShut } from "../ui/menu";
@@ -18,7 +18,7 @@ import { Chip } from "../ui/state-chip";
 import { isAgentRoom, isBoardChannel } from "./agent-rooms";
 import { machineHandle, sessionSlug } from "./agents";
 import { typesMachine } from "./mention-typed";
-import { useProjectBoards } from "./project-boards";
+import { useLedBoards, useProjectBoards } from "./project-boards";
 
 /** A row: a status, or a board channel's lead, which got the post. */
 type Row = Omit<ChatMentionStatus, "state"> & { state: ChatMentionStatus["state"] | "reached" };
@@ -40,6 +40,13 @@ export function mentionTone(state: Row["state"]): "quiet" | "pending" | "warn" {
       return "warn";
   }
 }
+
+/** A warning that routing, not the poster, may have made (#1167): where
+ * the machine went to no session it named, or wasn't there. Outside the
+ * agents' rooms one for a machine the post didn't type isn't shown. A
+ * session silenced or a turn ended is the agent's own state, shown even
+ * when the To row chose it. */
+const routed = (state: Row["state"]) => ["fell_back", "waiting", "queued", "no_such_session", "offline", "chain", "not_granted", "mentions_off"].includes(state);
 
 /** A row's state, in plain words. */
 export function mentionWords(s: Row): string {
@@ -82,12 +89,11 @@ export function mentionWords(s: Row): string {
 }
 
 /** Whom a row is: the session that has it (#1290), else the one the post
- * named, else the machine. With `projectName`, a chief of staff's session
- * reads by its project's name (Arugula #1457). */
-export function mentionWho(s: Row, projectName?: (id: string) => string | undefined): string {
-  const who = s.machine_name || "the machine";
+ * named, by what it is (../agent-name.ts `chatAgentName`, Arugula #1582),
+ * else the machine. `boards`: whose lead it may be. */
+export function mentionWho(s: Row, boards: readonly LedBoard[] = []): string {
   const session = s.session ?? s.for_session;
-  return session ? `${who}/${sessionLabel(session, projectName)}` : who;
+  return session ? chatAgentName({ machine: s.machine, machine_name: s.machine_name, session }, boards) : s.machine_name || "the machine";
 }
 
 /** The icon after a message's time: nothing for one that went to no agent.
@@ -96,7 +102,8 @@ export function mentionWho(s: Row, projectName?: (id: string) => string | undefi
  * tell, so each is. `insert` writes into the composer this message is
  * answered in. */
 export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; m: ChatMessage; seen?: ChatThreadAgent[]; insert?: (text: string) => void }) {
-  const { nav, projectName } = usePlatformApi();
+  const { nav } = usePlatformApi();
+  const led = useLedBoards();
   const board = isBoardChannel(room) ? room.target : null;
   const lead = useProjectBoards(board ? (room.project ?? undefined) : undefined)?.find((b) => b.id === board)?.lead;
   const [open, setOpen] = useState<"hover" | "tap" | null>(null);
@@ -104,7 +111,7 @@ export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agents = isAgentRoom(room);
   const leads = (s: Row) => !!lead && lead.machine === s.machine && sessionSlug(s.for_session || s.session || lead.session) === sessionSlug(lead.session);
-  const lines: Row[] = (m.mention_status ?? []).filter((s) => agents || mentionTone(s.state) !== "warn" || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
+  const lines: Row[] = (m.mention_status ?? []).filter((s) => agents || !routed(s.state) || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
   if (lead && !lines.some(leads) && ledBy(lead, m)) lines.unshift({ machine: lead.machine, machine_name: lead.machine_name, session: lead.session, state: "reached" });
   for (const a of seen) {
     const i = lines.findIndex((s) => s.machine === a.id && sessionSlug(s.for_session || s.session || a.name) === sessionSlug(a.name));
@@ -118,7 +125,7 @@ export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; 
     clearTimeout(timer.current);
     timer.current = setTimeout(fn, ms);
   };
-  const label = `Sent to ${lines.length === 1 ? mentionWho(lines[0]!, projectName) : `${lines.length} agents`}`;
+  const label = `Sent to ${lines.length === 1 ? mentionWho(lines[0]!, led) : `${lines.length} agents`}`;
   return (
     <span
       class="receipt"
@@ -137,7 +144,7 @@ export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; 
                 <span class="receipt-mark" data-tone={mentionTone(s.state)}>
                   {mentionTone(s.state) === "quiet" ? <CheckIcon size="xs" /> : <DotIcon size="xs" />}
                 </span>
-                <b>{mentionWho(s, projectName)}</b> {leads(s) && <span class="dim">lead </span>}
+                <b title={s.machine_name ? `on ${s.machine_name}` : undefined}>{mentionWho(s, led)}</b>{" "}
                 {s.state === "answered" && s.reply ? (
                   <button type="button" class="mention-link link" title={`Reply ${s.reply}`} onClick={() => nav.openRoom(room.id, s.reply, m.parent ?? m.seq)}>
                     {mentionWords(s)}

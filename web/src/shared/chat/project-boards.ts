@@ -27,20 +27,46 @@ function ask(project: string): Promise<void> {
   return p;
 }
 
-/** The project's boards, null until they're read. `fresh`: read them again
- * (the Agents section, as Chat opens). */
-export function useProjectBoards(project: string | undefined, fresh = false): ProjectBoard[] | null {
+/** Draw again whenever a project's boards are read. */
+function useRedraw() {
   const [, tick] = useState(0);
   useEffect(() => {
     const fn = () => tick((n) => n + 1);
     listeners.add(fn);
     return () => void listeners.delete(fn);
   }, []);
+}
+
+/** The project's boards, null until they're read. `fresh`: read them again
+ * (the Agents section, as Chat opens). */
+export function useProjectBoards(project: string | undefined, fresh = false): ProjectBoard[] | null {
+  useRedraw();
   useEffect(() => {
     if (project && (fresh || !read.has(project))) void ask(project);
   }, [project]);
   return project ? (read.get(project) ?? null) : null;
 }
 
-/** A board's title, from those read. */
-export const boardTitle = (project: string | null | undefined, board: string): string | undefined => (project ? read.get(project)?.find((b) => b.id === board)?.title : undefined);
+/** The boards of every project in `projects` (a room's `tag_projects`,
+ * Arugula #1582), as each is read: what its `@` offers. */
+export function useProjectsBoards(projects: readonly string[]): ProjectBoard[] {
+  useRedraw();
+  const key = projects.join(" ");
+  useEffect(() => {
+    for (const p of projects) if (!read.has(p)) void ask(p);
+  }, [key]);
+  return projects.flatMap((p) => read.get(p) ?? []);
+}
+
+/** Every board read so far, in any project: whose lead an agent in chat
+ * may be, for its name (../agent-name.ts `chatAgentName`). Redraws as more
+ * are read. */
+export function useLedBoards(): ProjectBoard[] {
+  useRedraw();
+  return [...read.values()].flat();
+}
+
+/** A board's title, from those read: `project`'s, else any project's (a
+ * team channel tags its team's projects' boards, Arugula #1582). */
+export const boardTitle = (project: string | null | undefined, board: string): string | undefined =>
+  (project ? read.get(project) : undefined)?.find((b) => b.id === board)?.title ?? [...read.values()].flat().find((b) => b.id === board)?.title;

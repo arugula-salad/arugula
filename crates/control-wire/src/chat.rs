@@ -215,6 +215,12 @@ pub struct ChatRoom {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lead: Option<ChatRoomLead>,
+    /// The projects whose boards a post here may tag as `@<board>`, each
+    /// its lead (Arugula #1582): the room's own project, or a team
+    /// channel's or DM's team's projects. Empty from a server before it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<String>>"))]
+    pub tag_projects: Vec<String>,
 }
 
 /// The session leading a room ([`ChatRoom::lead`]): its machine, the
@@ -408,7 +414,7 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub thread: Option<ChatThread>,
-    /// Its tags, in #agents or a board's channel (Arugula #1536).
+    /// Its tags, in any room (Arugula #1536, #1582).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<ChatTag>>"))]
     pub tags: Vec<ChatTag>,
@@ -923,7 +929,7 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub conversation: Option<String>,
-    /// Its tags, in #agents or a board's channel (Arugula #1536): who it's
+    /// Its tags, in any room (Arugula #1536, #1582): who it's
     /// for, by id. An agent's are read from its text instead (`@<board>`,
     /// `@here`, `@channel`, `@cos`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1002,7 +1008,7 @@ pub struct ChatPosted {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub nobody: Option<String>,
-    /// In #agents or a board's channel (Arugula #1536): who it's for, as its
+    /// In any room that tags (Arugula #1536, #1582): who it's for, as its
     /// tags resolved when it was posted; the message's own `reached` says
     /// whom the bus delivered it to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
