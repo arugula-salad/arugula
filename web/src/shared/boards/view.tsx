@@ -34,7 +34,7 @@ import type { TabItem } from "../kit/tabs";
 import type { PanelTarget } from "../kit/panel";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
-import { sessionLabel } from "../chief-of-staff";
+import { shownSession } from "../chief-of-staff";
 import { ChevronIcon, EditIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { StateChip, Chip } from "../ui/state-chip";
@@ -847,7 +847,7 @@ function DeskHead({ view, write, more: items, actions, prs, goal: draft, setGoal
             <div>
               <dt class="m-meta">lead</dt>
               <dd>
-                <Avatar name={sessionLabel(b.lead.session, api.projectName)} agent /> {sessionLabel(b.lead.session, api.projectName)}
+                <Avatar name={shownSession(b.lead.session)} agent /> {shownSession(b.lead.session)}
               </dd>
             </div>
             {machine && (
@@ -958,7 +958,7 @@ function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
   return (
     <p class="doc-meta board-lead" data-board-lead={lead.session}>
       <span>
-        Led by <b>{sessionLabel(lead.session, api.projectName)}</b>
+        Led by <b>{shownSession(lead.session)}</b>
         {machine && ` on ${machine}`}
       </span>
       <button type="button" class="link" title="The board's thread: its lead reads it" data-board-lead-talk onClick={() => void talk()}>

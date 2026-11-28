@@ -17,7 +17,7 @@ import type { BoardAsk, BoardRow, BoardView, ChatRoom, CiAlerts, InboxItem } fro
 import { chat } from "../chat-store";
 import { platformFetch } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
-import { sessionLabel } from "../chief-of-staff";
+import { shownSession } from "../chief-of-staff";
 import { RoomBody } from "../chat/room";
 import { useSubscribe } from "../ui/hooks";
 import { Avatar } from "../kit/avatar";
@@ -343,7 +343,7 @@ export function LeadPanel({ view, id, phone }: { view: BoardView; id: string; ph
   useSubscribe((fn) => api.ownPane?.watch(fn) ?? (() => {}));
   const lead = view.board.lead;
   const machine = lead ? lead.machine_name || api.machine(lead.machine)?.name || "" : "";
-  const name = lead ? sessionLabel(lead.session, api.projectName) : "No lead yet";
+  const name = lead ? shownSession(lead.session) : "No lead yet";
   const head = (
     <div class="board-lead-head" data-board-lead={lead?.session ?? ""}>
       <Avatar name={name} agent />
