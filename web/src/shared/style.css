@@ -9680,7 +9680,7 @@ button.chat-agent-name:hover {
 }
 
 .md.md-chat.md-jumbo > p {
-  font-size: var(--text-hero);
+  font-size: var(--text-doc);
   line-height: 1.2;
 }
 
