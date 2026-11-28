@@ -227,28 +227,6 @@
   margin-top: 6px;
 }
 
-/* How far each agent has read. */
-.thread-seen {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 12px 2px;
-}
-
-.thread-seen span {
-  padding: 0 6px;
-  border-radius: 8px;
-  background: var(--card-raised);
-  color: var(--ink-dim);
-  font: 500 var(--text-label)/1.6 var(--font-meta);
-}
-
-.thread-seen span .icon {
-  color: var(--accent);
-  vertical-align: -2px;
-}
-
 /* Who a message wakes (#647), above the composer. */
 .thread-to {
   display: flex;

@@ -10,6 +10,7 @@ test("an issue's comment opens its thread, and an answer its reply", async ({ pa
   await page.goto("/issue-thread-links.html");
   await expect(page.locator("[data-thread-footer]")).toContainText("2 replies");
   await page.locator("[data-thread-footer]").click();
+  await page.locator(".receipt-icon").click();
   await page.locator(".mention-link").click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { opened: unknown[][] }).opened)).toEqual([
     ["ob_aaaa0002", null, 31],

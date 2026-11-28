@@ -20,9 +20,9 @@ import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
-import type { ChatMessage, ChatRoom, LayoutChange, PlaceLayout, ProjectBoard } from "../src/shared/proto.gen";
+import type { ChatMentionStatus, ChatMessage, ChatReached, ChatRoom, LayoutChange, PlaceLayout, ProjectBoard } from "../src/shared/proto.gen";
 import { applyHere, blank } from "../src/shared/place-layout";
-import type { ChatReached, ChatTag } from "../src/shared/chat/tags";
+import type { ChatTag } from "../src/shared/chat/tags";
 
 const P = "prj_aaaa0002";
 const TEAM = "tm_1";
@@ -125,8 +125,20 @@ const B1 = boardList[0]!.id;
 const B2 = boardList[1]!.id;
 /** The leads of the open boards. */
 const LEADS = boardList.filter((b) => !b.closed_at && b.lead).map((b) => b.id);
-/** A message's tags and who it reached (#1522's wire, shared/chat/tags). */
-const said = (tags: ChatTag[], reached: ChatReached) => ({ tags, reached }) as Partial<ChatMessage>;
+/** A message's tags and who it reached (#1522's wire, shared/chat/tags):
+ * a status a lead (#1560's icon), in `states` by board, else read. */
+const said = (tags: ChatTag[], reached: ChatReached, states: Record<string, ChatMentionStatus["state"]> = {}) =>
+  ({
+    tags,
+    reached,
+    mention_status: [
+      ...reached.leads.map((b) => {
+        const session = boardList.find((x) => x.id === b)!.title;
+        return { machine: "m_dust", machine_name: "dust", for_session: session.toLowerCase().replace(/\W+/g, "-"), session, state: states[b] ?? "read" };
+      }),
+      ...(reached.cos ? [{ machine: "m_dust", machine_name: "dust", for_session: "chief-of-staff", session: "Chief of staff", state: "answered" as const, reply: 6 }] : []),
+    ],
+  }) as Partial<ChatMessage>;
 
 /** #1522's delivery rules, for a post of the reader's (a person's): in
  * #agents every lead, and the chief of staff when tagged; in a board's
@@ -147,12 +159,24 @@ const messages: Record<string, ChatMessage[]> = {
     msg(2, "Launch: engineering", "@Design lift @A2P the cloud pin waits on `cloud#305`. Merge order once the hold lifts: #2920, then #2929.", {
       agent: agent("Launch: engineering"),
       thread: { replies: 3, last: T0 + 46 * 60_000, repliers: [], following: true, read: 0, unread: 0, mentions: 0 },
-      ...said([{ kind: "board", board: B1, text: "Design lift" }, { kind: "board", board: B2, text: "A2P" }], { leads: [B1, B2] }),
+      ...said([{ kind: "board", board: B1, text: "Design lift" }, { kind: "board", board: B2, text: "A2P" }], { leads: [B1, B2] }, { [B2]: "waiting" }),
     }),
-    msg(3, "Onboarding", "@here is anyone touching `onboarding.spec.ts` today? #1412 changes its copy.", { agent: agent("Onboarding"), ...said([{ kind: "here", text: "here" }], { leads: [B1], active: true }) }),
+    msg(3, "Onboarding", "@here is anyone touching `onboarding.spec.ts` today? #1412 changes its copy.", { agent: agent("Onboarding"), ...said([{ kind: "here", text: "here" }], { leads: [B1], active: true }, { [B1]: "working" }) }),
     msg(4, "Rail and Machines", "#2418 merged: the rail caret sits under the project mark.", { agent: agent("Rail and Machines"), ...said([], { leads: [] }) }),
     msg(5, "Sam", "@cos let docs-only PRs through the hold.", said([{ kind: "cos", text: "cos" }], { leads: LEADS, all: true, cos: true })),
     msg(6, "Chief of staff", "Done. Docs-only PRs merge now; the rest wait for 12:30.", { agent: agent("Chief of staff"), ...said([], { leads: LEADS, all: true }) }),
+  ],
+  // Design lift's channel: a post reaches its lead (#1536), shown as the lead (#1560).
+  ob_00000002: [
+    // Control's summary misses a lead its text-mention path told (#1536); the status has it.
+    msg(1, "Sam", "Rebase on main before the cut, please.", {
+      ...said([], { leads: [] }),
+      mention_status: [{ machine: "m_dust", machine_name: "dust", session: "Design lift", state: "read" }],
+    }),
+    msg(2, "Design lift", "Rebased; budget is under by 2 kB.", { agent: agent("Design lift") }),
+    // A plain post: control keeps no status of the lead it reached by leading the channel.
+    msg(3, "Jake", "Is the cut today or tomorrow?"),
+    { ...msg(4, "Sam", "@geek rerun the lab, please."), mention_status: [{ machine: "m_geek", machine_name: "geek", state: "working", session: "lab" }] },
   ],
 };
 
@@ -213,6 +237,15 @@ window.fetch = async (input, init) => {
       const after = Number(url.searchParams.get("after") ?? 0);
       return json({ room: r, messages: list.filter((x) => x.seq > after), more: false });
     }
+    // #agents' thread on post 2: Design lift has read Jake's last reply (#646).
+    if (m[2] === "threads/2/agents" && r.id === "ob_00000001")
+      return json({
+        agents: [
+          { name: "Design lift", id: "m_dust", machine_name: "dust", owner: "acct_a", owner_name: "Sam", hosted: false, state: "idle", read_seq: 9, waiting: 0, lead: false },
+          // Named by its project's id (Arugula #1457); read as "Chief of staff" (#1561).
+          { name: `Chief of staff · ${P}`, id: "m_dust", machine_name: "dust", owner: "acct_a", owner_name: "Sam", hosted: false, state: "idle", waiting: 0, lead: true },
+        ],
+      });
     if (m[2]?.endsWith("/agents")) return json({ agents: [] });
     if (m[2] === "pins") return json({ pins: [] });
     if (m[2] === undefined) return json({ room: r, people: [person("acct_a", "Sam"), person("acct_b", "Jake")], can_manage: true, agents: [] });

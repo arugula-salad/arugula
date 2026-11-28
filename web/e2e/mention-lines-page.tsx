@@ -1,5 +1,5 @@
-// The fixture page for a message's mention lines (#502): the real lines
-// under a post that names two sessions of one machine, one session of
+// The fixture page for a message's mention lines (#502): the real icon
+// and its card (#1560) for a post that names two sessions of one machine, one session of
 // another, a third machine itself, and a fourth whose owner turned
 // agent mentions off. mention-lines.spec.ts builds this
 // with Vite and serves it, so no daemon is involved.

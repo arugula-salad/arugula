@@ -15,7 +15,7 @@ import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { savedAnchor, useAnchor } from "./use-anchor";
-import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
+import { seenAt, ThreadAgents, useThreadAgents } from "./thread-agents";
 import { WatchesOn } from "../watches-on";
 import { dropTarget } from "./files-ui";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
@@ -210,7 +210,7 @@ export function ThreadPanel({
           </button>
         )}
         {first && (
-          <RoomMessage room={room} m={first} reply={(q) => threadComposeRef.current?.reply(q)} setError={setError} editing={editing === first.seq} setEditing={(on) => setEditing(on ? first.seq : null)} inThread tokens={tokens} />
+          <RoomMessage room={room} m={first} reply={(q) => threadComposeRef.current?.reply(q)} setError={setError} editing={editing === first.seq} setEditing={(on) => setEditing(on ? first.seq : null)} inThread seen={seenAt(agents, first)} tokens={tokens} />
         )}
         {first && (
           <div class="msg-day thread-count" role="separator" data-thread-count>
@@ -240,8 +240,8 @@ export function ThreadPanel({
                   if (!on) threadComposeRef.current?.focus();
                 }}
                 inThread
+                seen={seenAt(agents, m)}
               />
-              <SeenMarks agents={agents} m={m} />
             </Fragment>
           );
         })}

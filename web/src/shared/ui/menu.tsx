@@ -95,6 +95,8 @@ interface OpenMenu extends MenuOpts {
   focus: boolean;
   /** A popover's content, in place of the items. */
   content?: ComponentChildren;
+  /** Opened by a hover: the focus stays where it was. */
+  passive?: boolean;
 }
 
 /** A menu of this many choosable rows or more has a filter row. */
@@ -252,6 +254,7 @@ export function Popover({
   from,
   end,
   beside,
+  passive,
   label,
   attrs,
   onClose,
@@ -262,6 +265,8 @@ export function Popover({
   /** Beside `from`, to its right with their tops together (the rail's
    * project tile, Arugula #989), rather than under it. */
   beside?: boolean;
+  /** Opened by a hover: it leaves the focus where it was. */
+  passive?: boolean;
   /** Its accessible name. */
   label: string;
   /** Attributes for the popover itself, such as a `data-` hook for the specs. */
@@ -285,6 +290,7 @@ export function Popover({
       items: [],
       focus: false,
       content: children,
+      passive,
       from: el,
       end,
       label,
@@ -468,7 +474,7 @@ export function MenuLayer() {
   // the popover itself, so the Tab key starts inside it.
   const shownFor = useRef<OpenMenu | null>(null);
   useEffect(() => {
-    if (!pos || !current || current.content === undefined || shownFor.current === current) return;
+    if (!pos || !current || current.content === undefined || current.passive || shownFor.current === current) return;
     const el = ref.current;
     if (!el || getComputedStyle(el).visibility !== "visible") return;
     shownFor.current = current;

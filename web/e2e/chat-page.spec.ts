@@ -220,9 +220,21 @@ test.describe("Tags (Arugula #1522)", () => {
     const view = page.locator(`[data-room-view="${AGENTS}"]`);
     // Tags already said: pills, and who each post reached.
     await expect(view.locator('[data-msg="2"] [data-tag="board"]')).toHaveText(["@Design lift", "@A2P"]);
-    await expect(view.locator('[data-msg="2"] [data-reached]')).toHaveText(/reached: Design lift, A2P/);
-    await expect(view.locator('[data-msg="4"] [data-reached]')).toHaveText(/reached: no lead · it tagged none/);
-    await expect(view.locator('[data-msg="5"] [data-reached]')).toHaveText(/reached: 2 leads, chief of staff/);
+    // Who each went to (#1560): one icon after the time, in its worst state's tone, and a hover's card.
+    const icon = view.locator('[data-msg="2"] .thread-head .receipt-icon');
+    await expect(icon).toHaveAttribute("data-receipt", "2");
+    await expect(icon).toHaveAttribute("data-tone", "warn");
+    await icon.hover();
+    const card = view.locator('[data-msg="2"] [data-receipt-card]');
+    await expect(card.locator(".mention-line")).toHaveText(["dust/Design lift read", "dust/A2P waiting: no session took it"]);
+    await expect(card).not.toBeFocused();
+    await page.mouse.move(0, 0);
+    await expect(card).toHaveCount(0);
+    await expect(view.locator('[data-msg="4"] .receipt-icon')).toHaveCount(0);
+    await expect(view.locator("[data-reached], .chat-reached")).toHaveCount(0);
+    await view.locator('[data-msg="5"] .receipt-icon').click();
+    await expect(view.locator('[data-msg="5"] [data-receipt-card] .mention-line')).toHaveCount(3);
+    await expect(view.locator('[data-msg="5"] [data-receipt-card] button.mention-link')).toHaveText("answered ↗");
     // The composer says who a post here reaches.
     await expect(view.locator(".k-composer-to")).toHaveText("Every lead gets this, no tag needed");
     const box = view.getByRole("textbox", { name: "Message #agents" });
@@ -240,13 +252,51 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect.poll(() => page.evaluate(() => window.__fx.posted.at(-1))).toEqual({ text: "Deploying web at 12:30. @A2P ", tags: [{ kind: "board", board: "brd_00000000000000000000000000000002", text: "A2P" }] });
     const sent = view.locator('[data-msg="7"]');
     await expect(sent.locator('[data-tag="board"]')).toHaveText("@A2P");
-    await expect(sent.locator("[data-reached]")).toHaveText(/reached: 2 leads/);
+    await expect(sent.locator(".receipt-icon")).toHaveAttribute("data-receipt", "2");
     // No "nobody called" for a tag's first word.
     await box.fill("@Design lift, rebase please");
     await box.press("Escape");
     await box.press("Enter");
     await expect(view.locator('[data-msg="8"]')).toBeVisible();
     await expect(page.getByText(/Nobody here called/)).toHaveCount(0);
+  });
+
+  test("a board channel's every post shows its lead as reached, as a thread's and Chat's do (#1560)", async ({ page }) => {
+    await open(page, `/p/${P}/chat/ob_00000002`);
+    const card = (seq: number) => page.locator(`[data-msg="${seq}"] [data-receipt-card] .mention-line`);
+    const icon = page.locator('[data-msg="1"] .receipt-icon');
+    await expect(icon).toHaveAttribute("data-tone", "quiet");
+    await icon.click();
+    await expect(card(1)).toHaveText(["dust/Design lift lead read"]);
+    await page.keyboard.press("Escape");
+    // The lead's own post went to nobody else: no icon.
+    await expect(page.locator('[data-msg="2"] .receipt-icon')).toHaveCount(0);
+    // A plain post has no status: the lead got it by leading the channel.
+    await page.locator('[data-msg="3"] .receipt-icon').click();
+    await expect(card(3)).toHaveText(["dust/Design lift lead reached"]);
+    await page.keyboard.press("Escape");
+    // Working is a dim pulse, not the accent: the worst of the lead's and geek's.
+    const working = page.locator('[data-msg="4"] .receipt-icon');
+    await expect(working).toHaveAttribute("data-tone", "pending");
+    await expect(working).toHaveAttribute("data-receipt", "2");
+    await working.click();
+    await expect(card(4)).toHaveText(["dust/Design lift lead reached", "geek/lab working…"]);
+  });
+
+  test("a thread agent's read mark is a row in its reply's receipt, not a pill of its own (#1560)", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${AGENTS}`);
+    await page.locator('[data-thread-footer="2"]').click();
+    const thread = page.locator('[data-thread-panel="2"]');
+    const icon = thread.locator('[data-msg="9"] .receipt-icon');
+    await expect(icon).toHaveAttribute("data-tone", "quiet");
+    await icon.click();
+    await expect(thread.locator('[data-msg="9"] [data-receipt-card] .mention-line')).toHaveText(["dust/Design lift read"]);
+    await expect(page.locator("[data-thread-seen], .thread-seen")).toHaveCount(0);
+    // Design lift wrote 7: nothing read it there.
+    await expect(thread.locator('[data-msg="7"] .receipt-icon')).toHaveCount(0);
+    // The To row reads a chief of staff by its role, never its project's id (#1561), and still sends its name.
+    await expect(thread.locator("[data-thread-to-agent]")).toHaveText(["Design lift", "Chief of staff · lead"]);
+    await expect(thread.locator("[data-thread-to]")).not.toContainText("prj_");
   });
 
   test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {
