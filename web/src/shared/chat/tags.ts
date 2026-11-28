@@ -1,12 +1,11 @@
 // Tags in the agents' rooms (Arugula #1522): `@channel`, `@here`, `@cos`
-// and `@<board>`, resolved by id rather than by text, and the receipt under
-// a post saying who it reached. No page state, so
-// `scripts/chat-tags.test.mjs` runs it without a browser.
+// and `@<board>`, resolved by id rather than by text. Who a post reached is
+// its mention statuses' (./mention-status, Arugula #1560). No page state,
+// so `scripts/chat-tags.test.mjs` runs it without a browser.
 //
-// The wire here is #1522's, typed ahead of the server (its half is Arugula
-// #1536): a post sends `tags` beside its text, and a message comes back
-// with its `tags` and `reached`. Until control sends them, a message has
-// neither: its tags are matched by today's names and it shows no receipt.
+// The wire here is #1522's (its server half is Arugula #1536): a post
+// sends `tags` beside its text, and a message comes back with its `tags`.
+// Without them, its tags are matched by today's names.
 
 import type { ChatMessage, ChatPost } from "../proto";
 
@@ -14,21 +13,7 @@ import type { ChatMessage, ChatPost } from "../proto";
  * board's is its id, so a rename keeps it. */
 export type ChatTag = { kind: "channel" | "here" | "cos"; text: string } | { kind: "board"; board: string; text: string };
 
-/** Who a post reached (#1522's delivery rules), as control says it. */
-export interface ChatReached {
-  /** The leads it reached, by their boards' ids. */
-  leads: string[];
-  /** Every lead (a person's or the chief of staff's post in #agents). */
-  all?: boolean;
-  /** Only the active ones (`@here`). */
-  active?: boolean;
-  /** The chief of staff (`@cos`). */
-  cos?: boolean;
-  /** A board channel's workers it reached. */
-  workers?: number;
-}
-
-export type TaggedMessage = ChatMessage & { tags?: ChatTag[]; reached?: ChatReached };
+export type TaggedMessage = ChatMessage & { tags?: ChatTag[] };
 export type TaggedPost = ChatPost & { tags?: ChatTag[] };
 
 /** A board as a tag names it. */
@@ -90,20 +75,6 @@ export function tagAt(from: string, tags: ChatTag[], title: (board: string) => s
   const found = [...tags].sort((a, b) => b.text.length - a.text.length).find((t) => fits(t.text));
   if (!found) return null;
   return { len: found.text.length + 1, kind: found.kind, name: found.kind === "board" ? (title(found.board) ?? found.text) : found.text };
-}
-
-/** The receipt under a post: "reached: 7 leads", "reached: Design lift,
- * A2P", "reached: no lead · it tagged none". */
-export function receipt(r: ChatReached, title: (board: string) => string | undefined): string {
-  const n = r.leads.length;
-  if (!n && !r.workers && !r.cos) return "reached: no lead · it tagged none";
-  const who: string[] = [];
-  if (n && r.all) who.push(`${n} ${n === 1 ? "lead" : "leads"}`);
-  else if (n && r.active) who.push(`${n} active ${n === 1 ? "lead" : "leads"}`);
-  else who.push(...r.leads.map((b) => title(b) ?? "a board"));
-  if (r.workers) who.push(`${r.workers} ${r.workers === 1 ? "worker" : "workers"}`);
-  if (r.cos) who.push("chief of staff");
-  return `reached: ${who.join(", ")}`;
 }
 
 /** The line under the composer: who a post here reaches. */

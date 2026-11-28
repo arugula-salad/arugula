@@ -1515,7 +1515,8 @@ button.att {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .att.needs_input {
+  .att.needs_input,
+  :is(.receipt-icon, .receipt-mark)[data-tone="pending"] {
     animation: none;
   }
 }
@@ -6615,10 +6616,12 @@ html[data-scheme="light"] .doc {
 
 .msg-gutter {
   display: flex;
+  /* A follow-on's time, and under it the icon of who it went to. */
+  flex-direction: column;
+  align-items: center;
   /* The picture (and its dot and badge) at the top of a long message, not
      stretched down it (UI audit #156). */
-  align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 /* The picture sits over the letters and fades in once it has loaded
@@ -6837,49 +6840,47 @@ html[data-scheme="light"] .doc {
   font-size: var(--text-body);
 }
 
-/* Where an @machine mention got to (#502): one dim line a machine. */
-.mention-status {
-  margin: 2px 0;
+/* Who a message went to (#502, Arugula #1560): an icon after its time, and
+   a card of each agent and its state. No colour of its own: got it is quiet,
+   on its way a dim pulse, and what waits or didn't get there amber. */
+.receipt-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  padding: 0 2px;
+  border-radius: var(--tag-radius);
+  color: var(--ink-faint);
+  font-size: var(--text-label);
+}
+
+.receipt-icon:is(:hover, [aria-expanded="true"]) {
+  background: var(--well);
+}
+
+.receipt-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  list-style: none;
+  font-size: var(--text-meta);
+  color: var(--ink-dim);
 }
 
 .mention-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 5px;
-  color: var(--ink-dim);
+  gap: 4px 6px;
 }
 
-/* The status chip is one line, cut short with an ellipsis (#1167). */
-.mention-line {
-  min-width: 0;
+:is(.receipt-icon, .receipt-mark)[data-tone="pending"] {
+  animation: k-breathe 2.4s ease-in-out infinite;
 }
 
-.mention-line .chip,
-.mention-names {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-/* The sessions behind a "no session named" chip. */
-.mention-names-list {
-  margin: 0;
-  padding: var(--space-1);
-  list-style: none;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.mention-names-list button {
-  display: block;
-  width: 100%;
-  padding: 6px 10px;
-  text-align: left;
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
+:is(.receipt-icon, .receipt-mark)[data-tone="warn"] {
+  color: var(--needs);
 }
 
 /* Reactions (#104): chips under a message, and the menu that adds one. */

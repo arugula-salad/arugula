@@ -14,7 +14,7 @@
 
 import { isAgentRoom, isAgentsRoom, isBoardChannel } from "./agent-rooms";
 import { boardTitle, useProjectBoards } from "./project-boards";
-import { receipt, TAG_RULE, tagAt, tagOptions, tagsIn, type RoomTags, type TaggedMessage } from "./tags";
+import { TAG_RULE, tagAt, tagOptions, tagsIn, type RoomTags, type TaggedMessage } from "./tags";
 import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
@@ -52,7 +52,7 @@ import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf 
 import { dmLabel } from "./members";
 import { handled } from "./escape";
 import { savedAnchor, useAnchor } from "./use-anchor";
-import { ArrowIcon, BookmarkIcon, CheckIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
+import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
@@ -535,9 +535,8 @@ export const threadComposeRef: ComposeHandle = { current: null };
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
 /** An agents' room's message (Arugula #1522): its tags drawn as pills
- * (its own, by id, else today's names) and its receipt, when control says
- * who it reached. Null in any other room. */
-function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { len: number; node: ComponentChildren } | null; reached: string | null } | null {
+ * (its own, by id, else today's names). Null in any other room. */
+function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { len: number; node: ComponentChildren } | null } | null {
   const on = isAgentRoom(room);
   const boards = useProjectBoards(on ? (room.project ?? undefined) : undefined);
   return useMemo(() => {
@@ -550,7 +549,6 @@ function useTagged(room: ChatRoom, m: ChatMessage): { tag: (from: string) => { l
         const at = tagAt(from, known, title);
         return at ? { len: at.len, node: <span class="mention" data-tag={at.kind}>@{at.name}</span> } : null;
       },
-      reached: t.reached ? receipt(t.reached, title) : null,
     };
   }, [on, m, boards]);
 }
@@ -593,8 +591,7 @@ export function RoomMessage({
     prev.via !== m.via ||
     m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
-  // In #agents and a board's channel (Arugula #1522): tags as pills, by
-  // id, and who the post reached.
+  // In #agents and a board's channel (Arugula #1522): tags as pills, by id.
   const tagged = useTagged(room, m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
@@ -668,6 +665,8 @@ export function RoomMessage({
   // Arugula #215: what an agent session said (its answer, a review), drawn
   // as the session's, apart from people's.
   const said = saidOf(m);
+  // Who it went to (Arugula #1560): an icon after the time, or under it in the gutter.
+  const receipt = <MentionStatus room={room} m={m} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />;
   return (
     <div
       class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}${m.agent ? " by-agent" : ""}${said ? " by-session" : ""}`}
@@ -686,9 +685,12 @@ export function RoomMessage({
             <AuthorAvatar m={m} />
           )
         ) : (
-          <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
-            {whenShort(m.at)}
-          </time>
+          <>
+            <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
+              {whenShort(m.at)}
+            </time>
+            {receipt}
+          </>
         )}
       </div>
       <div class="msg-body">
@@ -721,6 +723,7 @@ export function RoomMessage({
               </Chip>
             )}
             {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
+            {receipt}
           </div>
         )}
         {!editing && <ReplyTag room={room} m={m} inThread={inThread} />}
@@ -751,13 +754,7 @@ export function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
-        <MentionStatus room={room} m={m} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
-        {tagged?.reached && (
-          <p class="chat-reached m-meta" data-reached>
-            <CheckIcon size="xs" /> {tagged.reached}
-          </p>
-        )}
         {!inThread && <ThreadFooter room={room} m={m} />}
       </div>
       <div class={panel === "react" || panel === "menu" ? "msg-tools open" : "msg-tools"} role="toolbar" aria-label="Message actions">

@@ -1,9 +1,9 @@
 // Tags in the agents' rooms (Arugula #1522): the `@` list, the tags a post
-// sends by id, a tag drawn by its board's name now, and the receipts.
+// sends by id, and a tag drawn by its board's name now.
 // Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composerLine, receipt, tagAt, tagOptions, tagsIn } from "../src/shared/chat/tags.ts";
+import { composerLine, tagAt, tagOptions, tagsIn } from "../src/shared/chat/tags.ts";
 
 const boards = [
   { id: "brd_1", title: "Design lift", lead: true },
@@ -34,16 +34,6 @@ test("a tag is drawn by its board's name now: a rename keeps it", () => {
   const tags = [{ kind: "board", board: "brd_1", text: "Old name" }];
   assert.deepEqual(tagAt("@Old name, merge", tags, title), { len: 9, kind: "board", name: "Design lift" });
   assert.equal(tagAt("@Old names", tags, title), null);
-});
-
-test("receipts say who a post reached", () => {
-  const seven = ["a", "b", "c", "d", "e", "f", "g"];
-  assert.equal(receipt({ leads: seven, all: true }, title), "reached: 7 leads");
-  assert.equal(receipt({ leads: ["brd_1", "brd_2"] }, title), "reached: Design lift, A2P");
-  assert.equal(receipt({ leads: ["a", "b", "c", "d"], active: true }, title), "reached: 4 active leads");
-  assert.equal(receipt({ leads: [] }, title), "reached: no lead · it tagged none");
-  assert.equal(receipt({ leads: seven, all: true, cos: true }, title), "reached: 7 leads, chief of staff");
-  assert.equal(receipt({ leads: ["brd_1"], workers: 2 }, title), "reached: Design lift, 2 workers");
 });
 
 test("the composer's line", () => {
