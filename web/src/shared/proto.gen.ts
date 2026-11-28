@@ -564,7 +564,12 @@ at: number,
  * a board's dot and `@here` (Arugula #1536); `None` while it can't be
  * told (its machine is away, or a server before it).
  */
-active?: boolean, };
+active?: boolean, 
+/**
+ * Whether a post on the board's thread reaches it, when that's known
+ * not to: `None` means reachable, or not known (Arugula #1492).
+ */
+reach?: LeadReach, };
 
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
@@ -4447,6 +4452,11 @@ for_you: boolean,
  * Its opened panes, in order. The home tab's defaults aren't here.
  */
 panes: Array<LayoutPane>, };
+
+/**
+ * Why a board's lead can't be reached (Arugula #1492).
+ */
+export type LeadReach = "offline" | "lost";
 
 /**
  * A work lease, from `status`'s `leases` (#618): who holds a work item.

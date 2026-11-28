@@ -67,7 +67,7 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, leadReachWords } from "./text";
 
 /** The narrowest a pane gets before the next one stacks under it: at 1440, the board and two panes beside it, the third stacked. */
 const PANE_MIN = 280;
@@ -960,6 +960,7 @@ function LeadLine({ lead, id }: { lead: BoardLead; id: string }) {
       <span>
         Led by <b>{shownSession(lead.session)}</b>
         {machine && ` on ${machine}`}
+        {lead.reach && ` ${leadReachWords(lead.reach)}`}
       </span>
       <button type="button" class="link" title="The board's thread: its lead reads it" data-board-lead-talk onClick={() => void talk()}>
         Talk

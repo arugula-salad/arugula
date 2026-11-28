@@ -468,6 +468,14 @@ export function docWords(d: { pointer: BoardPointer; sections?: number; written?
   return counts;
 }
 
+/** What a board says after its lead's name when a post there won't reach it
+ * (Arugula #1492); the same words `board_read` prints. */
+export function leadReachWords(reach?: "offline" | "lost"): string {
+  if (reach === "offline") return "(offline)";
+  if (reach === "lost") return "(not reachable: take the lead with board_write lead_board)";
+  return "";
+}
+
 /** Where a board lists a Doc, for the Doc's page: `Docs strip`, `2 rows`, or both. */
 export function onBoardWords(b: { strip: boolean; rows: number }): string {
   const rows = b.rows === 1 ? "1 row" : `${b.rows} rows`;

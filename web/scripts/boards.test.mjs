@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, rowRef, workChip, onIssueChip, boardGroup, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, rowRef, workChip, onIssueChip, boardGroup, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords, leadReachWords } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -697,4 +697,10 @@ test("the agents' items on a board's issues: by row, oldest first; who they wait
   assert.deepEqual(answeredWords({ kind: "approval", question: "Start?", answer: "Approve" }), { verb: "answered", what: "Approve" });
   assert.deepEqual(answeredWords({ kind: "todo", question: "Rotate the key", answer: "Done", note: "in 1Password" }), { verb: "did", what: "Rotate the key", note: "in 1Password" });
   assert.deepEqual(answeredWords({ kind: "todo", question: "Rotate the key", answer: "Can't" }), { verb: "couldn't do", what: "Rotate the key", note: undefined });
+});
+
+test("a board's lead line says when its lead isn't reachable", () => {
+  assert.equal(leadReachWords(undefined), "");
+  assert.equal(leadReachWords("offline"), "(offline)");
+  assert.equal(leadReachWords("lost"), "(not reachable: take the lead with board_write lead_board)");
 });
