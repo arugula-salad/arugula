@@ -23,7 +23,7 @@ import { machineOfHost } from "../shell/pins";
 import { menuBelow, openMenu } from "../shared/ui/menu";
 import { PageHeader } from "../shared/ui/page-header";
 import { Row } from "../shared/kit/row";
-import { StateMark, type State } from "../shared/kit/state-mark";
+import { Mark, StateMark, type State } from "../shared/kit/state-mark";
 import { directory } from "../shell/hosts";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { KIND_LABEL, kindOf, shortHost, whatItDoes } from "../shell/fleet-model";
@@ -286,18 +286,19 @@ function Session({ m, s, to, last, phone, picked, pinned, ...data }: { m: Machin
 /** A session's state as its mark. */
 const MARK: Record<string, State> = { needs_input: "asks", working: "working", done: "done", idle: "idle" };
 
+/** A pane under its session: the session rows' mark, what it does, then one
+ * word (it needs you, else that it's where you were) and its kind, if what
+ * it does doesn't say it. */
 function PaneLine({ p, to, last, phone }: { p: FleetPane; to: string; last: boolean; phone: boolean }) {
   const asks = needsYou(p.info);
   const what = whatItDoes(p);
-  // A pane that says nothing of itself reads as its kind: once.
   const kind = KIND_LABEL[kindOf(p)];
-  const meta = phone ? "" : [kind !== what && kind, p.info.branch].filter(Boolean).join(" · ");
+  const meta = phone ? "" : [asks ? NEEDS_YOU : "where you were", kind !== what && kind].filter(Boolean).join(" · ");
   return (
     <li>
-      <a class={`panes-row${p.stale ? " stale" : ""}${last ? " last" : ""}`} href={to} title={last ? "The pane you had open last" : undefined} data-panes-pane={p.id} data-panes-host={p.host} data-panes-last={last || undefined} onClick={(e) => follow(e, to)}>
+      <a class={`panes-row${p.stale ? " stale" : ""}`} href={to} title={last ? "The pane you had open last" : undefined} data-panes-pane={p.id} data-panes-host={p.host} data-panes-last={last || undefined} onClick={(e) => follow(e, to)}>
+        <Mark state={asks ? "asks" : (MARK[p.info.attention] ?? "idle")} />
         <span class="panes-row-what">{what}</span>
-        {last && <span class="panes-row-where dim">where you were</span>}
-        {asks && <StateMark state="asks" word={NEEDS_YOU} />}
         {meta && <span class="panes-row-meta dim">{meta}</span>}
       </a>
     </li>
