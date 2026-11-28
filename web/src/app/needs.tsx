@@ -4,8 +4,11 @@
 // there: an approval or a to-do through the Inbox (`POST /api/inbox/{id}`,
 // its `choice` and a to-do's note), a pane's permission, one-question ask
 // or gate (Approve, and Expire for a chant gate, #1546; a decision point's
-// choices) through its machine. One that can't be
-// answered here (a form, a deploy, a board's own ask, a mention) has Open.
+// choices) through its machine, a board's ask as its board's card does
+// (`POST /api/boards/{id}/asks/{ask}/answer`, #1580: its why and the
+// recommended option read from its board). One that can't be answered
+// here (a form, a deploy, a mention) has Open; a board's ask has it too,
+// to its row on its board.
 // Answered, a row stays as a dim receipt until you leave the page, so the
 // list doesn't jump; a to-do's says its note as control kept it, read from
 // its card's record (#1462), never from what was typed or a live event.
@@ -16,8 +19,10 @@
 // `↵` opens it where it lives (through the back stack: `esc` comes back).
 
 import type { ComponentChildren } from "preact";
-import { useRef, useState } from "preact/hooks";
-import type { ChatAsk, InboxItem } from "../shared/proto";
+import { useEffect, useRef, useState } from "preact/hooks";
+import type { BoardRow, ChatAsk, InboxItem } from "../shared/proto";
+import { askNeed } from "../shared/boards/desk";
+import { boards } from "../shared/boards/store";
 import { Button } from "../shared/kit/button";
 import { NeedRow, type Need, type NeedOption, type Receipt } from "../shared/kit/need-row";
 import type { State } from "../shared/kit/state-mark";
@@ -32,7 +37,8 @@ import { pointOf } from "../shell/ui/point-choices";
 import type { PanelTarget } from "../shared/kit/panel-key";
 import { permissionTarget } from "../shell/ui/answer-card";
 import { answerItem, forTeammate, markItem, memberName } from "../platform/inbox";
-import { go } from "../platform/router";
+import { names } from "../platform/links";
+import { go, pathOf } from "../platform/router";
 
 /** Kinds that are alerts, not asks (#1393): the Inbox lists them, uncounted; Needs you doesn't. */
 export const ALERTS = new Set(["checks_failed", "run_failed", "agent_failed"]);
@@ -178,6 +184,9 @@ export function askerOf(fleet: Fleet, i: InboxItem): { pane?: FleetPane; target?
 
 /** How an item answers here, if it can. */
 function answering(fleet: Fleet | null, i: InboxItem): Answering | null {
+  const board = i.subject.board;
+  if (i.answer?.via === "board_answer" && board)
+    return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o) => boards.answer(board, i.id, o.id ? { option: o.id } : { text: o.label }).then(() => {}) };
   if (i.answer && (i.answer.via === "card" || i.answer.via === "todo") && i.answer.options.length)
     return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o, note) => answerItem(i.id, o.id, i.kind === "todo" ? note : undefined) };
   const p = paneOfItem(fleet, i);
@@ -229,12 +238,22 @@ const markOf = (i: InboxItem): State | undefined => (ALERTS.has(i.kind) ? "faili
  * back stack, so `esc` comes back), else its page on GitHub. What only
  * names you is seen once opened. */
 export function openItem(i: InboxItem) {
+  const url = whereOf(i);
   // A teammate's card has no address (Arugula #1469): nothing opens.
-  if (!i.subject.url) return;
+  if (!url) return;
   if (!decides(i) && !i.seen_at) void markItem(i.id, { seen: true }).catch(() => {});
-  if (i.subject.url.startsWith("/")) go(i.subject.url);
-  else window.open(i.subject.url, "_blank", "noopener,noreferrer");
+  if (url.startsWith("/")) go(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
 }
+
+/** Where Open goes: a board's ask, its row on its board, where its Needs you shows it open (#1580); anything else, its address. */
+function whereOf(i: InboxItem): string {
+  const { board, project, id } = i.subject;
+  return i.kind === "board_ask" && board && project ? `${pathOf({ page: "board", project, board }, names)}#row=${encodeURIComponent(id)}` : i.subject.url;
+}
+
+/** Whether a row offers Open: where it can't be answered here, a pane's (to see it), and a board's ask (its row). */
+export const opens = (i: InboxItem, answers: boolean) => (!answers || i.subject.type === "pane" || i.kind === "board_ask") && !!i.subject.url;
 
 /** A list of the Inbox's rows, answered in place, and its keys. `peek` is
  * told of the row the keys move to; `goes`, the footer shows `↵`'s chip
@@ -247,6 +266,9 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  // A board ask's row, as its board reads it (by the ask's id): its why and recommendation (#1580).
+  const [asked, setAsked] = useState<ReadonlyMap<string, BoardRow>>(new Map());
+  const reading = useRef(new Set<string>());
 
   /** The server's list without what was dismissed, with the answered ones kept in their place. */
   const kept = (live: InboxItem[]) => [...live.filter((i) => !receipts.has(i.id) && !gone.has(i.id)), ...[...receipts.values()].map((r) => r.item)].sort((a, b) => a.since - b.since);
@@ -265,7 +287,7 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
     setBusy(i.id);
     try {
       await a.send(o, note);
-      const receipt = await receiptOf(i, o.label);
+      const receipt = await receiptOf(i, i.kind === "board_ask" ? o.id || o.label : o.label);
       setReceipts((m) => new Map(m).set(i.id, { item: i, receipt }));
       setOpen(null);
     } catch (e) {
@@ -350,11 +372,27 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
   ];
   useBindings(keys, []);
 
+  // Each board with an ask not read yet, read once.
+  useEffect(() => {
+    const unread = now.current.rows.filter((i) => i.kind === "board_ask" && i.subject.board && !reading.current.has(i.id));
+    for (const b of new Set(unread.map((i) => i.subject.board!))) {
+      for (const i of unread) if (i.subject.board === b) reading.current.add(i.id);
+      boards.get(b).then(
+        (v) => setAsked((m) => new Map([...m, ...v.zones.flatMap((z) => z.rows.flatMap((r) => (r.ask ? [[r.ask.id, r] as const] : [])))])),
+        () => {},
+      );
+    }
+  });
+
   /** One item's row. `extra` replaces what it offers besides its answers. */
   const row = (i: InboxItem, extra?: (i: InboxItem, answers: boolean) => ComponentChildren) => {
     const done = receipts.get(i.id);
-    const a = done ? null : answering(fleet, i);
-    const need = needOf(i, me, fleet, a);
+    // A board's ask as its board draws it: its why, and the option it recommends; a teammate's answered here only where its board says you may.
+    const r = asked.get(i.id);
+    const a = done || (i.kind === "board_ask" && forTeammate(i, me) && !r?.ask?.can_answer) ? null : answering(fleet, i);
+    const base = needOf(i, me, fleet, a);
+    const ask = r?.ask && askNeed(r, r.ask, Date.now());
+    const need = ask ? { ...base, subject: ask.subject ?? base.subject, lines: ask.lines, answer: a ? ask.answer : undefined } : base;
     const from = i.from.name ?? i.from.agent;
     return (
       <NeedRow
@@ -377,7 +415,7 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
         extra={
           extra
             ? extra(i, !!a)
-            : (!a || i.subject.type === "pane") && i.subject.url
+            : opens(i, !!a)
               ? (
                 <Button keys="↵" onClick={() => openItem(i)}>
                   Open

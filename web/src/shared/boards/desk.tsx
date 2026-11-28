@@ -95,8 +95,9 @@ export function PrFold({ prs, open }: { prs: OpenPr[]; open: (pr: OpenPr) => voi
   );
 }
 
-/** An ask on a row, as the A2P row draws it. */
+/** An ask on a row, as the A2P row draws it: the option it recommends first (`y`, #1580), and marked. */
 export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
+  const options = [...a.options].sort((x, y) => Number(y === a.recommend) - Number(x === a.recommend));
   return {
     kind: "ask",
     title: a.question,
@@ -104,7 +105,7 @@ export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
     for: a.mine ? "you" : a.who_name || "someone",
     subject: r.live ? { kind: "issue", id: `#${r.live.number}` } : undefined,
     lines: a.why ? [a.why] : undefined,
-    answer: a.can_answer ? { via: "card", options: a.options.map((o) => ({ id: o, label: o === a.recommend ? `${o} · recommended` : o })) } : undefined,
+    answer: a.can_answer ? { via: "card", options: options.map((o) => ({ id: o, label: o === a.recommend ? `${o} · recommended` : o })) } : undefined,
     age: stalledFor(a.created_at, now),
   };
 }
@@ -181,8 +182,8 @@ interface Asked {
   data: Record<string, string>;
 }
 
-/** The board's Needs you, at the top of the right third: what waits on you as NeedRows (its asks, and the agents' asks and to-dos on its issues, oldest first), the first open; a teammate's folded under one neutral row each (`· 1 for Jake ›`). */
-export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view: BoardView; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean>; inbox: BoardInbox | null; platform: (path: string) => string | undefined; tabs?: { item: InboxItem; n: number; go: () => void }[] }) {
+/** The board's Needs you, at the top of the right third: what waits on you as NeedRows (its asks, and the agents' asks and to-dos on its issues, oldest first), the first open (or `at`, the ask a link names); a teammate's folded under one neutral row each (`· 1 for Jake ›`). */
+export function BoardNeeds({ view, at, answer, inbox, platform, tabs = [] }: { view: BoardView; at?: string; answer: (r: BoardRow, a: { option: string } | { text: string }) => Promise<boolean>; inbox: BoardInbox | null; platform: (path: string) => string | undefined; tabs?: { item: InboxItem; n: number; go: () => void }[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
@@ -229,7 +230,7 @@ export function BoardNeeds({ view, answer, inbox, platform, tabs = [] }: { view:
   const mine = all.filter((x) => x.who === "you");
   const theirs = new Map<string, Asked[]>();
   for (const x of all) if (x.who !== "you") theirs.set(x.who, [...(theirs.get(x.who) ?? []), x]);
-  const shown = open ?? mine[0]?.key ?? null;
+  const shown = open ?? at ?? mine[0]?.key ?? null;
   const row = (x: Asked) => (
     <div key={x.key} {...x.data}>
       <NeedRow

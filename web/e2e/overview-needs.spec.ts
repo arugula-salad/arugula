@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { cli, overview, P, paneItem, say } from "./overview-fixture";
+import { board, cli, launch, overview, P, paneItem, say } from "./overview-fixture";
 
 test.use({ permissions: ["local-network-access"] });
 
@@ -34,6 +34,59 @@ const item = (id: string, kind: string, title: string, more: Record<string, unkn
 const APPROVAL = item("prp_start", "approval", "Start a worker on #12 on geek?", { lines: ["Repo: acme/app", "Why: the release waits on it."], answer: { via: "card", options: ["Start", "Not now"] } });
 const TODO = item("prp_todo", "todo", "Swap the filament spool, then Done", { subject: { type: "proposal", id: "prp_todo", url: `/p/${P}/chat`, project: P, room: "room_staff", seq: 7 }, lines: ["Why: the printer stopped.", "1. Open the lid\n2. Swap the spool"], answer: { via: "todo", options: ["Done", "Can't"] }, since: Date.now() - 60_000 });
 const ALERT = item("run_1:run_failed", "run_failed", "CI failed on main", { subject: { type: "run", id: "run_1", url: "/", project: P } });
+
+/** A board's ask on #12 for the reader (Arugula #1580): the Inbox's item, and the row its board reads with it, which has its why and recommendation. */
+const QUESTION = "Bring Steps back as a Lanes | Steps switch?";
+// A board id as the platform makes them, so its address takes a slug.
+const B = `brd_${"1580".padStart(32, "0")}`;
+const BOARD_ASK = item("ask_1580", "board_ask", QUESTION, { from: { account: "acct_b" }, subject: { type: "board_row", id: "row_b", url: `/p/${P}/board/${B}/card/row_b`, project: P, board: B }, answer: { via: "board_answer", options: ["Lanes only", "A Lanes | Steps switch"] } });
+const asking = () => {
+  const l = launch();
+  const v = { ...l, board: { ...l.board, id: B, title: "Design lift" } };
+  const ask = { id: BOARD_ASK.id, who: "acct_a", who_name: "Sam", question: QUESTION, why: "Steps put open rows in order by what they wait on.", options: ["Lanes only", "A Lanes | Steps switch"], recommend: "A Lanes | Steps switch", asked_by: "claude@dust", raised: false, mine: true, can_answer: true, created_at: Date.now() - 7 * 60_000 };
+  return { ...v, zones: v.zones.map((z) => ({ ...z, rows: z.rows.map((r) => (r.id === "row_b" ? { ...r, ask } : r)) })) };
+};
+
+/** A board's ask answers in place, as its board's card does, and Open lands on its row on the board with the ask open in its Needs you (#1580). */
+async function boardAsk(page: Page, shot: (name: string) => string) {
+  // The system's light or dark, for the screenshots.
+  await page.addInitScript(() => localStorage.setItem("arugula-appearance", JSON.stringify({ palette: "system" })));
+  await overview(page);
+  const answers: unknown[] = [];
+  await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Design lift")] } }));
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: asking() }));
+  await page.route(`**/api/boards/${B}/asks/${BOARD_ASK.id}/answer`, (r) => (answers.push(r.request().postDataJSON()), r.fulfill({ json: asking() })));
+  await say(page, [BOARD_ASK]);
+  const r = row(page, BOARD_ASK.id);
+  await expect(r).toHaveAttribute("data-need", "ask");
+  await expect(r).toContainText("#12");
+  await r.locator("button[aria-expanded]").first().click();
+  // Its why and its options, the recommended one first (y) and marked.
+  await expect(r).toContainText("Steps put open rows in order by what they wait on.");
+  await expect(r.locator("[data-answer]")).toHaveText([/^A Lanes \| Steps switch · recommended/, /^Lanes only/]);
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({ path: shot(`board-ask-${scheme}.png`) });
+  }
+  // Open: the board, its row named, the ask open in its Needs you.
+  await r.getByRole("button", { name: /^Open/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards/${B}[^/#]*#row=row_b$`));
+  const there = page.locator(`[data-board-needs] [data-board-ask="${BOARD_ASK.id}"]`);
+  await expect(there).toContainText(QUESTION);
+  await expect(there.getByRole("button", { name: /recommended/ })).toBeInViewport();
+  await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
+  for (const scheme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({ path: shot(`board-ask-opened-${scheme}.png`) });
+  }
+  // Back on the Overview, answered in place, through the board's own route.
+  await page.goBack();
+  await say(page, [BOARD_ASK]);
+  await row(page, BOARD_ASK.id).locator("button[aria-expanded]").first().click();
+  await row(page, BOARD_ASK.id).getByRole("button", { name: /recommended/ }).click();
+  await expect.poll(() => answers).toEqual([{ option: "A Lanes | Steps switch", text: null }]);
+  await expect(row(page, BOARD_ASK.id)).toContainText("A Lanes | Steps switch by you");
+}
 
 /** A Claude Code permission in the suite daemon's terminal (its hook), and the Inbox's item for it. */
 async function permission(page: Page, term: number): Promise<string> {
@@ -237,6 +290,10 @@ test.describe("on a computer", () => {
     for (const id of ["needs-down", "needs-up", "needs-expand", "needs-yes", "needs-no", "needs-done", "needs-next", "needs-open"]) expect(ids).toContain(id);
   });
 
+  test("a board's ask answers in place, its why and recommendation shown; Open lands on its row with the ask open (#1580)", async ({ page }, info) => {
+    await boardAsk(page, (n) => info.outputPath(n));
+  });
+
   test("moving to a pane's ask peeks its session in the panel", async ({ page }) => {
     const { term, agent } = await overview(page);
     const host = await page.evaluate((t) => (window as unknown as { __app: { fleet: { panes: { id: number; host: string }[] } } }).__app.fleet.panes.find((p) => p.id === t)!.host, term);
@@ -260,5 +317,9 @@ test.describe("on a phone", () => {
     await expect(r.getByRole("button", { name: /^Start/ })).toBeVisible();
     expect(await needs(page).evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath("overview-needs-phone.png") });
+  });
+
+  test("a board's ask answers in place and Open lands on its row with the ask open (#1580)", async ({ page }, info) => {
+    await boardAsk(page, (n) => info.outputPath(n));
   });
 });
