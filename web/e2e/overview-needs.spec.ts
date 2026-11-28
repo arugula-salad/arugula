@@ -294,6 +294,19 @@ test.describe("on a computer", () => {
     await boardAsk(page, (n) => info.outputPath(n));
   });
 
+  test("a board's ask of more than two options isn't answered here: its question, and Open to where it lives (#1580)", async ({ page }) => {
+    await overview(page);
+    await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Design lift")] } }));
+    await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: asking() }));
+    await say(page, [{ ...BOARD_ASK, answer: { via: "board_answer", options: ["Lanes only", "A switch", "Steps only"] } }]);
+    const r = row(page, BOARD_ASK.id);
+    await r.locator("button[aria-expanded]").first().click();
+    await expect(r).toContainText(QUESTION);
+    await expect(r.locator("[data-answer]")).toHaveCount(0);
+    await r.getByRole("button", { name: /^Open/ }).click();
+    await expect(page.locator(`[data-board-needs] [data-board-ask="${BOARD_ASK.id}"]`)).toContainText(QUESTION);
+  });
+
   test("moving to a pane's ask peeks its session in the panel", async ({ page }) => {
     const { term, agent } = await overview(page);
     const host = await page.evaluate((t) => (window as unknown as { __app: { fleet: { panes: { id: number; host: string }[] } } }).__app.fleet.panes.find((p) => p.id === t)!.host, term);

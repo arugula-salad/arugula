@@ -4,11 +4,11 @@
 // there: an approval or a to-do through the Inbox (`POST /api/inbox/{id}`,
 // its `choice` and a to-do's note), a pane's permission, one-question ask
 // or gate (Approve, and Expire for a chant gate, #1546; a decision point's
-// choices) through its machine, a board's ask as its board's card does
-// (`POST /api/boards/{id}/asks/{ask}/answer`, #1580: its why and the
-// recommended option read from its board). One that can't be answered
-// here (a form, a deploy, a mention) has Open; a board's ask has it too,
-// to its row on its board.
+// choices) through its machine, a simple board ask (two options at most,
+// #1580) as its board's card does (`POST /api/boards/{id}/asks/{ask}/answer`,
+// its why and the recommended option read from its board). One that can't
+// be answered here (a form, a deploy, a mention, a board ask with more to
+// it) has Open; a board's ask has it too, to where it lives (`askHome`).
 // Answered, a row stays as a dim receipt until you leave the page, so the
 // list doesn't jump; a to-do's says its note as control kept it, read from
 // its card's record (#1462), never from what was typed or a live event.
@@ -185,8 +185,12 @@ export function askerOf(fleet: Fleet, i: InboxItem): { pane?: FleetPane; target?
 /** How an item answers here, if it can. */
 function answering(fleet: Fleet | null, i: InboxItem): Answering | null {
   const board = i.subject.board;
-  if (i.answer?.via === "board_answer" && board)
+  if (i.answer?.via === "board_answer") {
+    // Only a simple one here (yes or no, two options); the rest want their context first.
+    const n = i.answer.options.length;
+    if (!board || n === 0 || n > 2) return null;
     return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o) => boards.answer(board, i.id, o.id ? { option: o.id } : { text: o.label }).then(() => {}) };
+  }
   if (i.answer && (i.answer.via === "card" || i.answer.via === "todo") && i.answer.options.length)
     return { options: i.answer.options.map((o) => ({ id: o, label: o })), send: (o, note) => answerItem(i.id, o.id, i.kind === "todo" ? note : undefined) };
   const p = paneOfItem(fleet, i);
@@ -238,7 +242,7 @@ const markOf = (i: InboxItem): State | undefined => (ALERTS.has(i.kind) ? "faili
  * back stack, so `esc` comes back), else its page on GitHub. What only
  * names you is seen once opened. */
 export function openItem(i: InboxItem) {
-  const url = whereOf(i);
+  const url = i.kind === "board_ask" ? askHome(i) : i.subject.url;
   // A teammate's card has no address (Arugula #1469): nothing opens.
   if (!url) return;
   if (!decides(i) && !i.seen_at) void markItem(i.id, { seen: true }).catch(() => {});
@@ -246,10 +250,10 @@ export function openItem(i: InboxItem) {
   else window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** Where Open goes: a board's ask, its row on its board, where its Needs you shows it open (#1580); anything else, its address. */
-function whereOf(i: InboxItem): string {
+/** Where a board's ask lives, for Open (#1580): its row on its board, where its Needs you shows it open. The one place to point it at its card in its thread instead. */
+export function askHome(i: InboxItem): string {
   const { board, project, id } = i.subject;
-  return i.kind === "board_ask" && board && project ? `${pathOf({ page: "board", project, board }, names)}#row=${encodeURIComponent(id)}` : i.subject.url;
+  return board && project ? `${pathOf({ page: "board", project, board }, names)}#row=${encodeURIComponent(id)}` : i.subject.url;
 }
 
 /** Whether a row offers Open: where it can't be answered here, a pane's (to see it), and a board's ask (its row). */
