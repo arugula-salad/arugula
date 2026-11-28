@@ -76,6 +76,32 @@ export function dragsFiles(e: DragEvent): boolean {
   return !!e.dataTransfer && [...e.dataTransfer.types].includes("Files");
 }
 
+/** A drop target for files (#107): the handlers, and whether a drag is
+ * over it. The files go to `add`, its own composer's (a thread's reply box
+ * or the room's, #1557), and the drop goes no further, so a composer inside
+ * a room's list doesn't hand them to the room's too. */
+export function dropTarget(over: (v: boolean) => void, add: (files: File[]) => void) {
+  return {
+    onDragOver: (e: DragEvent) => {
+      if (!dragsFiles(e)) return;
+      e.preventDefault();
+      over(true);
+    },
+    onDragLeave: (e: DragEvent) => {
+      // Moving between the target's children isn't leaving it.
+      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) over(false);
+    },
+    onDrop: (e: DragEvent) => {
+      over(false);
+      const dropped = filesOf(e.dataTransfer);
+      if (!dropped.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      add(dropped);
+    },
+  };
+}
+
 const onMac = /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** The key that opens the picker, as a tooltip writes it (#412): ⌘U on a

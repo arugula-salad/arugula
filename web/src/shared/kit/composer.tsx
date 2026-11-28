@@ -9,7 +9,7 @@
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf } from "../chat/files-ui";
+import { AttachButton, attachKey, AttachChips, dropTarget, filesOf } from "../chat/files-ui";
 import { MAX_FILES, pastedName } from "../chat/files";
 import { ArrowIcon } from "../ui/icons";
 import "./kit.css";
@@ -48,25 +48,7 @@ export function Composer({
       setBusy(false);
     }
   };
-  const drop = takes &&
-    !disabled && {
-      onDragOver: (e: DragEvent) => {
-        if (!dragsFiles(e)) return;
-        e.preventDefault();
-        setOver(true);
-      },
-      onDragLeave: (e: DragEvent) => {
-        if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) setOver(false);
-      },
-      onDrop: (e: DragEvent) => {
-        setOver(false);
-        const dropped = filesOf(e.dataTransfer);
-        if (!dropped.length) return;
-        e.preventDefault();
-        add(dropped);
-      },
-      onKeyDown: attachKey,
-    };
+  const drop = takes && !disabled && { ...dropTarget(setOver, add), onKeyDown: attachKey };
   const chips = files.map((f, i) => ({ key: String(i), name: pastedName(f), size: f.size, progress: 0, state: busy ? ("uploading" as const) : ("done" as const) }));
   return (
     <div class={`k-composer${over ? " dropping" : ""}`} data-kit="composer" {...(drop || {})}>

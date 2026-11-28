@@ -17,6 +17,7 @@ import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { savedAnchor, useAnchor } from "./use-anchor";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 import { WatchesOn } from "../watches-on";
+import { dropTarget } from "./files-ui";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 import { Kbd } from "../kit/kbd";
 import { both, useBinding } from "../keys";
@@ -65,6 +66,7 @@ export function ThreadPanel({
   const [editing, setEditing] = useState<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [dropping, setDropping] = useState(false);
   // The red "New" line: the first reply after my mark when the thread
   // opened (not mine), kept while it stays open.
   const line = useRef<{ key: string; seq: number | null } | null>(null);
@@ -196,7 +198,7 @@ export function ThreadPanel({
       />}
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
       <WatchesOn compact path={`/api/chat/rooms/${encodeURIComponent(room.id)}/threads/${parent}/watches`} />
-      <div class="thread-list thread-replies" ref={list} onScroll={() => anchor.onScroll()}>
+      <div class={`thread-list thread-replies${dropping ? " dropping" : ""}`} ref={list} onScroll={() => anchor.onScroll()} {...(room.writable ? dropTarget(setDropping, (f) => threadComposeRef.current?.attach(f)) : {})}>
         {t === undefined && !error && <BlockLoading inline what="the thread" />}
         {error && <p class="thread-error">{error}</p>}
         {t?.older && (
