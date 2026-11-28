@@ -41,6 +41,13 @@ export function mentionTone(state: Row["state"]): "quiet" | "pending" | "warn" {
   }
 }
 
+/** A warning that routing, not the poster, may have made (#1167): where
+ * the machine went to no session it named, or wasn't there. Outside the
+ * agents' rooms one for a machine the post didn't type isn't shown. A
+ * session silenced or a turn ended is the agent's own state, shown even
+ * when the To row chose it. */
+const routed = (state: Row["state"]) => ["fell_back", "waiting", "queued", "no_such_session", "offline", "chain", "not_granted", "mentions_off"].includes(state);
+
 /** A row's state, in plain words. */
 export function mentionWords(s: Row): string {
   switch (s.state) {
@@ -104,7 +111,7 @@ export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const agents = isAgentRoom(room);
   const leads = (s: Row) => !!lead && lead.machine === s.machine && sessionSlug(s.for_session || s.session || lead.session) === sessionSlug(lead.session);
-  const lines: Row[] = (m.mention_status ?? []).filter((s) => agents || mentionTone(s.state) !== "warn" || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
+  const lines: Row[] = (m.mention_status ?? []).filter((s) => agents || !routed(s.state) || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
   if (lead && !lines.some(leads) && ledBy(lead, m)) lines.unshift({ machine: lead.machine, machine_name: lead.machine_name, session: lead.session, state: "reached" });
   for (const a of seen) {
     const i = lines.findIndex((s) => s.machine === a.id && sessionSlug(s.for_session || s.session || a.name) === sessionSlug(a.name));
