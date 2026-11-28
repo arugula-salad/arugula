@@ -109,12 +109,7 @@ export async function desktop(page: Page, chord = "Control+Shift+KeyK") {
   await page.keyboard.press(chord);
   await expect(goTo(page)).toBeHidden();
 
-  // `g p` from outside a field opens it, and so does the bar's button.
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("g");
-  await page.keyboard.press("p");
-  await expect(goTo(page)).toBeVisible();
-  await page.keyboard.press("Escape");
+  // The bar's button opens it too (`g p` went, #1534).
   await page.locator("[data-top] [data-open-palette]").click();
   await expect(goTo(page)).toBeVisible();
   await page.keyboard.press("Escape");

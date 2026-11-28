@@ -73,7 +73,7 @@ test.describe("on a computer", () => {
       await r.locator("button[aria-expanded]").first().click();
       await expect(r.locator("[data-kit=well] pre")).toContainText("npm test");
       const allow = r.getByRole("button", { name: /^Allow/ });
-      await expect(allow).toHaveAttribute("aria-keyshortcuts", "y");
+      await expect(allow).toHaveAttribute("aria-keyshortcuts", "a");
       await page.screenshot({ path: info.outputPath("overview-needs-permission.png") });
       await allow.click();
       // Answered on its machine: the hook returned and the shell went on.
@@ -105,7 +105,7 @@ test.describe("on a computer", () => {
     await row(page, "prp_jo1").locator("button[aria-expanded]").first().click();
     await expect(row(page, "prp_jo1")).toContainText("asks Jo");
     await expect(row(page, "prp_jo1").locator("[data-answer]")).toHaveCount(0);
-    // Mine: its lines, then Start (y) and Not now (x); Start goes to the Inbox as its choice.
+    // Mine: its lines, then Start (a) and Not now (x); Start goes to the Inbox as its choice.
     await r.locator("button[aria-expanded]").first().click();
     await expect(r).toContainText("Why: the release waits on it.");
     await r.getByRole("button", { name: /^Start/ }).click();
@@ -198,7 +198,7 @@ test.describe("on a computer", () => {
     await expect(r).toContainText(/Done by you .* · swapped to PETG/);
   });
 
-  test("the keys: j and k move and open, e folds, y answers, n goes to the next thing through To do, Enter opens it where it is", async ({ page }) => {
+  test("the keys: j and k move and open, a answers, Enter opens it where it is (e and n are unbound, #1534)", async ({ page }) => {
     await overview(page);
     const second = item("prp_close", "approval", "Close two sessions?", { answer: { via: "card", options: ["Approve", "Deny"] }, since: Date.now() - 3 * 60_000 });
     await say(page, [APPROVAL, second, TODO]);
@@ -208,21 +208,18 @@ test.describe("on a computer", () => {
     await page.keyboard.press("j");
     await expect(row(page, APPROVAL.id)).toHaveAttribute("data-selected", "true");
     await expect(row(page, APPROVAL.id).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "true");
-    // e folds it; j moves on; k back.
+    // e and n do nothing by default; j moves on, k back.
     await page.keyboard.press("e");
-    await expect(row(page, APPROVAL.id).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "false");
+    await page.keyboard.press("n");
+    await expect(row(page, APPROVAL.id)).toHaveAttribute("data-selected", "true");
     await page.keyboard.press("j");
     await expect(row(page, second.id)).toHaveAttribute("data-selected", "true");
     await page.keyboard.press("k");
     await expect(row(page, APPROVAL.id)).toHaveAttribute("data-selected", "true");
-    // n: the next thing that needs you, then To do.
-    await page.keyboard.press("n");
-    await expect(row(page, second.id)).toHaveAttribute("data-selected", "true");
-    await page.keyboard.press("n");
-    await expect(row(page, TODO.id)).toHaveAttribute("data-selected", "true");
-    // y answers the open row the first way.
-    await page.keyboard.press("k");
+    // a answers the selected row the first way; y no longer does.
+    await page.keyboard.press("j");
     await page.keyboard.press("y");
+    await page.keyboard.press("a");
     await expect.poll(() => posted(page)).toEqual([{ id: second.id, choice: "Approve" }]);
     // Enter opens the selected one where it lives: its chat.
     await page.locator("body").click({ position: { x: 5, y: 5 } });
@@ -234,7 +231,8 @@ test.describe("on a computer", () => {
   test("the keys are in ? under Needs you, and their chips in the footer", async ({ page }) => {
     await overview(page);
     const ids = await page.evaluate(() => (window as unknown as { __arugulaKeys: () => string[] }).__arugulaKeys());
-    for (const id of ["needs-down", "needs-up", "needs-expand", "needs-yes", "needs-no", "needs-done", "needs-next", "needs-open"]) expect(ids).toContain(id);
+    for (const id of ["needs-down", "needs-up", "needs-yes", "needs-no", "needs-done", "needs-open"]) expect(ids).toContain(id);
+    for (const id of ["needs-expand", "needs-next"]) expect(ids).not.toContain(id);
   });
 
   test("moving to a pane's ask peeks its session in the panel", async ({ page }) => {

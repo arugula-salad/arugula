@@ -12,7 +12,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { fuzzy } from "../../fuzzy";
-import { both, keyHint, os, typingIn, useBinding } from "../../keys";
+import { control } from "../../controls";
+import { keyHint, os, typingIn, useBinding } from "../../keys";
 import { useSubscribe } from "../../ui/hooks";
 import { Kbd } from "../kbd";
 import { Sheet } from "../sheet";
@@ -136,11 +137,6 @@ export function rank(list: GoItem[], query: string, recent: string[]): GoItem[] 
   return scored.map((x) => x.c);
 }
 
-/** ⌘K from anywhere on a Mac; elsewhere Ctrl+K, and Ctrl+Shift+K from a
- * terminal or a field (`when`). */
-const withK = (mods: string[]) => mods.map((m) => `${m}+KeyK`);
-const CHORDS = { mac: withK(["Meta", "Ctrl+Shift"]), other: withK(["Ctrl", "Ctrl+Shift"]) };
-
 /** Go to…, and its keys; once per page. */
 export function GoToLayer() {
   useSubscribe((fn) => {
@@ -151,18 +147,12 @@ export function GoToLayer() {
   // field their kill-line, and Ctrl+Shift+K is the one from anywhere.
   useBinding(
     {
-      id: "goto",
-      label: "Go to…",
-      group: "go",
-      context: "everywhere",
-      chip: "go to",
-      keys: CHORDS,
+      ...control("goto"),
       when: (e) => os === "mac" || e.shiftKey || !typingIn(document.activeElement),
       run: () => (open ? closeGoTo() : openGoTo()),
     },
     [],
   );
-  useBinding({ id: "goto.g", label: "Go to…", group: "go", context: "everywhere", keys: both("key:g key:p"), run: () => openGoTo() }, []);
   if (!open) return null;
   return <GoTo key={`${open.scope}/${open.mode}`} scope={open.scope} mode={open.mode} initial={open.query} />;
 }

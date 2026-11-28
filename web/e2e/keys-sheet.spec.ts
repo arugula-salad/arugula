@@ -1,5 +1,5 @@
 // Lift 3 (#1479): one key table (shared/keys.ts). `?` lists every binding
-// the page has, each with a key; the footer's chips come from the same
+// the page has, each with a key, the core first (#1534); the footer's chips come from the same
 // table; a plain key is never taken from a terminal; `g m` goes to Machines.
 
 import { expect, test } from "@playwright/test";
@@ -28,6 +28,11 @@ test("`?` lists every binding in the table, each with its key", async ({ page })
   // No binding is unreachable: each shows a key.
   for (const id of listed) await expect(sheet.locator(`[data-binding="${id}"] kbd`).first()).not.toBeEmpty();
   await expect(sheet.locator('[data-binding="go.machines"]')).toContainText("g");
+  // One screen (#1534): the core first, then this page's.
+  const core = sheet.locator("section").first();
+  await expect(core).toHaveAttribute("aria-label", "The core");
+  for (const id of ["goto", "go.machines", "keys"]) await expect(core.locator(`[data-binding="${id}"]`)).toHaveCount(1);
+  await expect(core.locator('[data-binding="pane.jump"]')).toHaveCount(0);
 
   // `?` again, or Escape, closes it.
   await page.keyboard.press("?");
@@ -56,7 +61,7 @@ test("`g m` goes back to Machines from Settings", async ({ page }) => {
   await expect(settings).toHaveCount(0);
 });
 
-test("Look: `s`, or the top bar's Look, opens this device's Look; `s` again shuts it", async ({ page }) => {
+test("Look is the top bar's: `s`, `t` and `d` have no key by default (#1534)", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await reset(page);
   const look = page.getByRole("dialog", { name: "Appearance" });
@@ -65,27 +70,11 @@ test("Look: `s`, or the top bar's Look, opens this device's Look; `s` again shut
   await page.keyboard.press("Escape");
   await expect(look).toHaveCount(0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("s");
-  await expect(look).toBeVisible();
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-  await page.keyboard.press("s");
-  await expect(look).toHaveCount(0);
-});
-
-test("Look's steps: `t` flips light and dark, `d` goes a step deeper", async ({ page }) => {
-  await reset(page);
-  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const html = page.locator("html");
   const was = await html.getAttribute("data-scheme");
-  await page.keyboard.press("t");
-  await expect(html).not.toHaveAttribute("data-scheme", was ?? "");
-  await page.keyboard.press("t");
+  for (const k of ["s", "t", "d"]) await page.keyboard.press(k);
+  await page.waitForTimeout(200);
+  await expect(look).toHaveCount(0);
   await expect(html).toHaveAttribute("data-scheme", was ?? "");
-  const depth = () => page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "{}").depth as number | undefined);
-  // From wherever the preset puts it: each `d` a quarter deeper, flat past deep.
-  await page.keyboard.press("d");
-  await expect.poll(depth).not.toBeUndefined();
-  const first = (await depth())!;
-  await page.keyboard.press("d");
-  await expect.poll(depth).toBe(first >= 1 ? 0 : Math.min(1, Math.round(first * 4 + 1) / 4));
+  await expect(page.locator("[data-top] [data-open-look] kbd")).toHaveCount(0);
 });

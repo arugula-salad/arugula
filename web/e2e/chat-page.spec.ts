@@ -278,6 +278,15 @@ test.describe("A room as a pane (Arugula #1522)", () => {
     await expect(pane.locator(".chat-side")).toHaveCount(0);
   });
 
+  test("g a from any page goes to #agents (#1534)", async ({ page }) => {
+    await open(page, `/p/${P}/docs`);
+    await expect(page.locator("main h1")).toHaveText("Docs");
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("g");
+    await page.keyboard.press("a");
+    await expect(page.locator(`[data-room-view="${AGENTS}"]`)).toBeVisible();
+  });
+
   test("g a on a board opens #agents beside it", async ({ page }) => {
     await open(page, `/p/${P}/boards/${PI}`);
     await expect(page.locator(`[data-board-desk="${PI}"]`)).toBeVisible();

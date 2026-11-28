@@ -57,7 +57,8 @@ import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
 import { Panes, type PaneItem } from "../kit/panes/panes";
 import { AgentsPaneKey, roomPaneItems } from "../chat/room-pane";
-import { both, useBindings } from "../keys";
+import { control } from "../controls";
+import { useBindings } from "../keys";
 import { Avatar } from "../kit/avatar";
 import { NeedRow } from "../kit/need-row";
 import { Mark } from "../kit/state-mark";
@@ -232,14 +233,14 @@ export function BoardPanel({
   useBindings(
     desk && shown && view
       ? [
-          { id: "board.tab", label: "A tab of the board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4"), hint: { mac: "1–4", other: "1–4" }, run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
-          // Leaving a maximised pane is Esc's back; the panes' other actions are their buttons (no new keys until #1534's list).
-          { id: "board.pane.back", label: "Back from a maximised pane", group: "panes", keys: both("key:escape"), hint: { mac: "esc", other: "esc" }, when: () => !!max, run: () => setMax(null) },
-          { id: "board.next", label: "The next row", chip: "move", keys: both("key:j"), hint: { mac: "j k", other: "j k" }, run: () => tile(1) },
-          { id: "board.prev", label: "The row before", keys: both("key:k"), run: () => tile(-1) },
-          { id: "board.find", label: "Filter the rows", keys: both("key:f", "key:/"), run: openFind },
-          { id: "board.add", label: "Add a row", keys: both("key:a"), run: () => (setTab(HOME), setAdding(true)) },
-          { id: "board.lead", label: "Write to the lead", chip: "lead", keys: both("key:l"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea, .board-desk-side [data-kit=panel] textarea")?.focus() },
+          { ...control("board.tab"), run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
+          // Leaving a maximised pane is Esc's back; the panes' other actions are their buttons (unbound by default, #1534).
+          { ...control("board.pane.back"), when: () => !!max, run: () => setMax(null) },
+          { ...control("board.next"), run: () => tile(1) },
+          { ...control("board.prev"), run: () => tile(-1) },
+          { ...control("board.find"), run: openFind },
+          { ...control("board.add"), run: () => (setTab(HOME), setAdding(true)) },
+          { ...control("board.lead"), run: () => document.querySelector<HTMLElement>("[data-board-thread] textarea, .board-desk-side [data-kit=panel] textarea")?.focus() },
         ]
       : [],
     [desk, shown, !!view, tabs.map((t) => t.id).join(), id, max],

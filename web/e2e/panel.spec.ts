@@ -167,16 +167,17 @@ test("widths: 420 by default, [ narrower to 320, ] wider to 600, \\ a strip and 
   await expect(panel(page)).toBeVisible();
 });
 
-test("l focuses the panel and h the work beside it", async ({ page }) => {
+test("l focuses the panel; h is unbound by default (#1534)", async ({ page }) => {
   await overview(page);
   await blur(page);
   await page.keyboard.press("l");
   await expect(panel(page)).toBeFocused();
   await page.keyboard.press("h");
-  await expect(page.locator("[data-ov-main]")).toBeFocused();
-  // Every one of the panel's keys is in the table, so `?` lists it.
+  await expect(panel(page)).toBeFocused();
+  // Every one of the panel's bound keys is in the table, so `?` lists it.
   const ids = await page.evaluate(() => (window as unknown as { __arugulaKeys: () => string[] }).__arugulaKeys());
-  for (const id of ["panel-focus", "panel-work", "panel-view", "panel-floor", "panel-narrow", "panel-wide", "panel-collapse", "panel-back"]) expect(ids).toContain(id);
+  for (const id of ["panel-focus", "panel-staff", "panel-view", "panel-floor", "panel-narrow", "panel-wide", "panel-collapse", "panel-back"]) expect(ids).toContain(id);
+  expect(ids).not.toContain("panel-work");
 });
 
 test("v shows the peeked session's pane live in a well, and back to its transcript", async ({ page }) => {
@@ -197,6 +198,23 @@ test("v shows the peeked session's pane live in a well, and back to its transcri
   await page.keyboard.press("v");
   await expect(panel(page).locator("[data-panel-transcript]")).toBeVisible();
   await expect(panel(page).locator("[data-panel-terminal]")).toHaveCount(0);
+});
+
+test("s flips to the chief of staff's tab, and back to the tab before (#1534)", async ({ page }) => {
+  await suiteIsListed(page);
+  const { term } = await overview(page);
+  const host = await suiteHost(page);
+  const key = await keyOf(page, term);
+  await say(page, [{ ...paneItem(host, term), title: "Run the migration?" }]);
+  await row(page, `${host}.${term}:1`).locator("button[aria-expanded]").first().click();
+  await expect(panel(page).locator(`[data-tab="${key}"]`)).toHaveAttribute("aria-selected", "true");
+  await blur(page);
+  await page.keyboard.press("s");
+  await expect(panel(page).locator('[data-tab="chief"]')).toHaveAttribute("aria-selected", "true");
+  await expect(panel(page).locator("[data-panel-head]")).toHaveAttribute("data-panel-head", "Chief of staff");
+  await blur(page);
+  await page.keyboard.press("s");
+  await expect(panel(page).locator(`[data-tab="${key}"]`)).toHaveAttribute("aria-selected", "true");
 });
 
 test("the chief of staff's room, then the floor: f puts its body over the page, and ⤢ or Esc leaves it", async ({ page }, info) => {
@@ -335,7 +353,7 @@ test("a tab's × closes it, and the chief of staff comes to the front", async ({
 });
 
 // Lift 4's "done" (#1480): v6's shots 1, 2, 2b and 13 at 1440×900, in
-// Slate (dark, the default) and Latte (light, the Look key `t`). Written
+// Slate (dark, the default) and Latte (light, from Look). Written
 // to the test's output, never to the repo.
 test.describe("shots", () => {
   /** The page as it is now, in Slate and then Latte, and back to Slate. */
@@ -343,12 +361,16 @@ test.describe("shots", () => {
     await blur(page);
     await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
     await page.screenshot({ path: info.outputPath(`${name}-slate.png`) });
-    await page.keyboard.press("t");
-    await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
+    const theme = async (t: "light" | "dark") => {
+      await page.locator("[data-top] [data-open-look]").click();
+      await page.locator(`[data-theme-choice="${t}"]`).click();
+      await page.keyboard.press("Escape");
+      await expect(page.locator("html")).toHaveAttribute("data-scheme", t);
+    };
+    await theme("light");
     await page.waitForTimeout(150);
     await page.screenshot({ path: info.outputPath(`${name}-latte.png`) });
-    await page.keyboard.press("t");
-    await expect(page.locator("html")).toHaveAttribute("data-scheme", "dark");
+    await theme("dark");
   }
   const ago = (min: number) => Date.now() - min * 60_000;
   /** The rows v6 draws around the one a shot is about. */

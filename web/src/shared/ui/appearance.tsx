@@ -4,7 +4,8 @@
 // settings menu and Go to…): Settings has no Appearance of its own (Lift 7).
 
 import { useEffect, useState } from "preact/hooks";
-import { both, useBindings } from "../keys";
+import { control } from "../controls";
+import { useBindings } from "../keys";
 import { useSubscribe } from "./hooks";
 import { Modal } from "./modal";
 import { appearance, isDefaultAppearance, lookSliders, onAppearance, resetAppearance, setAppearance, setPreset, THEMES } from "../appearance";
@@ -20,16 +21,16 @@ export function openAppearance() {
 }
 
 export function AppearanceLayer() {
-  // Look (Lift 3, #1479): `s` from anywhere but a field or a terminal; the
-  // top bar's Look too. The design reference keeps its own `s` (its Look,
-  // that page only).
+  // Look (Lift 3, #1479): the top bar's Look. It, light/dark and depth
+  // have no key by default (#1534); the design reference keeps its own
+  // `s` (its Look, that page only).
   const away = () => location.pathname !== "/design";
   useBindings(
     [
-      { id: "look", label: "Look", group: "app", context: "everywhere", keys: both("key:s"), when: away, run: () => (shown ? close() : openAppearance()) },
+      { ...control("look"), when: away, run: () => (shown ? close() : openAppearance()) },
       // A step of the theme (light ↔ dark) and of depth (flat → deep, round again).
-      { id: "look.theme", label: "Light or dark", group: "app", context: "everywhere", keys: both("key:t"), when: away, run: () => setAppearance({ theme: themeNow() === "light" ? "dark" : "light" }) },
-      { id: "look.depth", label: "Depth, a step deeper", group: "app", context: "everywhere", keys: both("key:d"), when: away, run: () => setAppearance({ depth: nextDepth(appearance().depth) }) },
+      { ...control("look.theme"), when: away, run: () => setAppearance({ theme: themeNow() === "light" ? "dark" : "light" }) },
+      { ...control("look.depth"), when: away, run: () => setAppearance({ depth: nextDepth(appearance().depth) }) },
     ],
     [],
   );

@@ -48,7 +48,8 @@ import { DocToc, tocOf } from "../../shared/docs/toc";
 import { panelKey, usePanel, type PanelTarget } from "../../shared/kit/panel";
 import { madeBy, modeOf } from "../../shared/docs/docs-mode";
 import { stateOf, useProjectDocs, useProjectImages } from "../../shared/docs/project-docs";
-import { both, useBindings } from "../../shared/keys";
+import { control } from "../../shared/controls";
+import { useBindings } from "../../shared/keys";
 import { Button } from "../../shared/kit/button";
 import { Choice } from "../../shared/kit/field";
 import { Row } from "../../shared/kit/row";
@@ -180,20 +181,17 @@ function DocList({ p, shared }: { p: PlatformProject; shared?: boolean }) {
   };
   useBindings(
     [
-      { id: "docs.next", label: "The next Doc", chip: "move", keys: both("key:j", "ArrowDown"), hint: { mac: "j k", other: "j k" }, run: () => step(1) },
-      { id: "docs.prev", label: "The Doc before", keys: both("key:k", "ArrowUp"), run: () => step(-1) },
+      { ...control("docs.next"), run: () => step(1) },
+      { ...control("docs.prev"), run: () => step(-1) },
       {
-        id: "docs.open",
-        label: "Open the Doc",
-        chip: "open",
-        keys: both("Enter"),
+        ...control("docs.open"),
         when: () => !!now.current.picked && !document.activeElement?.closest("button:not(.k-row-line), a, input, textarea, select"),
         run: () => {
           const d = now.current.rows.find((x) => x.id === now.current.picked);
           if (d) go(docPath(p, d));
         },
       },
-      ...(team ? [{ id: "docs.mine", label: "Mine or all", chip: "mine", keys: both("key:m"), run: () => setShow((s) => (s === "mine" ? "all" : "mine")) }] : []),
+      ...(team ? [{ ...control("docs.mine"), run: () => setShow((s) => (s === "mine" ? "all" : "mine")) }] : []),
     ],
     [p.id, team],
   );

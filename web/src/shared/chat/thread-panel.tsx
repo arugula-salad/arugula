@@ -20,7 +20,8 @@ import { WatchesOn } from "../watches-on";
 import { dropTarget } from "./files-ui";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 import { Kbd } from "../kit/kbd";
-import { both, useBinding } from "../keys";
+import { control } from "../controls";
+import { useBinding } from "../keys";
 import { isAgentRoom } from "./agent-rooms";
 import { composerLine } from "./tags";
 
@@ -57,7 +58,7 @@ export function ThreadPanel({
   const api = usePlatformApi();
   // In place, Esc goes back to the room from anywhere on the page (from the
   // reply box too, below).
-  useBinding(inPlace ? { id: "chat.thread-back", label: "Back to the room", chip: "back", keys: both("key:escape"), when: () => !document.querySelector(".menu, .prompt, [data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick"), run: close } : null, [inPlace, close]);
+  useBinding(inPlace ? { ...control("chat.thread-back"), when: () => !document.querySelector(".menu, .prompt, [data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick"), run: close } : null, [inPlace, close]);
   const tokens = useRoomTokens(room.id);
   const t = store.threads.get(room.id, parent);
   const first = t?.parent ?? null;

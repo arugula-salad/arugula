@@ -210,14 +210,14 @@ test("before the platform keeps layouts (404), a PR from the fold still opens be
   await expect(pr).toHaveCount(0);
 });
 
-test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
+test("Filter (/) shows the find bar; Add row (n) its sheet; the sidebar's adds are in ⋯", async ({ page }) => {
   await openDesk(page);
   await expect(page.locator("[data-board-find]")).toHaveCount(0);
-  await page.keyboard.press("f");
+  await page.keyboard.press("/");
   await expect(page.locator("[data-board-find-input] input, input[data-board-find-input]").first()).toBeFocused();
   await page.keyboard.press("Escape");
   await page.locator("body").click({ position: { x: 5, y: 5 } });
-  await page.keyboard.press("a");
+  await page.keyboard.press("n");
   await expect(page.getByRole("dialog", { name: "Add row" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Add row" })).toHaveCount(0);
@@ -225,18 +225,22 @@ test("Filter (f) shows the find bar; Add row (a) its sheet; the sidebar's adds a
   for (const hook of ["[data-board-add-existing]", "[data-board-doc-add]", "[data-board-add-group]", "[data-board-workers]", "[data-copy-link]"]) await expect(page.locator(`[role=menu] ${hook}`)).toBeVisible();
 });
 
-test("one key, one action (#1535): `l` writes to the lead without the panel's `l`, `f` filters without flooring the panel", async ({ page }) => {
+test("one verb per letter (#1534): `a` writes to the lead, `l` focuses the panel, `f` floors it and `/` filters", async ({ page }) => {
   await openDesk(page);
-  // Here the lead's machine is out of reach, so there's no box to write in: `l` is the board's all the same.
+  // Here the lead's machine is out of reach, so there's no box to write in: `a` is the board's all the same.
   const panel = page.locator(".board-desk-side [data-kit=panel]").first();
   await expect(panel.getByRole("button", { name: "Full screen" })).toBeVisible();
+  await page.keyboard.press("a");
+  await expect(page.getByRole("dialog", { name: "Add row" })).toHaveCount(0);
   await page.keyboard.press("l");
-  // The panel's `l` would focus the panel itself, a frame later.
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-  await expect(panel).not.toBeFocused();
+  await expect(panel).toBeFocused();
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("f");
-  await expect(page.locator("[data-board-find-input] input, input[data-board-find-input]").first()).toBeFocused();
+  await expect(page.locator("[data-panel-floor]")).toHaveCount(1);
+  await page.keyboard.press("f");
   await expect(page.locator("[data-panel-floor]")).toHaveCount(0);
+  await page.keyboard.press("/");
+  await expect(page.locator("[data-board-find-input] input, input[data-board-find-input]").first()).toBeFocused();
 });
 
 test("every project's old Boards addresses still land, untouched: /boards (and ?all=1) on a project's Boards, /boards/:board on its page", async ({ page }) => {

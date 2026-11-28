@@ -11,9 +11,9 @@
 // at a third of a wide screen or a phone (360–480px): put rows in a
 // `NeedList`, and the meta wraps under the title.
 //
-// The keys (`y`, `x`, `D`) are shown on the buttons; the screen's key
+// The keys (`a`, `x`, `D`; #1534) are shown on the buttons; the screen's key
 // table binds them, and presses a row's answer by its `data-answer` (the
-// option's place: 0 is `y` or `D`, 1 is `x`). `extra` holds what a row
+// option's place: 0 is `a` or `D`, 1 is `x`). `extra` holds what a row
 // can do besides answer (Open, where it can't be answered here), and
 // `children` what a place shows under its lines (a diff, a gate's why).
 //
@@ -93,7 +93,7 @@ const DEFAULTS: Record<string, [NeedOption, NeedOption]> = {
   ],
 };
 
-const KEYS = ["y", "x"];
+const KEYS = ["a", "x"];
 
 /** "asks you", "waits on you", "asks Jake". */
 export function who(n: Pick<Need, "kind" | "for">): string {
