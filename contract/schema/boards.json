@@ -820,6 +820,17 @@
             "null"
           ]
         },
+        "reach": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeadReach"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether a post on the board's thread reaches it, when that's known\nnot to: `None` means reachable, or not known (Arugula #1492)."
+        },
         "session": {
           "type": "string"
         }
@@ -1516,6 +1527,21 @@
         }
       },
       "type": "object"
+    },
+    "LeadReach": {
+      "description": "Why a board's lead can't be reached (Arugula #1492).",
+      "oneOf": [
+        {
+          "const": "offline",
+          "description": "Its machine is offline.",
+          "type": "string"
+        },
+        {
+          "const": "lost",
+          "description": "The last delivery to it found no session.",
+          "type": "string"
+        }
+      ]
     },
     "LeftQueue": {
       "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",

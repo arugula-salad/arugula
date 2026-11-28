@@ -959,6 +959,33 @@ pub struct BoardLead {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub active: Option<bool>,
+    /// Whether a post on the board's thread reaches it, when that's known
+    /// not to: `None` means reachable, or not known (Arugula #1492).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub reach: Option<LeadReach>,
+}
+
+/// Why a board's lead can't be reached (Arugula #1492).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum LeadReach {
+    /// Its machine is offline.
+    Offline,
+    /// The last delivery to it found no session.
+    Lost,
+}
+
+impl LeadReach {
+    /// The words after the lead's name, on a board's text and its page.
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::Offline => "offline",
+            Self::Lost => "not reachable: take the lead with board_write lead_board",
+        }
+    }
 }
 
 /// The rooms a board's agents talk in (Arugula #1536): the board's channel
@@ -2848,7 +2875,10 @@ pub fn render(view: &BoardView) -> String {
             Some(false) => " · idle",
             None => "",
         };
-        out += &format!("{}\n", fit(&format!("Led by {} on {}{state}", l.session, machine_label(l)), TEXT_WIDTH));
+        // The reach's words are the way out, so they aren't cut to the width.
+        let reach = l.reach.map_or(String::new(), |r| format!(" ({})", r.words()));
+        out +=
+            &format!("{}{reach}\n", fit(&format!("Led by {} on {}{state}", l.session, machine_label(l)), TEXT_WIDTH));
     }
     if let Some(r) = &view.rooms {
         out += &rooms_text(&b.title, r);
@@ -3461,11 +3491,20 @@ mod tests {
             pane: None,
             at: 5,
             active: None,
+            reach: None,
         });
         let text = render(&v);
         assert!(text.starts_with("Goal: Ship it\nLed by ux on geek\nNext "), "{text}");
         v.board.lead.as_mut().unwrap().machine_name.clear();
         assert!(render(&v).contains("Led by ux on m1\n"));
+        for (reach, words) in [
+            (LeadReach::Offline, "Led by ux on m1 (offline)\n"),
+            (LeadReach::Lost, "Led by ux on m1 (not reachable: take the lead with board_write lead_board)\n"),
+        ] {
+            v.board.lead.as_mut().unwrap().reach = Some(reach);
+            assert!(render(&v).contains(words), "{}", render(&v));
+        }
+        v.board.lead.as_mut().unwrap().reach = None;
         v.board.lead = None;
         v.board.goal.clear();
         assert_eq!(render(&v), plain);
