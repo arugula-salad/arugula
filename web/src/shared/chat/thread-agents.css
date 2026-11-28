@@ -82,7 +82,7 @@
   border-radius: 3px;
   background: var(--card-raised);
   color: var(--ink-dim);
-  font: 700 var(--text-label)/1 var(--font-mono);
+  font: 700 var(--text-label)/1 var(--font-meta);
   letter-spacing: 0;
 }
 
@@ -96,7 +96,7 @@
 
 .thread-agent-now {
   color: var(--ink-dim);
-  font: 500 var(--text-meta)/1.5 var(--font-mono);
+  font: 500 var(--text-meta)/1.5 var(--font-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -241,7 +241,7 @@
   border-radius: 8px;
   background: var(--card-raised);
   color: var(--ink-dim);
-  font: 500 var(--text-label)/1.6 var(--font-mono);
+  font: 500 var(--text-label)/1.6 var(--font-meta);
 }
 
 .thread-seen span .icon {

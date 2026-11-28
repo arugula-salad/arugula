@@ -171,7 +171,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-4);
-  font: var(--text-meta)/1.4 var(--font-mono);
+  font: var(--text-meta)/1.4 var(--font-meta);
   color: var(--ink-dim);
 }
 
@@ -331,7 +331,7 @@
 }
 
 .item-tab-count {
-  font: var(--text-label) var(--font-mono);
+  font: var(--text-label) var(--font-meta);
   opacity: 0.85;
 }
 

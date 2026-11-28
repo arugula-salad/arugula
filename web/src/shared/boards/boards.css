@@ -420,7 +420,7 @@
 }
 
 .board-ptr {
-  font-family: var(--font-mono);
+  font-family: var(--font-id);
   font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
@@ -477,7 +477,7 @@
 }
 
 .board-fact {
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: var(--text-label);
   overflow-wrap: anywhere;
 }
@@ -488,14 +488,14 @@
   flex-wrap: wrap;
   gap: 6px 18px;
   margin: 6px 0;
-  font: 500 var(--text-meta)/1.2 var(--font-mono);
+  font: 500 var(--text-meta)/1.2 var(--font-meta);
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
 
 .board .sw-stats b {
   display: block;
-  font: 700 var(--text-xl)/1 var(--font-mono);
+  font: 700 var(--text-xl)/1 var(--font-meta);
   color: var(--ink);
 }
 
@@ -741,7 +741,7 @@
 
 .board-docs-head {
   margin: 0 0 4px;
-  font: 600 var(--text-label)/1.4 var(--font-mono);
+  font: 600 var(--text-label)/1.4 var(--font-meta);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--ink-dim);
@@ -769,7 +769,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ink);
-  font: var(--text-label)/1.5 var(--font-mono);
+  font: var(--text-label)/1.5 var(--font-meta);
   text-decoration: none;
 }
 

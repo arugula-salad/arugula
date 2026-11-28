@@ -92,7 +92,7 @@
   width: 116px;
   padding: 0 4px;
   color: var(--ink);
-  font: 500 var(--t-field) var(--font-mono);
+  font: 500 var(--t-field) var(--font-meta);
 }
 
 .time-range > input::-webkit-calendar-picker-indicator {
@@ -135,7 +135,7 @@
   width: 100%;
   max-width: 520px;
   color: var(--ink-dim);
-  font: 500 var(--text-label) / 14px var(--font-mono);
+  font: 500 var(--text-label) / 14px var(--font-meta);
 }
 
 .week-caption {

@@ -123,7 +123,7 @@ select.field {
    color-scheme in either palette: mid-grey reads on both. */
 :where(input[type="time"]) {
   padding-right: 6px;
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-size: var(--text-meta);
 }
 

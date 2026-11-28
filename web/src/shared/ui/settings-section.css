@@ -60,7 +60,7 @@
 
 :is(.platform, .settings-place) .settings-part > h3 > .dim {
   margin-left: 6px;
-  font: 600 var(--text-meta)/1 var(--font-mono);
+  font: 600 var(--text-meta)/1 var(--font-meta);
   font-variant-numeric: tabular-nums;
 }
 

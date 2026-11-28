@@ -35,7 +35,7 @@
 }
 
 .pick-group-n {
-  font: 500 var(--text-label)/1.3 var(--font-mono);
+  font: 500 var(--text-label)/1.3 var(--font-meta);
   letter-spacing: 0;
 }
 
@@ -135,7 +135,7 @@
 }
 
 .count-list-n {
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
 }
 
 .count-list-note {
@@ -164,7 +164,7 @@
 .count-list-meta {
   flex: none;
   color: var(--ink-dim);
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
 }
 
 .count-list .pick-more {

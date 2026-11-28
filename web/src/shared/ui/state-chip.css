@@ -19,7 +19,7 @@
   /* Over the surface, not what's behind: a chip on a selected row keeps its contrast. */
   background: color-mix(in srgb, var(--c) 12%, var(--section));
   color: var(--ct);
-  font: 600 var(--text-label)/18px var(--font-mono);
+  font: 600 var(--text-label)/18px var(--font-meta);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
@@ -118,7 +118,7 @@ button.chip:is(:hover, :focus-visible) {
   border-radius: var(--chip-radius);
   background: var(--card-raised);
   color: var(--ink);
-  font: 700 var(--text-label)/1 var(--font-mono);
+  font: 700 var(--text-label)/1 var(--font-meta);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -205,13 +205,13 @@ button.chip-object:disabled {
 
 .chip-object-id {
   flex: none;
-  font: 600 var(--text-label)/1.4 var(--font-mono);
+  font: 600 var(--text-label)/1.4 var(--font-id);
   color: var(--ink);
 }
 
 .chip-object-fact {
   flex: none;
-  font: 600 var(--text-label)/1.4 var(--font-mono);
+  font: 600 var(--text-label)/1.4 var(--font-meta);
   color: var(--ct);
 }
 
