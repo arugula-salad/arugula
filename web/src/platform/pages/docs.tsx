@@ -41,6 +41,7 @@ import { DocBlock } from "../../shared/docs/doc-render";
 import { DocComments } from "../../shared/docs/doc-comments";
 import { reachOf } from "../../shared/docs/doc-reach";
 import { chiefProject } from "../../shared/chief-of-staff";
+import { agentName } from "../../shared/agent-name";
 import { LayoutMark } from "../../shared/docs/layout-mark";
 import { docLayout } from "../../shared/docs/layout";
 import { DocToc, tocOf } from "../../shared/docs/toc";
@@ -452,7 +453,7 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
         {view && <DocToc sections={docLayout(view.doc.layout) === "doc" ? tocOf(view.sections) : []} reader={reader} linked={linked} />}
       </div>
       {AgentPanel && (author || byChief) && (
-        <AgentPanel project={project} targets={author ? [author] : []} current={tab?.doc === doc ? tab.key : author ? panelKey(author) : undefined} onPick={(key) => setTab({ doc, key })} folded />
+        <AgentPanel project={project} targets={author ? [author] : []} current={tab?.doc === doc ? tab.key : author ? panelKey(author) : undefined} onPick={(key) => setTab({ doc, key })} chiefIcon folded />
       )}
     </div>
   );
@@ -460,10 +461,11 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
 
 /** The agent that wrote a Doc, as the panel's tab: its session on its
  * machine, or an agent session on a Cloud workspace (`ses_…`, as itself);
- * none when it's unknown which session it was. */
+ * none when it's unknown which session it was. Named, it's the page's own
+ * tab beside ✦, as a board's is (Arugula #1561). */
 function authorOf(a: ChatAgent): PanelTarget | null {
   const session = a.session ?? (a.machine.startsWith("ses_") ? a.machine : undefined);
-  return session ? { kind: "agent", role: "agent", machine: a.machine, session } : null;
+  return session ? { kind: "agent", role: "agent", machine: a.machine, session, label: agentName({ session, machine: a.machine_name }) } : null;
 }
 
 /** The Doc with its comments in the margin (#1258), once it's read. */
