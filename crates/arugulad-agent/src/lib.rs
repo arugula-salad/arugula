@@ -498,6 +498,13 @@ struct Inner {
     subagents: crate::conversations::spend::Subagents,
     /// The session's `configOptions` (for choosing a model).
     config_options: Value,
+    /// The permission modes the session offers (`modes.availableModes`'
+    /// ids), from `session/new`, `load` and `resume`.
+    modes: Vec<String>,
+    /// Why the permission mode asked for isn't the one it's in (Arugula
+    /// #1584): a warning on the block, not an error. A turn that ends is
+    /// done whatever mode it ran in.
+    mode_warning: Option<String>,
     /// The model the agent says it answers with (claude-agent-acp's
     /// `usage_update` `_meta` `_claude/model`), once it has (Arugula #215).
     served_model: Option<String>,
@@ -801,6 +808,8 @@ impl Inner {
             live_ctx_stamp: None,
             subagents: Default::default(),
             config_options: Value::Null,
+            modes: vec![],
+            mode_warning: None,
             served_model: None,
             engine_window: None,
             model_settled: false,
@@ -978,6 +987,26 @@ impl Inner {
         self.out(json!({ "jsonrpc": "2.0", "method": method, "params": params }));
     }
 
+    /// #163: put the session in the permission mode it was asked for.
+    /// Again on each reopen: a resumed session starts in its default.
+    /// M76: else the mode a recipe asks for.
+    fn put_in_mode(&mut self) {
+        let mode = self
+            .cfg
+            .def
+            .permission_mode
+            .clone()
+            .or_else(|| self.worn.as_ref().and_then(|w| w.permission_mode()).map(str::to_owned));
+        let Some(mode) = mode else { return };
+        match agent_mode(self.cfg.def.agent, &mode, &self.modes) {
+            Ok(id) => {
+                let session = self.session();
+                self.request("session/set_mode", json!({ "sessionId": session, "modeId": id }));
+            }
+            Err(why) => self.note(json!({ "e": "mode_unavailable", "mode": mode, "why": why })),
+        }
+    }
+
     fn session(&self) -> Value {
         self.cfg.session_id.clone().map(Value::String).unwrap_or(Value::Null)
     }
@@ -1019,6 +1048,16 @@ impl Inner {
                 self.t.note("The turn ended without Claude Code saying so; Arugula closed it", at);
             }
             "login" => self.login = e["login"].as_str().map(str::to_owned),
+            // #1584: a mode this agent hasn't, said and not sent.
+            "mode_unavailable" => {
+                let text = format!(
+                    "Permission mode {} isn't available for this agent: {}",
+                    e["mode"].as_str().unwrap_or("?"),
+                    e["why"].as_str().unwrap_or("it didn't offer it"),
+                );
+                self.t.note(text.clone(), at);
+                self.mode_warning = Some(text);
+            }
             "spawn" => {
                 // A new server: nothing outstanding carries over. (An old
                 // Managoat block's turn wasn't cut: it went on there.)
@@ -1037,6 +1076,7 @@ impl Inner {
                 self.replay = None;
                 self.status = Status::Starting;
                 self.error = None;
+                self.mode_warning = None;
                 self.adapter = None;
                 let just_continued =
                     matches!(self.t.entries.last(), Some(Entry::Note { text, .. }) if text == "Continued in Arugula");
@@ -1299,11 +1339,13 @@ impl Inner {
                     }
                     (Purpose::New, None) => {
                         self.config_options = r["configOptions"].clone();
+                        self.modes = mode_ids(r);
                         self.cfg.session_id = r["sessionId"].as_str().map(str::to_owned);
                         fx.push(Effect::SessionOpen { fresh: true });
                     }
                     (Purpose::Load { merge }, None) => {
                         self.config_options = r["configOptions"].clone();
+                        self.modes = mode_ids(r);
                         if let Some(mut replay) = self.replay.take() {
                             // #590: the prompt as the person wrote it.
                             chant::strip_notes(&mut replay);
@@ -1317,6 +1359,7 @@ impl Inner {
                     }
                     (Purpose::Resume, None) => {
                         self.config_options = r["configOptions"].clone();
+                        self.modes = mode_ids(r);
                         fx.push(Effect::SessionOpen { fresh: false });
                     }
                     (Purpose::Fork, None) => {
@@ -1391,8 +1434,11 @@ impl Inner {
                         self.t.note(format!("Couldn't switch the model: {e}"), at);
                     }
                     (Purpose::SetMode(mode), Some(e)) => {
-                        self.t.note(format!("Couldn't switch to permission mode {mode}: {e}"), at);
-                        self.error = Some(format!("permission mode {mode}: {e}"));
+                        // A warning, not `error`: that reads as needs_input
+                        // after every turn that follows (Arugula #1584).
+                        let text = format!("Couldn't switch to permission mode {mode}: {e}");
+                        self.t.note(text.clone(), at);
+                        self.mode_warning = Some(text);
                     }
                     // The agent stops, saying why (its exit's note).
                     (Purpose::Init | Purpose::New, Some(e)) => {
@@ -1896,6 +1942,8 @@ impl Inner {
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
+        // #1584: why the permission mode asked for isn't the one it's in.
+        state["permission_mode_warning"] = json!(self.mode_warning);
         state["model"] = model;
         // #397: the model, the window's fill and the compactions, from the
         // transcript.
@@ -2923,18 +2971,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
                 );
             }
             // #163: after the model, which decides whether `auto` is there.
-            // Again on each reopen: a resumed session starts in its default.
-            // M76: else the mode a recipe asks for.
-            let mode = g
-                .cfg
-                .def
-                .permission_mode
-                .clone()
-                .or_else(|| g.worn.as_ref().and_then(|w| w.permission_mode()).map(str::to_owned));
-            if let Some(mode) = mode {
-                let session = g.session();
-                g.request("session/set_mode", json!({ "sessionId": session, "modeId": mode }));
-            }
+            g.put_in_mode();
             if g.status == Status::Starting {
                 g.status = Status::Ready;
             }
@@ -3045,6 +3082,42 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             }
         }
         Effect::Retry(_) => {}
+    }
+}
+
+/// The ids of the permission modes a session's result offers.
+fn mode_ids(result: &Value) -> Vec<String> {
+    let modes = result["modes"]["availableModes"].as_array().map(Vec::as_slice).unwrap_or_default();
+    modes.iter().filter_map(|m| m["id"].as_str().map(str::to_owned)).collect()
+}
+
+/// The mode id to send the agent for the permission mode Arugula was asked
+/// for (Arugula #1584). Claude Code's names go through as they are. Codex
+/// has modes of its own (codex-acp 2.1.0: `read-only`, `workspace-write`,
+/// `agent`, `agent-full-access`), so `auto` is the one that asks least and
+/// keeps its sandbox: `agent`, which asks only for what its reviewer finds
+/// unsafe. `auto` is never `agent-full-access`: a grant from here doesn't
+/// lift a restriction of Codex's. `full-access`, which only a person or a
+/// hosted session asks for (`start_agent` refuses it, #163), is Codex's
+/// `agent-full-access`. A mode it doesn't offer isn't sent blind: the block
+/// says so.
+fn agent_mode(agent: Kind, mode: &str, offered: &[String]) -> Result<String, String> {
+    if agent != Kind::Codex {
+        return Ok(mode.to_owned());
+    }
+    let id = match mode {
+        "auto" => "agent",
+        // What a hosted session asks for (its box is the limit): the one
+        // way here to Codex's full access, past the refusal for an agent.
+        "full-access" => "agent-full-access",
+        _ => mode,
+    };
+    if offered.iter().any(|m| m == id) {
+        Ok(id.to_owned())
+    } else if offered.is_empty() {
+        Err("it offered no modes".to_owned())
+    } else {
+        Err(format!("it offers {}", offered.join(", ")))
     }
 }
 

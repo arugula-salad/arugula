@@ -476,8 +476,11 @@ pub struct StartAgentArgs {
     #[serde(default)]
     pub allow: Vec<String>,
     /// The permission mode its session starts in: `default`, `acceptEdits`,
-    /// `plan`, `auto` (Claude Code's), or the agent's own. Not one that
-    /// skips every check: the user picks that.
+    /// `plan`, `auto` (Claude Code's), or the agent's own. Codex's are
+    /// `read-only` and `agent`; `auto` there is `agent`,
+    /// which keeps Codex's own limits. A mode the agent doesn't offer is said
+    /// on its block, not sent. Not one that skips every check: the user
+    /// picks that.
     #[serde(default)]
     pub permission_mode: Option<String>,
     /// For claude: the user's Claude Code settings (allow and deny lists,
@@ -1177,7 +1180,9 @@ pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
         results::BlockOffer {
             kind: "agent".into(),
             open: "start_agent".into(),
-            about: "An agent (Claude Code, Codex, any ACP agent) whose approvals and questions come to its block."
+            about: "An agent (Claude Code, Codex, any ACP agent) whose approvals and questions come to its block. \
+                    permission_mode: Claude Code takes default, acceptEdits, plan and auto; Codex takes read-only and \
+                    agent, and auto is its agent (Codex's own limits stay on)."
                 .into(),
         },
         results::BlockOffer {

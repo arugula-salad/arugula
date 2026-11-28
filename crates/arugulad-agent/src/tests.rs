@@ -831,3 +831,130 @@ fn the_adapters_window_from_a_result_is_the_sessions() {
     g.on_in(&u(result), 2200);
     assert_eq!(g.engine_window, Some(1_000_000));
 }
+
+/// codex-acp 2.1.0's `modes.availableModes`, as `session/new` answers.
+const CODEX_MODES: [&str; 4] = ["read-only", "workspace-write", "agent", "agent-full-access"];
+
+/// A Codex block asked for `mode`, its session open with `offered` as its
+/// modes, and the mode put on, as `Effect::SessionOpen` does it.
+fn codex_open(mode: &str, offered: &[&str]) -> Inner {
+    let cfg: Config = serde_json::from_value(json!({ "agent": "codex", "permission_mode": mode })).unwrap();
+    let mut g = Inner::new(cfg, None);
+    g.on_note(&json!({ "e": "spawn", "argv": ["codex-acp"] }), 1000);
+    g.on_out(&json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }), 1000);
+    g.on_in(
+        &json!({ "jsonrpc": "2.0", "id": 1, "result": { "protocolVersion": 1, "agentCapabilities": {}, "agentInfo": { "name": "@agentclientprotocol/codex-acp" } } }),
+        1001,
+    );
+    g.on_out(&json!({ "jsonrpc": "2.0", "id": 2, "method": "session/new", "params": { "cwd": "/" } }), 1002);
+    let modes: Vec<Value> = offered.iter().map(|id| json!({ "id": id, "name": id })).collect();
+    g.on_in(
+        &json!({ "jsonrpc": "2.0", "id": 2, "result": { "sessionId": "s1", "modes": { "availableModes": modes, "currentModeId": "agent" } } }),
+        1003,
+    );
+    g.put_in_mode();
+    g.status = Status::Ready;
+    g
+}
+
+/// The mode ids that went out as `session/set_mode`.
+fn asked_modes(g: &Inner) -> Vec<String> {
+    let mut asked: Vec<_> =
+        g.ours.values().filter_map(|p| if let Purpose::SetMode(m) = p { Some(m.clone()) } else { None }).collect();
+    asked.sort();
+    asked
+}
+
+/// One turn, to its end.
+fn turn(g: &mut Inner) {
+    let id = g.next_id;
+    g.on_out(&json!({ "jsonrpc": "2.0", "id": id, "method": "session/prompt", "params": { "sessionId": "s1", "prompt": [{ "type": "text", "text": "hi" }] } }), 2000);
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": id, "result": { "stopReason": "end_turn" } }), 2100);
+}
+
+#[test]
+fn auto_goes_to_codex_as_its_own_mode_and_the_turn_ends_done() {
+    // #1584: `auto` isn't one of codex-acp's modes; `agent` is the one that
+    // asks least with its sandbox on. The frame that went out says so.
+    let mut g = codex_open("auto", &CODEX_MODES);
+    assert_eq!(asked_modes(&g), ["agent"]);
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": {} }), 1004);
+    assert_eq!(g.attention().0, Attention::Idle, "nothing has run yet");
+    turn(&mut g);
+    assert_eq!(g.attention().0, Attention::Done);
+    assert!(g.error.is_none() && g.mode_warning.is_none());
+}
+
+#[test]
+fn a_refused_mode_is_a_warning_and_a_finished_turn_still_reads_done() {
+    // #1584: the refusal used to set `error`, and every turn after it read
+    // needs_input.
+    let mut g = codex_open("auto", &CODEX_MODES);
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "error": { "code": -32602, "message": "Invalid params" } }), 1004);
+    assert!(g.error.is_none());
+    assert_eq!(g.mode_warning.as_deref(), Some("Couldn't switch to permission mode agent: Invalid params"));
+    assert!(
+        matches!(g.t.entries.last(), Some(Entry::Note { text, .. }) if text == "Couldn't switch to permission mode agent: Invalid params")
+    );
+    assert_eq!(g.attention().0, Attention::Idle, "not needs_input before the first turn");
+    turn(&mut g);
+    assert_eq!(g.attention().0, Attention::Done);
+}
+
+#[test]
+fn a_mode_codex_doesnt_offer_is_said_and_not_sent() {
+    let g = codex_open("auto", &["read-only", "workspace-write"]);
+    assert_eq!(asked_modes(&g), Vec::<String>::new(), "no blind set_mode");
+    let said = "Permission mode auto isn't available for this agent: it offers read-only, workspace-write";
+    assert_eq!(g.mode_warning.as_deref(), Some(said));
+    assert!(matches!(g.t.entries.last(), Some(Entry::Note { text, .. }) if text == said));
+    assert_eq!(g.attention().0, Attention::Idle);
+    // And it's still there when the log is replayed.
+    let mut again = Inner::new(Config::default(), None);
+    again.on_note(&json!({ "e": "mode_unavailable", "mode": "auto", "why": "it offered no modes" }), 1);
+    assert_eq!(
+        again.mode_warning.as_deref(),
+        Some("Permission mode auto isn't available for this agent: it offered no modes")
+    );
+}
+
+#[test]
+fn auto_never_becomes_codex_s_full_access() {
+    // The grant from here never lifts Codex's own sandbox, whatever it offers.
+    let all: Vec<String> = CODEX_MODES.iter().map(|m| (*m).to_owned()).collect();
+    assert_eq!(agent_mode(Kind::Codex, "auto", &all).as_deref(), Ok("agent"));
+    let no_agent: Vec<String> = ["read-only", "workspace-write", "agent-full-access"].map(String::from).to_vec();
+    assert!(agent_mode(Kind::Codex, "auto", &no_agent).is_err());
+    let g = codex_open("auto", &["read-only", "workspace-write", "agent-full-access"]);
+    assert_eq!(asked_modes(&g), Vec::<String>::new());
+}
+
+#[test]
+fn a_hosted_codex_session_s_full_access_is_codex_s_own() {
+    // aru-115: a hosted session asks Codex for `full-access`; codex-acp
+    // offers it as `agent-full-access`. Through the state machine, as sent.
+    let g = codex_open("full-access", &CODEX_MODES);
+    assert_eq!(asked_modes(&g), ["agent-full-access"]);
+    // Not offered: said, not sent.
+    let g = codex_open("full-access", &["read-only", "agent"]);
+    assert_eq!(asked_modes(&g), Vec::<String>::new());
+    assert!(g.mode_warning.is_some());
+}
+
+#[test]
+fn claude_s_modes_go_through_as_they_are() {
+    assert_eq!(agent_mode(Kind::Claude, "auto", &[]).as_deref(), Ok("auto"));
+    assert_eq!(agent_mode(Kind::Claude, "yolo", &["default".into()]).as_deref(), Ok("yolo"));
+    assert_eq!(agent_mode(Kind::Acp, "auto", &[]).as_deref(), Ok("auto"));
+}
+
+#[test]
+fn a_codex_turn_with_no_mode_asked_for_ends_done() {
+    let mut g = codex_open("auto", &CODEX_MODES);
+    g.cfg.def.permission_mode = None;
+    g.ours.clear();
+    g.put_in_mode();
+    assert_eq!(asked_modes(&g), Vec::<String>::new());
+    turn(&mut g);
+    assert_eq!(g.attention().0, Attention::Done);
+}

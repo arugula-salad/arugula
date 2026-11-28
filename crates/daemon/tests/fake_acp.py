@@ -259,7 +259,10 @@ LAYOUT = {"question": "Which layout?", "header": "Layout", "multiSelect": False,
     {"label": "Top bar", "description": "Navigation across the top",
      "preview": "+---------------------+\n| Nav                 |\n+---------------------+\n| Content Area        |"}]}
 # claude-agent-acp's permission modes, then codex-acp's.
-MODES = ("default", "acceptEdits", "plan", "auto", "bypassPermissions", "read-only", "full-access")
+CODEX_MODES = ("read-only", "workspace-write", "agent", "agent-full-access")
+MODES = ("default", "acceptEdits", "plan", "auto", "bypassPermissions") + CODEX_MODES
+# What session/new says it offers, as codex-acp does (Arugula #1584).
+MODES_STATE = {"availableModes": [{"id": m, "name": m} for m in CODEX_MODES], "currentModeId": "agent"}
 QUESTIONS = {"ask": [COLOUR, FRUIT, PET], "ask one": [COLOUR], "ask two": [FRUIT, PET], "ask preview": [LAYOUT]}
 
 
@@ -910,7 +913,7 @@ def handle(m):
         save(sid, {"updates": [], "cwd": p.get("cwd"), "mcp": p.get("mcpServers"), "meta": p.get("_meta")})
         with open(os.path.join(DIR, f"mcp-{sid}.json"), "w") as f:
             json.dump(p.get("mcpServers"), f)
-        send({"id": mid, "result": {"sessionId": sid}})
+        send({"id": mid, "result": {"sessionId": sid, "modes": MODES_STATE}})
     elif method in ("session/load", "session/resume"):
         s = load(p.get("sessionId", ""))
         if s is None:
@@ -933,7 +936,7 @@ def handle(m):
                 time.sleep(ms / 1000)
             for u in s["updates"]:
                 send({"method": "session/update", "params": {"sessionId": p["sessionId"], "update": u}})
-        send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})
+        send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS, "modes": MODES_STATE}})
     elif method == "session/fork":
         s = load(p.get("sessionId", ""))
         if s is None:

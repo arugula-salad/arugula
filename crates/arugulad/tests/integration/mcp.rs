@@ -883,8 +883,11 @@ fn one_agent_starts_another_and_answers_its_question() {
             "allow": ["Bash"], "permission_mode": mode });
         agent_mcp(&d, a, "start_agent", args)
     };
-    let e = start("bypassPermissions").unwrap_err();
-    assert!(e.contains("only the user"), "{e}");
+    // Codex's own name for it too (Arugula #1584), not only Claude Code's.
+    for mode in ["bypassPermissions", "full-access", "agent-full-access"] {
+        let e = start(mode).unwrap_err();
+        assert!(e.contains("only the user"), "{mode}: {e}");
+    }
     let c = start("auto").unwrap()["block"].as_u64().unwrap();
     d.wait(c, "idle");
     let s = d.state(c);
