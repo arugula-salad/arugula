@@ -67,7 +67,7 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
 
 /** The narrowest a pane gets before the next one stacks under it: at 1440, the board and two panes beside it, the third stacked. */
 const PANE_MIN = 280;
@@ -1511,7 +1511,9 @@ function RowForm({ project, row, save, done }: { project: string; row: BoardRow 
         <ul class="board-pick-list" role="listbox" id={listId} aria-label="Work items" hidden={!found.length} data-board-pick-list>
           {found.map((w, i) => (
             <li key={w.pointer.kind + ("id" in w.pointer ? w.pointer.id : "")} id={optionId(i)} role="option" aria-selected={i === active} class={i === active ? "active" : undefined} data-board-pick={i} onMouseDown={(e) => (e.preventDefault(), pick(w))}>
-              <span class="board-ptr">{workLabel(w)}</span>
+              <span class="board-ptr" title={workLabel(w)}>
+                {rowRef(workLabel(w))}
+              </span>
               <span class="board-pick-title">{w.title}</span>
               <StateChip tone="muted">{w.state}</StateChip>
             </li>

@@ -418,6 +418,11 @@ export function workLabel(w: Pick<BoardWorkItem, "source" | "repo" | "identifier
   return w.repo ? `${w.repo}#${w.number}` : `#${w.number}`;
 }
 
+/** A ref as a row's id column shows it: `cloud#310` for
+ * `arugula-salad/cloud#310`, the owner dropped (a row's item is from one of
+ * the project's own linked repos); the full ref goes in its tooltip. */
+export const rowRef = (ref: string) => ref.replace(/^[\w.-]+\/(?=[\w.-]+#\d+$)/, "");
+
 /** Call `fn` once, `ms` after the last call. `cancel` drops a pending one. */
 export function debounced<A extends unknown[]>(fn: (...a: A) => void, ms: number): ((...a: A) => void) & { cancel: () => void } {
   let t: ReturnType<typeof setTimeout> | undefined;

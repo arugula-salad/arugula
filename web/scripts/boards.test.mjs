@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, checkTone, checkWord, groupMove, liveTone, prsOf, assigneesLine, chipOf, counted, debounced, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, rowRef, workChip, onIssueChip, boardGroup, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, liveSessions, LANES, openPrs, prWord, redLine, deskLine, progressWords, tileState, tileMeta, needsFirst, boardItems, itemFor, itemNeed, itemWord, forTeammateFold, answeredWords } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -207,6 +207,12 @@ test("a result is labelled by its source", () => {
   assert.equal(workLabel({ source: "github", repo: "acme/app", number: 7, title: "Fix" }), "acme/app#7");
   assert.equal(workLabel({ source: "native", repo: null, number: 3, title: "Fix" }), "#3");
   assert.equal(workLabel({ source: "run", repo: null, number: null, title: "manual run" }), "manual run");
+});
+
+test("a row's id column drops a repo's owner, and leaves the rest (#1562)", () => {
+  assert.equal(rowRef("arugula-salad/cloud#310"), "cloud#310");
+  assert.equal(rowRef("arugula-salad/arugula#2981"), "arugula#2981");
+  for (const same of ["#1551", "ARUGU-12", "manual run", "a/b c#1"]) assert.equal(rowRef(same), same);
 });
 
 test("the arrow keys step through the results and wrap", () => {
