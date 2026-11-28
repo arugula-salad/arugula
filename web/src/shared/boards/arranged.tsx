@@ -23,12 +23,12 @@ export const boardPlace = (id: string) => `board:${id}`;
 /** A board's default panes' names: each group's id (`zon_…`), and `none` for its rows in no group; `lanes` for a board with no groups. */
 export const LANES = "lanes";
 
-/** Who opened a pane or changed the layout, as its title row says it: the lead, or you. */
-export const byWord = (by: { machine?: string | null }) => (by.machine ? "lead" : "you");
+/** Who opened a pane or changed the layout, as its title row says it: the place's agent (the board's lead, the Overview's chief of staff), or you. */
+export const byWord = (by: { machine?: string | null }, agent = "lead") => (by.machine ? agent : "you");
 
 /** A pane's title row's words after its title: who opened it, and what it stands in place of. */
-export function paneMeta(p: LayoutPane, defaultTitle: (name: string) => string): string {
-  return [p.in_place_of ? `in place of ${defaultTitle(p.in_place_of)}` : null, byWord(p.opened_by), p.offline && p.machine ? `${p.machine} offline` : null].filter(Boolean).join(" · ");
+export function paneMeta(p: LayoutPane, defaultTitle: (name: string) => string, agent?: string): string {
+  return [p.in_place_of ? `in place of ${defaultTitle(p.in_place_of)}` : null, byWord(p.opened_by, agent), p.offline && p.machine ? `${p.machine} offline` : null].filter(Boolean).join(" · ");
 }
 
 export function paneIcon(kind: LayoutPane["kind"]): ComponentChildren {
@@ -99,13 +99,13 @@ export function PromptAsk({ p }: { p: LayoutPane }) {
 /** "2:24 PM". */
 const timeOfDay = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 
-/** "changed by lead · 2:24 PM · Reset", while the home tab differs from the board's default. */
-export function ChangedLine({ layout, reset }: { layout: PlaceLayout; reset: () => void }) {
+/** "changed by lead · 2:24 PM · Reset", while the home tab differs from the place's default. */
+export function ChangedLine({ layout, reset, agent }: { layout: PlaceLayout; reset: () => void; agent?: string }) {
   const c = layout.changed;
   if (!c) return null;
   return (
-    <span class="m-meta board-changed" data-board-changed={byWord(c.by)}>
-      changed by {byWord(c.by)} · {timeOfDay(c.at)} ·{" "}
+    <span class="m-meta board-changed" data-board-changed={byWord(c.by, agent)}>
+      changed by {byWord(c.by, agent)} · {timeOfDay(c.at)} ·{" "}
       <button type="button" class="link" data-board-reset onClick={reset}>
         Reset
       </button>
@@ -122,16 +122,16 @@ export function layoutItems(layout: PlaceLayout, reset: () => void, reopen: (pan
   ];
 }
 
-/** A tab's title: the board's for the home tab. */
-export const tabTitle = (t: LayoutTab, board: string) => (t.id === HOME ? board : t.title || t.panes[0]?.title || "Tab");
+/** A tab's title: the place's for the home tab. */
+export const tabTitle = (t: LayoutTab, place: string) => (t.id === HOME ? place : t.title || t.panes[0]?.title || "Tab");
 
-/** The board's `for_you` items: what an agent put in a tab for you, waiting, by its tab. */
+/** A place's `for_you` items: what an agent put in a tab for you, waiting, by its tab. */
 export function forYou(items: InboxItem[], place: string): InboxItem[] {
   return items.filter((i) => i.subject.place === place && i.subject.tab && !i.done_at);
 }
 
 /** A pane as the kit draws it, from the record. */
-export function paneItem(p: LayoutPane, o: { body: ComponentChildren; above?: ComponentChildren; meta: string; dot: boolean; arriving: boolean; mine: boolean; move?: () => void; max: () => void; close: () => void; restore?: { name: string; run: () => void } }): PaneItem {
+export function paneItem(p: LayoutPane, o: { body: ComponentChildren; above?: ComponentChildren; meta: string; dot: boolean; arriving: boolean; mine: boolean; agent?: string; move?: () => void; max: () => void; close: () => void; restore?: { name: string; run: () => void } }): PaneItem {
   return {
     id: p.id,
     title: p.title,
@@ -152,6 +152,6 @@ export function paneItem(p: LayoutPane, o: { body: ComponentChildren; above?: Co
     ) : undefined,
     body: o.body,
     above: o.above,
-    data: { "data-layout-pane": p.id, "data-pane-kind": p.kind, "data-pane-by": byWord(p.opened_by), "data-pane-touched": p.touched ? "" : undefined },
+    data: { "data-layout-pane": p.id, "data-pane-kind": p.kind, "data-pane-by": byWord(p.opened_by, o.agent), "data-pane-touched": p.touched ? "" : undefined },
   };
 }

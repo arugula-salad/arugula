@@ -258,11 +258,17 @@ function whereOf(i: InboxItem): string {
 /** Whether a row offers Open: where it can't be answered here, a pane's (to see it), and a board's ask (its row). */
 export const opens = (i: InboxItem, answers: boolean) => (!answers || i.subject.type === "pane" || i.kind === "board_ask") && !!i.subject.url;
 
+/** A tab on this page that an item waits in (a `for_you` tab, Lift 9): its number, and the way there. */
+export interface Tabbed {
+  n: number;
+  go: () => void;
+}
+
 /** A list of the Inbox's rows, answered in place, and its keys. `peek` is
  * told of the row the keys move to; `goes`, the footer shows `↵`'s chip
  * (where going there is the point: the Inbox). Give `order` the rows as
  * they're drawn, every render. */
-export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null | undefined; fleet: Fleet | null; toast: (text: string) => void; peek?: (i: InboxItem) => void; goes?: boolean }) {
+export function useNeeds({ me, fleet, toast, peek, goes, tabOf }: { me: string | null | undefined; fleet: Fleet | null; toast: (text: string) => void; peek?: (i: InboxItem) => void; goes?: boolean; tabOf?: (i: InboxItem) => Tabbed | null }) {
   // Answered rows stay where they were, as receipts, while the page is up.
   const [receipts, setReceipts] = useState<ReadonlyMap<string, { item: InboxItem; receipt: Receipt }>>(new Map());
   const [open, setOpen] = useState<string | null>(null);
@@ -314,8 +320,14 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
   }
 
   // The keys read the list as it is now.
-  const now = useRef({ rows: [] as InboxItem[], selected, open, receipts, peek });
-  now.current = { ...now.current, selected, open, receipts, peek };
+  const now = useRef({ rows: [] as InboxItem[], selected, open, receipts, peek, tabOf });
+  now.current = { ...now.current, selected, open, receipts, peek, tabOf };
+  /** Open it: a tab an agent put it in, on this page (Lift 9), else where it is. */
+  const goTo = (i: InboxItem) => {
+    const t = now.current.tabOf?.(i);
+    if (t) t.go();
+    else openItem(i);
+  };
   const find = (id: string | null) => now.current.rows.find((i) => i.id === id);
   const at = () => now.current.rows.findIndex((i) => i.id === now.current.selected);
   const press = (n: number) => {
@@ -358,7 +370,7 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
       },
       run: () => {
         const i = find(now.current.selected);
-        if (i) openItem(i);
+        if (i) goTo(i);
       },
     },
   ];
@@ -384,7 +396,10 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
     const a = done || (i.kind === "board_ask" && forTeammate(i, me) && !r?.ask?.can_answer) ? null : answering(fleet, i);
     const base = needOf(i, me, fleet, a);
     const ask = r?.ask && askNeed(r, r.ask, Date.now());
-    const need = ask ? { ...base, subject: ask.subject ?? base.subject, lines: ask.lines, answer: a ? ask.answer : undefined } : base;
+    const drawn = ask ? { ...base, subject: ask.subject ?? base.subject, lines: ask.lines, answer: a ? ask.answer : undefined } : base;
+    // What waits in a tab here says which one (Lift 9).
+    const tab = tabOf?.(i);
+    const need = tab ? { ...drawn, kind: `tab ${tab.n}` } : drawn;
     const from = i.from.name ?? i.from.agent;
     return (
       <NeedRow
@@ -407,9 +422,9 @@ export function useNeeds({ me, fleet, toast, peek, goes }: { me: string | null |
         extra={
           extra
             ? extra(i, !!a)
-            : opens(i, !!a)
+            : tab || opens(i, !!a)
               ? (
-                <Button keys="↵" onClick={() => openItem(i)}>
+                <Button keys="↵" onClick={() => goTo(i)}>
                   Open
                 </Button>
               )

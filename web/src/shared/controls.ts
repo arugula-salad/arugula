@@ -85,7 +85,7 @@ export const CONTROLS = {
   "docs.mine": { label: "Mine or all", where: "docs", verb: "mine", chip: "mine", keys: both("key:m") },
 
   // A board
-  "board.tab": { label: "A tab of the board", where: "board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4"), hint: range("1–4") },
+  "board.tab": { label: "A tab of the board or the Overview", where: "board", chip: "tabs", keys: both("Digit1", "Digit2", "Digit3", "Digit4"), hint: range("1–4") },
   "board.pane.back": { label: "Back from a maximised pane", where: "board", verb: "back", group: "panes", keys: both("key:escape"), hint: range("esc") },
   "board.next": { label: "The next row", where: "board", verb: "next", chip: "move", keys: both("key:j"), hint: jk },
   "board.prev": { label: "The row before", where: "board", verb: "prev", keys: both("key:k") },

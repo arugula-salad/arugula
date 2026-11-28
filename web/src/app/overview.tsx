@@ -1,14 +1,17 @@
-// The project's Overview (Lift 4, #1480; v6's, on the kit): the page the
-// app opens on. Two thirds and one third, fixed (panes come in Lift 9).
-// The left holds the title line (the project, then how many sessions work,
-// how many cards fail, how many cards were done today), Boards (each moving
-// board a card: its mark, title, lane bar, count and what's going on in
-// words; the quiet ones folded into one card two wide), three to a row as
-// brand v2 drew them (#1567), and the Running line (what runs in the
-// project and its CI runs, on to the Running drawer). The right third is Needs you, To do
-// and a teammate's asks (./overview-needs.tsx) above the agent panel
-// (./overview-talk.tsx), whose first tab is the chief of staff; moving
-// through Needs you peeks each asker there.
+// The project's Overview (Lift 4, #1480; Lift 9, #1498): the page the app
+// opens on, and the chief of staff's view. On the left, tabs of panes
+// (design lift §3.12, the board's since Lift 5b): tab 1 is the title line
+// (the project, then how many sessions work, how many cards fail, how many
+// cards were done today) over its default panes, Boards (each moving board
+// a card: its mark, title, lane bar, count and what's going on in words; the
+// quiet ones folded into one card two wide, three to a row as brand v2 drew
+// them, #1567) and Running (what runs in the project and its CI runs, on to
+// Machines). The chief of staff and you open Docs, PRs, runs and a blocked
+// agent's prompt beside them or in tabs; Boards compacts to a list while
+// they're open. The right column, on every tab, is Needs you, To do and a
+// teammate's asks (./overview-needs.tsx) above the agent panel, whose first
+// tab is the chief of staff; moving through Needs you peeks each asker there.
+// On a phone, one column and no panes.
 //
 // Its old zoom addresses (`/p/:project/board/:board`, `…/card/:row`,
 // `…/work/:session`, Arugula #1287) still land: a board on its board, a
@@ -20,7 +23,7 @@
 
 import "./overview.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardRow, BoardView, InboxItem } from "../shared/proto";
+import type { BoardRow, BoardView, InboxItem, LayoutNewPane, LayoutPane } from "../shared/proto";
 import { panelKey, type PanelTarget } from "../shared/kit/panel";
 import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
@@ -32,7 +35,15 @@ import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared
 import { Mark, type State } from "../shared/kit/state-mark";
 import { Surface } from "../shared/kit/surface";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { ChevronIcon } from "../shared/ui/icons";
+import { ChevronIcon, IconButton, MoreIcon, PlusIcon } from "../shared/ui/icons";
+import { openMenu, type MenuItem } from "../shared/ui/menu";
+import { Tabs, type TabItem } from "../shared/kit/tabs";
+import { Panes, type PaneItem } from "../shared/kit/panes/panes";
+import { ChangedLine, layoutItems, PaneBody, paneItem, paneMeta, PromptAsk, tabTitle } from "../shared/boards/arranged";
+import { busyNow, HOME, usePlaceLayout } from "../shared/place-layout";
+import { agentsPane } from "../shared/chat/room-pane";
+import { control } from "../shared/controls";
+import { useBindings } from "../shared/keys";
 import type { Fleet } from "../shell/fleet";
 import { kindOf } from "../shell/fleet-model";
 import { boardSays, overviewOf, type OvBoard, type OvSession, type Standing } from "../shell/fleet-overview";
@@ -45,6 +56,8 @@ import { runs } from "../platform/runs";
 import { mayWrite } from "../platform/pages/issues";
 import { Faces } from "../platform/pages/project";
 import { useBoards } from "../platform/pages/boards";
+import { DocPage } from "../platform/pages/docs";
+import { RunPage } from "../platform/pages/runs";
 import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
@@ -287,6 +300,20 @@ const MARK: Record<Standing, State> = {
 /** A board is moving while it has cards in flight or something to say. */
 const moving = (b: OvBoard) => b.doing.length + b.review.length > 0 || b.standing !== "idle";
 
+/** The Overview's default panes, by the names its layout record keeps. */
+const BOARDS = "boards";
+const RUNNING = "running";
+const defaultTitle = (name: string) => (name === BOARDS ? "Boards" : name === RUNNING ? "Running" : name);
+/** Who the Overview's agent is, as a pane's title row and the header say it. */
+const CHIEF_WORD = "chief of staff";
+/** The narrowest a pane gets before panes stack. */
+const PANE_MIN = 280;
+
+const menuAt = (e: MouseEvent, items: MenuItem[]) => {
+  const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+};
+
 /** Midnight today, here. */
 const today = () => new Date(new Date().setHours(0, 0, 0, 0)).getTime();
 
@@ -323,15 +350,15 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
 
   // The card the address opens: the board's drawer, over the page.
   const shownView = board ? views?.find((v) => v.board.id === board) : undefined;
-  const opened = card ? shownView?.zones.flatMap((z) => z.rows).find((r) => r.id === card) : undefined;
+  const cardOpen = card ? shownView?.zones.flatMap((z) => z.rows).find((r) => r.id === card) : undefined;
   useEffect(() => {
-    if (opened) where.cardIs(opened.id, cardWords(opened));
-  }, [opened && cardWords(opened), opened?.id]);
+    if (cardOpen) where.cardIs(cardOpen.id, cardWords(cardOpen));
+  }, [cardOpen && cardWords(cardOpen), cardOpen?.id]);
   // The drawer's backdrop starts under the bar, so the path above it stays a way up while the card is open.
   const [barBottom, setBarBottom] = useState(0);
   useLayoutEffect(() => {
-    if (opened) setBarBottom(Math.max(0, Math.round(document.querySelector("[data-platform-bar]")?.getBoundingClientRect().bottom ?? 0)));
-  }, [!!opened, phone]);
+    if (cardOpen) setBarBottom(Math.max(0, Math.round(document.querySelector("[data-platform-bar]")?.getBoundingClientRect().bottom ?? 0)));
+  }, [!!cardOpen, phone]);
   const act = async (write: () => Promise<BoardView>): Promise<boolean> => {
     try {
       put(await write());
@@ -344,7 +371,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   };
 
   // The panel's tabs: the chief of staff's first (the panel's own), then the agents and rooms opened here.
-  const tabs = usePanelTabs(project);
+  const panelTabs = usePanelTabs(project);
   const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
   const sessions = [...ovCards.flatMap((c) => c.sessions), ...o.loose];
   const leads = o.boards.flatMap((b) => (b.lead ? [b.lead.peek] : []));
@@ -365,7 +392,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   useEffect(() => {
     const t = zoomed && targetOf(zoomed);
     if (!t) return;
-    tabs.open(t);
+    panelTabs.open(t);
     go(pathOf({ page: "project", project }, names), true);
   }, [zoomed?.key]);
 
@@ -374,9 +401,9 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   const peek = (i: InboxItem) => {
     const asker = askerOf(fleet, i);
     const pane = paneOfItem(fleet, i) ?? asker.pane;
-    if (pane) tabs.open(paneTarget(fleet, pane, roleOf(pane.key), sessions.find((x) => x.panes.some((y) => y.key === pane.key))?.name));
-    else if (asker.target) tabs.open(asker.target);
-    else if ((i.subject.room && i.subject.room === staffRoom?.id) || i.from.name?.startsWith("Chief of staff")) tabs.pick(CHIEF);
+    if (pane) panelTabs.open(paneTarget(fleet, pane, roleOf(pane.key), sessions.find((x) => x.panes.some((y) => y.key === pane.key))?.name));
+    else if (asker.target) panelTabs.open(asker.target);
+    else if ((i.subject.room && i.subject.room === staffRoom?.id) || i.from.name?.startsWith("Chief of staff")) panelTabs.pick(CHIEF);
   };
 
   const moved = o.boards.filter(moving);
@@ -428,27 +455,125 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     );
   };
 
-  const main = (
-    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
-      <header class="ov-title" data-ov-title>
-        <h1>{p?.name ?? "Overview"}</h1>
+  // The Overview's tabs and panes (Lift 9, design lift §3.12): the chief of
+  // staff's view. Tab 1 is the title line over its default panes, Boards and
+  // Running; what the chief of staff and you open goes beside them or in a
+  // tab of its own, from the person's layout of `overview:prj_…` (#1496).
+  // Its tab never becomes current and its pane never takes the keys.
+  const arranged = usePlaceLayout(phone ? null : `overview:${project}`, (why) => api.toast(`Couldn't change the layout: ${why}`));
+  const layout = arranged.layout;
+  const [tab, setTabNow] = useState(HOME);
+  const setTab = (t: string) => (busyNow(), setTabNow(t));
+  const [focused, setFocused] = useState<string | null>(null);
+  const [max, setMax] = useState<string | null>(null);
+  /** Tabs you've looked at since they opened: their dot goes. */
+  const [looked, setLooked] = useState<ReadonlySet<string>>(new Set());
+  const tabNow = layout.tabs.find((t) => t.id === tab) ?? layout.tabs[0]!;
+  useEffect(() => {
+    if (tabNow.id !== tab) setTabNow(HOME);
+    setLooked((s) => (s.has(tabNow.id) ? s : new Set([...s, tabNow.id])));
+  }, [tabNow.id]);
+  const tabs: TabItem[] = layout.tabs.map((t, i) => ({ id: t.id, title: tabTitle(t, "Overview"), count: i + 1, closes: t.id !== HOME, dot: t.id !== tab && ((t.for_you && !looked.has(t.id)) || t.panes.some((x) => arranged.quiet.has(x.id))) }));
+  useBindings(
+    phone
+      ? []
+      : [
+          { ...control("board.tab"), run: (e) => { const t = tabs[Number(e.code.slice(5)) - 1]; if (t) setTab(t.id); } },
+          { ...control("board.pane.back"), when: () => !!max, run: () => setMax(null) },
+        ],
+    [phone, tabs.map((t) => t.id).join(), max],
+  );
+  const show = async (pane: LayoutNewPane) => {
+    const r = await arranged.change({ op: "show", pane, intent: "beside", tab: tabNow.id, in_place_of: null });
+    if (r?.pane) setFocused(r.pane);
+  };
+  const closePane = (pane: string) => {
+    void arranged.change({ op: "close", pane });
+    if (focused === pane) setFocused(null);
+    if (max === pane) setMax(null);
+  };
+  const maxPane = (pane: string, own: boolean) => {
+    if (max === pane) return setMax(null);
+    setMax(pane);
+    setFocused(pane);
+    // A default pane's ⤢ is this page's: the record keeps only what was opened.
+    if (!own) void arranged.change({ op: "maximise", pane });
+  };
+  const reset = () => (setMax(null), setFocused(null), void arranged.change({ op: "reset" }));
+  const agents = agentsPane(project);
+  const addPane: MenuItem[] = agents ? [{ label: "#agents", run: () => void show(agents), attrs: { "data-ov-add-pane": "agents" } }] : [];
+  /** What the Overview draws itself: a Doc, a run, a PR's way to GitHub. */
+  const own = (x: LayoutPane) => {
+    if (x.kind === "doc") return <DocPage project={project} doc={x.ref} />;
+    if (x.kind === "run" && x.ref.startsWith("run_") && !x.offline) return <RunPage project={project} run={x.ref} pane />;
+    const pr = x.kind === "pr" ? /^([\w.-]+\/[\w.-]+)#(\d+)$/.exec(x.ref) : null;
+    return pr ? (
+      <div class="board-pane-note">
+        {x.state && <p class="m-meta">{x.state}</p>}
+        <a class="k-button is-plain" href={`https://github.com/${pr[1]}/pull/${pr[2]}`} target="_blank" rel="noreferrer" data-pane-open>
+          Open {x.title}
+        </a>
+      </div>
+    ) : null;
+  };
+  const item = (x: LayoutPane): PaneItem =>
+    paneItem(x, {
+      body: <PaneBody p={x} project={project} platform={(path) => path} own={own} />,
+      above: x.kind === "prompt" ? <PromptAsk p={x} /> : undefined,
+      meta: paneMeta(x, defaultTitle, CHIEF_WORD),
+      dot: arranged.quiet.has(x.id),
+      arriving: arranged.arrived.has(x.id),
+      mine: !x.opened_by.machine,
+      agent: CHIEF_WORD,
+      move: tabNow.id === HOME ? () => void arranged.change({ op: "move", pane: x.id, tab: null, index: null }) : undefined,
+      max: () => maxPane(x.id, false),
+      close: () => closePane(x.id),
+      restore: x.in_place_of ? { name: defaultTitle(x.in_place_of), run: () => closePane(x.id) } : undefined,
+    });
+  const opened = tabNow.panes.map(item);
+  // Panes open beside tab 1: Boards compacts to a list, and the right column narrows to a quarter.
+  const beside = !phone && (opened.length > 0 || tabNow.id !== HOME);
+  const compact = beside && tabNow.id === HOME;
+  // A default pane you closed stays closed until Reset; one the chief of staff stands something in place of is hidden, ↺ puts it back.
+  const gone = new Set([...layout.closed_defaults, ...layout.tabs[0]!.panes.flatMap((x) => (x.in_place_of ? [x.in_place_of] : []))]);
+
+  const title = (
+    <header class="ov-title" data-ov-title>
+      <h1>{p?.name ?? "Overview"}</h1>
+      <span class="ov-title-end">
         {chat.on && p?.team && <Faces p={p} />}
-        <p class="m-meta" data-ov-stats aria-busy={views === null || undefined}>
-          {views === null ? (
-            "Reading the boards…"
-          ) : (
-            <>
-              <span data-standing="working">{working} working</span> · <span data-standing={failing ? "failing" : undefined}>{failing} failing</span> · {doneToday} done today
-            </>
-          )}
-        </p>
-      </header>
+        {!phone && <ChangedLine layout={layout} reset={reset} agent={CHIEF_WORD} />}
+        {!phone && addPane.length > 0 && (
+          <button type="button" class="secondary small" aria-haspopup="menu" data-ov-add-pane-menu onClick={(e) => menuAt(e, addPane)}>
+            <PlusIcon size="xs" />
+            pane
+          </button>
+        )}
+        {!phone && layoutItems(layout, reset, (pane) => void arranged.change({ op: "reopen", pane })).length > 0 && (
+          <IconButton label="The Overview's layout" class="bar-btn sq" data-ov-more onClick={(e) => menuAt(e, layoutItems(layout, reset, (pane) => void arranged.change({ op: "reopen", pane })))}>
+            <MoreIcon size="sm" />
+          </IconButton>
+        )}
+      </span>
+      <p class="m-meta" data-ov-stats aria-busy={views === null || undefined}>
+        {views === null ? (
+          "Reading the boards…"
+        ) : (
+          <>
+            <span data-standing="working">{working} working</span> · <span data-standing={failing ? "failing" : undefined}>{failing} failing</span> · {doneToday} done today
+          </>
+        )}
+      </p>
+    </header>
+  );
+  const boardsPane = (
+    <section class="ov-pane" aria-label="Boards" data-ov-boards-pane>
       <header class="ov-head">
         <h2>Boards</h2>
         <span class="m-meta">
           {moved.length} moving{quiet.length ? ` · ${quiet.length} quiet` : ""}
         </span>
-        <span class="ov-head-end m-meta">↵ opens its desk</span>
+        {!compact && <span class="ov-head-end m-meta">↵ opens its desk</span>}
       </header>
       {views !== null && o.boards.length === 0 ? (
         <p class="ov-quiet" data-ov-empty>
@@ -458,7 +583,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           </a>
         </p>
       ) : (
-        <ul class="ov-boards" data-ov-boards aria-busy={views === null || undefined}>
+        <ul class="ov-boards" data-ov-boards data-compact={compact ? "" : undefined} aria-busy={views === null || undefined}>
           {moved.map(tile)}
           {quietOpen && quiet.map(tile)}
           {quiet.length > 0 && !quietOpen && (
@@ -473,27 +598,69 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           )}
         </ul>
       )}
-      <a class="ov-running" href={machines} onClick={(e) => follow(e, machines)} data-ov-running>
-        <b>Running</b>
-        <span class="m-meta">
-          {running.length ? running.join(" · ") : "nothing"}
-          {failed ? (
-            <>
-              {" · "}
-              <span data-standing="failing">{failed} failed</span>
-            </>
-          ) : null}
-        </span>
-        <span class="ov-head-end m-meta">open</span>
-      </a>
+    </section>
+  );
+  const runningLine = (
+    <a class="ov-running" href={machines} onClick={(e) => follow(e, machines)} data-ov-running>
+      <b>Running</b>
+      <span class="m-meta">
+        {running.length ? running.join(" · ") : "nothing"}
+        {failed ? (
+          <>
+            {" · "}
+            <span data-standing="failing">{failed} failed</span>
+          </>
+        ) : null}
+      </span>
+      <span class="ov-head-end m-meta">open</span>
+    </a>
+  );
+  const defaults: PaneItem[] =
+    tabNow.id !== HOME
+      ? []
+      : [
+          { id: BOARDS, body: boardsPane },
+          { id: RUNNING, body: runningLine },
+        ]
+          .filter((d) => !gone.has(d.id))
+          .map((d) => ({ ...d, title: defaultTitle(d.id), default: true, size: layout.default_sizes[d.id], max: () => maxPane(d.id, true), close: () => closePane(d.id), data: { "data-ov-default": d.id } }));
+  const main = phone ? (
+    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
+      {title}
+      {boardsPane}
+      {runningLine}
+    </Surface>
+  ) : (
+    <Surface kind="section" as="section" class="ov-main" aria-label="Overview" tabIndex={-1} data-ov-main data-work>
+      <div class="ov-tabs" data-ov-tabs>
+        <Tabs label="The Overview's tabs" tabs={tabs} current={tabNow.id} onPick={setTab} onClose={(t) => (void arranged.change({ op: "close_tab", tab: t }), t === tab && setTab(HOME))} />
+      </div>
+      {tabNow.id === HOME && title}
+      <Panes
+        label={tabNow.id === HOME ? "Overview" : tabTitle(tabNow, "Overview")}
+        defaults={defaults}
+        opened={opened}
+        focused={focused}
+        max={max}
+        min={PANE_MIN}
+        onFocus={(pane) => (pane !== focused && setFocused(pane), arranged.seen(pane))}
+        onResize={(pane, size) => void arranged.change({ op: "resize", pane, size })}
+      />
     </Surface>
   );
-  const needs = <OverviewNeeds items={inbox?.items ?? []} me={platform.me?.account} fleet={fleet} toast={(t) => api.toast(t)} peek={peek} />;
+  // What waits on you in a tab here: its row says which, and opens it.
+  const place = `overview:${project}`;
+  const tabOf = (i: InboxItem) => {
+    if (i.subject.place !== place || !i.subject.tab) return null;
+    const n = layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1;
+    return n > 0 ? { n, go: () => setTab(i.subject.tab!) } : null;
+  };
+  const needs = <OverviewNeeds items={inbox?.items ?? []} me={platform.me?.account} fleet={fleet} toast={(t) => api.toast(t)} peek={peek} tabOf={phone ? undefined : tabOf} />;
   const panel = (above?: typeof needs) => (
-    <AgentPanel project={project} above={above} targets={tabs.targets} current={tabs.current} onPick={tabs.pick} onClose={tabs.close} fleet={fleet} session={session} />
+    <AgentPanel project={project} above={above} targets={panelTabs.targets} current={panelTabs.current} onPick={panelTabs.pick} onClose={panelTabs.close} fleet={fleet} session={session} />
   );
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
+    <div class={["ov", phone && "phone", beside && "is-beside"].filter(Boolean).join(" ")} data-overview={project} data-ov-beside={beside || undefined} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
       {phone ? (
         [needs, main, panel()]
       ) : (
@@ -504,9 +671,9 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           </div>
         </>
       )}
-      {opened && shownView && (
+      {cardOpen && shownView && (
         <Drawer
-          r={opened}
+          r={cardOpen}
           platform={(path) => path}
           close={() => go(pathOf({ page: "project", project }, names))}
           project={project}
