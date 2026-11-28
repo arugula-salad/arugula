@@ -6,17 +6,17 @@
 
 import type { ChatAgent, ChatMessage } from "../proto";
 import { agentName } from "../agent-name";
-import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { authorLabel, machineHandle, sessionSlug } from "./agents";
 
 /** `machine/tab`, or the machine alone for a post that names no tab (an
- * older daemon, a machine-level post), as ../agent-name.ts names it. With
- * `projectName`, a chief of staff's tab reads by its project's name
- * (Arugula #1457). */
-export function agentHandle(a: ChatAgent, projectName?: (id: string) => string | undefined): string {
-  return agentName({ machine: machineHandle(a.machine_name), session: a.session ? sessionSlug(sessionLabel(a.session, projectName)) : "" }, { handle: true });
+ * older daemon, a machine-level post), as ../agent-name.ts names it. Shown,
+ * a chief of staff's is "Chief of staff" (Arugula #1561). */
+export function agentHandle(a: ChatAgent, shown = false): string {
+  const session = a.session ? sessionSlug(a.session) : "";
+  const machine = machineHandle(a.machine_name);
+  return shown ? agentName({ machine, session }, { handle: true }) : session ? `${machine}/${session}` : machine;
 }
 
 /** Whose agent it is, for the name's tooltip. */
@@ -35,7 +35,7 @@ export function AuthorName({ m, open, tag: Tag = "b" }: { m: ChatMessage; open?:
   const agent = m.agent;
   if (!agent) return <Tag class={open ? "thread-name" : undefined}>{authorLabel(m)}</Tag>;
   // As people read it; `data-agent-name` keeps the handle that reaches it.
-  const handle = agentHandle(agent, api.projectName);
+  const handle = agentHandle(agent, true);
   const routes = agentHandle(agent);
   const owner = ownerTip(m);
   const target = open && agent.session ? api.agentPane(agent.machine, agent.session) : undefined;

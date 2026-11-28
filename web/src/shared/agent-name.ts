@@ -6,6 +6,7 @@
 // session, a message's agent by `machine/tab`. Run with
 // `node --experimental-strip-types`.
 
+import { shownSession } from "./chief-of-staff.ts";
 import { surfacesFor, type Surfaces } from "./surfaces.ts";
 
 /** What a name is made from; every part is optional. */
@@ -27,9 +28,10 @@ export const rungOf = (a: Agent): string => ROLE[a.role ?? "agent"].toLowerCase(
 
 /** How `a` is shown. `handle`: as chat tags it, `machine/tab` (the machine
  * alone without a tab). `names` is the reader's (surfacesFor); by role, a
- * Lead or a Worker. The chief of staff is always the Chief of staff. */
+ * Lead or a Worker. The chief of staff, by its rung or its session's name
+ * (./chief-of-staff.ts), is always the Chief of staff. */
 export function agentName(a: Agent, o: { handle?: boolean; names?: Surfaces["names"] } = {}): string {
-  if (a.role === "chief") return ROLE.chief;
+  if (a.role === "chief" || [a.session, a.title].some((n) => n && shownSession(n.trim()) === ROLE.chief)) return ROLE.chief;
   if ((o.names ?? surfacesFor().names) === "role") return ROLE[a.role ?? "agent"];
   const session = a.session?.trim() ?? "";
   if (o.handle) {

@@ -4,7 +4,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chiefProject, sessionLabel } from "../src/shared/chief-of-staff.ts";
+import { chiefProject, sessionLabel, shownSession } from "../src/shared/chief-of-staff.ts";
 
 const names = { prj_3e5d80aa: "Launch crew", prj_77: "Other crew", prj_blank: "  " };
 const projectName = (id) => names[id];
@@ -25,4 +25,9 @@ test("no other session's name changes", () => {
     assert.equal(chiefProject(other), null, other);
     assert.equal(sessionLabel(other, projectName), other);
   }
+});
+
+test("where the page is the project's, a chief of staff's name, title or slug reads Chief of staff (Arugula #1561)", () => {
+  for (const name of ["Chief of staff · prj_3e5d80aa", "Chief of staff · Launch crew", "chief-of-staff-prj-3e5d80aa", "chief-of-staff-arugula", "chief-of-staff"]) assert.equal(shownSession(name), "Chief of staff", name);
+  for (const other of ["fix-1457", "My staff", "chief-of-staffing", "Chief of staff notes"]) assert.equal(shownSession(other), other);
 });

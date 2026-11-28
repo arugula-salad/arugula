@@ -8,11 +8,12 @@
 
 import type { ProjectDoc } from "../proto";
 import { machineHandle, sessionSlug } from "../chat/agents";
+import { shownSession } from "../chief-of-staff";
 
 export interface Reach {
   /** The mention a comment ends with, or "". */
   mention: string;
-  /** Who that is, for the page ("geek/docs-agent"), or "". */
+  /** Who that is, for the page ("geek/docs-agent", or "Chief of staff"), or "". */
   label: string;
 }
 
@@ -22,5 +23,7 @@ export function reachOf(doc: Pick<ProjectDoc, "agent">): Reach {
   const machine = machineHandle(a.machine_name);
   if (!machine) return { mention: "", label: "" };
   const handle = a.session ? `${machine}/${sessionSlug(a.session)}` : machine;
-  return { mention: `@${handle}`, label: handle };
+  // A chief of staff's reads as itself; the mention still reaches its tab.
+  const shown = a.session ? shownSession(a.session) : "";
+  return { mention: `@${handle}`, label: shown && shown !== a.session ? shown : handle };
 }

@@ -355,7 +355,9 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
   // A machine the fleet doesn't list (a pane it was given) by its name.
   const hostName = host?.name ?? t?.machine;
   const onHost = hostName ? fleet.panes.filter((p) => p.host === hostName) : [];
-  const bySession = t?.session ? onHost.filter((p) => p.session?.name === t.session) : [];
+  // An agent is named by its conversation's title (#429), not by the session its pane sits in: by name, else by title.
+  const named = t?.session ? onHost.filter((p) => p.session?.name === t.session) : [];
+  const bySession = named.length || !t?.session ? named : onHost.filter((p) => cleanTitle(p.info.title ?? "") === t.session);
   const pane = (t?.pane !== undefined ? onHost.find((p) => p.id === t.pane) : undefined) ?? bySession.find((p) => kindOf(p) === "agent") ?? bySession[0];
   const hostedId = t && !pane && t.session?.startsWith("ses_") ? t.session : null;
   const hosted = useHosted(hostedId);

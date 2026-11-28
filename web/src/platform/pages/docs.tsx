@@ -40,6 +40,7 @@ import { Time } from "../../shared/ui/time";
 import { DocBlock } from "../../shared/docs/doc-render";
 import { DocComments } from "../../shared/docs/doc-comments";
 import { reachOf } from "../../shared/docs/doc-reach";
+import { chiefProject } from "../../shared/chief-of-staff";
 import { LayoutMark } from "../../shared/docs/layout-mark";
 import { docLayout } from "../../shared/docs/layout";
 import { DocToc, tocOf } from "../../shared/docs/toc";
@@ -352,6 +353,8 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
   /** Opens the title's editor in place (#979), for ⋯'s Rename: TitleEdit's own. */
   const rename = useRef<(() => void) | null>(null);
+  /** The panel's tab picked on this Doc; before one is, the author's. */
+  const [tab, setTab] = useState<{ doc: string; key: string } | null>(null);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -412,7 +415,12 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
     );
   });
   // A Doc an agent wrote has it in the agent panel, folded (`\` opens it).
-  const author = view?.doc.agent ? authorOf(view.doc.agent) : null;
+  // The project's chief of staff's is its own tab, which follows whichever
+  // session is its chief of staff now (Arugula #1561): the one that wrote it
+  // may have been restarted since.
+  const agent = view?.doc.agent;
+  const byChief = !!agent && chiefProject(agent.session) === project;
+  const author = agent && !byChief ? authorOf(agent) : null;
   return (
     <div class="doc-place" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
       <div class="doc-place-work" data-work tabIndex={-1}>
@@ -443,7 +451,9 @@ export function DocPage({ project, doc, more }: { project: string; doc: string; 
         </section>
         {view && <DocToc sections={docLayout(view.doc.layout) === "doc" ? tocOf(view.sections) : []} reader={reader} linked={linked} />}
       </div>
-      {AgentPanel && author && <AgentPanel project={project} targets={[author]} current={panelKey(author)} folded />}
+      {AgentPanel && (author || byChief) && (
+        <AgentPanel project={project} targets={author ? [author] : []} current={tab?.doc === doc ? tab.key : author ? panelKey(author) : undefined} onPick={(key) => setTab({ doc, key })} folded />
+      )}
     </div>
   );
 }
