@@ -18,7 +18,9 @@ function Who({ name, role, agent }: { name: string; role: string; agent?: boolea
   return (
     <li class="chat-about-who">
       <Avatar name={name} agent={agent} />
-      <span class="chat-about-name">{name}</span>
+      <span class="chat-about-name" title={name}>
+        {name}
+      </span>
       <span class="m-meta">{role}</span>
     </li>
   );
