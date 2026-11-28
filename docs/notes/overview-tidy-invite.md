@@ -1,6 +1,6 @@
 ---
 section: Changed
-title: The Overview tidies itself each morning, and invites you to arrange it
+title: The Overview tidies itself and suggests asks
 line: Each morning the Overview closes what your chief of staff opened yesterday; while it's empty, example asks fill your chief of staff's message box.
 needs: control
 ---
