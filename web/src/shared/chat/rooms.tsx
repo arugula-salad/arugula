@@ -1035,23 +1035,30 @@ function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean
   );
 }
 
-/** Ctrl/Cmd+K: the switcher. Alt+↑/↓: the room above or below; with
- * Shift, the next unread one. Shift+Esc: everything read. */
+/** Ctrl/Cmd+K: the switcher (in the key table). Alt+↑/↓: the room above or
+ * below; with Shift, the next unread one. Shift+Esc: everything read. */
 function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => void, nav: ChatNav, openSwitcher: () => void, within: { current: HTMLElement | null } | null) {
   const latest = useRef({ rooms, picked, markAll, nav });
   latest.current = { rooms, picked, markAll, nav };
+  const free = () => !document.querySelector(".menu, .prompt") && (!within || !!within.current?.contains(document.activeElement));
+  // In the key table, so Go to…'s ⌘K doesn't run too (#1535): on Chat the
+  // switcher has it.
+  useBinding(
+    {
+      id: "chat.rooms",
+      label: "Jump to a room",
+      unlisted: true,
+      keys: both("Meta+key:k", "Ctrl+key:k"),
+      // A block answers only while focus is in it.
+      when: free,
+      run: openSwitcher,
+    },
+    [],
+  );
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (document.querySelector(".menu, .prompt")) return;
-      // A block answers only while focus is in it.
-      if (within && !within.current?.contains(document.activeElement)) return;
+      if (!free()) return;
       const { rooms, picked, markAll, nav } = latest.current;
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        e.stopPropagation();
-        openSwitcher();
-        return;
-      }
       if (e.key === "Escape" && e.shiftKey) {
         e.preventDefault();
         markAll();

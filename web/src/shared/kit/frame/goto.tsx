@@ -154,6 +154,7 @@ export function GoToLayer() {
       id: "goto",
       label: "Go to…",
       group: "go",
+      context: "everywhere",
       chip: "go to",
       keys: CHORDS,
       when: (e) => os === "mac" || e.shiftKey || !typingIn(document.activeElement),
@@ -161,7 +162,7 @@ export function GoToLayer() {
     },
     [],
   );
-  useBinding({ id: "goto.g", label: "Go to…", group: "go", keys: both("key:g key:p"), run: () => openGoTo() }, []);
+  useBinding({ id: "goto.g", label: "Go to…", group: "go", context: "everywhere", keys: both("key:g key:p"), run: () => openGoTo() }, []);
   if (!open) return null;
   return <GoTo key={`${open.scope}/${open.mode}`} scope={open.scope} mode={open.mode} initial={open.query} />;
 }

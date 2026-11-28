@@ -168,6 +168,7 @@ export function Panel({
   const keys: Binding[] = [
     {
       id: "panel-focus",
+      context: "panel",
       label: "Focus the agent panel",
       chip: "panel",
       keys: both("key:l"),
@@ -179,12 +180,14 @@ export function Panel({
     },
     {
       id: "panel-work",
+      context: "panel",
       label: "Focus the work beside the panel",
       keys: both("key:h"),
       run: () => (document.querySelector<HTMLElement>("[data-work]") ?? document.querySelector<HTMLElement>("main"))?.focus(),
     },
     {
       id: "panel-view",
+      context: "panel",
       label: "Transcript or terminal, in the panel",
       keys: both("key:v"),
       when: () => !!now.current.onView && !now.current.size.shut,
@@ -192,15 +195,17 @@ export function Panel({
     },
     {
       id: "panel-floor",
+      context: "panel",
       label: "The panel's transcript or terminal full screen, and back",
       keys: both("key:f"),
       when: () => now.current.floors && !now.current.size.shut,
       run: () => setFloor((f) => !f),
     },
-    { id: "panel-narrow", label: "Narrower panel", keys: both("key:["), run: () => step(-1) },
-    { id: "panel-wide", label: "Wider panel", keys: both("key:]"), run: () => step(1) },
+    { id: "panel-narrow", context: "panel", label: "Narrower panel", keys: both("key:["), run: () => step(-1) },
+    { id: "panel-wide", context: "panel", label: "Wider panel", keys: both("key:]"), run: () => step(1) },
     {
       id: "panel-collapse",
+      context: "panel",
       label: "Collapse the panel to a strip, and back",
       keys: both("key:\\"),
       run: () => {
@@ -210,6 +215,7 @@ export function Panel({
     },
     {
       id: "panel-back",
+      context: "panel",
       label: "Leave the floor, or a thread in the panel",
       // From a field too (the floor's composer), but never a terminal's.
       keys: both("*+key:escape"),

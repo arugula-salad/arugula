@@ -25,7 +25,7 @@ export function KeysSheetLayer() {
     return () => void listeners.delete(fn);
   });
   useSubscribe(subscribeKeys);
-  useBinding({ id: "keys", label: "Every shortcut", group: "app", keys: both("key:?"), run: () => set(!open) }, []);
+  useBinding({ id: "keys", label: "Every shortcut", group: "app", context: "everywhere", keys: both("key:?"), run: () => set(!open) }, []);
   if (!open) return null;
   const all = bindings();
   return (

@@ -140,8 +140,8 @@ export function installStack(r: StackRouter): () => void {
   };
   const keys = addBindings([
     // Listed for `?`: Escape goes back a place when nothing else takes it (lastEscape).
-    { id: "back", label: "Back a place, across projects", group: "switch", keys: both("key:escape"), when: () => false, run: () => {} },
-    { id: "flip", label: "Flip to your last place in another project", group: "switch", chip: "flip back", keys: both("Ctrl+Tab", "key:g key:;"), when: () => !!flipTarget(), run: flip },
+    { id: "back", label: "Back a place, across projects", group: "switch", context: "everywhere", keys: both("key:escape"), when: () => false, run: () => {} },
+    { id: "flip", label: "Flip to your last place in another project", group: "switch", context: "everywhere", chip: "flip back", keys: both("Ctrl+Tab", "key:g key:;"), when: () => !!flipTarget(), run: flip },
   ]);
   return () => {
     off();

@@ -26,10 +26,10 @@ export function AppearanceLayer() {
   const away = () => location.pathname !== "/design";
   useBindings(
     [
-      { id: "look", label: "Look", group: "app", keys: both("key:s"), when: away, run: () => (shown ? close() : openAppearance()) },
+      { id: "look", label: "Look", group: "app", context: "everywhere", keys: both("key:s"), when: away, run: () => (shown ? close() : openAppearance()) },
       // A step of the theme (light ↔ dark) and of depth (flat → deep, round again).
-      { id: "look.theme", label: "Light or dark", group: "app", keys: both("key:t"), when: away, run: () => setAppearance({ theme: themeNow() === "light" ? "dark" : "light" }) },
-      { id: "look.depth", label: "Depth, a step deeper", group: "app", keys: both("key:d"), when: away, run: () => setAppearance({ depth: nextDepth(appearance().depth) }) },
+      { id: "look.theme", label: "Light or dark", group: "app", context: "everywhere", keys: both("key:t"), when: away, run: () => setAppearance({ theme: themeNow() === "light" ? "dark" : "light" }) },
+      { id: "look.depth", label: "Depth, a step deeper", group: "app", context: "everywhere", keys: both("key:d"), when: away, run: () => setAppearance({ depth: nextDepth(appearance().depth) }) },
     ],
     [],
   );
