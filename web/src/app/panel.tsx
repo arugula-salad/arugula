@@ -242,11 +242,11 @@ function chiefHead(at: LeadAwake): PanelHead {
   return base;
 }
 
-/** A pane's terminal, live, in a well. */
-function TerminalWell({ machine, pane, label, watch }: { machine: string; pane: number; label: string; watch?: boolean }) {
+/** A pane's terminal, live, in a well: unlabelled, as the panel's head names its machine (#1572). */
+function TerminalWell({ machine, pane, watch }: { machine: string; pane: number; watch?: boolean }) {
   const { LiveWork } = usePlatformApi();
   return (
-    <Well label={label}>
+    <Well>
       <div data-panel-terminal={pane}>{LiveWork ? <LiveWork machine={machine} pane={String(pane)} watch={watch} /> : <p>This page doesn't draw terminals.</p>}</div>
     </Well>
   );
@@ -295,7 +295,7 @@ function useChief(on: boolean, place: Place, view: PanelView, setView: (v: Panel
       view: term ? view : undefined,
       onView: term ? setView : undefined,
       body: terminal ? (
-        <TerminalWell machine={term.machine} pane={term.pane} label={head.machine ?? ""} />
+        <TerminalWell machine={term.machine} pane={term.pane} />
       ) : (
         <div class="chat-thread" data-ov-staff={r.id}>
           <RoomBody key={r.id} room={r} phone={false} embedded target={head.machine ? `staff room · ${head.machine}` : "staff room"} name="Chief of staff" empty={{ title: "Nothing said to your chief of staff yet.", why }} />
@@ -407,7 +407,7 @@ function useAgent(t: Extract<PanelTarget, { kind: "agent" }> | null, place: Plac
   // The terminal: the pane itself, live, in a well, where the page draws one.
   const term = pane && surfacesFor().terminal && api.LiveWork ? { machine: t.machine, pane: pane.id } : null;
   if (term && view === "terminal")
-    return { head, view, onView: setView, body: <TerminalWell machine={term.machine} pane={term.pane} label={shortHost(pane!.host)} watch={team} /> };
+    return { head, view, onView: setView, body: <TerminalWell machine={term.machine} pane={term.pane} watch={team} /> };
 
   // Its lines: read from its machine; a cloud workspace's, from its box, else its last answer.
   let tail = lines;

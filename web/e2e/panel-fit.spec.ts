@@ -80,6 +80,8 @@ const slider = (panel: Locator) => panel.evaluate((p) => p.querySelector<HTMLEle
 async function oneScroller(page: Page, panel: Locator, pane: number, shot: string) {
   await panel.locator('[data-panel-view="terminal"]').click();
   await expect(panel.locator("[data-panel-terminal] .xterm")).toBeVisible({ timeout: 20_000 });
+  // The head names its machine; the terminal's frame doesn't again (#1572).
+  await expect(panel.locator(".k-well-label")).toHaveCount(0);
   await expect.poll(() => overflows(panel), { timeout: 15_000 }).toEqual([]);
   await expect.poll(() => fits(panel).then(() => true, () => false), { timeout: 15_000 }).toBe(true);
   // The program sees the slot's size: its PTY took as many columns as fit, drawn at full size.
@@ -126,11 +128,15 @@ for (const width of [1440, 1200]) {
   });
 }
 
-/** The pane's size as its program sees it, asked afresh. */
+/** The pane's columns as its program sees them, asked afresh: each answer is numbered. */
+let asked = 0;
 async function stty(page: Page, pane: number) {
-  await send(page, pane, "clear; stty size");
-  await expect.poll(async () => /^\d+ \d+$/m.test(await screenOf(page, pane))).toBe(true);
-  return Number((await screenOf(page, pane)).match(/^\d+ (\d+)$/m)![1]);
+  const n = ++asked;
+  await send(page, pane, `clear; echo "size-${n} $(stty size)"`);
+  const at = new RegExp(`^size-${n} \\d+ (\\d+)$`, "m");
+  let cols = 0;
+  await expect.poll(async () => (cols = Number((await screenOf(page, pane)).match(at)?.[1] ?? 0))).toBeGreaterThan(0);
+  return cols;
 }
 /** The columns of the panel's terminal slot, in cells `cell` px wide. */
 const slotCols = (panel: Locator, cell: number) => panel.evaluate((p, cell) => Math.floor(p.querySelector<HTMLElement>(".work-slot")!.clientWidth / cell), cell);
