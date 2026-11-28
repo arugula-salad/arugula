@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
+import { shownSession } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatThreadAgentState } from "../proto";
 import { machineHandle, sessionSlug } from "./agents";
@@ -36,9 +37,11 @@ export function stateOf(a: ChatThreadAgent): { cls: string; word: string } {
   return { cls: a.state, word: STATE[a.state] };
 }
 
-/** What an agent goes by: a machine told with no session yet has no name. */
+/** What an agent goes by: a machine told with no session yet has no name,
+ * and a chief of staff is "Chief of staff", never its project's id (Arugula
+ * #1561). Display only: posts route by `name`. */
 export function agentName(a: ChatThreadAgent): string {
-  return a.name || `an agent on ${a.machine_name}`;
+  return a.name ? shownSession(a.name) : `an agent on ${a.machine_name}`;
 }
 
 /** Its last line: what's waiting for it, or how far it has read. */

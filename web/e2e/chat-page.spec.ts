@@ -294,6 +294,9 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect(page.locator("[data-thread-seen], .thread-seen")).toHaveCount(0);
     // Design lift wrote 7: nothing read it there.
     await expect(thread.locator('[data-msg="7"] .receipt-icon')).toHaveCount(0);
+    // The To row reads a chief of staff by its role, never its project's id (#1561), and still sends its name.
+    await expect(thread.locator("[data-thread-to-agent]")).toHaveText(["Design lift", "Chief of staff · lead"]);
+    await expect(thread.locator("[data-thread-to]")).not.toContainText("prj_");
   });
 
   test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {

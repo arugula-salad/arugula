@@ -239,7 +239,13 @@ window.fetch = async (input, init) => {
     }
     // #agents' thread on post 2: Design lift has read Jake's last reply (#646).
     if (m[2] === "threads/2/agents" && r.id === "ob_00000001")
-      return json({ agents: [{ name: "Design lift", id: "m_dust", machine_name: "dust", owner: "acct_a", owner_name: "Sam", hosted: false, state: "idle", read_seq: 9, waiting: 0, lead: false }] });
+      return json({
+        agents: [
+          { name: "Design lift", id: "m_dust", machine_name: "dust", owner: "acct_a", owner_name: "Sam", hosted: false, state: "idle", read_seq: 9, waiting: 0, lead: false },
+          // Named by its project's id (Arugula #1457); read as "Chief of staff" (#1561).
+          { name: `Chief of staff · ${P}`, id: "m_dust", machine_name: "dust", owner: "acct_a", owner_name: "Sam", hosted: false, state: "idle", waiting: 0, lead: true },
+        ],
+      });
     if (m[2]?.endsWith("/agents")) return json({ agents: [] });
     if (m[2] === "pins") return json({ pins: [] });
     if (m[2] === undefined) return json({ room: r, people: [person("acct_a", "Sam"), person("acct_b", "Jake")], can_manage: true, agents: [] });
