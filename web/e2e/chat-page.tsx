@@ -220,9 +220,18 @@ window.fetch = async (input, init) => {
     if (!r) return json({ error: "not found" }, 404);
     const list = (messages[r.id] ??= []);
     if (m[2] === "messages" && method === "POST") {
-      const body = JSON.parse(String(init!.body)) as { text: string; tags?: ChatTag[] };
-      const seq = (list.at(-1)?.seq ?? 0) + 1;
+      const body = JSON.parse(String(init!.body)) as { text: string; tags?: ChatTag[]; parent?: number };
       window.__fx.posted.push(body);
+      // A reply in a thread (#1569): kept with the thread's, counted on its first.
+      const first = body.parent === undefined ? undefined : list.find((x) => x.seq === body.parent);
+      if (first) {
+        const thread = (window.__fx.replies[`${r.id}/${first.seq}`] ??= []);
+        const seq = Math.max(list.at(-1)?.seq ?? 0, thread.at(-1)?.seq ?? 0) + 1;
+        thread.push(msg(seq, "Sam", body.text, { parent: first.seq }));
+        first.thread = { replies: thread.length, last: Date.now(), repliers: [], following: true, read: seq, unread: 0, mentions: 0 };
+        return json({ seq, mentions: [], unreached: [], pushed: [] });
+      }
+      const seq = (list.at(-1)?.seq ?? 0) + 1;
       const tags = body.tags ?? [];
       list.push(msg(seq, "Sam", body.text, r.kind === "object" && /^(prj|brd)_/.test(r.target ?? "") ? said(tags, reachedBy(r, tags)) : {}));
       r.last = r.read = seq;
