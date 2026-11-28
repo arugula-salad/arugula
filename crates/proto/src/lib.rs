@@ -117,7 +117,16 @@ pub enum ClientMsg {
     Pane { pane: PaneId, op: PaneOp },
     /// The pane this client is looking at, if its window has focus (`None`
     /// when it doesn't). Attention notifications skip panes someone sees.
-    Focus { pane: Option<PaneId> },
+    Focus {
+        pane: Option<PaneId>,
+        /// A desktop window says whether it has the keyboard (#1572): the
+        /// one that has it takes the size from the same person's window
+        /// that doesn't. Phones and older clients leave it out, and keep
+        /// #473's rule.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        front: Option<bool>,
+    },
     /// Dismiss a machine-level notice, or open it (#551): the owner's
     /// alone. A key nothing holds is ignored.
     DismissNotice { key: String },

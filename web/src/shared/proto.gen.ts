@@ -2410,7 +2410,14 @@ kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "
 /**
  * The person pressed "Use this window's size" (#1502).
  */
-asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "dismiss_notice", key: string, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, 
+/**
+ * A desktop window says whether it has the keyboard (#1572): the
+ * one that has it takes the size from the same person's window
+ * that doesn't. Phones and older clients leave it out, and keep
+ * #473's rule.
+ */
+front?: boolean, } | { "type": "dismiss_notice", key: string, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.

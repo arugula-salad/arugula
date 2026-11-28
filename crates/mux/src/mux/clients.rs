@@ -158,24 +158,19 @@ impl Daemon {
             }
             // The server hands these to `App::hands` (S33).
             ClientMsg::Hand { .. } | ClientMsg::HandReply { .. } => {}
-            ClientMsg::Focus { pane } => {
+            ClientMsg::Focus { pane, front } => {
+                // A window taking or losing the keyboard (#1572): the tab it
+                // shows goes to the window in front.
+                if let Some(front) = front {
+                    self.front.insert(client, front);
+                    if let Some(&tab) = self.viewing.get(&client) {
+                        self.give_to_front(tab);
+                    }
+                }
                 let before = self.focus.get(&client).copied();
                 match pane.filter(|p| self.sees(&who, *p)) {
                     Some(p) => {
                         self.focus.insert(client, p);
-                        // Its window came to the front: the tab it shows
-                        // takes its size, if it may (#1572).
-                        self.fronted.insert(client, Instant::now());
-                        if let (Some(&tab), Some(&(cols, rows))) =
-                            (self.viewing.get(&client), self.view_size.get(&client))
-                            && self.sizes(&who, tab)
-                            && self.may_take(client, tab, true, false)
-                        {
-                            let zoom = self.zoomed.get(&client).copied();
-                            if matches!(self.mux.view(client, tab, cols, rows, zoom, true), Ok(true)) {
-                                self.changed();
-                            }
-                        }
                         // Seeing a finished command is enough.
                         if self.attention.get(&p) == Some(&Attention::Done) {
                             // A program's done or error (#720) too.
@@ -554,26 +549,51 @@ impl Daemon {
     /// the tab and zooming don't, whoever the holder is. An owner whose client
     /// has gone is nobody's.
     ///
-    /// The person's latest window (#1572): a claim from the window of the
-    /// same person that came to the front after the holder's takes it, as
-    /// tmux's latest-client does. A window that never said it's in front
-    /// (an older client) never takes it this way.
+    /// The window in front (#1572): a claim from a desktop window that has
+    /// the keyboard takes it from the same person's desktop window that
+    /// doesn't, as tmux's latest-client does. Phones and older clients
+    /// never say (`front`), so they neither take it nor lose it this way;
+    /// nor does typing, and two windows that both say they have the
+    /// keyboard (two machines) leave it with the holder.
     fn may_take(&self, client: ClientId, tab: TabId, claim: bool, asked: bool) -> bool {
         let held = self
             .mux
             .tab(tab)
             .ok()
             .and_then(|t| t.owner)
-            .is_some_and(|o| o != client && self.clients.contains_key(&o) && !self.later(client, o));
+            .is_some_and(|o| o != client && self.clients.contains_key(&o) && !self.in_front_of(client, o));
         claim && (asked || !held)
     }
 
-    /// Whether `client` is a window of `holder`'s person that came to the
-    /// front after `holder` did.
-    fn later(&self, client: ClientId, holder: ClientId) -> bool {
+    /// Whether `client` is a desktop window with the keyboard and `holder`
+    /// the same person's desktop window without it.
+    fn in_front_of(&self, client: ClientId, holder: ClientId) -> bool {
         let person = |c| self.clients.get(&c).map(|s| s.principal.id().to_owned());
-        person(client).is_some_and(|p| person(holder) == Some(p))
-            && self.fronted.get(&client).is_some_and(|at| self.fronted.get(&holder).is_none_or(|h| at > h))
+        self.front.get(&client) == Some(&true)
+            && self.front.get(&holder) == Some(&false)
+            && person(client).is_some_and(|p| person(holder) == Some(p))
+    }
+
+    /// `tab` goes to a window in front that shows it, at the size it last
+    /// said, when its holder isn't in front (#1572).
+    fn give_to_front(&mut self, tab: TabId) {
+        let owner = self.mux.tab(tab).ok().and_then(|t| t.owner);
+        let Some((c, (cols, rows))) = self
+            .viewing
+            .iter()
+            .filter(|&(c, t)| *t == tab && Some(*c) != owner && self.front.get(c) == Some(&true))
+            .filter_map(|(c, _)| Some((*c, *self.view_size.get(c)?)))
+            .find(|(c, _)| {
+                self.may_take(*c, tab, true, false)
+                    && self.clients.get(c).is_some_and(|s| self.sizes(&s.principal, tab))
+            })
+        else {
+            return;
+        };
+        let zoom = self.zoomed.get(&c).copied();
+        if matches!(self.mux.view(c, tab, cols, rows, zoom, true), Ok(true)) {
+            self.changed();
+        }
     }
 
     /// Whether `who` may size `tab`: editors do; viewers letterbox.
