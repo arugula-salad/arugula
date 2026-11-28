@@ -74,10 +74,11 @@
   color: var(--ink-dim);
 }
 
-/* Boards: a card each, three to a row where there's room. */
+/* Boards: a card each, three to a row (brand v2, #1567); the quiet ones'
+   card two wide. */
 .ov-boards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--gap);
   margin: 0;
   padding: 0;
@@ -87,8 +88,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-sizing: border-box;
   min-width: 0;
-  padding: 14px 16px;
+  min-height: 132px;
+  padding: 18px 18px 16px;
 }
 /* Ink, not a link's colour: the card is the board's, its title the way to it. */
 .ov .ov-board-title {
@@ -114,6 +117,7 @@
   text-decoration: underline;
 }
 .ov-board-bar {
+  margin-top: 10px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -144,6 +148,10 @@
 .ov-folded {
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius);
+}
+/* Two wide where the row has two cells left (or none), as brand v2 drew it. */
+.ov-folded[data-wide] {
+  grid-column: span 2;
 }
 .ov-folded .ov-board-title {
   color: var(--ink-dim);
@@ -221,6 +229,12 @@
 @media (max-width: 1000px) {
   .ov {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-boards {
+    grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr));
+  }
+  .ov-folded[data-wide] {
+    grid-column: auto;
   }
   .ov-needs {
     max-height: none;

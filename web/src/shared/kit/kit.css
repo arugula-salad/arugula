@@ -571,21 +571,17 @@ a.k-row-line {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* One line: past the room it ends in an ellipsis (its title has it all). */
 .k-panel-meta {
-  display: flex;
-  gap: 6px;
   overflow: hidden;
   color: var(--ink-dim);
   font-size: var(--text-meta);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .k-panel-meta > * + *::before {
-  content: "· ";
+  content: " · ";
   color: var(--ink-faint);
-}
-.k-panel-meta > :last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .k-panel-views {
   display: flex;

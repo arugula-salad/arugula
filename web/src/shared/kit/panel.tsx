@@ -28,7 +28,7 @@ import { ChevronIcon, ExpandIcon, IconButton, MoreIcon } from "../ui/icons";
 import { escapeTaken, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { Avatar } from "./avatar";
 import { Kbd } from "./kbd";
-import { StateMark, type State } from "./state-mark";
+import { MARKS, StateMark, type State } from "./state-mark";
 import { Surface } from "./surface";
 import { Tabs, type TabItem } from "./tabs";
 import type { PanelTarget } from "./panel-key";
@@ -260,7 +260,7 @@ export function Panel({
           {!head.person && <Avatar name={head.name} agent />}
           <div class="k-panel-who">
             <b>{head.name}</b>
-            <span class="k-panel-meta m-meta" title={head.hint}>
+            <span class="k-panel-meta m-meta" title={[[head.state && (head.word ?? MARKS[head.state].word), head.rung, head.machine].filter(Boolean).join(" · "), head.hint].filter(Boolean).join("\n")}>
               {head.state && <StateMark state={head.state} word={head.word} />}
               {[head.rung, head.machine].filter(Boolean).map((x) => (
                 <span key={x}>{x}</span>
