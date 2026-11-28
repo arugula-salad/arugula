@@ -507,14 +507,19 @@ const AGENTS: &str = "agents";
 /// `post_thread` `lead`: the calling session leads the staff room or the
 /// issue's thread, or lets it go.
 async fn lead_room(c: &Call<'_>, room: &str, release: bool) -> Out {
-    let session = match c.own_pane() {
-        Some(pane) => arugulad_base::agent_mentions::session_name(c.app(), pane).await,
-        None => None,
+    let (session, conversation) = match c.own_pane() {
+        Some(pane) => (
+            arugulad_base::agent_mentions::session_name(c.app(), pane).await,
+            arugulad_base::agent_mentions::conversation(c.app(), pane).await,
+        ),
+        None => (None, None),
     };
     if !release && session.is_none() {
         return Err("only a named session can lead a room: name this one (`arugula rename`), then ask again".into());
     }
-    let body = serde_json::to_value(LeadRoom { session, release }).map_err(|e| e.to_string())?;
+    // Its conversation (Arugula #1575): the room's posts are told by it.
+    let conversation = conversation.filter(|_| !release);
+    let body = serde_json::to_value(LeadRoom { session, conversation, release }).map_err(|e| e.to_string())?;
     let v = threads_call(c, Method::POST, &agent_room_lead(room), Some(body)).await?;
     let what = if release {
         format!("Let go of the lead of {}", room_name(&v))
@@ -526,12 +531,14 @@ async fn lead_room(c: &Call<'_>, room: &str, release: bool) -> Out {
 
 /// `start_agent` `recipe` chief-of-staff (Arugula #1338): `session`, the
 /// agent block it started, leads the person's staff room in `project`, as
-/// that block's own `post_thread` `room` staff, `lead` true would make it.
-pub(crate) async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
+/// that block's own `post_thread` `room` staff, `lead` true would make it,
+/// with its Claude Code conversation when it has one yet (Arugula #1575).
+pub(crate) async fn lead_staff(app: &App, project: &str, session: &str, conversation: Option<&str>) -> Out {
     let room = app.control.cloud(Method::POST, &agent_staff_room(project), None).await.map_err(said)?;
     let id = room["id"].as_str().ok_or("Arugula cloud named no staff room")?;
-    let body = serde_json::to_value(LeadRoom { session: Some(session.to_owned()), release: false })
-        .map_err(|e| e.to_string())?;
+    let lead =
+        LeadRoom { session: Some(session.to_owned()), conversation: conversation.map(str::to_owned), release: false };
+    let body = serde_json::to_value(lead).map_err(|e| e.to_string())?;
     let v = app.control.cloud(Method::POST, &agent_room_lead(id), Some(&body)).await.map_err(said)?;
     done(format!("{session} leads {}: your person's posts there come to it", room_name(&v)), v)
 }

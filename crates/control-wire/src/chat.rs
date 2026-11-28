@@ -1826,6 +1826,12 @@ pub fn agent_room_lead(room: &str) -> String {
 pub struct LeadRoom {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    /// The id of the calling session's Claude Code conversation (Arugula
+    /// #1575), as a board's lead sends it (#1563): the room's posts are told
+    /// by it, whatever the session is called then, and the lead is gone when
+    /// no pane holds it. Left out with `release`, or when it has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<String>,
     #[serde(default)]
     pub release: bool,
 }

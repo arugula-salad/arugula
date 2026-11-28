@@ -32,6 +32,8 @@ pub(super) struct Fake {
     pub(super) states: Arc<Mutex<Vec<Value>>>,
     /// The bodies `lead_board` POSTed to board `brd_1`'s lead (Arugula #1563).
     pub(super) leads: Arc<Mutex<Vec<Value>>>,
+    /// The bodies `post_thread` `lead` POSTed to a room's lead (Arugula #1575).
+    pub(super) room_leads: Arc<Mutex<Vec<Value>>>,
 }
 
 async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
@@ -76,6 +78,17 @@ pub(super) fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
                     f.leads.lock().unwrap().push(b);
                     Json(super::board_lead_watch::board_view())
                 }),
+            )
+            .route(
+                &arugula_control_wire::chat::agent_room_lead("{room}"),
+                post(
+                    |State(f): State<Fake>,
+                     axum::extract::Path(room): axum::extract::Path<String>,
+                     Json(b): Json<Value>| async move {
+                        f.room_leads.lock().unwrap().push(b);
+                        Json(json!({ "id": room, "kind": "object", "name": "#12 The parser", "powers": ["threads.read"] }))
+                    },
+                ),
             )
             .route(
                 "/api/daemon/chat/mention-state",

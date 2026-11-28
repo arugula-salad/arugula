@@ -186,8 +186,14 @@ impl ControlTools for Reach {
         issue_agent_on_a_machine(Some(prompt))
     }
 
-    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out> {
-        Box::pin(threads::lead_staff(app, project, session))
+    fn lead_staff<'a>(
+        &'a self,
+        app: &'a App,
+        project: &'a str,
+        session: &'a str,
+        conversation: Option<&'a str>,
+    ) -> BoxFuture<'a, Out> {
+        Box::pin(threads::lead_staff(app, project, session, conversation))
     }
 
     fn staff_room<'a>(&'a self, app: &'a App, project: &'a str) -> BoxFuture<'a, Out> {

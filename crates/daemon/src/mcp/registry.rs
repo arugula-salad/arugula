@@ -59,8 +59,15 @@ pub trait ControlTools: Send + Sync + 'static {
     /// instructions, then `prompt`.
     fn issue_agent_prompt(&self, prompt: &str) -> String;
     /// Make `session`, an agent block's on this machine, the lead of the
-    /// person's staff room in `project` (Arugula #1338). Answers the room.
-    fn lead_staff<'a>(&'a self, app: &'a App, project: &'a str, session: &'a str) -> BoxFuture<'a, Out>;
+    /// person's staff room in `project` (Arugula #1338), by its Claude Code
+    /// `conversation` too when it has one (Arugula #1575). Answers the room.
+    fn lead_staff<'a>(
+        &'a self,
+        app: &'a App,
+        project: &'a str,
+        session: &'a str,
+        conversation: Option<&'a str>,
+    ) -> BoxFuture<'a, Out>;
     /// The person's staff room in `project`, with its lead (Arugula #1340).
     fn staff_room<'a>(&'a self, app: &'a App, project: &'a str) -> BoxFuture<'a, Out>;
     /// Tell the staff room's lead `session` that it's moved (Arugula #1340):
@@ -197,9 +204,9 @@ pub fn issue_agent_prompt(issue: &str, board: Option<&str>, prompt: &str) -> Str
 }
 
 /// [`ControlTools::lead_staff`].
-pub async fn lead_staff(app: &App, project: &str, session: &str) -> Out {
+pub async fn lead_staff(app: &App, project: &str, session: &str, conversation: Option<&str>) -> Out {
     match CONTROL_TOOLS.get() {
-        Some(c) => c.lead_staff(app, project, session).await,
+        Some(c) => c.lead_staff(app, project, session, conversation).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't lead a staff room")),
     }
 }
