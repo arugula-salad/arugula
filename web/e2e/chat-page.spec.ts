@@ -273,14 +273,14 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect(page.locator('[data-msg="2"] .receipt-icon')).toHaveCount(0);
     // A plain post has no status: the lead got it by leading the channel.
     await page.locator('[data-msg="3"] .receipt-icon').click();
-    await expect(card(3)).toHaveText(["dust/Design lift lead reached: it leads this channel"]);
+    await expect(card(3)).toHaveText(["dust/Design lift lead reached"]);
     await page.keyboard.press("Escape");
     // Working is a dim pulse, not the accent: the worst of the lead's and geek's.
     const working = page.locator('[data-msg="4"] .receipt-icon');
     await expect(working).toHaveAttribute("data-tone", "pending");
     await expect(working).toHaveAttribute("data-receipt", "2");
     await working.click();
-    await expect(card(4)).toHaveText(["dust/Design lift lead reached: it leads this channel", "geek/lab working…"]);
+    await expect(card(4)).toHaveText(["dust/Design lift lead reached", "geek/lab working…"]);
   });
 
   test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {

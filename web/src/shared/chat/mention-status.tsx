@@ -44,7 +44,7 @@ export function mentionTone(state: Row["state"]): "quiet" | "pending" | "warn" {
 export function mentionWords(s: Row): string {
   switch (s.state) {
     case "reached":
-      return "reached: it leads this channel";
+      return "reached";
     case "sending":
       return "sending…";
     case "delivered":
