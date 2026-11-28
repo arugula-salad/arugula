@@ -37,7 +37,7 @@ import { asksFor, byTeammate, forTeammate, memberName, useInbox } from "../platf
 import { owners } from "../platform/owners";
 import { session } from "../platform/session";
 import { toast } from "../platform/toast";
-import { ALERTS, openItem, paneOfItem, paneTarget, useNeeds } from "./needs";
+import { ALERTS, openItem, opens, paneOfItem, paneTarget, useNeeds } from "./needs";
 import "./inbox.css";
 
 /** Where an item goes in its project: decisions, to-dos, what names you, chat, alerts. */
@@ -100,7 +100,7 @@ export function InboxPlace({ fleet }: { fleet: Fleet | null }) {
   // What isn't an ask is dismissed here; an ask is answered.
   const extra = (i: InboxItem, answers: boolean) => (
     <>
-      {(!answers || i.subject.type === "pane") && !!i.subject.url && (
+      {opens(i, answers) && (
         <Button keys="↵" onClick={() => openItem(i)}>
           Open
         </Button>

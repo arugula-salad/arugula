@@ -274,14 +274,16 @@ export function BoardPanel({
   // A link from a block or a session names a row, `#row=row_…` (#372),
   // or what it points at (`#row=iss_…`, from a link that knows a card's
   // board but not its row): the card's drawer opens on it
-  // (decision 9), as a click on it would. Read as the board opens:
+  // (decision 9), as a click on it would; on the desk, a row with an ask
+  // shows it open in Needs you instead (#1580). Read as the board opens:
   // keeping the filter in the URL replaces the hash.
   const [named] = useState(() => location.hash.match(/^#row=([A-Za-z0-9_-]+)/)?.[1]);
   const rowKey = view && named ? (view.zones.flatMap((z) => z.rows).find((r) => r.id === named || ("id" in r.pointer && r.pointer.id === named))?.id ?? named) : undefined;
+  const namedAsk = desk && rowKey ? view?.zones.flatMap((z) => z.rows).find((r) => r.id === rowKey && r.ask && !r.ask.raised) : undefined;
   useEffect(() => {
     if (!rowKey) return;
-    document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
-    if (view?.zones.some((z) => z.rows.some((r) => r.id === rowKey))) setDrawer(rowKey);
+    document.querySelector(namedAsk ? `[data-board-needs] [data-board-ask-row="${rowKey}"]` : `[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
+    if (!namedAsk && view?.zones.some((z) => z.rows.some((r) => r.id === rowKey))) setDrawer(rowKey);
   }, [rowKey, !!view]);
 
   if (missing && !view) return <BlockError inline data-board-missing title="Can't read this board." detail={missing} retry={again} />;
@@ -731,7 +733,7 @@ export function BoardPanel({
           </section>
           {prefsOpen && prefs.prefs && <LayoutSheet prefs={prefs.prefs} flip={prefs.flip} close={() => setPrefsOpen(false)} />}
           <div class="board-desk-side">
-            <BoardSide view={view} id={id} phone={phone} peek={peek} onPeekClose={() => setPeek(null)} above={<BoardNeeds view={view} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />} />
+            <BoardSide view={view} id={id} phone={phone} peek={peek} onPeekClose={() => setPeek(null)} above={<BoardNeeds view={view} at={namedAsk?.ask?.id} answer={(r, a) => act(() => boards.answer(id, r.ask!.id, a))} inbox={inbox} platform={platform} tabs={forYou(inbox?.items ?? [], boardPlace(id)).map((i) => ({ item: i, n: layout.tabs.findIndex((t) => t.id === i.subject.tab) + 1, go: () => setTab(i.subject.tab!) }))} />} />
           </div>
         </div>
       </RowItems.Provider>
