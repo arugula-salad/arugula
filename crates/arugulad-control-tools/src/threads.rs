@@ -917,6 +917,13 @@ pub(crate) async fn post_thread(c: &Call<'_>, a: PostThreadArgs) -> Out {
         c.app().agent_mentions.note_session(pane, &name);
         body["session"] = json!(name);
     }
+    // Its conversation (Arugula #1563): a board's lead isn't told its own
+    // post, whatever it's called now.
+    if let Some(pane) = pane
+        && let Some(id) = arugulad_base::agent_mentions::conversation(c.app(), pane).await
+    {
+        body["conversation"] = json!(id);
+    }
     let v = threads_call(c, Method::POST, &agent_messages(room), Some(body)).await?;
     // The session that posts is the one a mention in this thread is for
     // (#394): the room's last poster, and the thread's, whose root is the

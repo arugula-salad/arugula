@@ -62,6 +62,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "conversation": {
+          "description": "With a post told to a board's lead (Arugula #1563): the id of the\nClaude Code conversation that leads. The daemon gives it to the pane\nthat holds that conversation, whatever its session is called now, and\nto no other; when none does, the lead is gone. An older daemon ignores\nit and goes by `session`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "files": {
           "description": "The message's files (Arugula #538), each with its url at the\nmachine's address, so the session is told to look before it answers.\nAn older daemon ignores them.",
           "items": {

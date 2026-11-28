@@ -34,7 +34,7 @@ impl Fake {
     }
 }
 
-fn board_view() -> Value {
+pub(super) fn board_view() -> Value {
     let lane = |id: &str| json!({ "id": format!("lane_{id}"), "rev": 0, "title": id, "kind": "lane", "rows": [] });
     json!({
         "board": { "id": "brd_1", "project": "prj_1", "title": "Launch", "created_by": "a1", "created_at": 1,

@@ -1564,15 +1564,23 @@ async fn own_session(c: &Call<'_>) -> Option<String> {
     arugulad_base::agent_mentions::session_name(c.app(), c.own_pane()?).await
 }
 
-/// What `lead_board` sends: the session's name and the pane it leads from, so
-/// the page finds that pane without guessing from the name. A release names
-/// neither, and a pane with no name sends no pane.
-fn lead_request(session: Option<String>, pane: Option<u32>, release: bool) -> LeadBoard {
+/// The id of the calling session's Claude Code conversation (Arugula #1563),
+/// which its lead is told by whatever the session is called then.
+async fn own_conversation(c: &Call<'_>) -> Option<String> {
+    arugulad_base::agent_mentions::conversation(c.app(), c.own_pane()?).await
+}
+
+/// What `lead_board` sends: the session's name, the pane it leads from, so
+/// the page finds that pane without guessing from the name, and its
+/// conversation, which its board's posts are told by (Arugula #1563). A
+/// release names none of them, and a pane with no name sends neither.
+fn lead_request(session: Option<String>, pane: Option<u32>, conversation: Option<String>, release: bool) -> LeadBoard {
     if release {
-        return LeadBoard { session, pane: None, release };
+        return LeadBoard { session, pane: None, conversation: None, release };
     }
     let pane = session.as_ref().and(pane);
-    LeadBoard { session, pane, release }
+    let conversation = session.as_ref().and(conversation);
+    LeadBoard { session, pane, conversation, release }
 }
 
 /// `board_write`.
@@ -1602,6 +1610,10 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
                 goal: a.goal,
                 lead_session: session.clone(),
                 lead_pane: session.as_ref().and(c.own_pane()),
+                lead_conversation: match &session {
+                    Some(_) => own_conversation(c).await,
+                    None => None,
+                },
             };
             let v = boards_call(c, Method::POST, &agent_project_boards(&chosen.id), Some(given(new)?)).await?;
             let mut view = view_of(v)?;
@@ -1644,7 +1656,8 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             if !a.release && session.is_none() {
                 return Err(format!("{NO_SESSION_NAME} The board stays as it was."));
             }
-            let body = given(lead_request(session, c.own_pane(), a.release))?;
+            let conversation = if a.release { None } else { own_conversation(c).await };
+            let body = given(lead_request(session, c.own_pane(), conversation, a.release))?;
             let v = boards_call(c, Method::POST, &agent_board_lead(&a.board), Some(body)).await?;
             let view = view_of(v)?;
             let said = view.said.as_deref().map(|s| format!(" Note: {s}.")).unwrap_or_default();
@@ -2064,21 +2077,33 @@ mod tests {
         let a: CreateBoardArgs = serde_json::from_value(json!({ "title": "Epic" })).unwrap();
         assert!(a.goal.is_none() && a.project.is_none() && !a.verbose);
         assert_eq!(
-            given(NewBoard { title: a.title, goal: a.goal, lead_session: None, lead_pane: None }).unwrap(),
+            given(NewBoard {
+                title: a.title,
+                goal: a.goal,
+                lead_session: None,
+                lead_pane: None,
+                lead_conversation: None
+            })
+            .unwrap(),
             json!({ "title": "Epic" })
         );
     }
 
     /// Taking the lead sends the caller's pane with its name (#1368), so the
-    /// page finds the pane by it; a release sends neither pane, and a pane
+    /// page finds the pane by it, and its conversation (Arugula #1563), which
+    /// its board's posts are told by; a release sends neither, and a pane
     /// with no name none.
     #[test]
-    fn taking_the_lead_sends_the_callers_pane() {
-        let took = given(lead_request(Some("Product Improvements".into()), Some(1177), false)).unwrap();
-        assert_eq!(took, json!({ "session": "Product Improvements", "pane": 1177, "release": false }));
-        let nameless = given(lead_request(None, Some(1177), false)).unwrap();
+    fn taking_the_lead_sends_the_callers_pane_and_conversation() {
+        let (name, convo) = (|| Some("Product Improvements".to_owned()), || Some("c-1".to_owned()));
+        let took = given(lead_request(name(), Some(1177), convo(), false)).unwrap();
+        assert_eq!(
+            took,
+            json!({ "session": "Product Improvements", "pane": 1177, "conversation": "c-1", "release": false })
+        );
+        let nameless = given(lead_request(None, Some(1177), convo(), false)).unwrap();
         assert_eq!(nameless, json!({ "release": false }));
-        let released = given(lead_request(Some("Product Improvements".into()), Some(1177), true)).unwrap();
+        let released = given(lead_request(name(), Some(1177), convo(), true)).unwrap();
         assert_eq!(released, json!({ "session": "Product Improvements", "release": true }));
     }
 

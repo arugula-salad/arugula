@@ -916,6 +916,13 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub session: Option<String>,
+    /// An agent's post: the id of its session's Claude Code conversation
+    /// (Arugula #1563), kept, never shown. A board's lead isn't told its own
+    /// post by it, whatever the session is called now. A person's post
+    /// ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub conversation: Option<String>,
     /// Its tags, in #agents or a board's channel (Arugula #1536): who it's
     /// for, by id. An agent's are read from its text instead (`@<board>`,
     /// `@here`, `@channel`, `@cos`).

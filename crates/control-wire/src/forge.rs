@@ -459,6 +459,13 @@ pub struct AgentMention {
     /// states only. Control sends it only to a daemon that reads it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<crate::watch::WatchTag>,
+    /// With a post told to a board's lead (Arugula #1563): the id of the
+    /// Claude Code conversation that leads. The daemon gives it to the pane
+    /// that holds that conversation, whatever its session is called now, and
+    /// to no other; when none does, the lead is gone. An older daemon ignores
+    /// it and goes by `session`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<String>,
 }
 
 /// `projects.repo_moved`'s repo (Arugula #992). It names no project: a

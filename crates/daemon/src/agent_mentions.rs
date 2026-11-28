@@ -1646,9 +1646,11 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     // A pane that is gone, or whose queue is full, leaves it to the next.
     // 0. A board's lead names its pane (#1492): the session in it now takes
     // the message, whatever it's called. A pane that's gone, silenced or
-    // full leaves it to the name.
+    // full leaves it to the name. A lead named by its conversation (Arugula
+    // #1563) goes by that alone, in 1: its pane may hold another one now.
+    let lead = m.conversation.as_deref().filter(|c| !c.is_empty());
     let sessions = app.sessions().await;
-    if let Some(pane) = m.pane.filter(|p| !author.contains(p) && !silent.contains(p))
+    if let Some(pane) = m.pane.filter(|p| lead.is_none() && !author.contains(p) && !silent.contains(p))
         && sessions.iter().any(|(p, _)| *p == pane)
         && let Ok(now) = app.follow_up(pane, framed(m, &notes), by.clone(), tag_of(m, &notes)).await
     {
@@ -1657,15 +1659,38 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     }
     // 1. The session it names, by its exact name, or else by its tab's. When
     // it names one and none takes it, no other session does (#576): it waits
-    // in the inbox, and the answer lists the names there are.
-    if let Some(want) = m.session.as_deref().map(slug).filter(|w| !w.is_empty()) {
+    // in the inbox, and the answer lists the names there are. A board's lead
+    // is named by its Claude Code conversation (Arugula #1563): the pane that
+    // holds it, whatever its session is called now; none holding it is the
+    // lead gone.
+    let want = m.session.as_deref().map(slug).filter(|w| !w.is_empty()).or(lead.map(str::to_owned));
+    if let Some(want) = want {
         let tabs = app.tab_names().await;
-        let mut hits: Vec<PaneId> = sessions.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
-        if hits.is_empty() {
+        let mut hits: Vec<PaneId> = match lead {
+            Some(id) => {
+                app.conversations().await.into_iter().filter(|(_, c)| c == id).map(|(p, _)| p).take(1).collect()
+            }
+            None => sessions.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect(),
+        };
+        if hits.is_empty() && lead.is_none() {
             // Sessions in tabs of that name: two in one tab, or one in each
             // of two tabs, are as much "more than one" as two by name.
             let tabbed: Vec<PaneId> = tabs.iter().filter(|(_, n)| slug(n) == want).map(|(p, _)| *p).collect();
             hits = sessions.iter().map(|(p, _)| *p).filter(|p| tabbed.contains(p)).collect();
+        }
+        // A lead's own post (Arugula #1563), told it by a control that
+        // couldn't tell it was: nothing to give, and the lead isn't gone.
+        if lead.is_some()
+            && let [pane] = hits.as_slice()
+            && author.contains(pane)
+        {
+            debug!(room = m.room, seq = m.seq, "a lead's own post: not given back to it");
+            return routed(
+                RoutedStep::Named,
+                sessions.iter().find(|(p, _)| p == pane).map(|(_, n)| n.clone()),
+                None,
+                true,
+            );
         }
         // The author is no taker (#575): naming one's own session reaches
         // the inbox like naming a session that isn't there.
@@ -2098,6 +2123,7 @@ mod tests {
             from_owner: false,
             files: vec![],
             watch: None,
+            conversation: None,
         }
     }
 
@@ -3453,5 +3479,105 @@ mod tests {
         }
         assert_eq!(s.watches.lock().unwrap().len(), MAX_WATCHES_TOLD);
         assert!(s.watch_told("wch_0", now).is_none() && s.watch_told("wch_1", now).is_some());
+    }
+
+    /// A board's post for its lead, as control tells it (Arugula #1563): by
+    /// the name the lead was taken with and the lead's conversation.
+    fn for_lead(seq: i64, parent: Option<i64>) -> AgentMention {
+        AgentMention {
+            room: "ob_b".into(),
+            target: Some("brd_b".into()),
+            room_name: "board Design lift".into(),
+            seq,
+            parent,
+            session: Some("Product design consistency pass".into()),
+            from_owner: true,
+            conversation: Some("conv-4".into()),
+            ..mention()
+        }
+    }
+
+    /// Three posts on a board's channel in quick succession while its lead
+    /// is mid-turn (Arugula #1563): a thread reply, a top-level post with a
+    /// file, and another top-level post. The lead took the lead under
+    /// another name and was renamed since: each reaches the pane that holds
+    /// its conversation, once, though control sends them again.
+    #[tokio::test]
+    async fn a_renamed_lead_gets_every_post_on_its_board_once_mid_turn() {
+        let d = Fake::new("renamed-lead", &[4, 9])
+            .named(&[(4, "Design Lift"), (9, "docs")])
+            .conversing(&[(4, "conv-4"), (9, "conv-9")])
+            .queueing(&[4]);
+        let shot = arugula_control_wire::chat::ChatFile {
+            id: "cf_1".into(),
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            kind: arugula_control_wire::chat::ChatFileKind::Image,
+            size: 10,
+            width: None,
+            height: None,
+            url: "/api/daemon/chat/rooms/ob_b/files/cf_1".into(),
+        };
+        let posts =
+            [for_lead(147, Some(145)), AgentMention { files: vec![shot], ..for_lead(148, None) }, for_lead(151, None)];
+        for m in &posts {
+            assert_eq!(deliver(&d, m).await, routed(RoutedStep::Named, Some("Design Lift".into()), None, true));
+        }
+        for m in &posts {
+            deliver(&d, m).await;
+        }
+        let told: Vec<(PaneId, i64)> = d.tagged.lock().unwrap().iter().map(|(p, t)| (*p, t.seq)).collect();
+        assert_eq!(told, [(4, 147), (4, 148), (4, 151)]);
+        assert!(d.got(4)[1].contains("It has a file attached: shot.png"), "{}", d.got(4)[1]);
+        // Each asks for its answer in the thread, as any message does (#1573).
+        for (got, at) in d.got(4).iter().zip(["message 147, parent 145", "message 148", "message 151"]) {
+            assert!(got.contains(&format!("Answer with post_thread in room ob_b ({at})")), "{got}");
+        }
+        assert!(d.state.unread().is_empty() && d.notices.lock().unwrap().is_empty());
+    }
+
+    /// A lead goes by its conversation alone (Arugula #1563): a session that
+    /// has the lead's old name now isn't the lead, and with no pane holding
+    /// the conversation the lead is gone. It waits in the inbox, answered as
+    /// a named session that isn't there, so control lets the lead go.
+    #[tokio::test]
+    async fn a_lead_is_its_conversation_and_gone_when_no_pane_holds_it() {
+        let d = Fake::new("lead-convo", &[4, 9])
+            .named(&[(4, "Design Lift"), (9, "Product design consistency pass")])
+            .conversing(&[(4, "conv-4"), (9, "conv-9")]);
+        assert_eq!(
+            deliver(&d, &for_lead(5, None)).await,
+            routed(RoutedStep::Named, Some("Design Lift".into()), None, true)
+        );
+        assert_eq!((d.got(4).len(), d.got(9).len()), (1, 0));
+        // The pane it led from holds another conversation now (#1492's pane,
+        // Arugula #1563): the conversation decides.
+        let moved = AgentMention { pane: Some(9), ..for_lead(8, None) };
+        assert_eq!(deliver(&d, &moved).await, routed(RoutedStep::Named, Some("Design Lift".into()), None, true));
+        assert_eq!((d.got(4).len(), d.got(9).len()), (2, 0));
+        let gone =
+            Fake::new("lead-gone", &[9]).named(&[(9, "Product design consistency pass")]).conversing(&[(9, "conv-9")]);
+        let m = for_lead(6, None);
+        let answer = deliver(&gone, &m).await;
+        assert_eq!(answer, nowhere("product-design-consistency-pass", &["product-design-consistency-pass"]));
+        assert!(gone.got(9).is_empty());
+        assert_eq!(gone.state.unread().iter().map(|u| u.seq).collect::<Vec<_>>(), [6]);
+        // From a control before #1563, a lead is told by its name, as before.
+        let named = AgentMention { conversation: None, ..for_lead(7, None) };
+        assert_eq!(
+            deliver(&gone, &named).await,
+            routed(RoutedStep::Named, Some("Product design consistency pass".into()), None, true)
+        );
+    }
+
+    /// The lead's own post, told it by a control that took its old name for
+    /// another session's (Arugula #1563): nothing is given back to it, and it
+    /// isn't answered as a lead that's gone.
+    #[tokio::test]
+    async fn a_leads_own_post_is_not_given_back_or_taken_for_a_gone_lead() {
+        let d = Fake::new("lead-own", &[4]).named(&[(4, "Design Lift")]).conversing(&[(4, "conv-4")]);
+        let own = AgentMention { from_session: Some("Design Lift".into()), from_owner: false, ..for_lead(9, None) };
+        assert_eq!(deliver(&d, &own).await, routed(RoutedStep::Named, Some("Design Lift".into()), None, true));
+        assert!(d.got(4).is_empty() && d.state.unread().is_empty());
     }
 }

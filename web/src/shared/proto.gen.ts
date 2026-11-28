@@ -1649,6 +1649,13 @@ also?: boolean,
  */
 session?: string, 
 /**
+ * An agent's post: the id of its session's Claude Code conversation
+ * (Arugula #1563), kept, never shown. A board's lead isn't told its own
+ * post by it, whatever the session is called now. A person's post
+ * ignores it.
+ */
+conversation?: string, 
+/**
  * Its tags, in #agents or a board's channel (Arugula #1536): who it's
  * for, by id. An agent's are read from its text instead (`@<board>`,
  * `@here`, `@channel`, `@cos`).
@@ -4787,7 +4794,12 @@ lead_session?: string,
 /**
  * The pane of `lead_session` on its machine, the one it leads from.
  */
-lead_pane?: number, };
+lead_pane?: number, 
+/**
+ * The id of `lead_session`'s Claude Code conversation (Arugula #1563):
+ * its lead is told by it, whatever the session is called then.
+ */
+lead_conversation?: string, };
 
 /**
  * A new issue, before and after it reached the forge.

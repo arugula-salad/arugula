@@ -30,6 +30,8 @@ pub(super) struct Fake {
     pub(super) outbox: Arc<Mutex<Vec<String>>>,
     /// The turn reports it PUT, in order.
     pub(super) states: Arc<Mutex<Vec<Value>>>,
+    /// The bodies `lead_board` POSTed to board `brd_1`'s lead (Arugula #1563).
+    pub(super) leads: Arc<Mutex<Vec<Value>>>,
 }
 
 async fn dial(State(f): State<Fake>, up: WebSocketUpgrade) -> Response {
@@ -68,6 +70,13 @@ pub(super) fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
             .route("/api/relay/dial", get(dial))
+            .route(
+                "/api/daemon/boards/brd_1/lead",
+                post(|State(f): State<Fake>, Json(b): Json<Value>| async move {
+                    f.leads.lock().unwrap().push(b);
+                    Json(super::board_lead_watch::board_view())
+                }),
+            )
             .route(
                 "/api/daemon/chat/mention-state",
                 put(|State(f): State<Fake>, Json(b): Json<Value>| async move {
