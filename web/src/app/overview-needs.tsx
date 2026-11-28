@@ -1,7 +1,8 @@
 // The Overview's right third, above the agent panel (Lift 4, #1480): Needs
 // you, this project's slice of the Inbox (`by_project`'s items), then To do,
 // then a teammate's asks folded into one line each ("2 asks for Jake ›").
-// Each is the Inbox's row (./needs), answered in place, with its keys.
+// Each is the Inbox's row (./needs), answered in place, with its keys; what
+// the chief of staff put in a tab for you (Lift 9) says which and opens it.
 // Alerts (checks or a run failed) aren't here: they're the board's and
 // Running's, and the Inbox's.
 
@@ -14,15 +15,15 @@ import { Surface } from "../shared/kit/surface";
 import { needAge } from "../shared/needs-you";
 import type { Fleet } from "../shell/fleet";
 import { asksFor, byTeammate, forTeammate, memberName } from "../platform/inbox";
-import { needsOf, useNeeds } from "./needs";
+import { needsOf, useNeeds, type Tabbed } from "./needs";
 
 /** The rows past which the list folds ("N more ›"), so the panel keeps its room. */
 const SHOWN = 5;
 
-export function OverviewNeeds({ items, me, fleet, toast, peek }: { items: InboxItem[]; me: string | null | undefined; fleet: Fleet; toast: (text: string) => void; peek: (i: InboxItem) => void }) {
+export function OverviewNeeds({ items, me, fleet, toast, peek, tabOf }: { items: InboxItem[]; me: string | null | undefined; fleet: Fleet; toast: (text: string) => void; peek: (i: InboxItem) => void; tabOf?: (i: InboxItem) => Tabbed | null }) {
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const [more, setMore] = useState(false);
-  const needs = useNeeds({ me, fleet, toast, peek });
+  const needs = useNeeds({ me, fleet, toast, peek, tabOf });
   const { receipts, row } = needs;
 
   const live = needsOf(items);

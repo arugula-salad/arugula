@@ -29,15 +29,21 @@ export function RoomPane({ room }: { room: string }) {
 
 const pane = (room: string, title: string): LayoutNewPane => ({ kind: "room", ref: room, title, machine: null, state: null });
 
+/** The project's #agents as a pane, once chat lists it. */
+export function agentsPane(project: string): LayoutNewPane | null {
+  const agents = chat.on ? chat.rooms.find((r) => isAgentsRoom(r, project)) : undefined;
+  return agents ? pane(agents.id, "#agents") : null;
+}
+
 /** On a board, "+ pane"'s rooms: #agents (once the project has it) and the
  * board's channel. `show` opens a pane on the board. */
 export function roomPaneItems(project: string, board: string, title: string, show: (p: LayoutNewPane) => void): MenuItem[] {
   if (!chat.on) return [];
-  const agents = chat.rooms.find((r) => isAgentsRoom(r, project));
+  const agents = agentsPane(project);
   // The board's channel is made the first time someone opens it.
   const channel = () => void chat.openObject(board).then((r) => show(pane(r.id, `#${title}`)), () => {});
   return [
-    ...(agents ? [{ label: "#agents", run: () => show(pane(agents.id, "#agents")), attrs: { "data-board-add-pane": "agents" } }] : []),
+    ...(agents ? [{ label: "#agents", run: () => show(agents), attrs: { "data-board-add-pane": "agents" } }] : []),
     { label: `#${title}`, run: channel, attrs: { "data-board-add-pane": "channel" } },
   ];
 }
