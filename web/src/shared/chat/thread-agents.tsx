@@ -12,7 +12,7 @@ import type { ChatMessage, ChatPostTarget, ChatRoomAgent, ChatThreadAgent, ChatT
 import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
 import { Chip, ObjectChip } from "../ui/state-chip";
-import { CheckIcon, ChevronIcon } from "../ui/icons";
+import { ChevronIcon } from "../ui/icons";
 import { useSubscribe } from "../ui/hooks";
 
 /** How often an open thread asks again. */
@@ -214,21 +214,11 @@ export function ThreadAgents({ agents, newest, phone }: { agents: ChatThreadAgen
   );
 }
 
-/** Under a message: the agents that have read this far and no further, but
- * for the one that wrote it. */
-export function SeenMarks({ agents, m }: { agents: ChatThreadAgent[]; m: ChatMessage }) {
+/** The agents that have read `m` and no further, but for the one that wrote
+ * it: its receipt's card says they read it (Arugula #1560). */
+export function seenAt(agents: ChatThreadAgent[], m: ChatMessage): ChatThreadAgent[] {
   const wrote = (a: ChatThreadAgent) => m.agent?.machine === a.id && sessionSlug(m.agent?.session ?? "") === sessionSlug(a.name);
-  const here = agents.filter((a) => !a.hosted && a.read_seq === m.seq && !wrote(a));
-  if (!here.length) return null;
-  return (
-    <div class="thread-seen" title="How far each agent has read" data-thread-seen>
-      {here.map((a) => (
-        <span key={`${a.id}/${a.name}`}>
-          <CheckIcon size="xs" /> {agentName(a)}
-        </span>
-      ))}
-    </div>
-  );
+  return agents.filter((a) => !a.hosted && a.read_seq === m.seq && !wrote(a));
 }
 
 const keyOf = (a: ChatThreadAgent) => `${a.id}/${a.name}`;

@@ -5,10 +5,11 @@
 // (`@machine/session`, #875), and its state in plain words. Control says
 // each when the machine's daemon answers, and again when its agent replies.
 // A board channel's lead gets every post there by leading it, which control
-// keeps no status of: its row is drawn from the board.
+// keeps no status of: its row is drawn from the board. And a thread's agents
+// that have read this far (#646) read it.
 
 import { useRef, useState } from "preact/hooks";
-import type { ChatMentionStatus, ChatMessage, ChatRoom, ProjectBoard } from "../proto";
+import type { ChatMentionStatus, ChatMessage, ChatRoom, ChatThreadAgent, ProjectBoard } from "../proto";
 import { sessionLabel } from "../chief-of-staff";
 import { usePlatformApi } from "../platform-api";
 import { CheckIcon, DotIcon, MachineIcon } from "../ui/icons";
@@ -94,7 +95,7 @@ export function mentionWho(s: Row, projectName?: (id: string) => string | undefi
  * (routing put it there) isn't shown (#1167); in them the bus chose whom to
  * tell, so each is. `insert` writes into the composer this message is
  * answered in. */
-export function MentionStatus({ room, m, insert }: { room: ChatRoom; m: ChatMessage; insert?: (text: string) => void }) {
+export function MentionStatus({ room, m, seen = [], insert }: { room: ChatRoom; m: ChatMessage; seen?: ChatThreadAgent[]; insert?: (text: string) => void }) {
   const { nav, projectName } = usePlatformApi();
   const board = isBoardChannel(room) ? room.target : null;
   const lead = useProjectBoards(board ? (room.project ?? undefined) : undefined)?.find((b) => b.id === board)?.lead;
@@ -105,6 +106,12 @@ export function MentionStatus({ room, m, insert }: { room: ChatRoom; m: ChatMess
   const leads = (s: Row) => !!lead && lead.machine === s.machine && sessionSlug(s.for_session || s.session || lead.session) === sessionSlug(lead.session);
   const lines: Row[] = (m.mention_status ?? []).filter((s) => agents || mentionTone(s.state) !== "warn" || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
   if (lead && !lines.some(leads) && ledBy(lead, m)) lines.unshift({ machine: lead.machine, machine_name: lead.machine_name, session: lead.session, state: "reached" });
+  for (const a of seen) {
+    const i = lines.findIndex((s) => s.machine === a.id && sessionSlug(s.for_session || s.session || a.name) === sessionSlug(a.name));
+    const was = lines[i];
+    if (!was) lines.push({ machine: a.id, machine_name: a.machine_name, session: a.name, state: "read" });
+    else if (was.state === "reached" || mentionTone(was.state) === "pending") lines[i] = { ...was, state: "read" };
+  }
   if (!lines.length || m.deleted !== null) return null;
   const tone = (["warn", "pending"] as const).find((t) => lines.some((s) => mentionTone(s.state) === t)) ?? "quiet";
   const later = (fn: () => void, ms: number) => {

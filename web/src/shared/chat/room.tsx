@@ -562,6 +562,7 @@ export function RoomMessage({
   editing,
   setEditing,
   inThread = false,
+  seen,
   relative = false,
   tokens = NO_TOKENS,
 }: {
@@ -574,6 +575,8 @@ export function RoomMessage({
   setEditing: (on: boolean) => void;
   /** Shown in a thread's panel (#106): no thread of its own to open there. */
   inThread?: boolean;
+  /** The thread's agents that have read this far and no further (#646). */
+  seen?: ChatThreadAgent[];
   /** On a page about something else (an issue's, a run's): the head says
    * how long ago, as the page's timeline does (UI audit #182). */
   relative?: boolean;
@@ -666,7 +669,7 @@ export function RoomMessage({
   // as the session's, apart from people's.
   const said = saidOf(m);
   // Who it went to (Arugula #1560): an icon after the time, or under it in the gutter.
-  const receipt = <MentionStatus room={room} m={m} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />;
+  const receipt = <MentionStatus room={room} m={m} seen={seen} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />;
   return (
     <div
       class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}${m.agent ? " by-agent" : ""}${said ? " by-session" : ""}`}

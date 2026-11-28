@@ -283,6 +283,19 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect(card(4)).toHaveText(["dust/Design lift lead reached", "geek/lab working…"]);
   });
 
+  test("a thread agent's read mark is a row in its reply's receipt, not a pill of its own (#1560)", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${AGENTS}`);
+    await page.locator('[data-thread-footer="2"]').click();
+    const thread = page.locator('[data-thread-panel="2"]');
+    const icon = thread.locator('[data-msg="9"] .receipt-icon');
+    await expect(icon).toHaveAttribute("data-tone", "quiet");
+    await icon.click();
+    await expect(thread.locator('[data-msg="9"] [data-receipt-card] .mention-line')).toHaveText(["dust/Design lift read"]);
+    await expect(page.locator("[data-thread-seen], .thread-seen")).toHaveCount(0);
+    // Design lift wrote 7: nothing read it there.
+    await expect(thread.locator('[data-msg="7"] .receipt-icon')).toHaveCount(0);
+  });
+
   test("a board's channel says its lead gets a post; other rooms have no tag list", async ({ page }) => {
     await open(page, `/p/${P}/chat/ob_00000003`);
     await expect(page.locator('[data-room-view="ob_00000003"] .k-composer-to')).toHaveText("Its lead gets this · @here adds active workers");
