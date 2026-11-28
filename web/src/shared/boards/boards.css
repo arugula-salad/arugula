@@ -44,20 +44,18 @@
   grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
 }
 
-/* Each pane is the lanes' container, so a compacted group's lanes go two,
-   then one, across. Beside other panes they fill the height left. */
+/* The tab's body is its panes (#1565): the board is one, full height, and
+   scrolls alone; each pane is its content's container. */
 .board-desk .k-pane-body {
   container-type: inline-size;
 }
 
-.board > .k-panes.is-beside,
-.board-desk-tab > .k-panes {
-  flex: 1 0 60vh;
-  min-height: 60vh;
+.board-desk-main .k-pane.is-default {
+  flex: 1 1 auto;
 }
 
-.board-desk-tab > .k-panes {
-  height: 100%;
+.board-desk-main .k-pane.is-default > .k-pane-body {
+  overflow: auto;
 }
 
 .board-changed {
@@ -91,16 +89,8 @@
   box-shadow: var(--shadow-card);
 }
 
-.board-desk-main > .board,
-.board-desk-tab {
-  flex: 1;
-  min-height: 0;
+.board-desk-main .k-pane-body > .board {
   padding: var(--gap) calc(var(--gap) * 2) 30px;
-  overflow: auto;
-}
-
-.board-desk-tab > .platform-section {
-  padding: 0;
 }
 
 .board-desk-side {
@@ -165,6 +155,7 @@
 .board-alerts,
 .board-prs {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
@@ -268,9 +259,8 @@
     height: auto;
   }
 
-  .board-desk-main > .board,
-  .board-desk-tab {
-    overflow: visible;
+  .board-desk-main > .k-panes {
+    min-height: 70vh;
   }
 
   .board-needs {

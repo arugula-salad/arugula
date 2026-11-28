@@ -1,10 +1,11 @@
 // The lead arranges the board (Lift 5b, design lift §3.12; Arugula #1497):
-// the board's lane groups are its default panes. The lead (MCP `show` with
+// the board is the home tab's default pane (#1565), its header and lanes
+// scrolling inside it. The lead (MCP `show` with
 // a place target) and you open Docs, PRs, runs and prompts beside them or in
 // tabs, from the board's place-layout record (#1496), which the stream's
 // `layout` event keeps live. The lead never takes the focus, a busy person
 // gets its pane quietly with a dot, a fourth agent pane closes the oldest
-// untouched one, a closed default stays closed until Reset, and what waits on
+// untouched one, Reset puts the board back alone, and what waits on
 // you goes to a tab of its own with a Needs-you row pointing at it. The
 // panes are worked by their buttons: no new keys until #1534's list. Layout
 // (the ⋯'s Layout…) holds the sentences the lead follows (#1531's prefs). On the
@@ -59,7 +60,7 @@ async function openBoard(page: Page, before?: (l: FakeLayouts) => void): Promise
   await page.route((u) => u.pathname.startsWith("/p/"), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(`/p/${P}/boards/${B}`);
   await expect(page.locator(`[data-board-desk="${B}"]`)).toBeVisible();
-  await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
+  await expect(page.locator('[data-board-group="zon_ux"]')).toBeVisible();
   return l;
 }
 
@@ -68,11 +69,11 @@ const pane = (page: Page, title: string) => page.locator(`[data-layout-pane]`, {
 /** Long enough since the last key or click that the person isn't busy. */
 const idle = (page: Page) => page.waitForTimeout(4_300);
 
-test("the board's groups are its default panes; a PR from the fold opens beside them, yours and focused, and the right column narrows to a quarter", async ({ page }, info) => {
+test("the board is its tab's default pane; a PR from the fold opens beside it, yours and focused, and the right column narrows to a quarter", async ({ page }, info) => {
   const l = await openBoard(page);
   await expect(tabs(page)).toHaveText(["Product improvements1"]);
-  // The defaults are quiet: their own headings, no title row.
-  await expect(page.locator('[data-board-default="zon_ux"] .k-pane-title')).toHaveCount(0);
+  // The board is quiet: its own heading, no title row.
+  await expect(page.locator('[data-board-default="lanes"] .k-pane-title')).toHaveCount(0);
   const side = async () => (await page.locator(".board-desk-side").boundingBox())!.width;
   const wide = await side();
   await page.locator('[data-board-pr="fi_2868"] .k-row-line').click();
@@ -81,8 +82,8 @@ test("the board's groups are its default panes; a PR from the fold opens beside 
   await expect(p).toHaveAttribute("data-pane-by", "you");
   await expect(p).toHaveAttribute("data-pane-focused", "");
   await expect(p.locator('[data-board-drawer="row_1443"]')).toBeVisible();
-  // The defaults compact beside it, and show their title rows.
-  await expect(page.locator('[data-board-default="zon_ux"]')).toHaveAttribute("data-pane-compact", "");
+  // The board compacts beside it.
+  await expect(page.locator('[data-board-default="lanes"]')).toHaveAttribute("data-pane-compact", "");
   await expect(page.locator(`[data-board-desk="${B}"]`)).toHaveAttribute("data-board-beside", "");
   const desk = (await page.locator(`[data-board-desk="${B}"]`).boundingBox())!.width;
   await expect.poll(side).toBeLessThan(wide);
@@ -138,9 +139,9 @@ test("a fourth agent pane closes the oldest the lead opened and you haven't touc
   await pane(page, "Doc 1").hover();
   await pane(page, "Doc 1").locator("[data-pane-max]").click();
   await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "1");
-  await expect(page.locator('[data-board-default="zon_ux"]')).toHaveCount(0);
+  await expect(page.locator('[data-board-group="zon_ux"]')).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
+  await expect(page.locator('[data-board-group="zon_ux"]')).toBeVisible();
   await expect.poll(() => l.posted.map((c) => c.op)).toContain("maximise");
   await l.lead(doc(4));
   await expect(page.locator("[data-layout-pane] .k-pane-title")).toHaveText(["Doc 1", "Doc 3", "Doc 4"]);
@@ -163,21 +164,17 @@ test("at 1440 three opened panes stack rather than shrink the board below its wi
   await page.screenshot({ path: info.outputPath("board-three-panes-1440.png"), animations: "disabled" });
 });
 
-test("a default pane you close stays closed while the lead opens more, until Reset; Reset sends what was opened to the closed list", async ({ page }) => {
+test("Reset puts the board back alone and sends what was opened to the closed list; Reopen brings one back", async ({ page }) => {
   const l = await openBoard(page);
   await l.lead(DOC);
-  const ux = page.locator('[data-board-default="zon_ux"]');
-  await ux.hover();
-  await ux.locator("[data-pane-close]").click();
-  await expect(ux).toHaveCount(0);
   await l.lead(doc(2));
   await expect(page.locator("[data-layout-pane]")).toHaveCount(2);
-  await expect(ux).toHaveCount(0);
+  // The board has no ×: its header holds Reset.
+  await expect(page.locator('[data-board-default="lanes"] [data-pane-close]')).toHaveCount(0);
   await page.locator("[data-board-reset]").click();
-  await expect(ux).toBeVisible();
   await expect(page.locator("[data-layout-pane]")).toHaveCount(0);
+  await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "1");
   await expect(page.locator("[data-board-changed]")).toHaveCount(0);
-  // And Reopen brings one back from the closed list.
   await page.locator("[data-board-more]").click();
   await page.locator(`[role=menu] [data-board-reopen]`, { hasText: "Design pass" }).click();
   await expect(pane(page, "Design pass")).toBeVisible();
@@ -188,22 +185,22 @@ test("the lead shows a run in place of a group for a while; ↺ puts the group b
   await l.lead({ kind: "run", ref: "run_main", title: "Run · main" }, "beside", "zon_ux");
   const run = pane(page, "Run · main");
   await expect(run.locator(".k-pane-meta")).toHaveText("in place of UX · lead");
-  await expect(page.locator('[data-board-default="zon_ux"]')).toHaveCount(0);
+  await expect(page.locator('[data-board-group="zon_ux"]')).toHaveCount(0);
   await run.hover();
   await run.locator('[data-pane-restore="zon_ux"]').click();
-  await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
+  await expect(page.locator('[data-board-group="zon_ux"]')).toBeVisible();
 });
 
 test("for_you: a prompt opens a tab of its own that never becomes current, with a Needs-you row pointing at it; answered, both go", async ({ page }, info) => {
   const l = await openBoard(page);
-  await page.locator('[data-board-default="zon_ux"]').click();
+  await page.locator('[data-board-group="zon_ux"]').click();
   const r = await l.lead({ kind: "prompt", ref: "%7", title: "Allow git clone", machine: "dust" }, "for_you");
   const item = { id: "fy_1", kind: "for_you", group: "decide", counts: true, title: "Allow git clone", lines: [], from: { agent: "claude@dust", machine: "mch_dust" }, subject: { type: "tab", id: r.tab, url: `/p/${P}/boards/${B}`, project: P, place: PLACE, tab: r.tab }, since: Date.now() };
   await page.evaluate((items) => (window as unknown as { __inboxSay(i: unknown[]): void }).__inboxSay(items), [item]);
   await expect(tabs(page)).toHaveCount(2);
   await expect(tabs(page).nth(1)).toHaveAttribute("aria-selected", "false");
   await expect(tabs(page).nth(1).locator("[data-tab-dot]")).toBeVisible();
-  await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
+  await expect(page.locator('[data-board-group="zon_ux"]')).toBeVisible();
   const row = page.locator('[data-board-for-you]');
   await expect(row).toContainText("Allow git clone");
   await expect(row).toContainText("tab 2");
@@ -234,7 +231,7 @@ test("the panes' controls: ⤢ maximises and esc comes back, × closes a pane, a
   await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "1");
   await page.locator("body").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Escape");
-  await expect(page.locator('[data-board-default="zon_ux"]')).toBeVisible();
+  await expect(page.locator('[data-board-group="zon_ux"]')).toBeVisible();
   await d.hover();
   await d.locator("[data-pane-close]").click();
   await expect(d).toHaveCount(0);
@@ -327,4 +324,52 @@ test("a run beside the board is its run page, with no way back to the Runs list 
   const p = pane(page, "Run · deploy-preview");
   await expect(p.locator('[data-run="run_deploy"]')).toBeVisible();
   await expect(p.locator("[data-run-back]")).toHaveCount(0);
+});
+
+test("+ pane splits the tab's body: the pane is the board's sibling at full height, the board scrolls alone, the divider drags, and a reload keeps the split (#1565)", async ({ page }, info) => {
+  await page.setViewportSize({ width: 1440, height: 640 });
+  const l = await openBoard(page);
+  await page.locator("[data-board-add-pane-menu]").click();
+  await page.locator('[role=menu] [data-board-add-pane="bdc_1"]').click();
+  const d = pane(page, "Design pass");
+  await expect(d).toBeVisible();
+  const board = page.locator('[data-board-default="lanes"]');
+  // Siblings in the tab body's panes, not the pane inside the board.
+  await expect(page.locator(".board-desk-main > .k-panes > [data-panes-col] > [data-board-default]")).toHaveCount(1);
+  await expect(page.locator(".board-desk-main > .k-panes > [data-panes-col] > [data-layout-pane]")).toHaveCount(1);
+  await expect(board.locator("[data-layout-pane]")).toHaveCount(0);
+  // Both full height: the same top and bottom, the board's header inside the board.
+  const panes = (await page.locator(".board-desk-main > .k-panes").boundingBox())!;
+  for (const b of [(await board.boundingBox())!, (await d.boundingBox())!]) {
+    expect(Math.abs(b.y - panes.y)).toBeLessThan(1.5);
+    expect(Math.abs(b.y + b.height - (panes.y + panes.height))).toBeLessThan(1.5);
+  }
+  await expect(board.locator("[data-board-head]")).toBeVisible();
+  // The board scrolls alone: its body moves, the pane beside it doesn't.
+  const body = board.locator(":scope > .k-pane-body");
+  expect(await body.evaluate((e) => e.scrollHeight > e.clientHeight)).toBe(true);
+  const top = (await d.boundingBox())!.y;
+  await body.evaluate((e) => (e.scrollTop = 200));
+  expect(await body.evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+  expect((await d.boundingBox())!.y).toBe(top);
+  expect(await page.locator(".board-desk-main").evaluate((e) => e.scrollTop)).toBe(0);
+  await page.screenshot({ path: info.outputPath("board-pane-split-1440.png") });
+  // At 2000 the board's PR strip ellipsises inside its pane: nothing runs past it sideways.
+  await page.setViewportSize({ width: 2000, height: 1000 });
+  await body.evaluate((e) => (e.scrollTop = 0));
+  await expect.poll(() => body.evaluate((e) => e.scrollWidth - e.clientWidth)).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: info.outputPath("board-pane-split-2000.png") });
+  await page.setViewportSize({ width: 1440, height: 640 });
+  // The divider drags, and the board's share is kept.
+  const line = (await page.locator("[data-panes-divider]").boundingBox())!;
+  await page.mouse.move(line.x + line.width / 2, line.y + 100);
+  await page.mouse.down();
+  await page.mouse.move(line.x - 120, line.y + 100, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(() => l.posted.at(-1)).toMatchObject({ op: "resize", pane: "lanes" });
+  // A reload keeps the split.
+  await page.reload();
+  await expect(pane(page, "Design pass")).toBeVisible();
+  await expect(page.locator(".board-desk-main > .k-panes > [data-panes-col] > [data-board-default]")).toHaveCount(1);
+  await expect(page.locator("[data-panes-columns]")).toHaveAttribute("data-panes-columns", "2");
 });
