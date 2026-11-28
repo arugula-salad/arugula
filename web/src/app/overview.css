@@ -236,9 +236,17 @@
   .ov:not(.phone) {
     grid-template-rows: minmax(0, 1fr);
   }
+  /* The page's own section is no frame around it (#1588): the work's
+     section and the panel are the page's, on the board's and the card's
+     lines, and the work's runs to the foot as the panel does. */
+  .platform-section[data-project-home]:has(> .ov:not(.phone)) {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
   .ov:not(.phone) > .ov-main {
     box-sizing: border-box;
-    max-height: 100%;
+    height: 100%;
     overflow: hidden;
   }
   /* Each column of panes scrolls on its own. */

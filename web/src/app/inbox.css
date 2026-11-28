@@ -42,15 +42,22 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--gap);
-  align-items: start;
 }
 .inbox-page.phone {
   grid-template-columns: minmax(0, 1fr);
 }
+/* On a computer the list's section runs to the foot, as the panel does (#1588). */
+.inbox-page:not(.phone) {
+  min-height: 100%;
+}
+.inbox-page:not(.phone) .inbox-list:last-child {
+  flex: 1;
+}
 .inbox-side {
   position: sticky;
   top: 0;
-  height: calc(100vh - 80px);
+  /* The window under the bar (46px) and the page's 8px above and below. */
+  height: calc(100vh - 62px);
   min-width: 0;
 }
 .inbox-page.phone .inbox-side {
