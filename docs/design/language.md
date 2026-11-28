@@ -37,7 +37,8 @@ until each screen's lift drops them).
 | surfaces | `--canvas` `--rail` `--section` `--card` `--card-raised` `--paper` `--well` |
 | ink | `--ink` `--ink-dim` `--ink-faint` `--well-ink` `--well-dim` `--on-accent` `--on-needs` |
 | lines | `--line` `--line-strong` `--hover` `--focus` |
-| signal | `--accent` (brand, working, primary, send) `--needs` (asks or waits on you) `--needs-tint` `--fail` `--fail-tint` `--review` `--done` `--backdrop` |
+| signal | `--accent` (brand, working, primary, send) `--needs` (asks or waits on you) `--fail` `--review` `--done` `--backdrop` |
+| pull request | `--gh-open` `--gh-merged` `--gh-closed` `--gh-queued` `--gh-draft`: GitHub's colours, only in `PrMark` |
 | depth | `--shadow-card` `--shadow-raised` `--highlight` `--sheen` `--glow` |
 | type | `--font-sans` `--font-title` `--font-mono` `--font-id` `--font-meta`; `--text-label` `--text-meta` `--text-body` `--text-title` `--text-hero` `--text-doc` |
 | shape | `--radius` `--radius-control` `--gap` `--row` `--rail-w` `--panel-w` |

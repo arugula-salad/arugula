@@ -14,9 +14,8 @@
   --selected: color-mix(in srgb, var(--accent-fill) 14%, transparent);
   --selected-edge: inset 0 0 0 1px var(--accent);
   --selected-mark: inset 3px 0 0 var(--accent), var(--selected-edge);
-  /* A place to drop on (#696): the dashed edge and the tint, the same on
-     every target (see `.drop-target`). */
-  --drop-edge: var(--accent);
+  /* A place to drop on (#696): the tint under the accent's dashed edge,
+     the same on every target (see `.drop-target`). */
   --drop-fill: color-mix(in srgb, var(--accent-fill) 10%, transparent);
   /* The menu, dialog or prompt over the page: a shadow no role covers
      yet (kit/tokens.css has the card's and a raised thing's). */
@@ -39,7 +38,8 @@
   --icon-md: 16px;
   --icon-lg: 18px;
   /* The type scale (#687): seven sizes (kit/tokens.css's --text-* roles
-     and --text-xl), each with its line-height. 11 is a
+     and --text-xl), the small four's line-heights and prose's (the
+     prototype kit's match them). 11 is a
      caps label, a chip, an id or a time; 12 is meta and a button; 13 is
      what you read; 15 is a title; 19 is a section's h2 and a stat; 32 is a
      page's h1; 38 is the Doc's title. Components name a step, never a
@@ -49,9 +49,6 @@
   --lh-md: 18px;
   --lh-lg: 20px;
   --text-xl: 19px;
-  --lh-xl: 1.05;
-  --lh-2xl: 0.95;
-  --lh-doc: 1.02;
   --lh-prose: 1.45;
   /* The two sizes that change with the device (below): body text is 15 on
      touch, and a field is 16, because iOS zooms the page into a field
@@ -1138,7 +1135,7 @@ button.att {
    background, so nothing moves or loses its fill when the drag arrives. */
 .drop-target.drop-over,
 [data-drop-target].drop-over {
-  outline: 2px dashed var(--drop-edge);
+  outline: 2px dashed var(--accent);
   outline-offset: -2px;
   background-image: linear-gradient(var(--drop-fill), var(--drop-fill));
 }
@@ -3976,17 +3973,10 @@ button.agent-image {
   color: var(--done);
 }
 
-/* The getting started overlay's names for the palette's colors (#729;
-   Swarm's too, before Lift 6a), so Latte reaches them. */
+/* The getting started overlay's panel, from the page (#729), so Latte
+   reaches it; its colors are the roles. */
 :where(.start) {
-  --void: var(--well);
-  --mute: var(--ink-dim);
   --panel: color-mix(in srgb, var(--canvas) 86%, transparent);
-  --s-ask: var(--accent);
-  --s-fail: var(--fail);
-  --s-done: var(--done);
-  --s-wait: var(--needs);
-  --s-plain: var(--ink-dim);
 }
 
 /* M28: an edit Claude Code proposes, as a diff. */
@@ -5828,14 +5818,14 @@ html[data-scheme="light"] .doc {
 }
 
 .start a {
-  color: var(--s-ask);
+  color: var(--accent);
 }
 
 .start-kicker {
   font: 500 var(--text-label)/1 var(--font-meta);
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
-  color: var(--mute);
+  color: var(--ink-dim);
   margin-bottom: 8px;
 }
 
@@ -5859,7 +5849,7 @@ html[data-scheme="light"] .doc {
 }
 
 .start-dim {
-  color: var(--mute);
+  color: var(--ink-dim);
   font-size: var(--text-body);
 }
 
@@ -5932,7 +5922,7 @@ html[data-scheme="light"] .doc {
   border-radius: var(--radius);
   background: var(--panel);
   font: 500 var(--text-body)/1.3 var(--font-meta);
-  color: var(--mute);
+  color: var(--ink-dim);
 }
 
 .start-check i {
@@ -5940,7 +5930,7 @@ html[data-scheme="light"] .doc {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  border: 1.5px solid var(--mute);
+  border: 1.5px solid var(--ink-dim);
 }
 
 .start-check.done {
@@ -5948,18 +5938,18 @@ html[data-scheme="light"] .doc {
 }
 
 .start-check.done i {
-  background: var(--s-done);
-  border-color: var(--s-done);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--s-done) 60%, transparent);
+  background: var(--done);
+  border-color: var(--done);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--done) 60%, transparent);
 }
 
 .start-check.wait i {
-  border-color: var(--s-wait);
+  border-color: var(--needs);
 }
 
 .start-check.fail i {
-  background: var(--s-fail);
-  border-color: var(--s-fail);
+  background: var(--fail);
+  border-color: var(--fail);
 }
 
 /* The tour's buttons are the set's (buttons.css); its biggest, the step's
@@ -5974,10 +5964,10 @@ html[data-scheme="light"] .doc {
 .start-said {
   margin: 12px 0;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--s-fail) 40%, transparent);
-  border-left: 3px solid var(--s-fail);
+  border: 1px solid color-mix(in srgb, var(--fail) 40%, transparent);
+  border-left: 3px solid var(--fail);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--s-fail) 6%, transparent);
+  background: color-mix(in srgb, var(--fail) 6%, transparent);
 }
 
 .start-said p:first-child {
@@ -5989,7 +5979,7 @@ html[data-scheme="light"] .doc {
   margin: 14px 0;
   padding: 12px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--s-ask);
+  border-left: 3px solid var(--accent);
   border-radius: var(--panel-radius);
   background: var(--panel);
 }
@@ -6018,20 +6008,20 @@ html[data-scheme="light"] .doc {
   border-radius: var(--radius-control);
   shape-rendering: crispEdges;
 }
-/* The overlay's own ink and void, from the page (UI audit #198). */
+/* The overlay's own ink and well, from the page (UI audit #198). */
 .start-qr rect {
   fill: var(--ink);
 }
 .start-qr path {
-  fill: var(--void);
+  fill: var(--well);
 }
 
 .start-code {
   margin: 16px 0;
   padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--s-ask) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: var(--panel-radius);
-  background: color-mix(in srgb, var(--s-ask) 5%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
   text-align: center;
 }
 
@@ -6039,8 +6029,8 @@ html[data-scheme="light"] .doc {
   margin: 4px 0 16px;
   font: 700 52px/1 var(--font-title); /* off-scale: the start code */
   letter-spacing: 0.18em; /* off-scale: the start code */
-  color: var(--s-ask);
-  text-shadow: 0 0 24px color-mix(in srgb, var(--s-ask) 35%, transparent);
+  color: var(--accent);
+  text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* A join secret (#760): after the code, smaller, on a line of its own. */
@@ -6066,7 +6056,7 @@ html[data-scheme="light"] .doc {
   height: 8px;
   margin-right: 4px;
   border-radius: 50%;
-  background: var(--s-wait);
+  background: var(--needs);
   animation: start-pulse 1.4s ease-in-out infinite;
 }
 

@@ -42,12 +42,19 @@
   --accent: #78ce57;
   --accent-fill: var(--accent);
   --needs: #eea54a;
-  --needs-tint: color-mix(in srgb, var(--needs) 14%, transparent);
   --fail: #ec6c5f;
-  --fail-tint: color-mix(in srgb, var(--fail) 14%, transparent);
   --review: #8fb4dc;
   --done: #6fc884;
   --backdrop: rgb(0 0 0 / 0.4);
+
+  /* A pull request's state, in GitHub's colours (#1566), so a PR reads
+     as it does there: open, merged, closed, in the merge queue, a draft.
+     look.ts lifts each to AA on every surface. */
+  --gh-open: #3fb950;
+  --gh-merged: #ab7df8;
+  --gh-closed: #f8655e;
+  --gh-queued: #d29922;
+  --gh-draft: #9198a1;
 
   /* Depth: a card's shadow, a raised thing's (a popover, a menu), a top
      highlight, a sheen down a surface and the composer's glow. look.ts

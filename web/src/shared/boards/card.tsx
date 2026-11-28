@@ -23,6 +23,7 @@ import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { useSubscribe } from "../ui/hooks";
 import { Avatar } from "../kit/avatar";
+import { PrMark, prMarkOf } from "../kit/pr-mark";
 import { day } from "../time";
 import { boards, type ForgeChecks } from "./store";
 import { DocLink, DocPicker } from "./docs";
@@ -128,6 +129,7 @@ export function AttachmentChip({ a, platform, facts = "settled", stalled, waitin
         data-attach-role={a.role}
         data-board-block={a.block?.state}
       >
+        {a.live?.kind === "pr" && <PrMark {...prMarkOf(a.live)} size="xs" />}
         {name}
       </ObjectChip>
       {more.length > 0 && (
@@ -342,6 +344,7 @@ export function Drawer({ r, platform, close, project, others, write, act, id, wh
         </span>
       </div>
       <div class="board-line" title={r.live?.state === "closed" && r.lane === "done" ? liveWord(r.live) : undefined}>
+        {r.live?.kind === "pr" && <PrMark {...prMarkOf(r.live)} />}
         {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={queueChip(r.live)?.tone ?? liveTone(r.live.state)}>{queueChip(r.live)?.word ?? liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>

@@ -77,7 +77,8 @@ export function itemBlockSpecs(tag: string) {
     expect(text).toBe(bg);
     const facts = b.locator("[data-item-facts]");
     await expect(facts.locator("[data-item-fact='branch']")).toHaveText("land/rail-and-ux → main");
-    await expect(facts.locator("[data-item-fact='checks']")).toHaveText(/29\s*● 1\s*1/);
+    await expect(facts.locator("[data-item-fact='checks']")).toHaveText(/29\s*1\s*1/);
+    await expect(facts.locator("[data-item-fact='checks'] .item-warn svg")).toHaveCount(1);
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='jake']")).toHaveAttribute("title", "jake approved");
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='alec']")).toHaveAttribute("data-ring", "asked");
     await expect(facts.locator("[data-item-avatar='reviewer'][data-name='jake']")).not.toHaveAttribute("data-ring", /.*/);
@@ -102,26 +103,27 @@ export function itemBlockSpecs(tag: string) {
     await shot(page, "pr-ready");
   });
 
-  test(`${tag}: a merged PR has a done pill and no strip`, async ({ page }) => {
+  test(`${tag}: a merged PR has GitHub's purple pill and no strip`, async ({ page }) => {
     await open(page);
     const b = block(page, "pr-merged");
     await expect(b.locator("[data-item-pill]")).toHaveText("Merged");
     await expect(b).toHaveAttribute("data-item-state", "merged");
     await expect(b.locator("[data-item-next]")).toHaveCount(0);
     await expect(b.locator("[data-item-fact='text']")).toHaveText("merged 1cc9e39f · 2h");
-    // The pill is done's color (Lift 7: merged is done), not red.
-    const [pill, done] = await Promise.all([
+    // The pill is GitHub's merged purple (#1566), as its mark is.
+    const [pill, merged] = await Promise.all([
       b.locator("[data-item-pill]").evaluate((e) => getComputedStyle(e).borderTopColor),
       page.evaluate(() => {
         const s = document.createElement("i");
-        s.style.color = "var(--done)";
+        s.style.color = "var(--gh-merged)";
         document.body.append(s);
         const c = getComputedStyle(s).color;
         s.remove();
         return c;
       }),
     ]);
-    expect(pill).toBe(done);
+    expect(pill).toBe(merged);
+    await expect(b.locator('.item-head [data-pr="merged"]')).toBeVisible();
     await shot(page, "pr-merged");
   });
 

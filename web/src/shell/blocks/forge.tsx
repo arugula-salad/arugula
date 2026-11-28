@@ -31,6 +31,7 @@ import { ago } from "../../shared/time";
 import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab, type NextStep, type Reviewer as ItemReviewer } from "../../shared/ui/item-block";
 import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
+import { isPrState, PrMark } from "../../shared/kit/pr-mark";
 import { Caret, ExternalIcon } from "../../shared/ui/icons";
 import { WatchesOn } from "../../shared/watches-on";
 
@@ -153,7 +154,8 @@ const BLOCKED = "The forge won't merge it yet, though it has no conflicts: on Gi
 /** A forge item's state, in its tone: merged is purple, not the accent. */
 const stateTone = (st: string): Tone | null => (st === "open" ? "ok" : st === "merged" ? "merged" : st === "closed" ? "danger" : st === "draft" ? "accent" : st === "revising" ? "warn" : null);
 
-const linkedState = (st: string) => <StateChip tone={stateTone(st)}>{st}</StateChip>;
+/** A linked PR's state: GitHub's mark and colour (#1566). */
+const linkedState = (st: string) => (isPrState(st) ? <PrMark state={st} size="xs" word={st} /> : <StateChip tone={stateTone(st)}>{st}</StateChip>);
 
 /** How each forge merges, as the daemon names them, with a word each. */
 const MERGE_STYLES: Record<string, [string, string][]> = {

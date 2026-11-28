@@ -25,6 +25,7 @@ import { liveSessions, openPrs, prWord, waitingOf } from "../../shared/boards/te
 import { issues, linkedRepos, openOnGithub } from "../../shared/issues/store";
 import { IssueApiContext, IssueView, type IssueApi } from "../../shared/issues/view";
 import { Avatar } from "../../shared/kit/avatar";
+import { PrMark, prMarkOf } from "../../shared/kit/pr-mark";
 import { NeedList, NeedRow } from "../../shared/kit/need-row";
 import { day } from "../../shared/time";
 import { names } from "../links";
@@ -148,7 +149,7 @@ function CardProps({ c }: { c: Card }) {
       )}
       {pr && (
         <Prop name="PR" data="pr">
-          {pr.label} <span class="dim">· {prWord(pr.live)}</span>
+          <PrMark {...prMarkOf(pr.live)} /> {pr.label} <span class="dim">· {prWord(pr.live)}</span>
         </Prop>
       )}
     </>

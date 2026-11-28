@@ -42,18 +42,6 @@
   color: var(--ink-dim);
 }
 
-.item-block[data-item-state="open"] .item-kind {
-  color: var(--done);
-}
-
-.item-block[data-item-state="merged"] .item-kind {
-  color: var(--done);
-}
-
-.item-block[data-item-state="closed"] .item-kind {
-  color: var(--fail);
-}
-
 .item-number {
   flex: none;
   color: var(--ink-dim);
