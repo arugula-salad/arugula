@@ -19,6 +19,13 @@ test("who did it: a person, someone gone, or their agent", () => {
   assert.equal(whoLabel("a1", { machine: "d1", machine_name: "geek" }, nameOf), "Jake's agent on geek");
 });
 
+test("the reader's own agent reads as theirs, never \"you's\" (Arugula #1559)", () => {
+  const mine = (a) => (a === "a1" ? "you" : nameOf(a));
+  assert.equal(whoLabel("a1", { machine: "d1", machine_name: "dust" }, mine), "your agent on dust");
+  assert.equal(whoLabel("a1", { machine: "agt_0123", machine_name: "cc (MCP)" }, mine), "your agent token “cc”");
+  assert.equal(whoLabel("a2", { machine: "d1", machine_name: "dust" }, mine), "Sam's agent on dust");
+});
+
 test("an agent token's agent reads as a token, never a machine (UI audit #192)", () => {
   const token = { machine: "agt_0123", machine_name: "redone: claude code (MCP)" };
   assert.equal(whoLabel("a1", token, nameOf), "Jake's agent token “redone: claude code”");

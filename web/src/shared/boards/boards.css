@@ -7,7 +7,6 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1400px;
   min-width: 0;
   container-type: inline-size;
 }
@@ -19,13 +18,6 @@
   border: 1px solid var(--needs);
   border-radius: 6px;
   background: var(--section);
-}
-
-/* The lanes are columns, so the page takes more than the 880px reading column of its siblings. */
-@media (min-width: 701px) {
-  .platform-section[data-board-page] {
-    padding-inline: max(24px, calc((100% - 1280px) / 2));
-  }
 }
 
 /* The four lanes: four across when each gets 230px of the board, two per row
@@ -683,6 +675,7 @@
 }
 
 .board-goal {
+  max-width: 72ch;
   margin: 4px 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -692,7 +685,6 @@
 .board-goal.editable {
   position: relative;
   display: block;
-  max-width: 72ch;
   margin: 0 -10px;
   padding: 8px 34px 8px 10px;
   border: 1px solid transparent;

@@ -5,6 +5,7 @@
 // footer. Only owners and editors see the list, so a viewer's is empty.
 
 import { useEffect, useState } from "preact/hooks";
+import { agentOf } from "../../shared/agent-label";
 import type { TrackerPendingWrite, TrackerPendingWrites, TrackerWrite } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { askText } from "../../shared/ui/menu";
@@ -133,7 +134,7 @@ export function WaitingWrites({ project }: { project: string }) {
               </span>
               <span class="triage-title">{shown(w.write)}</span>
               <span class="triage-who dim">
-                {w.person}'s agent on {w.machine_name}
+                {agentOf(w.person)} on {w.machine_name}
               </span>
               <button class="primary" disabled={busy} data-waiting-approve onClick={() => void act(() => call("POST", `${base}/${w.id}/approve`))}>
                 Approve
