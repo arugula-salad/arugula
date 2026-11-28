@@ -887,6 +887,9 @@ pub enum SessionIssuesOp {
         text: String,
         #[serde(default)]
         parent: Option<i64>,
+        /// A slug a watcher can wake on (Arugula #1538), as `post_thread`'s.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal: Option<String>,
     },
     /// The project's boards, as the session's asker may read them (Arugula
     /// #1381); with `board` (`brd_…`, or an open board's exact title) that
@@ -1026,6 +1029,25 @@ pub enum Reported {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A post's signal round-trips, is left out when absent, and an op from
+    /// before it reads without one (Arugula #1538).
+    #[test]
+    fn a_thread_post_carries_its_signal() {
+        let op = |signal: Option<&str>| SessionIssuesOp::ThreadPost {
+            room: "staff".into(),
+            text: "up".into(),
+            parent: None,
+            signal: signal.map(Into::into),
+        };
+        let v = serde_json::to_value(op(Some("pr_ready"))).unwrap();
+        assert_eq!(v["signal"], "pr_ready");
+        assert_eq!(serde_json::from_value::<SessionIssuesOp>(v).unwrap(), op(Some("pr_ready")));
+        let none = serde_json::to_value(op(None)).unwrap();
+        assert!(none.get("signal").is_none(), "{none}");
+        let old = serde_json::json!({ "op": "thread_post", "room": "staff", "text": "up" });
+        assert_eq!(serde_json::from_value::<SessionIssuesOp>(old).unwrap(), op(None));
+    }
 
     #[test]
     fn on_the_wire() {

@@ -2072,6 +2072,22 @@ pub struct AgentMessages {
     pub parent: Option<ChatMessage>,
 }
 
+/// A signal's slug (Arugula #1538): a word a watcher matches on, so one
+/// spelling: lowercase letters, digits, `_` and `-`, starting with a letter.
+pub fn signal_check(s: &str) -> Result<(), String> {
+    let ok = (1..=SIGNAL_MAX).contains(&s.len())
+        && s.starts_with(|c: char| c.is_ascii_lowercase())
+        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-');
+    if ok {
+        return Ok(());
+    }
+    Err(format!(
+        "signal {s:?}: use a short slug like pr_ready: lowercase letters, digits, _ and -, starting with a letter, at most {SIGNAL_MAX} characters"
+    ))
+}
+
+pub const SIGNAL_MAX: usize = 40;
+
 #[cfg(test)]
 mod tests {
     use super::GrantScope;
