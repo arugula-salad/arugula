@@ -32,12 +32,14 @@ import type {
   ChatTargetKind,
   ChatToGithub,
   NotifyLevel,
+  ThreadsUnread,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
 import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
 import { presence } from "./chat/presence";
-import { emptySidebar } from "./chat/sidebar";
+import { savedIn, threadsIn } from "./chat/badges";
+import { emptySidebar, type ChatScope } from "./chat/sidebar";
 import { sessionPins } from "./session-pins-store";
 import { ThreadState } from "./chat/thread-state";
 import type { ChatTag, TaggedPost } from "./chat/tags";
@@ -154,6 +156,9 @@ export class ChatStore {
   /** Unread replies in the threads I follow, and how many mention me: the
    * Threads view's badge. Not counted in `unread()`: Activity's is apart. */
   threadsUnread = { n: 0, mentions: 0 };
+  /** The same by room, from a server that says (Arugula #1529); null from
+   * one that doesn't: the totals are all there is. */
+  threadsByRoom: ThreadsUnread[] | null = null;
   /** The reader's Inbox as the stream last said it (Arugula #1430,
    * #1433): its one count, that count by project, and how many times it's
    * been said, so what lists its items reads them again. */
@@ -259,6 +264,7 @@ export class ChatStore {
     presence.start();
     this.rooms = r.rooms;
     this.threadsUnread = { n: r.threads_unread ?? 0, mentions: r.threads_mentions ?? 0 };
+    this.threadsByRoom = r.threads_by_room ?? null;
     this.emit();
   }
 
@@ -731,9 +737,23 @@ export class ChatStore {
     return !!this.saved?.some((i) => i.room === room && i.seq === seq && i.done === null);
   }
 
-  /** What's saved and not done: the Saved view's count. */
-  savedTodo(): number {
-    return this.saved?.filter((i) => i.done === null).length ?? 0;
+  /** What's saved in the rooms `scope` lists (every room, with none), done
+   * or not: the Saved view's list, null until read. A room the store
+   * doesn't know isn't in a scope (Arugula #1529). */
+  savedIn(scope?: ChatScope): ChatSavedItem[] | null {
+    return this.saved ? savedIn(this.saved, (id) => this.room(id), scope) : null;
+  }
+
+  /** What's saved there and not done: the Saved view's count. */
+  savedTodo(scope?: ChatScope): number {
+    return this.savedIn(scope)?.filter((i) => i.done === null).length ?? 0;
+  }
+
+  /** Unread followed-thread replies, and how many mention the reader, in the
+   * rooms `scope` lists: the Threads badge, which counts the rooms its view
+   * shows. An older server gives totals only: those, whatever the scope. */
+  threadsBadge(scope?: ChatScope): { n: number; mentions: number } {
+    return threadsIn(this.threadsByRoom, this.threadsUnread, (id) => this.room(id), scope);
   }
 
   /** Save a message, with a reminder at `remindAt` (ms) if given; saving

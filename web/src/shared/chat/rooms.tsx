@@ -354,7 +354,8 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   const agents = useAgentRooms(store, scope?.project);
   const order = [...groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms)), ...(collapsed.has(AGENTS_GROUP) ? [] : agentOrder(agents))];
   useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, readAll, nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
-  const savedTodo = store.savedTodo();
+  const savedTodo = store.savedTodo(scope);
+  const threads = store.threadsBadge(scope);
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
 
   const toggle = (key: string) => toggleGroup(store, key, api.toast);
@@ -451,7 +452,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         />
         <Row
           kind={route.view === "threads" ? "selected" : "plain"}
-          bold={store.threadsUnread.n > 0}
+          bold={threads.n > 0}
           data-chat-threads
           lead={
             <span class="chat-sigil">
@@ -459,7 +460,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             </span>
           }
           title="Threads"
-          meta={store.threadsUnread.n > 0 ? [<Count for={store.threadsUnread.mentions ? "mention" : "you"}>{badge(store.threadsUnread.n, store.threadsUnread.mentions)}</Count>] : undefined}
+          meta={threads.n > 0 ? [<Count for={threads.mentions ? "mention" : "you"}>{badge(threads.n, threads.mentions)}</Count>] : undefined}
           onClick={() => nav.openChatView("threads")}
         />
       </div>

@@ -2459,6 +2459,14 @@
           },
           "type": "array"
         },
+        "threads_by_room": {
+          "default": [],
+          "description": "The same counts by room, only the rooms with something unread: what\na page that lists some rooms adds up for its badge, so the Threads\nbadge counts what its view shows. Empty from a server that doesn't\nsay; then the two totals are all there is.",
+          "items": {
+            "$ref": "#/$defs/ThreadsUnread"
+          },
+          "type": "array"
+        },
         "threads_mentions": {
           "default": 0,
           "format": "uint64",
@@ -3565,6 +3573,30 @@
         "days",
         "from",
         "to"
+      ],
+      "type": "object"
+    },
+    "ThreadsUnread": {
+      "description": "A room's unread followed-thread replies, and how many mention the reader\n([`ChatRooms::threads_by_room`]).",
+      "properties": {
+        "mentions": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "room": {
+          "type": "string"
+        },
+        "unread": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "unread",
+        "mentions"
       ],
       "type": "object"
     },

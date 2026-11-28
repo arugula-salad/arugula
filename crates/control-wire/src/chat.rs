@@ -254,6 +254,23 @@ pub struct ChatRooms {
     pub threads_unread: u64,
     #[serde(default)]
     pub threads_mentions: u64,
+    /// The same counts by room, only the rooms with something unread: what
+    /// a page that lists some rooms adds up for its badge, so the Threads
+    /// badge counts what its view shows. Empty from a server that doesn't
+    /// say; then the two totals are all there is.
+    #[serde(default)]
+    pub threads_by_room: Vec<ThreadsUnread>,
+}
+
+/// A room's unread followed-thread replies, and how many mention the reader
+/// ([`ChatRooms::threads_by_room`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ThreadsUnread {
+    pub room: String,
+    pub unread: u64,
+    pub mentions: u64,
 }
 
 /// `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
