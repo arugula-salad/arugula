@@ -1354,7 +1354,7 @@ function BoardItemRow({
   const st = tileState(r, Date.now(), !!own?.needs || !!other?.needs, item);
   const meta = tileMeta(r, who);
   const m = chain === undefined ? null : marksOf(r);
-  const waits = m ? [...(m.after ? [m.after.words] : []), ...m.blocked.map((b) => b.words), ...(chain ? ["on the longest chain"] : [])] : [];
+  const waits = m ? [...(m.after ? [m.after.words] : []), ...m.blocked.map((b) => b.words), ...(chain ? ["on the longest chain"] : [])].filter((w) => w !== st.word) : [];
   const more = (e: MouseEvent) =>
     menuAt(e, [
       { label: "Details", run: () => (details ?? open)(r.id) },
