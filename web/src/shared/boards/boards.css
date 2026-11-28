@@ -1174,3 +1174,16 @@ a.board-tile-title:focus-visible {
   gap: 12px;
   width: min(520px, 80vw);
 }
+
+/* Steps (Arugula #1579): one column of steps, each its tiles; the longest chain's tiles carry an accent edge as well as their words. */
+.board-steps {
+  max-width: 720px;
+}
+
+.board-steps > p {
+  margin: 0;
+}
+
+.board-tile[data-board-on-chain] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}

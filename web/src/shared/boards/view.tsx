@@ -30,7 +30,8 @@
 
 import { useEffect, useId, useRef, useState, useContext } from "preact/hooks";
 import type { BoardLead, BoardAnsweredAsk, BoardGroup, BoardPointer, LayoutNewPane, LayoutPane, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
-import type { TabItem } from "../kit/tabs";
+import { Tabs, type TabItem } from "../kit/tabs";
+import { Choice } from "../kit/field";
 import type { PanelTarget } from "../kit/panel";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -67,8 +68,8 @@ import { CardSessions, Drawer, useRowSessions, type Act } from "./card";
 import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
-import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, leadReachWords } from "./text";
+import { STEPS, groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, stepsOf, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, leadReachWords } from "./text";
 
 /** The narrowest a pane gets before the next one stacks under it: at 1440, the board and two panes beside it, the third stacked. */
 const PANE_MIN = 280;
@@ -148,6 +149,9 @@ export function BoardPanel({
     setFolds(next);
     saveFolds(id, next);
   };
+  /** Lanes or Steps (Arugula #1579), kept with the folds. */
+  const showSteps = isFolded(folds, STEPS);
+  const pickView = (v: string) => (v === "steps") !== showSteps && toggleFold(STEPS);
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
   /** The close-epic form is open and what it has been given: the trigger is in the view switch's row, the form under the progress bar. */
@@ -538,6 +542,36 @@ export function BoardPanel({
     );
   };
 
+  // Steps (Arugula #1579): the open rows in board_read's order, by step, each tile as its lane draws it, with what it waits on and the longest open chain marked.
+  const chain = new Set(view.chain ?? []);
+  const inChain = (view.chain ?? []).flatMap((c) => allRows.find((r) => r.id === c) ?? []);
+  const ordered = stepsOf(view, found);
+  const stepList = (
+    <div class="board-steps" data-board-steps>
+      {inChain.length > 1 && (
+        <p class="m-meta" data-board-chain>
+          Longest chain: {inChain.map((r) => pointerLabel(r.pointer, r.live)).join(" → ")}
+        </p>
+      )}
+      {!ordered.length && !narrows && <EmptyLine data-board-steps-none>No open rows.</EmptyLine>}
+      {ordered.map((st) => (
+        <section key={st.step} data-board-step={st.step}>
+          <SectionHead title={`Step ${st.step}`} count={st.rows.length} />
+          <ul class="board-rows">
+            {st.rows.map((r) => (
+              <BoardItemRow key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={view.board.project} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={openRow} details={setDrawer} opened={drawer} asks={!desk} chain={chain.has(r.id)} />
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+  const views = [
+    { id: "lanes", label: "Lanes", title: "Lanes" },
+    { id: "steps", label: "Steps", title: "Steps" },
+  ] as const;
+  const viewNow = showSteps ? "steps" : "lanes";
+
   // The desk's panes (Lift 5b): the board's groups are its default panes;
   // what the lead and you opened is beside them, from the layout record.
   // What you open takes the focus; what the lead opens never does.
@@ -613,6 +647,7 @@ export function BoardPanel({
             prs={prs}
             actions={
               <>
+                {!phone && <Choice label="View" options={views} value={viewNow} onChange={pickView} />}
                 <ChangedLine layout={layout} reset={reset} />
                 {addPane.length > 0 && (
                   <button type="button" class="secondary small" aria-haspopup="menu" data-board-add-pane-menu onClick={(e) => menuAt(e, addPane)}>
@@ -634,6 +669,7 @@ export function BoardPanel({
             act={act}
             id={id}
           />
+          {phone && <Tabs label="View" tabs={[...views]} current={viewNow} onPick={pickView} />}
           {picking && <DocPicker project={view.board.project} taken={new Set((view.docs ?? []).flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])))} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
           {(filterOpen || narrows) && findBar}
           {editing === "new" && rowForm}
@@ -670,9 +706,11 @@ export function BoardPanel({
           }
         />
       )}
-      {sections(narrowed)
-        .filter((sec) => !desk || !replaced.has(defaultName(sec)))
-        .map(drawSection)}
+      {desk && showSteps
+        ? stepList
+        : sections(narrowed)
+            .filter((sec) => !desk || !replaced.has(defaultName(sec)))
+            .map(drawSection)}
       {view.said && (
         <p class="board-said" role="status" data-board-said>
           {view.said}
@@ -1284,6 +1322,7 @@ function BoardItemRow({
   details,
   opened,
   asks,
+  chain,
 }: {
   r: BoardRow;
   editing: boolean;
@@ -1299,6 +1338,8 @@ function BoardItemRow({
   details?: (row: string) => void;
   opened: string | null;
   asks: boolean;
+  /** Drawn in Steps (Arugula #1579): whether it's on the longest open chain. Its blockers show then too. */
+  chain?: boolean;
 }) {
   const phone = usePhone();
   const label = pointerLabel(r.pointer, r.live);
@@ -1312,6 +1353,8 @@ function BoardItemRow({
   const item = useContext(RowItems).get(r.id);
   const st = tileState(r, Date.now(), !!own?.needs || !!other?.needs, item);
   const meta = tileMeta(r, who);
+  const m = chain === undefined ? null : marksOf(r);
+  const waits = m ? [...(m.after ? [m.after.words] : []), ...m.blocked.map((b) => b.words), ...(chain ? ["on the longest chain"] : [])].filter((w) => w !== st.word) : [];
   const more = (e: MouseEvent) =>
     menuAt(e, [
       { label: "Details", run: () => (details ?? open)(r.id) },
@@ -1351,6 +1394,7 @@ function BoardItemRow({
       data-status={r.status}
       data-tile={st.mark}
       data-needs-you={st.needs ? "" : undefined}
+      data-board-on-chain={chain ? "" : undefined}
       current={opened === r.id}
       draggable={groups.length > 0 && !phone && !editing}
       onDragStart={(e: DragEvent) => {
@@ -1398,6 +1442,11 @@ function BoardItemRow({
           {meta.length > 0 && (
             <p class="board-tile-meta m-meta" data-board-tile-meta>
               {meta.join(" · ")}
+            </p>
+          )}
+          {waits.length > 0 && (
+            <p class="board-tile-meta m-meta" data-board-waits>
+              {waits.join(" · ")}
             </p>
           )}
           {asks && r.ask && !r.ask.raised && (

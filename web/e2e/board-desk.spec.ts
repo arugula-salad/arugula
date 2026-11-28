@@ -345,3 +345,57 @@ test("Add row is a sheet: a title, a description and Start an agent on it; it op
   await expect.poll(() => calls).toEqual(["issue Tabs keep their order", `row ${made.id}`, "agent"]);
   await expect(sheet).toHaveCount(0);
 });
+
+// The board as board_read orders it: Doing and Review are step 1; #1622 waits on #1443, so it is step 2 and the chain's end.
+const at = (r: (typeof ROWS.next)[number], step: number, more: Record<string, unknown> = {}) => ({ ...r, step, ...more });
+const STEPPED = {
+  ...VIEW,
+  zones: VIEW.zones.map((z) => ({ ...z, rows: z.rows.map((r) => (r.id === "row_1622" ? at(r, 2, { marks: [{ kind: "blocked_by", number: 1443, title: "Sidebar caret beside the crumb" }] }) : r.lane === "done" ? r : at(r, 1))) })),
+  sequence: ["row_1443", "row_1448", "row_1416", "row_1622"],
+  chain: ["row_1443", "row_1622"],
+};
+async function openStepped(page: Page) {
+  await openDesk(page);
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: STEPPED }));
+  await page.reload();
+}
+
+test("Lanes | Steps (#1579): Steps lists the open rows in board_read's order by step, with blockers and the longest chain; the pick stays across a reload", async ({ page }, info) => {
+  await openStepped(page);
+  const pick = page.getByRole("radiogroup", { name: "View" });
+  await expect(pick.getByRole("radio", { name: "Lanes" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator("[data-board-steps]")).toHaveCount(0);
+  await pick.getByRole("radio", { name: "Steps" }).click();
+  const steps = page.locator("[data-board-steps]");
+  await expect(steps.locator("[data-board-step]")).toHaveCount(2);
+  // The order is the data's: the sequence, Done left out.
+  await expect(steps.locator("[data-board-row]")).toHaveCount(4);
+  expect(await steps.locator("[data-board-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.boardRow))).toEqual(STEPPED.sequence);
+  const last = steps.locator('[data-board-step="2"] [data-board-row="row_1622"]');
+  await expect(last).toContainText("blocked by #1443");
+  await expect(last.locator("[data-board-waits]")).toHaveText("on the longest chain");
+  await expect(steps.locator("[data-board-on-chain]")).toHaveCount(2);
+  await expect(steps.locator("[data-board-chain]")).toHaveText("Longest chain: #1443 → #1622");
+  await page.screenshot({ path: info.outputPath("board-steps-dark.png") });
+  // Kept for this board across a reload (in the light theme); Lanes brings the lanes back.
+  await page.evaluate(() => localStorage.setItem("arugula-appearance", JSON.stringify({ theme: "light", preset: "arugula", light: null, warmth: 0, depth: 0 })));
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-scheme", "light");
+  await expect(page.locator("[data-board-steps] [data-board-row]")).toHaveCount(4);
+  await page.screenshot({ path: info.outputPath("board-steps-light.png") });
+  await page.getByRole("radiogroup", { name: "View" }).getByRole("radio", { name: "Lanes" }).click();
+  await expect(page.locator("[data-board-steps]")).toHaveCount(0);
+  await expect(page.locator('[data-board-zone="lane_next"]')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('[data-board-zone="lane_next"]')).toBeVisible();
+  await expect(page.locator("[data-board-steps]")).toHaveCount(0);
+});
+
+test("on a phone Lanes | Steps is a tab (#1579)", async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openStepped(page);
+  await expect(page.getByRole("radiogroup", { name: "View" })).toHaveCount(0);
+  await page.getByRole("tablist", { name: "View" }).getByRole("tab", { name: "Steps" }).click();
+  await expect(page.locator("[data-board-steps] [data-board-row]")).toHaveCount(4);
+  await page.screenshot({ path: info.outputPath("board-steps-phone.png"), fullPage: true });
+});
