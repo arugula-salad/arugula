@@ -2073,7 +2073,14 @@ export type ChatRooms = { rooms: Array<ChatRoom>,
  * mention them (#106): the Threads view's badge, which the rooms'
  * own counts leave out.
  */
-threads_unread: number, threads_mentions: number, };
+threads_unread: number, threads_mentions: number, 
+/**
+ * The same counts by room, only the rooms with something unread: what
+ * a page that lists some rooms adds up for its badge, so the Threads
+ * badge counts what its view shows. Empty from a server that doesn't
+ * say; then the two totals are all there is.
+ */
+threads_by_room: Array<ThreadsUnread>, };
 
 /**
  * `PUT /api/chat/rooms/{id}/messages/{seq}/saved`: save the message for
@@ -7364,6 +7371,12 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
  * Why telemetry is on or off here.
  */
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
+
+/**
+ * A room's unread followed-thread replies, and how many mention the reader
+ * ([`ChatRooms::threads_by_room`]).
+ */
+export type ThreadsUnread = { room: string, unread: number, mentions: number, };
 
 /**
  * The conversation a machine's agent's to-do is for (Arugula #1462): its

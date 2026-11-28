@@ -6,7 +6,7 @@
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
-import { inView, type ChatScope } from "./sidebar";
+import type { ChatScope } from "./sidebar";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
@@ -87,7 +87,7 @@ export function SavedView({ phone, scope }: { phone: boolean; scope?: ChatScope 
     void chat.loadSaved();
   }, []);
   // In a scope, the messages of its rooms (Arugula #883).
-  const items = chat.saved?.filter((i) => inView(chat.room(i.room), scope)) ?? null;
+  const items = chat.savedIn(scope);
   const todo = items?.filter((i) => i.done === null) ?? [];
   const finished = items?.filter((i) => i.done !== null) ?? [];
   return (
