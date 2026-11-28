@@ -1487,7 +1487,7 @@ button.k-foot-key:hover {
   border-radius: 7px;
   background: var(--needs);
   color: var(--on-needs);
-  font: 600 var(--text-label) / 14px var(--font-mono);
+  font: 600 var(--text-label) / 14px var(--font-meta);
   text-align: center;
 }
 .k-rail-count.is-mention {

@@ -399,7 +399,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           <span class="ov-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.total} aria-valuenow={b.done} aria-label={`${b.done} of ${b.total} done`}>
             <i style={{ width: `${b.total ? Math.round((100 * b.done) / b.total) : 0}%` }} />
           </span>
-          <span class="m-id" data-ov-board-count>
+          <span class="m-meta" data-ov-board-count>
             {b.total ? `${b.done}/${b.total}` : "–"}
           </span>
         </div>

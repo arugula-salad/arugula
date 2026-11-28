@@ -156,7 +156,7 @@ export function NeedRow({
   else meta.push(<span class={mine ? "k-needs" : undefined}>{who(need)}</span>);
   if (need.escalated) meta.push("escalated");
   if (need.subject) meta.push(<span class="m-id">{need.subject.id}</span>);
-  if (need.age) meta.push(<span class="m-id">{need.age}</span>);
+  if (need.age) meta.push(<span class="m-meta">{need.age}</span>);
 
   // The note's check, as it's typed: what it looks like, if a secret.
   const secret = todo ? looksSecret(note) : null;

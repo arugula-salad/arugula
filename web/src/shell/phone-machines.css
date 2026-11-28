@@ -73,7 +73,7 @@
 .sheet-host .host-state {
   flex: none;
   color: var(--ink-dim);
-  font: var(--text-meta) var(--font-mono);
+  font: var(--text-meta) var(--font-meta);
 }
 
 .sheet-host .host-state {
@@ -111,7 +111,7 @@
 }
 
 .host-count {
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   color: var(--ink);
 }
 

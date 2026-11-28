@@ -60,14 +60,14 @@
   --glow: linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent);
 
   /* Type: the faces, system stacks with nothing bundled (§4.4), where mono
-     goes, and the sizes. Mono level 3: code, ids and meta lines (an id, a
-     count, a time, a section label, a row's kind, a state word) are mono;
-     titles are the sans, bold. */
+     goes, and the sizes. Mono level 2: code and ids (a #N, a sha, a pane
+     %N, a key cap) are mono; meta lines (a count, a time, a section label,
+     a row's kind, a state word) and titles, bold, are the sans. */
   --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-title: var(--font-sans);
   --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
   --font-id: var(--font-mono);
-  --font-meta: var(--font-mono);
+  --font-meta: var(--font-sans);
   --text-label: 11px;
   --text-meta: 12px;
   --text-body: 13px;

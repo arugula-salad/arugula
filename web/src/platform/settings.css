@@ -148,7 +148,7 @@
 .platform .settings-table thead th {
   padding-top: 2px;
   border-bottom: 1px solid var(--line);
-  font: 500 var(--text-label)/1.3 var(--font-mono);
+  font: 500 var(--text-label)/1.3 var(--font-meta);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--ink-dim);
@@ -198,7 +198,7 @@
 }
 
 .platform .agent-level {
-  font: 500 var(--text-label)/1.2 var(--font-mono);
+  font: 500 var(--text-label)/1.2 var(--font-meta);
   /* Its own height, and room for the kit's caret (shared/fields.css). */
   height: auto;
   padding: 3px 22px 3px 6px;
@@ -218,7 +218,7 @@
 .platform .agent-only {
   display: block;
   margin-top: 3px;
-  font: 500 var(--text-label)/1.2 var(--font-mono);
+  font: 500 var(--text-label)/1.2 var(--font-meta);
   color: var(--needs);
   overflow-wrap: anywhere;
 }
@@ -228,7 +228,7 @@
 .platform .agent-idle {
   display: block;
   margin-top: 3px;
-  font: 500 var(--text-label)/1.2 var(--font-mono);
+  font: 500 var(--text-label)/1.2 var(--font-meta);
   color: var(--ink-dim);
   cursor: help;
 }
@@ -305,7 +305,7 @@
 .platform .spend-table .num,
 .platform .spend-table thead th:nth-child(n + 3) {
   text-align: right;
-  font-family: var(--font-mono);
+  font-family: var(--font-meta);
   font-variant-numeric: tabular-nums;
 }
 
@@ -409,7 +409,7 @@
 .platform .env-label {
   display: block;
   margin-bottom: 4px;
-  font: 500 var(--text-label)/1.3 var(--font-mono);
+  font: 500 var(--text-label)/1.3 var(--font-meta);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--ink-dim);
@@ -466,7 +466,7 @@
 
 .platform .deploy-source-kind {
   margin-right: var(--space-1);
-  font: 500 var(--text-label)/1.3 var(--font-mono);
+  font: 500 var(--text-label)/1.3 var(--font-meta);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--ink-dim);
@@ -480,7 +480,7 @@
   border-radius: var(--chip-radius);
   background: none;
   box-shadow: none;
-  font: 500 var(--text-label)/1.4 var(--font-mono);
+  font: 500 var(--text-label)/1.4 var(--font-meta);
   color: var(--ink-dim);
 }
 
@@ -586,7 +586,7 @@
   }
   .platform .agent-matrix-wide td::before {
     content: attr(data-col);
-    font: 500 var(--text-label)/1.2 var(--font-mono);
+    font: 500 var(--text-label)/1.2 var(--font-meta);
     letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -636,7 +636,7 @@
   .platform .settings-table td[data-col]::before {
     content: attr(data-col);
     margin-right: 8px;
-    font: 500 var(--text-label)/1.2 var(--font-mono);
+    font: 500 var(--text-label)/1.2 var(--font-meta);
     letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--ink-dim);

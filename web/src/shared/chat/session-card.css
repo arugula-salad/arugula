@@ -73,7 +73,7 @@
 .session-card-id,
 .session-card-time,
 .session-card-where {
-  font: 500 var(--text-meta)/1.3 var(--font-mono);
+  font: 500 var(--text-meta)/1.3 var(--font-id);
   font-variant-numeric: tabular-nums;
 }
 
@@ -87,6 +87,7 @@ a.session-card-id:hover {
 
 .session-card-time {
   color: var(--ct);
+  font-family: var(--font-meta);
 }
 
 .session-card-where {
@@ -207,7 +208,7 @@ a.session-card-id:hover {
 .session-history time,
 .session-history .signed {
   color: var(--ink-dim);
-  font: var(--text-meta)/1.4 var(--font-mono);
+  font: var(--text-meta)/1.4 var(--font-meta);
   font-variant-numeric: tabular-nums;
 }
 
