@@ -191,6 +191,8 @@ test("the next morning, what the chief of staff opened before today and you have
   await expect(pane(page, "Yesterday's thread")).toHaveCount(0);
   const overnight = page.locator("[data-ov-overnight]");
   await expect(overnight).toHaveText("↺ 2 closed overnight");
+  // The tidy is yours, but the layout is still the chief of staff's change.
+  await expect(page.locator("[data-board-changed]")).toContainText("changed by chief of staff");
   await page.screenshot({ path: info.outputPath("overview-layout-next-morning.png") });
   // Once a day: a reload tidies nothing more.
   await page.reload();
