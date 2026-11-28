@@ -1754,6 +1754,11 @@ pub struct Ask {
     #[serde(default)]
     pub can_answer: bool,
     pub created_at: u64,
+    /// Its link on the page (Arugula #1581): posted in a chat thread, it
+    /// unfurls into the ask, answerable there. None for a raised ask.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub link: Option<String>,
 }
 
 /// An ask that was answered, kept in the row's history.
@@ -3852,6 +3857,7 @@ Done: People can sign up.
             mine: false,
             can_answer: false,
             created_at: 0,
+            link: None,
         });
         let text = render(&view(lanes(vec![(Lane::Review, vec![r.clone()])])));
         assert!(text.contains("      ? Ship it? (for sam)\n"), "{text}");

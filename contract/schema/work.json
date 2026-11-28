@@ -354,6 +354,13 @@
           "description": "`ask_…`; a raised ask has none.",
           "type": "string"
         },
+        "link": {
+          "description": "Its link on the page (Arugula #1581): posted in a chat thread, it\nunfurls into the ask, answerable there. None for a raised ask.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "mine": {
           "default": false,
           "description": "It is for the reader (a raised ask is for whoever reads the row).",

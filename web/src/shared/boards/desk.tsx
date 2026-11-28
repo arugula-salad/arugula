@@ -13,7 +13,7 @@
 
 import { createContext, type ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { BoardAsk, BoardRow, BoardView, ChatRoom, CiAlerts, InboxItem } from "../proto";
+import type { BoardRow, BoardView, ChatRoom, CiAlerts, InboxItem } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch } from "../maintenance";
 import { usePlatformApi } from "../platform-api";
@@ -28,7 +28,7 @@ import { Row } from "../kit/row";
 import { StateMark } from "../kit/state-mark";
 import { Tabs, type TabItem } from "../kit/tabs";
 import { boards } from "./store";
-import { boardItems, forTeammateFold, itemFor, itemNeed, itemWord, liveSessions, prWord, redLine, stalledFor, waitingOf, type OpenPr } from "./text";
+import { askNeed, boardItems, forTeammateFold, itemFor, itemNeed, itemWord, liveSessions, prWord, redLine, waitingOf, type OpenPr } from "./text";
 
 export function DeskTabs({ tabs, current, pick, close }: { tabs: TabItem[]; current: string; pick: (id: string) => void; close: (id: string) => void }) {
   return (
@@ -93,21 +93,6 @@ export function PrFold({ prs, open }: { prs: OpenPr[]; open: (pr: OpenPr) => voi
       ))}
     </div>
   );
-}
-
-/** An ask on a row, as the A2P row draws it: the option it recommends first (`y`, #1580), and marked. */
-export function askNeed(r: BoardRow, a: BoardAsk, now: number): Need {
-  const options = [...a.options].sort((x, y) => Number(y === a.recommend) - Number(x === a.recommend));
-  return {
-    kind: "ask",
-    title: a.question,
-    from: { name: a.asked_by },
-    for: a.mine ? "you" : a.who_name || "someone",
-    subject: r.live ? { kind: "issue", id: `#${r.live.number}` } : undefined,
-    lines: a.why ? [a.why] : undefined,
-    answer: a.can_answer ? { via: "card", options: options.map((o) => ({ id: o, label: o === a.recommend ? `${o} · recommended` : o })) } : undefined,
-    age: stalledFor(a.created_at, now),
-  };
 }
 
 /** The project's Inbox, for a board: the agents' items on its rows' issues (Arugula #1469), who reads, and how they answer. Null where the page has no Inbox (the shell's block: board asks alone). Read again when the stream says the Inbox changed, and after an answer. */
@@ -195,7 +180,7 @@ export function BoardNeeds({ view, at, answer, inbox, platform, tabs = [] }: { v
         key: a.id,
         who: a.mine ? "you" : a.who_name || "someone",
         since: a.created_at,
-        need: askNeed(r, a, now),
+        need: askNeed(a, r.live?.number, now),
         answer: (o) => void answer(r, o.id ? { option: o.id } : { text: o.label }),
         data: { "data-board-ask": a.id, "data-board-ask-row": r.id },
       });

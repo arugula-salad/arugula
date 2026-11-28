@@ -52,7 +52,7 @@ import { day } from "../time";
 import { BoardError, STALE_REV, boards } from "./store";
 import { DocLink, DocPicker } from "./docs";
 import { AddRowSheet } from "./add-row";
-import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, workerOf, askNeed, RowItems, rowItemWords, useBoardInbox } from "./desk";
+import { AlertStrip, BoardNeeds, BoardSide, DeskTabs, PrFold, workerOf, RowItems, rowItemWords, useBoardInbox } from "./desk";
 import { boardPlace, ChangedLine, forYou, PromptAsk, LANES, layoutItems, PaneBody, paneItem, paneMeta, prOf, rowOf, tabTitle } from "./arranged";
 import { busyNow, HOME, usePlaceLayout } from "../place-layout";
 import { LayoutSheet, useLayoutPrefs } from "../layout-prefs";
@@ -69,7 +69,7 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { STEPS, groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, stepsOf, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, leadReachWords } from "./text";
+import { PICK_DELAY_MS, groupMove, PICK_LIMIT, GOAL_MAX, debounced, epicLine, groupLine, isCard, laneCount, marksOf, waitingOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, sections, sourceLine, sourceLinked, leftOutLine, stepActive, stepsOf, workLabel, rowRef, findLine, openPrs, needsFirst, DONE_SHOWN, tileState, tileMeta, liveSessions, firstLine, progressWords, deskLine, askNeed, type OpenPr, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, leadReachWords } from "./text";
 
 /** The narrowest a pane gets before the next one stacks under it: at 1440, the board and two panes beside it, the third stacked. */
 const PANE_MIN = 280;
@@ -281,8 +281,9 @@ export function BoardPanel({
   // (decision 9), as a click on it would; on the desk, a row with an ask
   // shows it open in Needs you instead (#1580). Read as the board opens:
   // keeping the filter in the URL replaces the hash.
-  const [named] = useState(() => location.hash.match(/^#row=([A-Za-z0-9_-]+)/)?.[1]);
-  const rowKey = view && named ? (view.zones.flatMap((z) => z.rows).find((r) => r.id === named || ("id" in r.pointer && r.pointer.id === named))?.id ?? named) : undefined;
+  // An ask's link (`/boards/:board/asks/:ask`, Arugula #1581) names its row too.
+  const [named] = useState(() => location.hash.match(/^#row=([A-Za-z0-9_-]+)/)?.[1] ?? location.pathname.match(/\/asks\/(ask_[0-9a-f]+)$/)?.[1]);
+  const rowKey = view && named ? (view.zones.flatMap((z) => z.rows).find((r) => r.id === named || ("id" in r.pointer && r.pointer.id === named) || r.ask?.id === named || r.asked?.some((a) => a.id === named))?.id ?? named) : undefined;
   const namedAsk = desk && rowKey ? view?.zones.flatMap((z) => z.rows).find((r) => r.id === rowKey && r.ask && !r.ask.raised) : undefined;
   useEffect(() => {
     if (!rowKey) return;
@@ -1451,7 +1452,7 @@ function BoardItemRow({
           )}
           {asks && r.ask && !r.ask.raised && (
             <div data-board-ask={r.ask.id}>
-              <NeedRow need={askNeed(r, r.ask, Date.now())} open onAnswer={(o) => void act(() => boards.answer(id, r.ask!.id, o.id ? { option: o.id } : { text: o.label }))} />
+              <NeedRow need={askNeed(r.ask, r.live?.number, Date.now())} open onAnswer={(o) => void act(() => boards.answer(id, r.ask!.id, o.id ? { option: o.id } : { text: o.label }))} />
             </div>
           )}
           {asks && r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}

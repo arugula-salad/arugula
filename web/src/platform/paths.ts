@@ -31,6 +31,9 @@
 //   /p/:project/triage             the Boards page, scrolled to Not on a board (#292, #656)
 //   /p/:project/boards             its boards
 //   /p/:project/boards/:board      a board (`brd_…`)
+//   /p/:project/boards/:board/asks/:ask  the board at the row of an ask
+//                                  (`ask_…`): its link, which unfurls in
+//                                  chat (Arugula #1581)
 //   /boards                        every project's boards, a group a project
 //   /boards/:board                 the same, that board selected (Arugula #1131)
 //   /docs                          every Doc the reader can read, their own
@@ -116,7 +119,7 @@ export type Route =
   | { page: "issue"; project: string; issue: string; msg?: number; thread?: number }
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
-  | { page: "board"; project: string; board: string }
+  | { page: "board"; project: string; board: string; ask?: string }
   | { page: "docs"; project?: string; all?: true; shared?: true }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
@@ -345,6 +348,10 @@ export function parse(path: string, search = "", hash = ""): Route {
   if (parts[2] === "boards" && parts.length === 4) {
     const board = idOf(parts[3]);
     return board?.startsWith("brd_") ? { page: "board", project, board } : missing;
+  }
+  if (parts[2] === "boards" && parts.length === 6 && parts[4] === "asks") {
+    const board = idOf(parts[3]);
+    return board?.startsWith("brd_") && parts[5]!.startsWith("ask_") ? { page: "board", project, board, ask: parts[5]! } : missing;
   }
   if (parts[2] === "docs" && parts.length === 3) return { page: "docs", project };
   if (parts[2] === "docs" && parts.length === 4) {
@@ -576,7 +583,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "boards":
       return `/p/${s(r.project)}/boards`;
     case "board":
-      return `/p/${s(r.project)}/boards/${s(r.board)}`;
+      return `/p/${s(r.project)}/boards/${s(r.board)}${r.ask ? `/asks/${s(r.ask)}` : ""}`;
     case "docs":
       return r.project ? `/p/${s(r.project)}/docs` : r.shared ? "/docs?shared=1" : r.all ? "/docs?all=1" : "/docs";
     case "doc":
