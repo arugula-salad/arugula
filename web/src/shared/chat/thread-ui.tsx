@@ -8,6 +8,7 @@ import "./threads.css";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { usePlatformApi, type ChatNav } from "../platform-api";
 import { MsgAvatar } from "./avatar";
+import { isAgentRoom } from "./agent-rooms";
 import { messageHooks } from "./msg-actions";
 import { ago, footer, rootOf } from "./threads";
 import { when } from "../time";
@@ -22,10 +23,11 @@ export function setThreadNav(n: ChatNav | null) {
 }
 
 /** Whether a room's messages take replies in a thread: those a team's
- * people talk in. An issue's or a run's comments are one flat list, as
- * they are on GitHub; an archive is read only. */
+ * people talk in, #agents and a board's channel among them (Arugula #1569).
+ * An issue's or a run's comments are one flat list, as they are on GitHub;
+ * an archive is read only. */
 export function threads(room: ChatRoom): boolean {
-  return room.kind === "channel" || room.kind === "dm" || room.kind === "pane" || room.kind === "session";
+  return room.kind === "channel" || room.kind === "dm" || room.kind === "pane" || room.kind === "session" || isAgentRoom(room);
 }
 
 /** Whether a message's replies show under it: in a room that takes them,

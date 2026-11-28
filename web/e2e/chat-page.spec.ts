@@ -258,6 +258,34 @@ test.describe("Tags (Arugula #1522)", () => {
     await expect(page.locator("[data-tag-list]")).toHaveCount(0);
     await expect(page.locator("[data-tag-option]")).toHaveCount(0);
   });
+
+  // Arugula #1569: a person starts a thread in #agents and a board's channel
+  // from a message's hover tools, as in any channel.
+  async function startThread(page: Page, id: string, seq: number) {
+    const view = page.locator(`[data-room-view="${id}"]`);
+    await view.locator(`[data-msg="${seq}"]`).hover();
+    await view.locator(`[data-msg="${seq}"] [data-msg-thread]`).click();
+    const thread = page.locator(`[data-thread-panel="${seq}"][data-thread-in-place]`);
+    const box = thread.getByRole("textbox", { name: "Reply in thread" });
+    await box.fill("On it.");
+    await box.press("Enter");
+    await expect.poll(() => page.evaluate(() => window.__fx.posted.at(-1))).toMatchObject({ text: "On it.", parent: seq });
+    await expect(thread.getByText("On it.")).toBeVisible();
+    await thread.locator("[data-thread-back]").click();
+    await expect(view.locator(`[data-thread-footer="${seq}"]`)).toContainText("1 reply");
+  }
+
+  test("#agents and a board's channel: a message's hover tools start a thread, and its reply counts under it", async ({ page }) => {
+    await open(page, `/p/${P}/chat/${AGENTS}`);
+    await expect(page.locator(`[data-room-view="${AGENTS}"] [data-thread-footer="4"]`)).toHaveCount(0);
+    await startThread(page, AGENTS, 4);
+    const board = "ob_00000003";
+    await page.goto(`/p/${P}/chat/${board}`);
+    const box = page.locator(`[data-room-view="${board}"]`).getByRole("textbox", { name: "Message #Product improvements" });
+    await box.fill("Who takes the copy pass?");
+    await box.press("Enter");
+    await startThread(page, board, 1);
+  });
 });
 
 test.describe("A room as a pane (Arugula #1522)", () => {
