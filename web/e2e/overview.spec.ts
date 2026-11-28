@@ -228,7 +228,7 @@ test.describe("on a computer", () => {
     }, host);
     await expect(head).toHaveAttribute("data-panel-state", "idle");
     await expect(head).toContainText(host);
-    await expect(head.locator('[title="wakes on its own"]')).toHaveCount(1);
+    await expect(head.locator('.k-panel-meta[title$="wakes on its own"]')).toHaveCount(1);
     // No session leads it: none.
     await page.evaluate(() => {
       const c = (window as unknown as { __chat: { rooms: { id: string; lead?: unknown }[]; emit(): void } }).__chat;

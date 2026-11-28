@@ -3,8 +3,9 @@
 // The left holds the title line (the project, then how many sessions work,
 // how many cards fail, how many cards were done today), Boards (each moving
 // board a card: its mark, title, lane bar, count and what's going on in
-// words; the quiet ones folded into one card) and the Running line (what
-// runs in the project, on to Machines). The right third is Needs you, To do
+// words; the quiet ones folded into one card two wide), three to a row as
+// brand v2 drew them (#1567), and the Running line (what runs in the
+// project and its CI runs, on to the Running drawer). The right third is Needs you, To do
 // and a teammate's asks (./overview-needs.tsx) above the agent panel
 // (./overview-talk.tsx), whose first tab is the chief of staff; moving
 // through Needs you peeks each asker there.
@@ -40,6 +41,7 @@ import { askerOf, paneOfItem, paneTarget } from "./needs";
 import { AgentPanel, CHIEF, ovPane } from "./panel";
 import { useProjectInbox } from "../platform/inbox";
 import { names } from "../platform/links";
+import { runs } from "../platform/runs";
 import { mayWrite } from "../platform/pages/issues";
 import { Faces } from "../platform/pages/project";
 import { useBoards } from "../platform/pages/boards";
@@ -254,6 +256,20 @@ function useByCard(project: string): SessionsByCard | null | undefined {
   return v;
 }
 
+/** How many of the project's CI runs are going, read again on refocus; 0 until it answers. */
+function useCiRuns(project: string, refocus: number): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let live = true;
+    runs.list(project, { state: "running" }, 100).then(
+      (l) => live && setN(l.runs.length),
+      () => {},
+    );
+    return () => void (live = false);
+  }, [project, refocus]);
+  return n;
+}
+
 /** How a board stands, as a kit mark. */
 const MARK: Record<Standing, State> = {
   needs: "asks",
@@ -372,7 +388,8 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
   const since = today();
   const doneToday = (views ?? []).flatMap((v) => v.zones.flatMap((z) => z.rows)).filter((r) => r.lane === "done" && r.updated_at >= since).length;
 
-  // Running: what runs in the project, by kind.
+  // Running: what runs in the project, by kind, and its CI runs going.
+  const ciRuns = useCiRuns(project, refocus);
   const mine = ovPanes.filter((x) => x.project === project);
   const kinds = new Map<string, number>();
   for (const x of fleet.panes) if (mine.some((m) => m.key === x.key)) kinds.set(kindOf(x), (kinds.get(kindOf(x)) ?? 0) + 1);
@@ -383,8 +400,9 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
     kinds.get("server") && plural(kinds.get("server")!, "server"),
     kinds.get("shell") && plural(kinds.get("shell")!, "shell"),
     kinds.get("app") && plural(kinds.get("app")!, "app"),
+    ciRuns && plural(ciRuns, "CI run"),
   ].filter(Boolean);
-  const machines = pathOf({ page: "machines", project, at: { at: "machines" } }, names);
+  const machines = pathOf({ page: "machines", project, at: { at: "machines", running: true } }, names);
 
   const tile = (b: OvBoard) => {
     const to = pathOf({ page: "board", project, board: b.id }, names);
@@ -430,6 +448,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
         <span class="m-meta">
           {moved.length} moving{quiet.length ? ` · ${quiet.length} quiet` : ""}
         </span>
+        <span class="ov-head-end m-meta">↵ opens its desk</span>
       </header>
       {views !== null && o.boards.length === 0 ? (
         <p class="ov-quiet" data-ov-empty>
@@ -443,7 +462,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
           {moved.map(tile)}
           {quietOpen && quiet.map(tile)}
           {quiet.length > 0 && !quietOpen && (
-            <li class="ov-board ov-folded">
+            <li class="ov-board ov-folded" data-wide={moved.length % 3 !== 2 || undefined}>
               <button type="button" class="ov-board-title" aria-expanded={false} data-ov-quiet onClick={() => setQuietOpen(true)}>
                 <Mark state="idle" />
                 <span>{quiet.length} quiet</span>
@@ -465,6 +484,7 @@ function OverviewBody({ project, board, card, zoom, fleet, session }: { project:
             </>
           ) : null}
         </span>
+        <span class="ov-head-end m-meta">open</span>
       </a>
     </Surface>
   );

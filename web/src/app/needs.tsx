@@ -189,7 +189,9 @@ function answering(fleet: Fleet | null, i: InboxItem): Answering | null {
 /** Where a row says it is: its card (`#1443`), the chief of staff, a room, or not on a card. */
 function placeOf(i: InboxItem, fleet: Fleet | null): string {
   if (i.from.name?.startsWith("Chief of staff")) return "chief of staff";
-  if (i.subject.type === "issue" || i.subject.type === "pr" || i.subject.type === "board_row") return /#\d+/.exec(i.title)?.[0] ?? (decides(i) ? i.subject.type : "");
+  // Its number where the title has one; else a plain word, never the kind's own name (#1567).
+  if (i.subject.type === "issue" || i.subject.type === "pr" || i.subject.type === "board_row")
+    return /#\d+/.exec(i.title)?.[0] ?? (decides(i) ? { issue: "issue", pr: "PR", board_row: "" }[i.subject.type] : "");
   if (i.subject.type === "pane") {
     const p = paneOfItem(fleet, i);
     return p?.info.on_issue?.issue ?? "not on a card";
