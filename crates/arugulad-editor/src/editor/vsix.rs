@@ -8,7 +8,7 @@ use super::server::{EXT_FILES, EXT_VERSION};
 const README: &str = include_str!("ext/README.md");
 const LICENSE: &str = include_str!("../../../../LICENSE-MIT");
 
-/// The extension's file name: `arugula-editor-0.2.3.vsix`.
+/// The extension's file name: `arugula-editor-0.2.4.vsix`.
 pub fn file_name() -> String {
     format!("arugula-editor-{EXT_VERSION}.vsix")
 }
@@ -165,6 +165,38 @@ fn crc32(data: &[u8]) -> u32 {
 mod tests {
     use super::*;
 
+    /// The stores refuse a version they have with other bytes, and with it
+    /// every release (vsix.sha256): what goes in the VSIX changes only with
+    /// its version.
+    #[test]
+    fn a_version_is_one_vsix() {
+        use sha2::{Digest, Sha256};
+        let got = format!("sha256:{}", hex::encode(Sha256::digest(build())));
+        let pkg: serde_json::Value = serde_json::from_str(EXT_FILES[0].1).unwrap();
+        assert_eq!(pkg["version"], EXT_VERSION, "ext/package.json's version is EXT_VERSION");
+        let lines: Vec<(&str, &str)> = include_str!("vsix.sha256")
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .map(|l| l.split_once(' ').expect("`VERSION sha256:HEX`"))
+            .collect();
+        for (i, (v, _)) in lines.iter().enumerate() {
+            assert!(!lines[..i].iter().any(|(w, _)| w == v), "vsix.sha256 has {v} twice");
+        }
+        let (last, want) = *lines.last().expect("vsix.sha256 has a line");
+        assert!(
+            !(last == EXT_VERSION && want != got && want != "sha256:unset"),
+            "What goes in the editor extension's VSIX changed, but its version is still {EXT_VERSION}, \
+             and the stores already have {EXT_VERSION} with other bytes: every release's publish would \
+             stop (publish-marketplace-version-exists). Bump the version in ext/package.json and \
+             EXT_VERSION (server.rs), then add `NEW_VERSION {got}` to vsix.sha256."
+        );
+        assert_eq!(
+            (last, want),
+            (EXT_VERSION, got.as_str()),
+            "vsix.sha256's last line is the VSIX this builds: add `{EXT_VERSION} {got}` to it (and change no other line)"
+        );
+    }
+
     #[test]
     fn crc_is_zips() {
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
@@ -203,7 +235,7 @@ mod tests {
             assert!(names.lines().any(|l| l == n), "{n} in {names}");
         }
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains(r#"Id="arugula-editor" Version="0.2.3" Publisher="arugula""#));
+        assert!(text.contains(&format!(r#"Id="arugula-editor" Version="{EXT_VERSION}" Publisher="arugula""#)));
         assert!(text.contains(r#"ExtensionKind" Value="workspace""#));
     }
 }
