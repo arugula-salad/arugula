@@ -1,0 +1,12 @@
+# Each version of the editor extension and the sha256 of its VSIX
+# (`arugulad _vsix`), oldest first; the last line is the version
+# ext/package.json and EXT_VERSION say. The stores keep a version's bytes for
+# good: release.yml's publish refuses a release whose VSIX has a version they
+# have with other bytes (publish-marketplace-version-exists), so every release
+# would stop. vsix.rs's `a_version_is_one_vsix` fails on a pull request first.
+#
+# Append only. A change to what goes in the VSIX (ext/, its README, the MIT
+# license, vsix.rs) bumps ext/package.json's version and EXT_VERSION and adds
+# a line here; never change a line that's here.
+0.2.3 sha256:f77bfb159500a1d180a44a3063088deea3d502761a815cdb55a9da708b19f3c2
+0.2.4 sha256:61a4dc46e37115c2c42d0a30629ddd50548e7102d968559ceb5b7342a5518c20
