@@ -1,6 +1,6 @@
 ---
 section: Added
-title: Tag a board's lead from any room, and agents named by what they are
+title: Tag a board's lead from any room; agents named by role
 line: Type @ and a board's name in any chat room to reach its lead. Agents show as "Design lift lead", "Chief of staff" or their session, not machine/session.
 headline: no
 ---
