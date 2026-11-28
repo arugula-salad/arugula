@@ -40,7 +40,10 @@ use arugula_control_wire::{
     events::{READ_LIMIT_MAX, page_text, read_types},
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
     sessions::{PROPOSAL_CLOSE_MAX, PROPOSAL_PROMPT_MAX, PROPOSAL_WHY_MAX, Proposal},
-    watch::{EventTarget, WatchState, WatchTarget, Watcher, event_target, event_types, expires_ms, until_word_parse},
+    watch::{
+        EventTarget, TARGET_TYPES, WatchState, WatchTarget, Watcher, event_target, event_types, expires_ms,
+        until_word_parse,
+    },
     work::{
         SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, SessionWatchAsk, SessionWatchGiven, SessionWatchOp,
         WORK_SESSION_ISSUES, WORK_SESSION_WATCH,
@@ -357,7 +360,7 @@ fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
         let r = arugulad_base::forge_wait::PrRef::parse(&p)
             .filter(|r| r.host == "github.com")
             .ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
-        out.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
+        out.push(WatchTarget::Pr { repo: r.repo, number: r.number, until, head: None });
     }
     for id in ids(&a.agent_session) {
         if !id.starts_with("ses_") {
@@ -501,7 +504,7 @@ impl Server {
         // A hosted session's box has joined: every cloud type is
         // watchable, and no machine's own.
         if a.kind.as_deref().map(str::trim) == Some("types") {
-            let text = event_types(Watcher::HostedSession, true);
+            let text = format!("{}\n{TARGET_TYPES}", event_types(Watcher::HostedSession, true));
             return done(text.clone(), json!({ "types": text }));
         }
         let op = watch_op(a)?;
