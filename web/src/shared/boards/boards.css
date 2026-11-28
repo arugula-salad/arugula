@@ -133,7 +133,7 @@
 
 .board-needs-head {
   margin: 0 0 8px;
-  font: 600 var(--text-meta) / 1.4 var(--font-meta);
+  font: 600 var(--text-body) / 1.4 var(--font-meta);
   color: var(--ink);
 }
 
