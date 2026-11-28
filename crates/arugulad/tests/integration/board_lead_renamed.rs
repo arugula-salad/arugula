@@ -1,4 +1,5 @@
-//! Arugula #1563: a board's lead is told of its board's posts by its Claude
+//! Arugula #1563, #1575: a board's lead, or an issue thread's, is told of its
+//! room's posts by its Claude
 //! Code conversation, never by its name. A session takes the lead with
 //! `lead_board`, which sends its conversation's id, and is renamed. The posts
 //! control tells for it then (by that id, and the name it led with) still
@@ -83,4 +84,35 @@ fn a_renamed_lead_gets_every_post_on_its_board_once_mid_turn() {
         assert_eq!(prompts.iter().filter(|p| p.contains(&format!("post {n}"))).count(), 1, "{prompts:#?}");
     }
     assert!(prompts.iter().any(|p| p.contains("post 148") && p.contains("shot.png")), "{prompts:#?}");
+}
+
+/// An issue's thread a session leads (Arugula #1575): `post_thread` `lead`
+/// sends its conversation, and renamed since, its thread's posts still reach
+/// it by that, as a board's lead's do.
+#[test]
+fn a_renamed_lead_of_an_issues_thread_gets_its_posts() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    let url = serve(&rt, f.clone());
+    let d = Daemon::child_in(&[], &[], |state| enroll(state, &url));
+    until("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+    let config = json!({ "agent": "acp", "command": [PYTHON, fake()], "title": "Parser", "prompt": "hello" });
+    let block = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(block, "idle");
+    let conversation = d.state(block)["session_id"].as_str().unwrap().to_owned();
+
+    let mcp = Mcp::bridge(&d, Some(block));
+    mcp.call("post_thread", json!({ "room": "iss_12", "lead": true })).unwrap();
+    let led = f.room_leads.lock().unwrap()[0].clone();
+    assert_eq!((&led["session"], &led["conversation"]), (&json!("Parser"), &json!(conversation)), "{led}");
+
+    d.call(block, "set_title", json!({ "title": "Parser rewrite" }));
+    let op = json!({ "t": "op", "id": "p1", "op": { "op": "agents.mention", "room": "iss_12", "target": "iss_12",
+        "room_name": "#12 The parser", "seq": 3, "author": "Aaron", "text": "post 3", "session": "Parser",
+        "from_owner": true, "conversation": conversation } });
+    f.outbox.lock().unwrap().push(op.to_string());
+    until("the daemon's answer", || answer(&f, "p1").is_some());
+    let a = answer(&f, "p1").unwrap();
+    assert_eq!((&a["routed"]["step"], &a["routed"]["session"]), (&json!("named"), &json!("Parser rewrite")), "{a}");
+    until("read", || states(&f).contains(&(3, "read".to_owned())));
 }

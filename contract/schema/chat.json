@@ -3181,6 +3181,13 @@
     "LeadRoom": {
       "description": "`POST` to [`agent_room_lead`]: the calling session (`session`, its name\non its machine) leads the room, or with `release` nobody does (the lead's\nown machine's agents only, as a board's).",
       "properties": {
+        "conversation": {
+          "description": "The id of the calling session's Claude Code conversation (Arugula\n#1575), as a board's lead sends it (#1563): the room's posts are told\nby it, whatever the session is called then, and the lead is gone when\nno pane holds it. Left out with `release`, or when it has none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "release": {
           "default": false,
           "type": "boolean"

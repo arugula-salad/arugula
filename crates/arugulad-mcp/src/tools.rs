@@ -3728,19 +3728,23 @@ impl ToolCall<'_, '_> {
             Some((room, b)) => Some(self.stand_down(&room, b, &session).await),
             None => None,
         };
-        let (lead, said) = match crate::mcp::registry::lead_staff(self.app, &project.id, &session).await {
-            Ok(_) => (
-                true,
-                format!("It leads your person's staff room in {}: their posts there are its prompts", project.name),
-            ),
-            Err(e) => (
-                false,
-                format!(
-                    "It doesn't lead your person's staff room in {} ({e}): it tries again on its first turn",
-                    project.name
+        // Its conversation, once the block has one (Arugula #1575): its
+        // recipe takes the lead again on its first wake, with it.
+        let conversation = arugulad_base::agent_mentions::conversation(self.app, block).await;
+        let (lead, said) =
+            match crate::mcp::registry::lead_staff(self.app, &project.id, &session, conversation.as_deref()).await {
+                Ok(_) => (
+                    true,
+                    format!("It leads your person's staff room in {}: their posts there are its prompts", project.name),
                 ),
-            ),
-        };
+                Err(e) => (
+                    false,
+                    format!(
+                        "It doesn't lead your person's staff room in {} ({e}): it tries again on its first turn",
+                        project.name
+                    ),
+                ),
+            };
         let mut said = match &moved_from {
             Some(m) => format!("{said}. {}", m.said),
             None => said,
