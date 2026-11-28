@@ -170,10 +170,25 @@
 
 /* The right: Needs you over the panel, held in the window. */
 .ov-side {
-  position: sticky;
-  top: 0;
-  height: calc(100vh - 80px);
   min-width: 0;
+}
+/* Beside the work, the Overview is the window's height (#1555): the panel
+   reaches its foot, the work scrolls on its own if it's longer, and the
+   page doesn't scroll. */
+@media (min-width: 1001px) {
+  .platform-section[data-project-home]:has(> .ov:not(.phone)),
+  .ov:not(.phone),
+  .ov:not(.phone) > .ov-side {
+    height: 100%;
+  }
+  .ov:not(.phone) {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .ov:not(.phone) > .ov-main {
+    box-sizing: border-box;
+    max-height: 100%;
+    overflow: auto;
+  }
 }
 .ov-needs {
   flex: 0 1 auto;
@@ -206,10 +221,6 @@
 @media (max-width: 1000px) {
   .ov {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .ov-side {
-    position: static;
-    height: auto;
   }
   .ov-needs {
     max-height: none;

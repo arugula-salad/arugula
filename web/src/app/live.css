@@ -28,11 +28,15 @@
   }
 }
 
-/* The agent panel's terminal (live-pane.tsx's WorkSlot): the pane fills its well. */
+/* The agent panel's terminal (live-pane.tsx's WorkSlot): the pane fits its
+   well, so only its scrollback scrolls; drawn smaller, from its corner. */
 .work-slot {
   position: relative;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
+}
+.work-slot .term-host {
+  transform-origin: 0 0;
 }
 .work-slot .term-host,
 .work-slot .xterm {

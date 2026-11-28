@@ -139,6 +139,34 @@ export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pan
     for (const k of kinds) slot.addEventListener(k, stop, true);
     return () => kinds.forEach((k) => slot.removeEventListener(k, stop, true));
   }, [readOnly, !!view]);
+  // The pane fits its slot (#1555): it takes the slot's size in cells, so
+  // its program redraws there, where it may (yours, and no other screen
+  // holds its tab's size); else it's drawn smaller to fit. The slot never
+  // scrolls: the terminal's scrollback does.
+  useEffect(() => {
+    const slot = ref.current;
+    const term = info ? client!.panes.get(id)?.view : undefined;
+    const screen = term?.host.querySelector<HTMLElement>(".xterm-screen");
+    if (!slot || !term || !screen) return;
+    const fit = () => {
+      const cell = term.cellSize();
+      if (!cell || !slot.clientWidth || !slot.clientHeight) return;
+      const cols = Math.max(2, Math.floor(slot.clientWidth / cell.width));
+      const rows = Math.max(1, Math.floor(slot.clientHeight / cell.height));
+      const tab = client!.tabOfPane(id);
+      if (tab && !readOnly && (cols !== term.cols || rows !== term.rows)) client!.view(tab.id, cols, rows, id, true);
+      const scale = Math.min(1, slot.clientWidth / screen.offsetWidth, slot.clientHeight / screen.offsetHeight);
+      term.host.style.transform = scale < 1 ? `scale(${scale})` : "";
+    };
+    const seen = new ResizeObserver(fit);
+    seen.observe(slot);
+    seen.observe(screen);
+    fit();
+    return () => {
+      seen.disconnect();
+      term.host.style.transform = "";
+    };
+  }, [client, id, view, readOnly]);
   return notDrawn(p) ?? <div ref={ref} class="work-slot" data-live-slot={pane} data-live-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
 }
 

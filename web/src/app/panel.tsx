@@ -244,7 +244,7 @@ function TerminalWell({ machine, pane, label, watch }: { machine: string; pane: 
   const { LiveWork } = usePlatformApi();
   return (
     <Well label={label}>
-      <div style={{ height: "100%" }} data-panel-terminal={pane}>{LiveWork ? <LiveWork machine={machine} pane={String(pane)} watch={watch} /> : <p>This page doesn't draw terminals.</p>}</div>
+      <div data-panel-terminal={pane}>{LiveWork ? <LiveWork machine={machine} pane={String(pane)} watch={watch} /> : <p>This page doesn't draw terminals.</p>}</div>
     </Well>
   );
 }
